@@ -1253,6 +1253,27 @@ export function loadNative() {
 		return null;
 	}
 
+	function findJjRepo(startDir) {
+		if (!startDir || typeof startDir !== "string") return null;
+		let current = path.resolve(startDir);
+		while (true) {
+			const jjRepo = path.join(current, ".jj", "repo");
+			const jjDir = path.join(current, ".jj");
+			try {
+				if (fs.existsSync(jjRepo) || fs.existsSync(jjDir)) {
+					return {
+						root: current,
+						storeDir: jjDir,
+					};
+				}
+			} catch {}
+			const parent = path.dirname(current);
+			if (parent === current) break;
+			current = parent;
+		}
+		return null;
+	}
+
 	class FallbackVcsGitRepo {
 		#data;
 		constructor(data) {
@@ -1261,8 +1282,11 @@ export function loadNative() {
 		info() {
 			return {
 				repoRoot: this.#data.repoRoot,
+				gitEntryPath: this.#data.gitDir,
 				gitDir: this.#data.gitDir,
 				commonDir: this.#data.commonDir,
+				headPath: path.join(this.#data.gitDir, "HEAD"),
+				isReftable: false,
 				kind: "git",
 			};
 		}
@@ -1292,11 +1316,35 @@ export function loadNative() {
 				if (headContent.startsWith("ref:")) {
 					const ref = headContent.slice(4).trim();
 					const name = ref.replace(/^refs\/heads\//, "");
-					return { detached: false, name, sha: "" };
+					return {
+						kind: "ref",
+						branch: name,
+						refName: ref,
+						commit: "",
+						detached: false,
+						name,
+						sha: "",
+					};
 				}
-				return { detached: true, name: "HEAD", sha: headContent };
+				return {
+					kind: "detached",
+					branch: undefined,
+					refName: undefined,
+					commit: headContent,
+					detached: true,
+					name: "HEAD",
+					sha: headContent,
+				};
 			} catch {
-				return { detached: false, name: "main", sha: "" };
+				return {
+					kind: "ref",
+					branch: "main",
+					refName: "refs/heads/main",
+					commit: "",
+					detached: false,
+					name: "main",
+					sha: "",
+				};
 			}
 		}
 		async head() {
@@ -1411,45 +1459,225 @@ export function loadNative() {
 		async diffTree() {
 			return "";
 		}
+		async diffText() {
+			return "";
+		}
+		async diffNoIndex() {
+			return "";
+		}
+		async numstat() {
+			return [];
+		}
+		async hasDiff() {
+			return false;
+		}
+		async stageFiles() {}
+		async unstage() {}
+		async stageHunks() {}
+		async checkout() {}
+		async createBranch() {}
+		async deleteBranch() {
+			return false;
+		}
+		async checkoutNewBranch() {}
+		async restore() {}
+		async reset() {}
+		async clean() {}
+		async readTree() {}
+		async writeTree() {
+			return "";
+		}
+		async applyPatch() {}
+		async canApplyPatch() {
+			return false;
+		}
+		async cherryPick() {
+			const err = new Error("cherryPick not supported in fallback mode");
+			err.name = "VcsError";
+			err.code = "Unsupported";
+			throw err;
+		}
+		async cherryPickAbort() {}
+		async cherryPickSkip() {}
+		async stashPush() {
+			return false;
+		}
+		async stashTryPop() {
+			return false;
+		}
+		async fetch() {}
+		async submodulePaths() {
+			return [];
+		}
+		async showBlob() {
+			return { data: Buffer.from(""), truncated: false };
+		}
+		async lfsMediaDir() {
+			return null;
+		}
+	}
+
+	class FallbackVcsJjWorkspace {
+		#data;
+		constructor(data) {
+			this.#data = data;
+		}
+		root() {
+			return this.#data.root;
+		}
+		primaryRoot() {
+			return this.#data.root;
+		}
+		prefixOf(dir) {
+			const rel = path.relative(this.#data.root, dir);
+			return rel.startsWith("..") ? null : rel;
+		}
+		storeDir() {
+			return this.#data.storeDir;
+		}
+		watchTarget() {
+			return path.join(this.#data.storeDir, "working_copy");
+		}
+		async workingCopyLabel() {
+			return null;
+		}
+		async headId() {
+			return null;
+		}
+		async statusSummary() {
+			return { staged: 0, unstaged: 0, untracked: 0, conflicted: 0 };
+		}
+		async diffText() {
+			return "";
+		}
+		async changedFiles() {
+			return [];
+		}
+		async logSubjects() {
+			return [];
+		}
+		async logOnelines() {
+			return [];
+		}
+		async commitDetails() {
+			return { subject: "", author: "", date: "", hash: "", body: "" };
+		}
+		async lsFiles() {
+			return [];
+		}
 	}
 
 	class FallbackVcsRepo {
+		#kind;
 		#git;
-		constructor(data) {
-			this.#git = new FallbackVcsGitRepo(data);
+		#jj;
+		constructor(data, kind = "git") {
+			this.#kind = kind;
+			if (kind === "git") {
+				this.#git = new FallbackVcsGitRepo(data);
+				this.#jj = null;
+			} else {
+				this.#git = null;
+				this.#jj = new FallbackVcsJjWorkspace(data);
+			}
 		}
 		kind() {
-			return "git";
+			return this.#kind;
 		}
 		root() {
-			return this.#git.root();
+			return this.#kind === "git" ? this.#git.root() : this.#jj.root();
 		}
 		primaryRoot() {
-			return this.#git.primaryRoot();
+			return this.#kind === "git" ? this.#git.primaryRoot() : this.#jj.primaryRoot();
 		}
 		prefixOf(dir) {
-			return this.#git.prefixOf(dir);
+			if (this.#kind === "git") return this.#git.prefixOf(dir);
+			return this.#jj.prefixOf(dir);
 		}
 		watchTarget() {
-			return this.#git.watchTarget();
+			return this.#kind === "git" ? this.#git.watchTarget() : this.#jj.watchTarget();
 		}
-		supports() {
-			return false;
+		supports(feature) {
+			if (this.#kind === "git") {
+				if (feature === "stagedDiff" || feature === "revDiff") return true;
+			} else if (this.#kind === "jj") {
+				if (feature === "stagedDiff" || feature === "revDiff") return false;
+			}
+			const err = new Error(`unknown feature \`${feature}\`; valid: stagedDiff, revDiff`);
+			err.name = "VcsError";
+			err.code = "Backend";
+			throw err;
+		}
+		asGit() {
+			return this.#git;
 		}
 		as_git() {
 			return this.#git;
 		}
+		asJj() {
+			return this.#jj;
+		}
 		as_jj() {
-			return null;
+			return this.#jj;
 		}
-		async label() {
-			return this.#git.currentBranch();
+		async label(signal) {
+			return this.#kind === "git" ? this.#git.currentBranch() : this.#jj.workingCopyLabel();
 		}
-		async head_id() {
-			return this.#git.headSha();
+		async headId(signal) {
+			return this.#kind === "git" ? this.#git.headSha() : this.#jj.headId();
 		}
-		async status_counts() {
-			return null;
+		async head_id(signal) {
+			return this.headId(signal);
+		}
+		async statusSummary(signal) {
+			return this.#kind === "git" ? this.#git.statusSummary() : this.#jj.statusSummary();
+		}
+		async status_counts(signal) {
+			return this.statusSummary(signal);
+		}
+		async statusPorcelain(options, signal) {
+			return this.#kind === "git" ? this.#git.statusPorcelain(options) : "";
+		}
+		async diffText(options, signal) {
+			return "";
+		}
+		async changedFiles(options, signal) {
+			return this.#kind === "git" ? this.#git.changedFiles(options) : this.#jj.changedFiles();
+		}
+		async numstat(options, signal) {
+			return [];
+		}
+		async uncommittedDiff(files, signal) {
+			return "";
+		}
+		async logSubjects(count, signal) {
+			return this.#kind === "git" ? this.#git.logSubjects(count) : this.#jj.logSubjects(count);
+		}
+		async logOnelines(count, signal) {
+			return this.#kind === "git" ? this.#git.logOnelines(count) : this.#jj.logOnelines(count);
+		}
+		async commitDetails(rev, signal) {
+			return this.#kind === "git" ? this.#git.commitDetails(rev) : this.#jj.commitDetails(rev);
+		}
+		async revListRange(base, head, limit, signal) {
+			return this.#kind === "git" ? this.#git.revListRange(base, head, limit) : [];
+		}
+		async mergeBase(left, right, signal) {
+			return this.#kind === "git" ? this.#git.mergeBase(left, right) : null;
+		}
+		async listFiles(patterns, signal) {
+			return this.#kind === "git" ? this.#git.lsFiles() : [];
+		}
+		async lsFiles(others, excludeStandard, signal) {
+			return this.#kind === "git" ? this.#git.lsFiles(others, excludeStandard) : [];
+		}
+		async commitCreate(message, signal) {
+			if (this.#kind === "git") return this.#git.commitCreate(message);
+			throw new Error("commitCreate not supported in fallback mode");
+		}
+		async push(remote, branch, signal) {
+			if (this.#kind === "git") return this.#git.push(remote, branch);
+			throw new Error("push not supported in fallback mode");
 		}
 	}
 
@@ -1546,21 +1774,48 @@ export function loadNative() {
 		// VCS classes and functions
 		VcsGitRepo: FallbackVcsGitRepo,
 		VcsRepo: FallbackVcsRepo,
-		VcsJjWorkspace: class {},
+		VcsJjWorkspace: FallbackVcsJjWorkspace,
 		vcsGitDiscover: (dir) => {
 			const data = findGitRepo(dir);
 			return data ? new FallbackVcsGitRepo(data) : null;
 		},
 		vcsDiscover: (dir) => {
-			const data = findGitRepo(dir);
-			return data ? new FallbackVcsRepo(data) : null;
+			const jjData = findJjRepo(dir);
+			const gitData = findGitRepo(dir);
+			if (jjData && (!gitData || (gitData.repoRoot !== jjData.root && jjData.root.startsWith(gitData.repoRoot)))) {
+				return new FallbackVcsRepo(jjData, "jj");
+			}
+			if (gitData) {
+				return new FallbackVcsRepo(gitData, "git");
+			}
+			if (jjData) {
+				return new FallbackVcsRepo(jjData, "jj");
+			}
+			return null;
 		},
 		vcsGitRepoInfo: (dir) => {
 			const data = findGitRepo(dir);
-			return data ? { repoRoot: data.repoRoot, gitDir: data.gitDir, commonDir: data.commonDir, kind: "git" } : null;
+			return data
+				? {
+						repoRoot: data.repoRoot,
+						gitEntryPath: data.gitDir,
+						gitDir: data.gitDir,
+						commonDir: data.commonDir,
+						headPath: path.join(data.gitDir, "HEAD"),
+						isReftable: false,
+						kind: "git",
+					}
+				: null;
 		},
-		vcsJjDiscover: () => null,
-		vcsIsPureJj: () => false,
+		vcsJjDiscover: (dir) => {
+			const data = findJjRepo(dir);
+			return data ? new FallbackVcsJjWorkspace(data) : null;
+		},
+		vcsIsPureJj: (dir) => {
+			const jjData = findJjRepo(dir);
+			const gitData = findGitRepo(dir);
+			return !!(jjData && (!gitData || (gitData.repoRoot !== jjData.root && jjData.root.startsWith(gitData.repoRoot))));
+		},
 		vcsDetachGitDir: async () => "no-git",
 		vcsGitClone: async () => {},
 		vcsValidateHunkSelections: () => [],

@@ -113,7 +113,7 @@ export class FooterComponent implements Component {
 			return null;
 		}
 
-		const gitRepository = repository.asGit();
+		const gitRepository = repository.asGit?.() ?? null;
 		if (!gitRepository) {
 			if (!this.#branchResolve) {
 				const request = new AbortController();

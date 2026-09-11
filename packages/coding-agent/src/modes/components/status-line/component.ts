@@ -998,7 +998,7 @@ export class StatusLineComponent implements Component {
 		const gitCwd = activeRepoCache.effectiveGitCwd;
 		const repository = this.#resolveRepository(activeRepoCache);
 		if (!repository) return null;
-		const gitRepository = repository.asGit();
+		const gitRepository = repository.asGit?.() ?? null;
 		if (!gitRepository) {
 			if (this.#jjBranchActive || Date.now() - this.#jjBranchLastFetch < JJ_REFRESH_TTL_MS) {
 				return this.#cachedJjBranch;
