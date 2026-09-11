@@ -729,16 +729,20 @@ async function searchVirtualResources(
 }
 
 function mergeGrepResults(left: GrepResult, right: GrepResult, maxCount: number): GrepResult {
-	if (left.matches.length === 0) return right;
-	if (right.matches.length === 0) return left;
-	const combinedMatches = [...left.matches, ...right.matches];
+	const leftMatches = left?.matches ?? [];
+	const rightMatches = right?.matches ?? [];
+	if (leftMatches.length === 0)
+		return right ?? { matches: [], totalMatches: 0, filesWithMatches: 0, filesSearched: 0 };
+	if (rightMatches.length === 0)
+		return left ?? { matches: [], totalMatches: 0, filesWithMatches: 0, filesSearched: 0 };
+	const combinedMatches = [...leftMatches, ...rightMatches];
 	const matches = combinedMatches.length > maxCount ? combinedMatches.slice(0, maxCount) : combinedMatches;
 	return {
 		matches,
-		totalMatches: left.totalMatches + right.totalMatches,
+		totalMatches: (left?.totalMatches ?? 0) + (right?.totalMatches ?? 0),
 		filesWithMatches: new Set(matches.map(match => match.path)).size,
-		filesSearched: left.filesSearched + right.filesSearched,
-		limitReached: left.limitReached || right.limitReached || matches.length < combinedMatches.length,
+		filesSearched: (left?.filesSearched ?? 0) + (right?.filesSearched ?? 0),
+		limitReached: Boolean(left?.limitReached || right?.limitReached || matches.length < combinedMatches.length),
 	};
 }
 
@@ -1289,7 +1293,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 				result = mergeGrepResults(result, virtualResult, nativeMaxCount);
 				if (rangesByAbsPath.size > 0) {
 					const filteredMatches: GrepMatch[] = [];
-					for (const match of result.matches) {
+					for (const match of result?.matches ?? []) {
 						const abs = matchAbsolutePath(match.path, searchPath);
 						const ranges = rangesByAbsPath.get(abs);
 						if (!ranges) {
@@ -1312,12 +1316,12 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 						matches: filteredMatches,
 						totalMatches: filteredMatches.length,
 						filesWithMatches: new Set(filteredMatches.map(match => match.path)).size,
-						filesSearched: result.filesSearched,
-						limitReached: result.limitReached,
+						filesSearched: result?.filesSearched ?? 0,
+						limitReached: result?.limitReached,
 					};
 				}
 				if (archiveDisplayMap.size > 0) {
-					for (const match of result.matches) {
+					for (const match of result?.matches ?? []) {
 						const abs = matchAbsolutePath(match.path, searchPath);
 						const display = archiveDisplayMap.get(abs);
 						if (display) match.path = display;
@@ -1334,7 +1338,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 				// trimmed for diversity.
 				const fileOrder: string[] = [];
 				const matchesByPath = new Map<string, GrepMatch[]>();
-				for (const match of result.matches) {
+				for (const match of result?.matches ?? []) {
 					if (!matchesByPath.has(match.path)) {
 						fileOrder.push(match.path);
 						matchesByPath.set(match.path, []);

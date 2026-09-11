@@ -1763,14 +1763,556 @@ export function loadNative() {
 		}
 	}
 
+	class FallbackShell {
+		#cwd;
+		#child = null;
+
+		constructor(options) {
+			this.#cwd = options?.cwd ? path.resolve(options.cwd) : process.cwd();
+		}
+
+		async abort() {
+			if (this.#child) {
+				try {
+					this.#child.kill();
+				} catch {}
+				this.#child = null;
+			}
+		}
+
+		async liveBackgroundJobCount() {
+			return 0;
+		}
+
+		run(options, onChunk) {
+			const { command, cwd, env, timeoutMs, signal } = options || {};
+			const runCwd = cwd ? path.resolve(this.#cwd, cwd) : this.#cwd;
+
+			if (signal?.aborted) {
+				return Promise.resolve({
+					exitCode: undefined,
+					cancelled: true,
+					timedOut: false,
+					workingDir: this.#cwd,
+				});
+			}
+
+			let shellPath = "sh";
+			let isBash = false;
+			if (process.platform === "win32") {
+				const gitRoots = [
+					process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Git"),
+					process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Git"),
+					process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Programs", "Git"),
+				];
+				for (const root of gitRoots) {
+					if (!root) continue;
+					const candidate = path.join(root, "bin", "bash.exe");
+					try {
+						if (fs.existsSync(candidate)) {
+							shellPath = candidate;
+							isBash = true;
+							break;
+						}
+					} catch {}
+				}
+				if (!isBash) {
+					shellPath = process.env.ComSpec || "cmd.exe";
+				}
+			} else {
+				shellPath = "/bin/bash";
+				isBash = true;
+			}
+
+			let cmdToRun = String(command ?? "");
+			if (isBash && process.platform === "win32") {
+				cmdToRun = cmdToRun.replace(/([a-zA-Z]:)\\[^"'\s]*/g, (m) => m.replace(/\\/g, "/"));
+			}
+
+			const runId = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			const cwdMarkerFile = path.join(os.tmpdir(), `omp-shell-cwd-${runId}.txt`);
+			const scriptFile = path.join(os.tmpdir(), `omp-shell-run-${runId}.sh`);
+
+			let spawnArgs = [];
+			if (isBash) {
+				const preamble = process.platform === "win32"
+					? 'pwd() { if [ "$#" -eq 0 ]; then cygpath -w "$(builtin pwd)" 2>/dev/null || (builtin pwd -W 2>/dev/null || builtin pwd); else builtin pwd "$@"; fi; }; export -f pwd 2>/dev/null || true;\n'
+					: "";
+				const scriptContent = `${preamble}${cmdToRun}\n__omp_ec=$?\n(pwd -W 2>/dev/null || pwd) > "${cwdMarkerFile.replace(/\\/g, "/")}"\nexit $__omp_ec\n`;
+				fs.writeFileSync(scriptFile, scriptContent);
+				spawnArgs = [scriptFile];
+			} else {
+				spawnArgs = ["/c", cmdToRun];
+			}
+
+			const mergedEnv = { ...process.env, ...(env || {}) };
+
+			return new Promise((resolve) => {
+				let timer = null;
+				let finished = false;
+
+				let child;
+				try {
+					child = childProcess.spawn(shellPath, spawnArgs, {
+						cwd: runCwd,
+						env: mergedEnv,
+						stdio: ["pipe", "pipe", "pipe"],
+						windowsHide: true,
+					});
+				} catch {
+					try { fs.unlinkSync(scriptFile); } catch {}
+					try { fs.unlinkSync(cwdMarkerFile); } catch {}
+					resolve({
+						exitCode: 1,
+						cancelled: false,
+						timedOut: false,
+						workingDir: this.#cwd,
+					});
+					return;
+				}
+				this.#child = child;
+
+				const cleanup = () => {
+					if (timer) clearTimeout(timer);
+					try { fs.unlinkSync(scriptFile); } catch {}
+					this.#child = null;
+				};
+
+				if (timeoutMs && timeoutMs > 0) {
+					timer = setTimeout(() => {
+						if (finished) return;
+						finished = true;
+						try { child.kill(); } catch {}
+						cleanup();
+						try { fs.unlinkSync(cwdMarkerFile); } catch {}
+						resolve({
+							exitCode: undefined,
+							cancelled: true,
+							timedOut: true,
+							workingDir: this.#cwd,
+						});
+					}, timeoutMs);
+				}
+
+				const abortListener = () => {
+					if (finished) return;
+					finished = true;
+					try { child.kill(); } catch {}
+					cleanup();
+					try { fs.unlinkSync(cwdMarkerFile); } catch {}
+					resolve({
+						exitCode: undefined,
+						cancelled: true,
+						timedOut: false,
+						workingDir: this.#cwd,
+					});
+				};
+
+				if (signal) {
+					signal.addEventListener("abort", abortListener, { once: true });
+				}
+
+				child.stdout?.on("data", (buf) => {
+					onChunk?.(null, buf.toString());
+				});
+
+				child.stderr?.on("data", (buf) => {
+					onChunk?.(null, buf.toString());
+				});
+
+				child.on("error", (err) => {
+					if (finished) return;
+					finished = true;
+					cleanup();
+					try { fs.unlinkSync(cwdMarkerFile); } catch {}
+					onChunk?.(err, "");
+					resolve({
+						exitCode: 1,
+						cancelled: false,
+						timedOut: false,
+						workingDir: this.#cwd,
+					});
+				});
+
+				child.on("close", (code) => {
+					if (finished) return;
+					finished = true;
+					cleanup();
+
+					let newCwd = this.#cwd;
+					if (fs.existsSync(cwdMarkerFile)) {
+						try {
+							const captured = fs.readFileSync(cwdMarkerFile, "utf8").trim();
+							if (captured) {
+								newCwd = path.resolve(captured);
+								this.#cwd = newCwd;
+							}
+						} catch {}
+						try { fs.unlinkSync(cwdMarkerFile); } catch {}
+					}
+
+					resolve({
+						exitCode: code ?? 0,
+						cancelled: false,
+						timedOut: false,
+						workingDir: newCwd,
+					});
+				});
+			});
+		}
+	}
+
+	function fallbackGlobMatches(pattern, relPath) {
+		if (pattern === "**/*" || pattern === "*") return true;
+		let p = pattern;
+		if (p.startsWith("**/")) {
+			p = p.slice(3);
+			const subRegex = `^(?:.*\\/)?${p
+				.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+				.replace(/\*\*/g, ".*")
+				.replace(/\*/g, "[^/]*")}$`;
+			try {
+				return new RegExp(subRegex).test(relPath);
+			} catch {
+				return false;
+			}
+		}
+		const regexStr = `^${p
+			.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+			.replace(/\*\*/g, ".*")
+			.replace(/\*/g, "[^/]*")}$`;
+		try {
+			return new RegExp(regexStr).test(relPath);
+		} catch {
+			return false;
+		}
+	}
+
+	const EXCLUDED_WORKSPACE_DIRS = new Set([
+		"node_modules",
+		".git",
+		".next",
+		"dist",
+		"build",
+		"target",
+		".venv",
+		".cache",
+		".turbo",
+		".parcel-cache",
+		"coverage",
+	]);
+
+	function parseGitignoreLines(content) {
+		const rules = [];
+		for (let line of content.split("\n")) {
+			line = line.trim();
+			if (!line || line.startsWith("#")) continue;
+			const isDirOnly = line.endsWith("/");
+			if (isDirOnly) line = line.slice(0, -1);
+			rules.push({ pattern: line, isDirOnly });
+		}
+		return rules;
+	}
+
+	function isPathGitignored(name, rel, isDir, rules) {
+		for (const rule of rules) {
+			if (rule.isDirOnly && !isDir) continue;
+			if (rule.pattern.includes("/")) {
+				if (rel === rule.pattern || rel.endsWith(`/${rule.pattern}`)) return true;
+			} else {
+				if (name === rule.pattern || rel.split("/").includes(rule.pattern)) return true;
+				if (rule.pattern.startsWith("*.")) {
+					const ext = rule.pattern.slice(1);
+					if (name.endsWith(ext)) return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	function fallbackGlob(options, onMatch) {
+		const rootPath = path.resolve(options?.path || ".");
+		const hidden = options?.hidden ?? false;
+		const maxResults = options?.maxResults ?? 1000;
+		const useGitignore = options?.gitignore !== false;
+		const matches = [];
+
+		function walk(currentDir, relativePrefix, parentRules) {
+			if (matches.length >= maxResults) return;
+			let dirEntries;
+			try {
+				dirEntries = fs.readdirSync(currentDir, { withFileTypes: true });
+			} catch {
+				return;
+			}
+
+			let localRules = parentRules ? [...parentRules] : [];
+			if (useGitignore) {
+				const giPath = path.join(currentDir, ".gitignore");
+				try {
+					if (fs.existsSync(giPath)) {
+						const giContent = fs.readFileSync(giPath, "utf8");
+						localRules = localRules.concat(parseGitignoreLines(giContent));
+					}
+				} catch {}
+			}
+
+			for (const dirent of dirEntries) {
+				if (matches.length >= maxResults) return;
+				if (dirent.name === ".DS_Store") continue;
+				if (!hidden && dirent.name.startsWith(".")) continue;
+				const isDirectory = dirent.isDirectory();
+				if (useGitignore && isDirectory && EXCLUDED_WORKSPACE_DIRS.has(dirent.name)) continue;
+
+				const relPath = relativePrefix ? `${relativePrefix}/${dirent.name}` : dirent.name;
+				const fullPath = path.join(currentDir, dirent.name);
+
+				if (useGitignore && isPathGitignored(dirent.name, relPath, isDirectory, localRules)) {
+					continue;
+				}
+
+				let fileType = 1; // File
+				let mtime = 0;
+				let size = 0;
+				try {
+					const stat = fs.statSync(fullPath);
+					mtime = stat.mtimeMs;
+					size = stat.size;
+					if (stat.isDirectory()) fileType = 2; // Dir
+					else if (stat.isSymbolicLink()) fileType = 3; // Symlink
+				} catch {}
+
+				if (fallbackGlobMatches(options?.pattern || "*", relPath)) {
+					const match = { path: relPath, fileType, mtime, size };
+					matches.push(match);
+					try { onMatch?.(null, match); } catch {}
+				}
+
+				if (fileType === 2 && options?.recursive !== false) {
+					walk(fullPath, relPath, localRules);
+				}
+			}
+		}
+
+		walk(rootPath, "", []);
+		return Promise.resolve({
+			matches,
+			totalMatches: matches.length,
+		});
+	}
+
+	function fallbackGrep(options, onMatch) {
+		const rootPath = path.resolve(options?.path || ".");
+		const maxCount = options?.maxCount ?? 1000;
+		const maxCountPerFile = options?.maxCountPerFile ?? Number.POSITIVE_INFINITY;
+		const useGitignore = options?.gitignore !== false;
+		const matches = [];
+		let filesSearched = 0;
+		const filesWithMatchesSet = new Set();
+
+		let regex;
+		try {
+			const flags = options?.ignoreCase ? "i" : "";
+			regex = new RegExp(options?.pattern || "", flags);
+		} catch {
+			return Promise.resolve({
+				matches: [],
+				totalMatches: 0,
+				filesWithMatches: 0,
+				filesSearched: 0,
+				limitReached: false,
+			});
+		}
+
+		function searchFile(filePath, relPath) {
+			if (options?.glob && !fallbackGlobMatches(options.glob, relPath)) return;
+			filesSearched++;
+			let content;
+			try {
+				content = fs.readFileSync(filePath, "utf8");
+			} catch {
+				return;
+			}
+			// Skip binary files (null bytes)
+			if (content.includes("\0")) return;
+
+			const lines = content.split("\n");
+			let fileMatches = 0;
+			for (let i = 0; i < lines.length; i++) {
+				if (matches.length >= maxCount) return;
+				if (fileMatches >= maxCountPerFile) break;
+				const line = lines[i];
+				if (regex.test(line)) {
+					filesWithMatchesSet.add(relPath);
+					fileMatches++;
+					const match = {
+						path: relPath,
+						lineNumber: i + 1,
+						line: line.replace(/\r$/, ""),
+					};
+					matches.push(match);
+					try { onMatch?.(null, match); } catch {}
+				}
+			}
+		}
+
+		function walk(currentDir, relativePrefix, parentRules) {
+			if (matches.length >= maxCount) return;
+			let dirEntries;
+			try {
+				dirEntries = fs.readdirSync(currentDir, { withFileTypes: true });
+			} catch {
+				return;
+			}
+
+			let localRules = parentRules ? [...parentRules] : [];
+			if (useGitignore) {
+				const giPath = path.join(currentDir, ".gitignore");
+				try {
+					if (fs.existsSync(giPath)) {
+						const giContent = fs.readFileSync(giPath, "utf8");
+						localRules = localRules.concat(parseGitignoreLines(giContent));
+					}
+				} catch {}
+			}
+
+			for (const dirent of dirEntries) {
+				if (matches.length >= maxCount) return;
+				if (dirent.name === ".DS_Store") continue;
+				if (!options?.hidden && dirent.name.startsWith(".")) continue;
+				const isDirectory = dirent.isDirectory();
+				if (useGitignore && isDirectory && EXCLUDED_WORKSPACE_DIRS.has(dirent.name)) continue;
+
+				const relPath = relativePrefix ? `${relativePrefix}/${dirent.name}` : dirent.name;
+				const fullPath = path.join(currentDir, dirent.name);
+
+				if (useGitignore && isPathGitignored(dirent.name, relPath, isDirectory, localRules)) {
+					continue;
+				}
+
+				if (isDirectory) {
+					walk(fullPath, relPath, localRules);
+				} else if (dirent.isFile()) {
+					searchFile(fullPath, relPath);
+				}
+			}
+		}
+
+		try {
+			const stat = fs.statSync(rootPath);
+			if (stat.isDirectory()) {
+				walk(rootPath, "", []);
+			} else {
+				searchFile(rootPath, path.basename(rootPath));
+			}
+		} catch {}
+
+		return Promise.resolve({
+			matches,
+			totalMatches: matches.length,
+			filesWithMatches: filesWithMatchesSet.size,
+			filesSearched,
+			limitReached: matches.length >= maxCount,
+		});
+	}
+
+	function fallbackListWorkspace(options) {
+		const rootPath = path.resolve(options?.path || ".");
+		const maxDepth = options?.maxDepth ?? 1;
+		const hidden = options?.hidden ?? false;
+		const useGitignore = options?.gitignore !== false;
+		const collectAgentsMd = Boolean(options?.collectAgentsMd);
+		const maxWalkDepth = collectAgentsMd ? Math.max(maxDepth, 4) : maxDepth;
+
+		const entries = [];
+		const agentsMdFiles = [];
+
+		function walk(currentDir, relativePrefix, depth, parentRules) {
+			if (depth > maxWalkDepth) return;
+			let dirEntries;
+			try {
+				dirEntries = fs.readdirSync(currentDir, { withFileTypes: true });
+			} catch {
+				return;
+			}
+
+			let localRules = parentRules ? [...parentRules] : [];
+			if (useGitignore) {
+				const giPath = path.join(currentDir, ".gitignore");
+				try {
+					if (fs.existsSync(giPath)) {
+						const giContent = fs.readFileSync(giPath, "utf8");
+						localRules = localRules.concat(parseGitignoreLines(giContent));
+					}
+				} catch {}
+			}
+
+			for (const dirent of dirEntries) {
+				if (dirent.name === ".DS_Store") continue;
+				if (!hidden && dirent.name.startsWith(".")) continue;
+
+				const isDirectory = dirent.isDirectory();
+				if (isDirectory && EXCLUDED_WORKSPACE_DIRS.has(dirent.name)) continue;
+
+				const relPath = relativePrefix ? `${relativePrefix}/${dirent.name}` : dirent.name;
+				const fullPath = path.join(currentDir, dirent.name);
+
+				const gitignored = useGitignore && isPathGitignored(dirent.name, relPath, isDirectory, localRules);
+				if (gitignored && isDirectory) continue;
+
+				let fileType = 1; // File
+				let mtime = 0;
+				let size = 0;
+				try {
+					const stat = fs.statSync(fullPath);
+					mtime = stat.mtimeMs;
+					size = stat.size;
+					if (stat.isDirectory()) {
+						fileType = 2; // Dir
+					} else if (stat.isSymbolicLink()) {
+						fileType = 3; // Symlink
+					}
+				} catch {}
+
+				const isAgentsMd = dirent.isFile() && dirent.name.toLowerCase() === "agents.md";
+				if (collectAgentsMd && isAgentsMd && depth >= 1 && depth <= 4) {
+					agentsMdFiles.push(relPath);
+				}
+
+				if (!gitignored || (collectAgentsMd && isAgentsMd)) {
+					if (depth + 1 <= maxDepth) {
+						entries.push({
+							path: relPath,
+							fileType,
+							mtime,
+							size,
+						});
+					}
+				}
+
+				if (fileType === 2 && depth < maxWalkDepth) {
+					walk(fullPath, relPath, depth + 1, localRules);
+				}
+			}
+		}
+
+		walk(rootPath, "", 0, []);
+		return Promise.resolve({
+			entries,
+			agentsMdFiles,
+			truncated: false,
+		});
+	}
+
 	const fallback = {
 		__ompInstallTokioRuntime: () => {},
 		__piNativesV18_1_14: true,
 		Ellipsis: "…",
 		ProcessStatus: { Running: 0, Sleeping: 1, Stopped: 2, Zombie: 3, Dead: 4 },
-		FileType: { File: 0, Directory: 1, Symlink: 2, Unknown: 3 },
-		GrepOutputMode: { Standard: 0, Json: 1, Count: 2 },
+		FileType: { File: 1, Dir: 2, Directory: 2, Symlink: 3, Unknown: 0 },
+		GrepOutputMode: { Content: "content", Count: "count", FilesWithMatches: "filesWithMatches", Standard: 0, Json: 1 },
 		FileLock: FallbackFileLock,
+		Shell: FallbackShell,
 		// VCS classes and functions
 		VcsGitRepo: FallbackVcsGitRepo,
 		VcsRepo: FallbackVcsRepo,
@@ -1852,11 +2394,21 @@ export function loadNative() {
 		highlightCode: (code) => String(code ?? ""),
 		warmHighlighter: () => {},
 		// AST / search stubs
-		search: () => [],
-		grep: () => [],
-		fuzzyFind: () => [],
-		astEdit: () => ({ code: "", matches: [] }),
-		astGrep: () => [],
+		search: () => ({ matches: [], matchCount: 0, limitReached: false }),
+		grep: fallbackGrep,
+		fuzzyFind: (options) => fallbackGlob({ ...options, pattern: "**/*" }),
+		astEdit: () =>
+			Promise.resolve({
+				changes: [],
+				fileChanges: [],
+				totalReplacements: 0,
+				filesTouched: 0,
+				filesSearched: 0,
+				applied: false,
+				limitReached: false,
+				parseErrors: [],
+			}),
+		astGrep: () => Promise.resolve({ matches: [], totalMatches: 0, filesWithMatches: 0, filesSearched: 0, limitReached: false, parseErrors: [] }),
 		astMatch: () => false,
 		hasMatch: () => false,
 		matchesKey: jsMatchesKey,
@@ -1883,9 +2435,9 @@ export function loadNative() {
 		editDiffString: () => ({ diff: "", firstChangedLine: undefined }),
 		summarizeCode: (code) => code,
 		copyToClipboard: () => false,
-		executeShell: () => ({ exitCode: 0, stdout: "", stderr: "" }),
-		glob: () => [],
-		listWorkspace: () => [],
+		executeShell: (options, onChunk) => new FallbackShell({ cwd: options?.cwd }).run(options, onChunk),
+		glob: fallbackGlob,
+		listWorkspace: fallbackListWorkspace,
 		// Sixel & image encoding
 		encodeSixel: () => "",
 		snapcompactSupportedChars: (_font, chars) => String(chars ?? ""),
@@ -1897,7 +2449,7 @@ export function loadNative() {
 		rasterizeSvg: () => null,
 		readImageFromClipboard: () => null,
 		renderSnapcompactPng: () => null,
-		decodeSixelToPng: () => null,
+		decodeSixelToPng: () => Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC", "base64"),
 		deviceCheckGenerateToken: () => null,
 		execReplace: () => "",
 		extractInlineSloppyRegions: () => [],

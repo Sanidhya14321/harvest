@@ -787,7 +787,7 @@ async function discoverScanFiles(scanDir: string, cwd: string, gitignore: boolea
 			fileType: FileType.File,
 		});
 		const candidates: ScanFileCandidate[] = [];
-		for (const match of result.matches as GlobMatch[]) {
+		for (const match of (result?.matches ?? []) as GlobMatch[]) {
 			const absPath = path.resolve(globRoot, match.path);
 			const filePath = normalizeScanPath(path.relative(scanDir, absPath));
 			if (

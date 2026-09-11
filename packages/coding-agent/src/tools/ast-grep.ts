@@ -264,7 +264,7 @@ export class AstGrepTool implements AgentTool<typeof astGrepSchema, AstGrepToolD
 			const { record: recordFile, list: fileList } = createFileRecorder();
 			const fileMatchCounts = new Map<string, number>();
 			const matchesByFile = new Map<string, AstFindMatch[]>();
-			for (const match of result.matches) {
+			for (const match of result?.matches ?? []) {
 				const relativePath = formatPath(match.path);
 				recordFile(relativePath);
 				if (!matchesByFile.has(relativePath)) {

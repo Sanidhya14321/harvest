@@ -512,7 +512,7 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 					);
 					throwIfAborted(signal);
 					const out: Array<{ path: string; mtime: number }> = [];
-					for (const match of result.matches) {
+					for (const match of result?.matches ?? []) {
 						if (!match.path) continue;
 						out.push({
 							path: formatMatchPath(match.path, target.searchPath, match.fileType),

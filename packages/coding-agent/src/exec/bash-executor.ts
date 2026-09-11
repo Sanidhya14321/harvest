@@ -642,7 +642,7 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 	let resetSession = false;
 
 	try {
-		const runPromise = executionShell.run(
+		const rawRunPromise = executionShell.run(
 			{
 				command: finalCommand,
 				cwd: commandCwd,
@@ -656,6 +656,7 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 				}
 			},
 		);
+		const runPromise = Promise.resolve(rawRunPromise);
 
 		const ey = new ExponentialYield();
 		const winner = await ey.race<

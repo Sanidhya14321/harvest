@@ -103,7 +103,7 @@ export async function runGrepCommand(cmd: GrepCommandArgs): Promise<void> {
 		}
 		console.log("");
 
-		for (const match of result.matches) {
+		for (const match of result?.matches ?? []) {
 			const displayPath = match.path.replace(/\\/g, "/");
 
 			if (cmd.mode === GrepOutputMode.Content) {

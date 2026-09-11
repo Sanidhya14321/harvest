@@ -64,8 +64,8 @@ export async function buildDirectoryTree(cwd: string, options: BuildDirectoryTre
 			hidden: true,
 			gitignore: false,
 		});
-		entries = result.entries;
-		nativeTruncated = result.truncated;
+		entries = result?.entries ?? [];
+		nativeTruncated = result?.truncated ?? false;
 	} catch {
 		return emptyTree(rootPath);
 	}
@@ -97,17 +97,18 @@ export async function buildWorkspaceTree(cwd: string, options: BuildWorkspaceTre
 			collectAgentsMd: true,
 			timeoutMs: options.timeoutMs,
 		});
-		const tree = assembleTree(rootPath, result.entries, {
+		const entries = result?.entries ?? [];
+		const tree = assembleTree(rootPath, entries, {
 			perDirLimit: WORKSPACE_DEFAULTS.perDirLimit,
 			rootLimit: WORKSPACE_DEFAULTS.perDirLimit,
 			lineCap: WORKSPACE_DEFAULTS.lineCap,
-			nativeTruncated: result.truncated,
+			nativeTruncated: result?.truncated ?? false,
 			// This tree is embedded in the cached system prompt. Render absolute
 			// mtimes so the block is byte-identical across sessions and does not
 			// bust the prompt cache (a relative "Nm ago" drifts every build).
 			ageMode: "absolute",
 		});
-		return { ...tree, agentsMdFiles: result.agentsMdFiles };
+		return { ...tree, agentsMdFiles: result?.agentsMdFiles ?? [] };
 	} catch {
 		return { ...emptyTree(rootPath), agentsMdFiles: [] };
 	}
@@ -153,7 +154,7 @@ function assembleTree(rootPath: string, entries: readonly GlobMatch[], opts: Ass
 	// any order across worker threads, so we group by string key and sort once
 	// per directory below.
 	const byParent = new Map<string, Node[]>();
-	for (const entry of entries) {
+	for (const entry of entries ?? []) {
 		const slash = entry.path.lastIndexOf("/");
 		const name = slash === -1 ? entry.path : entry.path.slice(slash + 1);
 		const parentPath = slash === -1 ? "" : entry.path.slice(0, slash);

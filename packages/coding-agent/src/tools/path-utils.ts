@@ -1437,7 +1437,7 @@ async function findUniqueWorkspaceSuffixWithGlob(
 			timeoutMs: WORKSPACE_SUFFIX_TIMEOUT_MS,
 		});
 		if (signal?.aborted) throw new ToolAbortError();
-		matches = result.matches.map(match => match.path);
+		matches = (result?.matches ?? []).map(match => match.path);
 	} catch {
 		if (signal?.aborted) throw new ToolAbortError();
 		return null;

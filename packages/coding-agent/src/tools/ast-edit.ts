@@ -98,17 +98,17 @@ async function runAstEditTargets(
 			failOnParseError: options.failOnParseError,
 			signal: options.signal,
 		});
-		totalReplacements += targetResult.totalReplacements;
-		filesSearched += targetResult.filesSearched;
-		limitReached = limitReached || targetResult.limitReached;
-		applied = applied && targetResult.applied;
-		if (targetResult.parseErrors) parseErrors.push(...targetResult.parseErrors);
-		for (const change of targetResult.changes) {
+		totalReplacements += targetResult?.totalReplacements ?? 0;
+		filesSearched += targetResult?.filesSearched ?? 0;
+		limitReached = limitReached || Boolean(targetResult?.limitReached);
+		applied = applied && Boolean(targetResult?.applied);
+		if (targetResult?.parseErrors) parseErrors.push(...targetResult.parseErrors);
+		for (const change of targetResult?.changes ?? []) {
 			const absolute = path.resolve(target.basePath, change.path);
 			const rebased = path.relative(commonBasePath, absolute).replace(/\\/g, "/");
 			aggregatedChanges.push({ ...change, path: rebased });
 		}
-		for (const fileChange of targetResult.fileChanges) {
+		for (const fileChange of targetResult?.fileChanges ?? []) {
 			const absolute = path.resolve(target.basePath, fileChange.path);
 			const rebased = path.relative(commonBasePath, absolute).replace(/\\/g, "/");
 			fileCounts.set(rebased, (fileCounts.get(rebased) ?? 0) + fileChange.count);
