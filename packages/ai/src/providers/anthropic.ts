@@ -2403,6 +2403,7 @@ const streamAnthropicOnce = (
 						? client.beta.messages.create({ ...params, stream: true }, requestOptions)
 						: client.messages.create({ ...params, stream: true }, requestOptions);
 				let streamedReplayUnsafeContent = false;
+				let sawSplicedEnvelope = false;
 
 				try {
 					let requestTimeout: NodeJS.Timeout | undefined;
@@ -2439,7 +2440,7 @@ const streamAnthropicOnce = (
 					// Set when a duplicate message_start splices a second envelope onto
 					// the stream; closed indexes then refuse to reopen so replayed
 					// content cannot duplicate (see content_block_start guard).
-					let sawSplicedEnvelope = false;
+					sawSplicedEnvelope = false;
 					const closedBlockIndexes = new Set<number>();
 					const openBlocks = new Map<
 						number,
@@ -2886,16 +2887,17 @@ const streamAnthropicOnce = (
 						throw new AIError.AnthropicStreamEnvelopeError("stream ended before message_start");
 					}
 					if (!sawTerminalEnvelope) {
-						// Neither a message_delta stop_reason nor message_stop arrived: the
-						// connection died mid-generation. Finalizing the partial message as
-						// a clean "stop" would make the agent loop treat the truncated turn
-						// as complete (silent mid-sentence halt), so fail the turn. The
-						// envelope error is transparently retried before replay-unsafe
-						// content streams; afterwards it surfaces as an error turn whose
-						// complete tool calls the agent loop salvages
-						// (`recoverTransientErrorToolTurn` recognizes the envelope-error
-						// text and `retainCompletedToolCalls` drops half-streamed calls).
-						throw new AIError.AnthropicStreamEnvelopeError("stream ended before message_stop");
+						// If the stream ended cleanly with all opened blocks finalized and
+						// we received content (non-conforming gateway omitting message_stop
+						// or message_delta stop_reason), degrade to best-effort instead of
+						// discarding complete blocks.
+						if (openBlocks.size === 0 && output.content.length > 0) {
+							reportAnthropicEnvelopeAnomaly("stream ended before message_stop (all content blocks finalized)");
+							sawTerminalEnvelope = true;
+							output.stopReason = output.content.some(b => b.type === "toolCall") ? "toolUse" : "stop";
+						} else {
+							throw new AIError.AnthropicStreamEnvelopeError("stream ended before message_stop");
+						}
 					}
 					if (!sawMessageStop) {
 						// A stop_reason arrived via message_delta, so generation finished;
@@ -3052,9 +3054,10 @@ const streamAnthropicOnce = (
 						firstTokenTime === undefined &&
 						!streamedReplayUnsafeContent &&
 						AIError.isProviderRetryableError(streamFailure);
+					const maxProviderRetries = sawSplicedEnvelope ? 1 : PROVIDER_MAX_RETRIES;
 					if (
 						activeAbortTracker.wasCallerAbort() ||
-						providerRetryAttempt >= PROVIDER_MAX_RETRIES ||
+						providerRetryAttempt >= maxProviderRetries ||
 						(!canRetryTransientEnvelopeFailure && !canRetryProviderFailure)
 					) {
 						throw streamFailure;

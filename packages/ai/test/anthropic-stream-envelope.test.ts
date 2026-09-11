@@ -1927,4 +1927,78 @@ describe("anthropic stream envelope handling", () => {
 		expect(cacheControls[1]).toEqual({ type: "ephemeral" });
 		expect(cacheControls[2]).toEqual({ type: "ephemeral", ttl: "1h" });
 	});
+
+	it("degrades to best-effort content when all content blocks are finalized but message_stop and message_delta are missing", async () => {
+		// Simulates a non-conforming reverse proxy that closes the connection after content_block_stop
+		// without sending message_delta (stop_reason) or message_stop.
+		vi.spyOn(AnthropicMessages.prototype, "create").mockImplementation(
+			() =>
+				createMockRequest([
+					{
+						type: "message_start",
+						message: {
+							id: "msg_finalized_blocks",
+							usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+						},
+					},
+					{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+					{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "completed text" } },
+					{ type: "content_block_stop", index: 0 },
+				]) as never,
+		);
+
+		const stream = streamAnthropic(model, context, { apiKey: "sk-ant-test" });
+		const events: AssistantMessageEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+		const result = await stream.result();
+
+		expect(countEvents(events, "error")).toBe(0);
+		expect(countEvents(events, "done")).toBe(1);
+		expect(result.stopReason).toBe("stop");
+		expect(JSON.parse(JSON.stringify(result.content))).toEqual([{ type: "text", text: "completed text" }]);
+	});
+
+	it("caps provider retries to 1 when a duplicate message_start spliced envelope fails", async () => {
+		let attempt = 0;
+		const providerRetryWait = vi.fn(async () => {});
+		vi.spyOn(AnthropicMessages.prototype, "create").mockImplementation(() => {
+			attempt += 1;
+			// Upstream proxy sends duplicate message_start and cuts off without terminal envelope
+			return createMockRequest([
+				{
+					type: "message_start",
+					message: {
+						id: "msg_spliced_1",
+						usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+					},
+				},
+				{
+					type: "message_start",
+					message: {
+						id: "msg_spliced_2",
+						usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+					},
+				},
+			]) as never;
+		});
+
+		const stream = streamAnthropic(model, context, {
+			apiKey: "sk-ant-test",
+			providerRetryWait,
+		});
+		const events: AssistantMessageEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+		const result = await stream.result();
+
+		// Spliced envelope error must cap retries at 1 retry (total 2 attempts), never looping 10 times
+		expect(attempt).toBe(2);
+		expect(providerRetryWait).toHaveBeenCalledTimes(1);
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toContain("message_stop");
+	});
 });
+

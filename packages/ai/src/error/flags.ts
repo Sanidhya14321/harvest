@@ -446,7 +446,9 @@ function classifyText(
 		if (matchesPayloadRejectionText(errorMessage)) kinds |= Flag.PayloadRejected;
 		if (isMalformedFunctionCallText(errorMessage)) kinds |= Flag.MalformedFunctionCall;
 		if (isProviderFinishErrorText(errorMessage)) kinds |= Flag.ProviderFinishError;
-		if (EMPTY_RESPONSE_PATTERN.test(errorMessage)) kinds |= Flag.EmptyResponse | Flag.Transient;
+		if (EMPTY_RESPONSE_PATTERN.test(errorMessage) || isStreamEnvelopeErrorText(errorMessage)) {
+			kinds |= Flag.EmptyResponse | Flag.Transient;
+		}
 		if (isContentBlockedText(errorMessage)) kinds |= Flag.ContentBlocked;
 		if (
 			ACCOUNT_POLICY_PATTERN.test(errorMessage) ||

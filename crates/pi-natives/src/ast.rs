@@ -1002,10 +1002,10 @@ fn ast_edit_blocking(
 			let mut entries: Vec<_> = compile_errors_by_lang.iter().collect();
 			entries.sort_by_key(|(lang_key, _)| lang_key.as_str());
 			if fail_on_parse_error {
-				let (_, err) = entries
-					.first()
-					.expect("compile failure recorded for every language");
-				return Err(Error::from_reason(format!("{pattern}: {err}")));
+				if let Some((_, err)) = entries.first() {
+					return Err(Error::from_reason(format!("{pattern}: {err}")));
+				}
+				return Err(Error::from_reason(format!("{pattern}: pattern failed to compile in any language")));
 			}
 			for (lang_key, err) in entries {
 				parse_errors.push(if languages.len() > 1 {

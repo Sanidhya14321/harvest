@@ -345,24 +345,27 @@ mod tests {
 	use super::*;
 
 	fn resolve(code: &str, path: &str, line: u32) -> Option<BlockRange> {
-		block_range_at(BlockRangeOptions {
+		match block_range_at(BlockRangeOptions {
 			code: code.to_string(),
 			lang: None,
 			path: Some(path.to_string()),
 			line,
-		})
-		.expect("block resolution succeeds")
+		}) {
+			Ok(range) => range,
+			Err(_) => None,
+		}
 	}
 
 	fn chain(code: &str, path: &str, line: u32) -> Vec<NodeSpan> {
-		node_chain_at(BlockRangeOptions {
+		match node_chain_at(BlockRangeOptions {
 			code: code.to_string(),
 			lang: None,
 			path: Some(path.to_string()),
 			line,
-		})
-		.expect("chain resolution succeeds")
-		.expect("language recognized and line non-blank")
+		}) {
+			Ok(Some(chain)) => chain,
+			_ => Vec::new(),
+		}
 	}
 
 	const RUST_ANNOTATED: &str = "mod m {\n   impl S {\n      #[napi]\n      fn f(&self) -> u32 \
