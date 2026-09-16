@@ -1010,7 +1010,7 @@ async function openClassifier(modelSpec: string): Promise<Classifier> {
 	await storage.reload();
 	const apiKey = await storage.getApiKey(provider);
 	if (!apiKey) {
-		throw new Error(`no credentials for provider "${provider}" (omp login or env var required)`);
+		throw new Error(`no credentials for provider "${provider}" (harvest login or env var required)`);
 	}
 	return { model, apiKey };
 }

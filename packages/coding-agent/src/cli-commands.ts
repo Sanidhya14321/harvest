@@ -374,11 +374,11 @@ export function resolveCliArgv(argv: string[]): ResolvedCliArgv {
 	}
 	if (isSubcommand(first)) return { argv };
 	// A subcommand can hide behind leading global option flags
-	// (`omp --approval-mode=yolo acp`). `run` dispatches strictly on argv[0], so
+	// (`harvest --approval-mode=yolo acp`). `run` dispatches strictly on argv[0], so
 	// hoist the subcommand to the front. Launch-shaped commands share the launch
 	// flag surface, so their leading flags are forwarded and applied; every other
 	// subcommand parses only its own flags, so launch-global flags placed before
-	// it (`omp --cwd <dir> update`) are stripped rather than forwarded into a
+	// it (`harvest --cwd <dir> update`) are stripped rather than forwarded into a
 	// crash (#8891). Genuine launch prompts (no trailing subcommand) are untouched.
 	const subIndex = leadingSubcommandIndex(argv);
 	if (subIndex >= 0) {

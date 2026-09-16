@@ -10,7 +10,7 @@ export default class Grievances extends Command {
 	static description = commandHelp.description;
 	static args = {
 		// Positional action: "list" (default), "clean", or "push". A positional
-		// arg keeps the historical `omp grievances` invocation working unchanged
+		// arg keeps the historical `harvest grievances` invocation working unchanged
 		// while reusing the same command surface for the clean/push verbs.
 		action: Args.string({
 			description: "list (default), clean, or push",

@@ -233,8 +233,8 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 			if (err instanceof Error && err.name === "AbortError") throw err;
 			throw new ToolError(
 				autoStarted
-					? `omp browser relay is serving at ${cdpUrl} but its extension never connected. Install it with \`omp browser-relay install\` and check the toolbar badge shows "on".`
-					: `omp browser relay is not reachable at ${cdpUrl}. Start it with \`omp browser-relay\` (or check the endpoint), and make sure the OMP Browser Relay extension is loaded in Chrome.`,
+					? `harvest browser relay is serving at ${cdpUrl} but its extension never connected. Install it with \`harvest browser-relay install\` and check the toolbar badge shows "on".`
+					: `harvest browser relay is not reachable at ${cdpUrl}. Start it with \`harvest browser-relay\` (or check the endpoint), and make sure the Browser Relay extension is loaded in Chrome.`,
 			);
 		}
 		const puppeteer = await loadPuppeteer();

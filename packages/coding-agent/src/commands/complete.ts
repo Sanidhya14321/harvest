@@ -1,5 +1,5 @@
 /**
- * `omp __complete <kind> [-- <prefix>]` — dynamic completion candidates.
+ * `harvest __complete <kind> [-- <prefix>]` — dynamic completion candidates.
  *
  * Hidden helper invoked by the generated shell completion scripts to resolve
  * values that can't be baked into the script: the live model catalog and

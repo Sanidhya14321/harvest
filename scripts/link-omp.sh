@@ -27,5 +27,6 @@ if [ -z "$global_bin" ]; then
 fi
 
 mkdir -p "$global_bin"
+ln -sfn "$target" "$global_bin/harvest"
 ln -sfn "$target" "$global_bin/omp"
-echo "link-omp: linked $global_bin/omp -> $target"
+echo "link-omp: linked $global_bin/harvest and $global_bin/omp -> $target"

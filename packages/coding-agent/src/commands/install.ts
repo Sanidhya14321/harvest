@@ -66,7 +66,7 @@ export default class Install extends Command {
 		const targets = Array.isArray(args.targets) ? args.targets : args.targets ? [args.targets] : [];
 
 		if (targets.length === 0) {
-			process.stderr.write("Usage: omp install <path | npm-spec | name@marketplace> [...]\n");
+			process.stderr.write("Usage: harvest install <path | npm-spec | name@marketplace> [...]\n");
 			process.exit(1);
 		}
 

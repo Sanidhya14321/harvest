@@ -1,5 +1,5 @@
 /**
- * `omp browser-relay` — drive the user's own Chrome tabs.
+ * `harvest browser-relay` — drive the user's own Chrome tabs.
  */
 import { Args, Command, Flags } from "@harvest/pi-utils/cli";
 import {

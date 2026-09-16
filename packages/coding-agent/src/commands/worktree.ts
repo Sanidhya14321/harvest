@@ -13,7 +13,7 @@ export default class Worktree extends Command {
 	static aliases = ["wt"];
 
 	static args = {
-		// A positional action keeps `omp worktree` (the no-arg form) useful.
+		// A positional action keeps `harvest worktree` (the no-arg form) useful.
 		action: Args.string({
 			description: "list (default), clear, or add",
 			required: false,
