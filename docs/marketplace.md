@@ -15,16 +15,16 @@ In the TUI, `/marketplace` with no arguments opens the interactive plugin browse
 
 A **marketplace** is a Git repository (or local directory) containing a catalog file at `.omp-plugin/marketplace.json` (preferred) or `.claude-plugin/marketplace.json` (Claude Code-compatible fallback). The catalog lists available plugins with their sources, descriptions, and metadata.
 
-A **plugin** is a directory containing Claude/OMP plugin content such as skills, commands, agents, rules, hooks, tools, MCP servers, or LSP servers. Marketplace installs also load extension modules declared by `package.json` `omp.extensions`: installation symlinks the cached plugin into the scope's `node_modules` tree and records it in `omp-plugins.lock.json`, the same runtime surfaces used by npm-installed and `omp plugin link`ed plugins. Plugins are identified by `name@marketplace` (e.g. `code-review@claude-plugins-official`).
+A **plugin** is a directory containing Claude/OMP plugin content such as skills, commands, agents, rules, hooks, tools, MCP servers, or LSP servers. Marketplace installs also load extension modules declared by `package.json` `omp.extensions`: installation symlinks the cached plugin into the scope's `node_modules` tree and records it in `harvest-plugins.lock.json`, the same runtime surfaces used by npm-installed and `harvest plugin link`ed plugins. Plugins are identified by `name@marketplace` (e.g. `code-review@claude-plugins-official`).
 
 **Scopes**: marketplace plugins can be installed at two scopes:
 
-- **user** (default) -- available in all projects, stored in the user plugins data root's `installed_plugins.json` (`~/.omp/plugins/installed_plugins.json` by default)
+- **user** (default) -- available in all projects, stored in the user plugins data root's `installed_plugins.json` (`~/.harvest/plugins/installed_plugins.json` by default)
 - **project** -- available only in the active project, stored in the nearest project `.omp/plugins/installed_plugins.json`
 
 Enabled project-scoped installs shadow enabled user-scoped installs of the same plugin. A disabled project install does not shadow the user install.
 
-On Linux and macOS, `omp config init-xdg` creates the XDG data, state, and cache roots; it does not move existing data. Once the relevant roots exist and `XDG_DATA_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` are set, new user marketplace/plugin state resolves under `$XDG_DATA_HOME/omp` (including `marketplaces.json` and `plugins/`). The `~/.omp` paths below are the non-XDG defaults.
+On Linux and macOS, `harvest config init-xdg` creates the XDG data, state, and cache roots; it does not move existing data. Once the relevant roots exist and `XDG_DATA_HOME`, `XDG_STATE_HOME`, and `XDG_CACHE_HOME` are set, new user marketplace/plugin state resolves under `$XDG_DATA_HOME/harvest` (including `marketplaces.json` and `plugins/`). The `~/.harvest` paths below are the non-XDG defaults.
 
 ## Commands
 
@@ -61,17 +61,17 @@ On Linux and macOS, `omp config init-xdg` creates the XDG data, state, and cache
 The same operations are available from the command line:
 
 ```
-omp plugin marketplace add <source>
-omp plugin marketplace remove <name>
-omp plugin marketplace update [name]
-omp plugin marketplace list
-omp plugin discover [marketplace]
-omp plugin install [--force] [--scope user|project] name@marketplace
-omp plugin uninstall [--scope user|project] name@marketplace
-omp plugin upgrade [--scope user|project] [name@marketplace]
-omp plugin enable [--scope user|project] name@marketplace
-omp plugin disable [--scope user|project] name@marketplace
-omp plugin list
+harvest plugin marketplace add <source>
+harvest plugin marketplace remove <name>
+harvest plugin marketplace update [name]
+harvest plugin marketplace list
+harvest plugin discover [marketplace]
+harvest plugin install [--force] [--scope user|project] name@marketplace
+harvest plugin uninstall [--scope user|project] name@marketplace
+harvest plugin upgrade [--scope user|project] [name@marketplace]
+harvest plugin enable [--scope user|project] name@marketplace
+harvest plugin disable [--scope user|project] name@marketplace
+harvest plugin list
 
 ```
 
@@ -213,7 +213,7 @@ Invalid catalog JSON or invalid required top-level fields reject the catalog. An
 ## Updates, removal, and scope
 
 - `/marketplace update [name]` refreshes catalogs only; it does not reinstall plugins.
-- `omp plugin upgrade name@marketplace` reinstalls every installed scope when `--scope` is omitted. `/marketplace upgrade name@marketplace`, uninstall, and enable/disable require `--scope user|project` when the plugin exists in both scopes.
+- `harvest plugin upgrade name@marketplace` reinstalls every installed scope when `--scope` is omitted. `/marketplace upgrade name@marketplace`, uninstall, and enable/disable require `--scope user|project` when the plugin exists in both scopes.
 - Upgrading all plugins compares only catalog entries that declare `version`. Semver versions must be newer; non-semver versions are treated as changed when unequal. Per-plugin failures are skipped, so an all-plugin upgrade can partially succeed.
 - `marketplace.autoUpdate` controls startup checks: `off`, `notify` (default), or `auto`. Catalogs older than 24 hours are refreshed best-effort before version checks. Despite its name, current `notify` mode writes update availability only to the debug log; it does not show a user-facing notification.
 - Removing a marketplace removes its registry entry and catalog cache; it does not uninstall plugins already cached and registered.
@@ -221,11 +221,11 @@ Invalid catalog JSON or invalid required top-level fields reject the catalog. An
 ## On-disk layout
 
 ```
-~/.omp/
+~/.harvest/
   marketplaces.json              # Registry of added marketplaces
   plugins/
     installed_plugins.json       # User-scoped marketplace plugins (version: 2)
-    omp-plugins.lock.json         # Runtime enable/feature state
+    harvest-plugins.lock.json         # Runtime enable/feature state
     node_modules/<package>        # Symlink to the cached plugin
     cache/
       marketplaces/<name>/       # Cached marketplace clone/catalog
@@ -234,7 +234,7 @@ Invalid catalog JSON or invalid required top-level fields reject the catalog. An
 <project>/.omp/
   plugins/
     installed_plugins.json       # Project-scoped marketplace plugins (version: 2)
-    omp-plugins.lock.json         # Project runtime enable/feature state
+    harvest-plugins.lock.json         # Project runtime enable/feature state
     node_modules/<package>        # Symlink to the cached plugin
 ```
 

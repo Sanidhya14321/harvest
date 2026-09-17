@@ -79,7 +79,7 @@ interface ZaiMcpPostResult {
 
 const ZAI_MCP_PROTOCOL_VERSION = "2025-03-26";
 const ZAI_MCP_CLIENT_INFO = {
-	name: "omp-coding-agent",
+	name: "harvest-coding-agent",
 	version: "1.0.0",
 };
 
@@ -417,7 +417,7 @@ export async function searchZai(params: ZaiSearchParams): Promise<SearchResponse
 
 	const rawResult = await withAuth(keyOrResolver, key => callZaiSearch(key, params), {
 		signal: params.signal,
-		missingKeyMessage: "Z.AI credentials not found. Set ZAI_API_KEY or login with 'omp /login zai'.",
+		missingKeyMessage: "Z.AI credentials not found. Set ZAI_API_KEY or login with 'harvest /login zai'.",
 	});
 	const payload = parseSearchPayload(rawResult);
 	let sources = toSources(payload.results);

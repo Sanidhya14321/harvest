@@ -243,10 +243,13 @@ describe("global --profile flag", () => {
 			const childEnv: Record<string, string | undefined> = {
 				...process.env,
 				HOME: home,
+				USERPROFILE: home,
 				PI_CONFIG_DIR: configDir,
 				PI_NO_TITLE: "1",
 				NO_COLOR: "1",
 			};
+			delete childEnv.HARVEST_PROFILE;
+			delete childEnv.HARVEST_CODING_AGENT_DIR;
 			delete childEnv.OMP_PROFILE;
 			delete childEnv.PI_PROFILE;
 			delete childEnv.PI_CODING_AGENT_DIR;
@@ -264,6 +267,7 @@ describe("global --profile flag", () => {
 				proc.exited,
 			]);
 
+			console.log("DEBUG SENTINEL lines:", stdout.split("\n").filter(l => l.includes("SENTINEL")));
 			expect(exitCode, stderr).toBe(0);
 			expect(stdout).toContain("SENTINEL=work");
 			expect(stdout).not.toContain("SENTINEL=default");
@@ -316,7 +320,7 @@ describe("global --profile flag", () => {
 			]);
 
 			expect(stdout, stderr).toContain("HANDLED");
-			expect(stderr).toContain("Invalid OMP profile");
+			expect(stderr).toContain("Invalid Harvest profile");
 			expect(exitCode).toBe(1);
 		} finally {
 			await removeWithRetries(root);

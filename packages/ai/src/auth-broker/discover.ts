@@ -194,8 +194,8 @@ export async function resolveAuthBrokerConfig(
 	const agentDir = options.agentDir ?? getAgentDir();
 	const resolveConfig = options.configValueResolver ?? defaultResolveConfigValue;
 
-	const envUrl = process.env.OMP_AUTH_BROKER_URL;
-	const envToken = process.env.OMP_AUTH_BROKER_TOKEN;
+	const envUrl = process.env.HARVEST_AUTH_BROKER_URL ?? process.env.OMP_AUTH_BROKER_URL;
+	const envToken = process.env.HARVEST_AUTH_BROKER_TOKEN ?? process.env.OMP_AUTH_BROKER_TOKEN;
 
 	let url = envUrl && envUrl.length > 0 ? envUrl : undefined;
 	let configToken: string | undefined;
@@ -217,8 +217,8 @@ export async function resolveAuthBrokerConfig(
 	if (!token) {
 		throw new AIError.MissingApiKeyError(
 			undefined,
-			`OMP_AUTH_BROKER_URL is set (${url}) but no bearer token is available. ` +
-				`Set OMP_AUTH_BROKER_TOKEN, the \`auth.broker.token\` config entry, or place one at ${getAuthBrokerTokenFilePath()}.`,
+			`HARVEST_AUTH_BROKER_URL is set (${url}) but no bearer token is available. ` +
+				`Set HARVEST_AUTH_BROKER_TOKEN, the \`auth.broker.token\` config entry, or place one at ${getAuthBrokerTokenFilePath()}.`,
 		);
 	}
 	return { url, token };

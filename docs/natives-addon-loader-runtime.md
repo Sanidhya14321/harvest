@@ -17,7 +17,7 @@ A successful call is not memoized by JS. Repeated calls rely on the runtime's `r
 - `platformTag`: `${platform}-${process.arch}`;
 - package version and sentinel name `__piNativesV<version_with_underscores>`;
 - package-local `nativeDir` and the directory of `process.execPath`;
-- `nativesDir`, normally `~/.omp/natives`; it uses `$XDG_DATA_HOME/omp/natives` only when `$XDG_DATA_HOME/omp` exists;
+- `nativesDir`, normally `~/.harvest/natives`; it uses `$XDG_DATA_HOME/harvest/natives` only when `$XDG_DATA_HOME/harvest` exists;
 - `versionedDir`: `<nativesDir>/<packageVersion>`;
 - legacy compiled-binary directory: `%LOCALAPPDATA%/omp` (or `~/AppData/Local/omp`) on Windows, `~/.local/bin` elsewhere;
 - workspace/install/compiled mode, optional leaf directory, Windows staging policy, CPU variant, filenames, and ordered candidates.

@@ -64,7 +64,7 @@ The dedicated fallback provider in `src/discovery/mcp-json.ts` reads project-roo
 
 In practice MCP servers also come from higher-priority providers (for example native `.omp/...` and tool-specific config dirs). Authoring guidance:
 
-- Prefer `.omp/mcp.json` (project) or `~/.omp/agent/mcp.json` (user) for explicit control.
+- Prefer `.omp/mcp.json` (project) or `~/.harvest/agent/mcp.json` (user) for explicit control.
 - Use root `mcp.json` / `.mcp.json` when you need fallback compatibility.
 - Reusing the same server name in multiple sources causes precedence shadowing, not merge.
 
@@ -81,7 +81,7 @@ Key behavior:
 
 ### Environment expansion during discovery
 
-OMP-native MCP config (`.omp/mcp.json`, `~/.omp/agent/mcp.json`, plus their `.mcp.json` variants) expands `${VAR}` and `${VAR:-default}` placeholders recursively before converting to runtime config. It also accepts boolean/string forms for `enabled` (`true`, `false`, `1`, `0`) and numeric strings for `timeout`. `requestIdFormat` accepts only `"number"` or `"string"`; other values warn and fall back to numeric IDs.
+Harvest-native MCP config (`.omp/mcp.json`, `~/.harvest/agent/mcp.json`, plus their `.mcp.json` variants) expands `${VAR}` and `${VAR:-default}` placeholders recursively before converting to runtime config. It also accepts boolean/string forms for `enabled` (`true`, `false`, `1`, `0`) and numeric strings for `timeout`. `requestIdFormat` accepts only `"number"` or `"string"`; other values warn and fall back to numeric IDs.
 
 The standalone fallback provider in `src/discovery/mcp-json.ts` reads project-root `mcp.json` and `.mcp.json`, expands the same `${...}` placeholders, and type-checks `enabled`/`timeout` without coercing string values. It applies the same `requestIdFormat` validation.
 

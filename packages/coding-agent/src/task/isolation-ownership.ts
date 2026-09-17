@@ -10,7 +10,8 @@ import * as path from "node:path";
 import { $ } from "bun";
 
 /** Marker file written into a task-isolation base dir identifying its owner. */
-export const ISOLATION_OWNER_FILE = ".omp-isolation-owner.json";
+export const ISOLATION_OWNER_FILE = ".harvest-isolation-owner.json";
+export const LEGACY_ISOLATION_OWNER_FILE = ".omp-isolation-owner.json";
 
 /** Recorded owner of a task-isolation sandbox. */
 export interface IsolationOwner {
@@ -85,7 +86,11 @@ export async function hasLiveIsolationOwner(baseDir: string): Promise<boolean> {
 	try {
 		decoded = await Bun.file(path.join(baseDir, ISOLATION_OWNER_FILE)).json();
 	} catch {
-		return false;
+		try {
+			decoded = await Bun.file(path.join(baseDir, LEGACY_ISOLATION_OWNER_FILE)).json();
+		} catch {
+			return false;
+		}
 	}
 	if (typeof decoded !== "object" || decoded === null || !("pid" in decoded)) return false;
 	const pid = decoded.pid;

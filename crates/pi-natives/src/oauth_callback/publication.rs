@@ -117,7 +117,7 @@ mod tests {
 				.expect("system clock should follow the Unix epoch")
 				.as_nanos();
 			let path = std::env::temp_dir()
-				.join(format!("omp-oauth-relay-{label}-{}-{nonce}", std::process::id()));
+				.join(format!("harvest-oauth-relay-{label}-{}-{nonce}", std::process::id()));
 			fs::create_dir(&path).expect("create test transaction directory");
 			Self(path)
 		}

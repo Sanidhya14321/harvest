@@ -6,6 +6,7 @@
  * the real `clearClaudePluginRootsCache` while tests supply a counter stub.
  */
 
+import * as nodeFs from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -772,7 +773,13 @@ export class MarketplaceManager {
 	}
 
 	#runtimeLockPath(scope: "user" | "project"): string {
-		return path.join(this.#runtimeRoot(scope), "omp-plugins.lock.json");
+		const root = this.#runtimeRoot(scope);
+		const harvestLock = path.join(root, "harvest-plugins.lock.json");
+		const legacyLock = path.join(root, "omp-plugins.lock.json");
+		if (!nodeFs.existsSync(harvestLock) && nodeFs.existsSync(legacyLock)) {
+			return legacyLock;
+		}
+		return harvestLock;
 	}
 
 	async #loadRuntimeConfig(scope: "user" | "project"): Promise<PluginRuntimeConfig> {

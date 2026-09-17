@@ -177,7 +177,7 @@ does **not** identify a runnable TS/JS entry point.
 
 The Gemini provider separately populates the `extension-module` capability by
 scanning the same two extension roots for direct `.ts`/`.js` files,
-`<name>/index.ts` / `index.js`, and `package.json` `omp`/`pi` extension entries.
+`<name>/index.ts` / `index.js`, and `package.json` `harvest`/`pi` extension entries.
 Those module records are independent of `gemini-extension.json`.
 
 The ambient startup path in `discoverExtensionPaths()` currently requests only

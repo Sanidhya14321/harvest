@@ -12,8 +12,8 @@ A minimal `oh-my-pi` marketplace catalog that demonstrates the `marketplace.json
 Or from the CLI:
 
 ```
-omp plugin marketplace add ./docs/skills/examples/mini-marketplace
-omp plugin install my-plugin@example-marketplace
+harvest plugin marketplace add ./docs/skills/examples/mini-marketplace
+harvest plugin install my-plugin@example-marketplace
 ```
 
 ## What it demonstrates

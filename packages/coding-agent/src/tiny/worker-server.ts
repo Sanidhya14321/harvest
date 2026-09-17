@@ -53,7 +53,7 @@ export class TinyWorkerServer {
 		}
 		const cancelCleanup = postmortem.register("tiny-worker", () => this.#shutdown());
 		this.#armIdle();
-		process.stdout.write(`omp tiny worker listening on ${endpoint}\n`);
+		process.stdout.write(`harvest tiny worker listening on ${endpoint}\n`);
 		try {
 			await this.#stopped.promise;
 		} finally {

@@ -44,7 +44,7 @@ export function tinyWorkerEndpoint(
 	const name = workerName(modelKey, backend);
 	if (process.platform === "win32") {
 		const key = Bun.hash.crc32(path.resolve(runtimeDir, name)).toString(16).padStart(8, "0");
-		return `\\\\.\\pipe\\omp-tiny-${name}-${key}`;
+		return `\\\\.\\pipe\\harvest-tiny-${name}-${key}`;
 	}
 	return path.join(runtimeDir, `${name}.sock`);
 }

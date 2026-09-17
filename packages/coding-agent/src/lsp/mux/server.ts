@@ -305,11 +305,11 @@ export class LspMuxServer {
 			return;
 		}
 		const request = hasRequestId(message);
-		if (message.method === MUX_PING_METHOD && request) {
+		if ((message.method === MUX_PING_METHOD || message.method === "omp/muxPing") && request) {
 			this.#sendSession(session, rpcResult(message.id, MUX_PING_RESULT));
 			return;
 		}
-		if (message.method === MUX_CONNECT_METHOD && request) {
+		if ((message.method === MUX_CONNECT_METHOD || message.method === "omp/muxConnect") && request) {
 			if (session.server) {
 				this.#sendSession(session, rpcError(message.id, -32600, "session already bound"));
 				return;
@@ -344,7 +344,7 @@ export class LspMuxServer {
 			if (request) this.#sendSession(session, rpcError(message.id, -32002, "muxConnect must be first"));
 			return;
 		}
-		if (message.method === MUX_RESTART_METHOD && !request) {
+		if ((message.method === MUX_RESTART_METHOD || message.method === "omp/muxRestartServer") && !request) {
 			this.#killServer(server);
 			return;
 		}

@@ -18,7 +18,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { getAgentDir, isEnoent, logger, MAIN_CONFIG_FILENAMES, tryParseJson } from "@harvest/pi-utils";
+import { CONFIG_DIR_NAME, getAgentDir, isEnoent, logger, MAIN_CONFIG_FILENAMES, tryParseJson } from "@harvest/pi-utils";
 import { YAML } from "bun";
 import { readDirEntries, readFile } from "../capability/fs";
 import type { ExtensionRootMode, LoadContext } from "../capability/types";
@@ -159,7 +159,7 @@ interface ScopeDirs {
 
 function scopeDirs(ctx: LoadContext): ScopeDirs {
 	return {
-		project: path.join(ctx.cwd, ".omp"),
+		project: path.join(ctx.cwd, CONFIG_DIR_NAME),
 		user: getAgentDir(),
 	};
 }
@@ -176,7 +176,7 @@ async function readSettingsExtensions(settingsPath: string): Promise<string[] | 
 	return readExtensionsArray(parsed?.extensions);
 }
 
-/** Project native config filename; matches the single `.omp/config.yml` the settings loader reads. */
+/** Project native config filename; matches the single `.harvest/config.yml` (or `.omp/config.yml`) the settings loader reads. */
 const PROJECT_CONFIG_FILENAMES = ["config.yml"] as const;
 
 interface YamlExtensions {
@@ -220,14 +220,19 @@ interface ConfiguredExtensions {
  */
 async function readConfiguredExtensions(ctx: LoadContext): Promise<ConfiguredExtensions | null> {
 	const { project, user } = scopeDirs(ctx);
-	const [projectYaml, projectSettings, userYaml, userSettings] = await Promise.all([
+	const legacyProject = path.join(ctx.cwd, ".omp");
+	const [projectYaml, projectSettings, legacyProjectYaml, legacyProjectSettings, userYaml, userSettings] = await Promise.all([
 		readYamlExtensions(project, PROJECT_CONFIG_FILENAMES),
 		readSettingsExtensions(path.join(project, "settings.json")),
+		project !== legacyProject ? readYamlExtensions(legacyProject, PROJECT_CONFIG_FILENAMES) : Promise.resolve({ exists: false, entries: null }),
+		project !== legacyProject ? readSettingsExtensions(path.join(legacyProject, "settings.json")) : Promise.resolve(null),
 		readYamlExtensions(user, MAIN_CONFIG_FILENAMES),
 		readSettingsExtensions(path.join(user, "settings.json")),
 	]);
 	if (projectYaml.entries !== null) return { entries: projectYaml.entries, level: "project" };
 	if (projectSettings !== null) return { entries: projectSettings, level: "project" };
+	if (legacyProjectYaml.entries !== null) return { entries: legacyProjectYaml.entries, level: "project" };
+	if (legacyProjectSettings !== null) return { entries: legacyProjectSettings, level: "project" };
 	if (userYaml.entries !== null) return { entries: userYaml.entries, level: "user" };
 	if (userYaml.exists) return null;
 	if (userSettings !== null) return { entries: userSettings, level: "user" };

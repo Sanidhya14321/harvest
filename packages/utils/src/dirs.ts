@@ -67,7 +67,7 @@ export function normalizeProfileName(profile: string | undefined): string | unde
 		WINDOWS_RESERVED_BASENAME_RE.test(normalized)
 	) {
 		throw new Error(
-			`Invalid OMP profile "${profile}". Profile names must match ${PROFILE_NAME_RE.source}, ` +
+			`Invalid Harvest profile "${profile}". Profile names must match ${PROFILE_NAME_RE.source}, ` +
 				`cannot be "." or "..", cannot end with ".", and cannot be a Windows reserved device name ` +
 				`(CON, PRN, AUX, NUL, COM0-9, LPT0-9, or any of those with an extension).`,
 		);
@@ -76,28 +76,31 @@ export function normalizeProfileName(profile: string | undefined): string | unde
 }
 
 /**
- * Resolve the active profile from the two profile env vars. `OMP_PROFILE` is the
- * canonical variable and takes precedence; `PI_PROFILE` is the legacy
- * compatibility fallback, consulted only when `OMP_PROFILE` is undefined. An
- * explicitly-empty `OMP_PROFILE` therefore selects the default profile rather
- * than silently inheriting `PI_PROFILE`. Delegates validation/normalization to
- * {@link normalizeProfileName} (which throws on a syntactically invalid value).
+ * Resolve the active profile from the profile env vars. `HARVEST_PROFILE` is the
+ * canonical variable and takes precedence; `OMP_PROFILE` and `PI_PROFILE` are legacy
+ * compatibility fallbacks. An explicitly-empty `HARVEST_PROFILE` therefore selects
+ * the default profile rather than silently inheriting fallbacks. Delegates
+ * validation/normalization to {@link normalizeProfileName} (which throws on a syntactically invalid value).
  */
-export function resolveProfileEnv(omp: string | undefined, pi: string | undefined): string | undefined {
-	return normalizeProfileName(omp !== undefined ? omp : pi);
+export function resolveProfileEnv(
+	harvest: string | undefined,
+	omp?: string | undefined,
+	pi?: string | undefined,
+): string | undefined {
+	return normalizeProfileName(harvest !== undefined ? harvest : omp !== undefined ? omp : pi);
 }
 
 function getProfileFromEnv(): string | undefined {
-	return resolveProfileEnv(process.env.OMP_PROFILE, process.env.PI_PROFILE);
+	return resolveProfileEnv(process.env.HARVEST_PROFILE, process.env.OMP_PROFILE, process.env.PI_PROFILE);
 }
 
 /**
  * Module-load profile resolution. Unlike {@link getProfileFromEnv}, an invalid
- * OMP_PROFILE/PI_PROFILE value does NOT throw here — a bad env var must not
+ * profile value does NOT throw here — a bad env var must not
  * crash a bare `import` of this module with an uncaught stack trace before the
  * CLI's error handling is in scope. The default profile is used instead; the
  * CLI re-validates the env (see `runCli` in coding-agent/src/cli.ts) so the
- * user still gets a clean "Invalid OMP profile" message.
+ * user still gets a clean "Invalid Harvest profile" message.
  */
 function readProfileFromEnvSafe(): string | undefined {
 	try {
@@ -277,9 +280,9 @@ export function getSafeProjectCwd(): string {
 	return os.homedir();
 }
 
-/** Get the config directory name relative to home (e.g. ".omp" or PI_CONFIG_DIR override). */
+/** Get the config directory name relative to home (e.g. ".harvest" or HARVEST_CONFIG_DIR / PI_CONFIG_DIR override). */
 export function getConfigDirName(): string {
-	return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;
+	return process.env.HARVEST_CONFIG_DIR || process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;
 }
 
 /** Get the config agent directory name relative to home (e.g. ".omp/agent" or PI_CONFIG_DIR + "/agent"). */
@@ -415,19 +418,23 @@ function resolvePreProfileAgentDir(
 	return isProfileDerivedAgentDir(profile ?? profileAgentDirSource, agentDirEnv) ? undefined : agentDirEnv;
 }
 
+function getCodingAgentDirEnv(): string | undefined {
+	return process.env.HARVEST_CODING_AGENT_DIR || process.env.PI_CODING_AGENT_DIR;
+}
+
 let activeProfile = readProfileFromEnvSafe();
 
 /**
  * Resolve the agent-dir override for the current `activeProfile` from the live
  * environment. A named profile derives its own agent dir (no override); default
- * mode honors a non-profile `PI_CODING_AGENT_DIR` (see
+ * mode honors a non-profile `HARVEST_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR` (see
  * {@link resolvePreProfileAgentDir}). Shared by the module-load resolver and
  * {@link refreshDirsFromEnv} so both apply identical logic.
  */
 function resolveActiveAgentDirOverride(): string | undefined {
 	return activeProfile
 		? undefined
-		: resolvePreProfileAgentDir(undefined, process.env.PI_CODING_AGENT_DIR, readPiProfileFromEnvSafe());
+		: resolvePreProfileAgentDir(undefined, getCodingAgentDirEnv(), readPiProfileFromEnvSafe());
 }
 
 let dirs = new DirResolver({
@@ -435,19 +442,19 @@ let dirs = new DirResolver({
 	profile: activeProfile,
 });
 /**
- * Snapshot of `PI_CODING_AGENT_DIR` from before the first named-profile
+ * Snapshot of `HARVEST_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR` from before the first named-profile
  * activation. Reset paths restore this value (or its absence) instead of
  * unconditionally deleting the env var. Without the snapshot, a process started
- * with `PI_CODING_AGENT_DIR=/custom` then `setProfile("work")` then
+ * with `HARVEST_CODING_AGENT_DIR=/custom` then `setProfile("work")` then
  * `setProfile(undefined)` would silently lose `/custom` and fall back to
- * `~/.omp/agent`. Captured at module load — ignoring a profile-derived value
+ * `~/.harvest/agent`. Captured at module load — ignoring a profile-derived value
  * inherited from a parent's `setProfile` (see {@link resolvePreProfileAgentDir})
  * — and refreshed on `setAgentDir`, since that call is the user explicitly
  * redefining the baseline.
  */
 let preProfileAgentDirEnv: string | undefined = resolvePreProfileAgentDir(
 	activeProfile,
-	process.env.PI_CODING_AGENT_DIR,
+	getCodingAgentDirEnv(),
 	activeProfile ?? readPiProfileFromEnvSafe(),
 );
 // Anchor home for the resolver. Captured at module load to stay stable across
@@ -459,7 +466,7 @@ const RESOLVER_HOME = os.homedir();
 /**
  * Rebuild the dirs resolver from the current environment, reusing the profile
  * resolved at module load. Directory-affecting keys (XDG_*_HOME and, in default
- * mode, `PI_CODING_AGENT_DIR`) loaded from a profile/agent `.env` only reach
+ * mode, `HARVEST_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR`) loaded from a profile/agent `.env` only reach
  * `process.env` *after* this module froze the resolver at import time, so
  * `env.ts` calls this once after applying its `.env` files. The agent `.env`
  * location derives from the profile name + home before this runs, so the
@@ -477,7 +484,7 @@ export function refreshDirsFromEnv(): void {
 // Root directories
 // =============================================================================
 
-/** Get the config root directory (~/.omp). */
+/** Get the config root directory (~/.harvest). */
 export function getConfigRootDir(): string {
 	return dirs.configRoot;
 }
@@ -486,6 +493,7 @@ export function getConfigRootDir(): string {
 export function setAgentDir(dir: string): void {
 	activeProfile = undefined;
 	dirs = new DirResolver({ agentDirOverride: dir });
+	process.env.HARVEST_CODING_AGENT_DIR = dir;
 	process.env.PI_CODING_AGENT_DIR = dir;
 	preProfileAgentDirEnv = dir;
 	for (const key of PROFILE_ENV_KEYS) {
@@ -494,7 +502,7 @@ export function setAgentDir(dir: string): void {
 }
 
 /**
- * Test-only: reset the pre-profile `PI_CODING_AGENT_DIR` snapshot to whatever
+ * Test-only: reset the pre-profile `HARVEST_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR` snapshot to whatever
  * the current environment looks like. Cross-suite test pollution can otherwise
  * leak a stale snapshot through `setAgentDir` and corrupt `setProfile(undefined)`
  * restore semantics. Production code MUST NOT call this — the snapshot's
@@ -504,7 +512,7 @@ export function setAgentDir(dir: string): void {
 export function __resetProfileSnapshotForTests(): void {
 	preProfileAgentDirEnv = resolvePreProfileAgentDir(
 		activeProfile,
-		process.env.PI_CODING_AGENT_DIR,
+		getCodingAgentDirEnv(),
 		activeProfile ?? readPiProfileFromEnvSafe(),
 	);
 }
@@ -526,29 +534,33 @@ export function setProfile(profile: string | undefined): void {
 	const next = normalizeProfileName(profile);
 	if (next && !activeProfile) {
 		// First activation of a named profile in this process: snapshot the
-		// current PI_CODING_AGENT_DIR so a later reset can restore the user's
+		// current HARVEST_CODING_AGENT_DIR / PI_CODING_AGENT_DIR so a later reset can restore the user's
 		// explicit override. Subsequent profile switches keep the original
 		// snapshot — the "pre-profile" baseline is the state before profiles
 		// entered the picture, not the state between two activations.
 		preProfileAgentDirEnv = resolvePreProfileAgentDir(
 			undefined,
-			process.env.PI_CODING_AGENT_DIR,
+			getCodingAgentDirEnv(),
 			readPiProfileFromEnvSafe(),
 		);
 	}
 	activeProfile = next;
 	if (activeProfile) {
 		dirs = new DirResolver({ profile: activeProfile });
+		process.env.HARVEST_PROFILE = activeProfile;
 		process.env.OMP_PROFILE = activeProfile;
 		process.env.PI_PROFILE = activeProfile;
+		process.env.HARVEST_CODING_AGENT_DIR = dirs.agentDir;
 		process.env.PI_CODING_AGENT_DIR = dirs.agentDir;
 	} else {
 		for (const key of PROFILE_ENV_KEYS) {
 			delete process.env[key];
 		}
 		if (preProfileAgentDirEnv === undefined) {
+			delete process.env.HARVEST_CODING_AGENT_DIR;
 			delete process.env.PI_CODING_AGENT_DIR;
 		} else {
+			process.env.HARVEST_CODING_AGENT_DIR = preProfileAgentDirEnv;
 			process.env.PI_CODING_AGENT_DIR = preProfileAgentDirEnv;
 		}
 		dirs = new DirResolver({ agentDirOverride: preProfileAgentDirEnv });
@@ -620,9 +632,15 @@ export function getPluginsPackageJson(home?: string): string {
 	return path.join(getPluginsDir(home), "package.json");
 }
 
-/** Plugin lock file (~/.omp/plugins/omp-plugins.lock.json). */
+/** Plugin lock file (~/.harvest/plugins/harvest-plugins.lock.json with fallback to legacy omp-plugins.lock.json). */
 export function getPluginsLockfile(home?: string): string {
-	return path.join(getPluginsDir(home), "omp-plugins.lock.json");
+	const pluginsDir = getPluginsDir(home);
+	const harvestLock = path.join(pluginsDir, "harvest-plugins.lock.json");
+	const legacyLock = path.join(pluginsDir, "omp-plugins.lock.json");
+	if (!fs.existsSync(harvestLock) && fs.existsSync(legacyLock)) {
+		return legacyLock;
+	}
+	return harvestLock;
 }
 
 /** Get the remote mount directory (~/.omp/remote). */
@@ -674,7 +692,11 @@ export function setWorktreesDir(dir: string | undefined): string | undefined {
  * ignored and resolution falls through.
  */
 export function getWorktreesDir(): string {
-	return resolveWorktreeBase(process.env.OMP_WORKTREE_DIR) ?? worktreesDirOverride ?? dirs.rootSubdir("wt", "data");
+	return (
+		resolveWorktreeBase(process.env.HARVEST_WORKTREE_DIR || process.env.OMP_WORKTREE_DIR) ??
+		worktreesDirOverride ??
+		dirs.rootSubdir("wt", "data")
+	);
 }
 
 /** Get the SSH control socket directory (~/.omp/ssh-control). */
@@ -741,20 +763,20 @@ export function getGpuCachePath(): string {
 
 /**
  * Get the GitHub view cache database path (~/.omp/cache/github-cache.db).
- * Honors the `OMP_GITHUB_CACHE_DB` env var when set so tests can isolate the
+ * Honors the `HARVEST_GITHUB_CACHE_DB` / `OMP_GITHUB_CACHE_DB` env var when set so tests can isolate the
  * cache file without touching the rest of the config root.
  */
 export function getGithubCacheDbPath(): string {
-	const override = process.env.OMP_GITHUB_CACHE_DB;
+	const override = process.env.HARVEST_GITHUB_CACHE_DB || process.env.OMP_GITHUB_CACHE_DB;
 	if (override) return override;
 	return dirs.rootSubdir(path.join("cache", "github-cache.db"), "cache");
 }
 /**
  * Get the conventional commit inference cache database path (~/.omp/cache/commit-inference.db).
- * Honors `OMP_COMMIT_CACHE_DB` so tests and operators can isolate the cache.
+ * Honors `HARVEST_COMMIT_CACHE_DB` / `OMP_COMMIT_CACHE_DB` so tests and operators can isolate the cache.
  */
 export function getCommitCacheDbPath(): string {
-	const override = process.env.OMP_COMMIT_CACHE_DB;
+	const override = process.env.HARVEST_COMMIT_CACHE_DB || process.env.OMP_COMMIT_CACHE_DB;
 	if (override) return override;
 	return dirs.rootSubdir(path.join("cache", "commit-inference.db"), "cache");
 }
@@ -766,11 +788,11 @@ export function getLegacyPiExtensionCacheDbPath(): string {
 
 /**
  * Get the encrypted auth-broker snapshot cache path (~/.omp/cache/auth-broker-snapshot.enc).
- * Honors the `OMP_AUTH_BROKER_SNAPSHOT_CACHE` env var when set so tests and
+ * Honors the `HARVEST_AUTH_BROKER_SNAPSHOT_CACHE` / `OMP_AUTH_BROKER_SNAPSHOT_CACHE` env var when set so tests and
  * operators can isolate or relocate the cache file.
  */
 export function getAuthBrokerSnapshotCachePath(): string {
-	const override = process.env.OMP_AUTH_BROKER_SNAPSHOT_CACHE;
+	const override = process.env.HARVEST_AUTH_BROKER_SNAPSHOT_CACHE || process.env.OMP_AUTH_BROKER_SNAPSHOT_CACHE;
 	if (override) return override;
 	return dirs.rootSubdir(path.join("cache", "auth-broker-snapshot.enc"), "cache");
 }
@@ -1037,14 +1059,14 @@ let cachedInstallId: string | null = null;
 
 const INSTALL_ID_FILE = "install-id";
 /**
- * Application label for usage attribution (`OMP_APP_NAME`), defaulting to
- * `omp`. Embedders that drive omp programmatically (robomp, CI bots, …) set
- * the env var so broker-side per-client burn tracking can answer "what did
+ * Application label for usage attribution (`HARVEST_APP_NAME`), defaulting to
+ * `harvest`. Embedders that drive harvest programmatically
+ * set the env var so broker-side per-client burn tracking can answer "what did
  * app X use" instead of folding everything into one install-wide bucket.
  */
 export function getAppName(): string {
-	const value = process.env.OMP_APP_NAME?.trim();
-	return value ? value : "omp";
+	const value = (process.env.HARVEST_APP_NAME || process.env.OMP_APP_NAME)?.trim();
+	return value ? value : "harvest";
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -81,7 +81,7 @@ export function sshControlFallbackDir(canonicalDir: string, uid: number, tmpBase
 		.update(canonicalDir)
 		.digest("hex")
 		.slice(0, 20);
-	return path.join(tmpBase, `omp-${key}`);
+	return path.join(tmpBase, `harvest-${key}`);
 }
 
 interface ControlDirChoice {

@@ -37,7 +37,7 @@ Define custom secret entries in YAML. Two locations are checked:
 
 | Level   | Path                       | Purpose                     |
 | ------- | -------------------------- | --------------------------- |
-| Global  | `~/.omp/agent/secrets.yml` | Secrets across all projects |
+| Global  | `~/.harvest/agent/secrets.yml` | Secrets across all projects |
 | Project | `<cwd>/.omp/secrets.yml`   | Project-specific secrets    |
 
 Project entries override global entries with matching `content`.
@@ -83,7 +83,7 @@ Each entry in the array has these fields:
 
 This produces placeholders shaped like `$$GITHUBTOKEN_3P8W5JH1TK2Q:L$$`. The friendly name is sanitized to uppercase letters and digits, capped at 32 characters, and omitted if it sanitizes to an empty value. Invalid optional `friendlyName` metadata does not disable the secret entry; the secret still obfuscates with an unlabeled placeholder. A label is also dropped for a particular placeholder if it would expose a configured literal secret or match a configured secret regex.
 
-The 12-character hash base is an HMAC of the exact secret under a private per-install key (stored at `~/.omp/agent/secret-placeholder.key`, or `$XDG_STATE_HOME/omp/secret-placeholder.key` on XDG-enabled installs, never sent to a model). This prevents a transcript reader from dictionary-hashing a placeholder back to its secret. Secrets that differ only by case receive independent bases, so seeing one placeholder does not let a provider synthesize another by changing the case hint. If the key cannot be persisted on the lazy built-in-token path, the session warns and uses a process-ephemeral key; obfuscation remains reversible within that process but placeholders are not stable across restarts. A case-hint suffix labels the casing of the redacted value:
+The 12-character hash base is an HMAC of the exact secret under a private per-install key (stored at `~/.harvest/agent/secret-placeholder.key`, or `$XDG_STATE_HOME/harvest/secret-placeholder.key` on XDG-enabled installs, never sent to a model). This prevents a transcript reader from dictionary-hashing a placeholder back to its secret. Secrets that differ only by case receive independent bases, so seeing one placeholder does not let a provider synthesize another by changing the case hint. If the key cannot be persisted on the lazy built-in-token path, the session warns and uses a process-ephemeral key; obfuscation remains reversible within that process but placeholders are not stable across restarts. A case-hint suffix labels the casing of the redacted value:
 
 | Hint | Meaning                                        |
 | ---- | ---------------------------------------------- |

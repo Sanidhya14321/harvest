@@ -6,7 +6,7 @@ This reference describes the converter implemented by `packages/ai/src/dialect/x
 
 ## Selection and request conversion
 
-Select the dialect in `~/.omp/agent/config.yml`, project config, or an overlay:
+Select the dialect in `~/.harvest/agent/config.yml`, project config, or an overlay:
 
 ```yaml
 tools:

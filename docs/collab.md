@@ -1,6 +1,6 @@
 # Collab: Live Session Sharing
 
-`/collab` shares your running session with other omp instances in real time. Guests render the **same session natively in their own TUI** — streaming assistant text, tool-call cards, footer state (cwd, model, context %, cost), ctrl+o expansion, `/dump` — no terminal mirroring. Guests can prompt and interrupt the agent; the host machine runs the agent and all tools.
+`/collab` shares your running session with other harvest instances in real time. Guests render the **same session natively in their own TUI** — streaming assistant text, tool-call cards, footer state (cwd, model, context %, cost), ctrl+o expansion, `/dump` — no terminal mirroring. Guests can prompt and interrupt the agent; the host machine runs the agent and all tools.
 
 ## Quick start
 
@@ -42,7 +42,7 @@ The guest's previous session is restored on `/leave` (or when the host stops).
 
 ## Link format
 
-Accepted by `/join <link>` and `omp join "<link>"`:
+Accepted by `/join <link>` and `harvest join "<link>"`:
 
 ```
 <roomId>.<key>                                                    → default relay (wss://my.omp.sh)
@@ -128,7 +128,7 @@ The relay is a small content-blind Go service. It keeps no state beyond live con
 Hub topology — the host is authoritative, guests never peer:
 
 1. `welcome` + `snapshot-chunk` frames — initial state and transcript. The transcript is byte-bounded into chunks so each arrival resets the guest's progress timeout; oversized replicated entries are shrunk before transmission.
-2. `entry` frames — durable session entries, broadcast pre-blob-externalization so images stay inline (guests cannot resolve host blob refs). Guests append them with ids preserved to a replica session file under `~/.omp/collab/<roomId>.jsonl` and into the agent's message array, which is why `/dump` and context estimates work.
+2. `entry` frames — durable session entries, broadcast pre-blob-externalization so images stay inline (guests cannot resolve host blob refs). Guests append them with ids preserved to a replica session file under `~/.harvest/collab/<roomId>.jsonl` and into the agent's message array, which is why `/dump` and context estimates work.
 3. `event` frames — live agent events, fed straight into the guest's normal event controller; rendering is events-only to prevent double-render.
 4. `state` frames — debounced footer snapshots: streaming flag, the host's full model object and thinking level (applied to the guest's replica agent state, so model display and context-window math are native), host context numbers, and participants.
 5. `bus` frames — mirrored task-subagent lifecycle/progress EventBus traffic, republished on the guest's local bus so the subagent HUD and status-line count work natively.

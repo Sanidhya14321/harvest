@@ -434,7 +434,7 @@ async function callGeminiSearch(
 			}
 		: {
 				userAgent: USER_AGENT,
-				requestId: `omp-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+				requestId: `harvest-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
 			};
 
 	const normalizedSystemPrompt = systemPrompt?.toWellFormed();
@@ -667,7 +667,7 @@ export async function searchGemini(params: GeminiSearchParams): Promise<SearchRe
 			throw new Error(
 				endpoint.isCloudflareGateway
 					? 'No Cloudflare AI Gateway credential found. Configure provider "cloudflare-ai-gateway" or set CLOUDFLARE_AI_GATEWAY_API_KEY.'
-					: "No Gemini credentials found. Set GEMINI_API_KEY, configure an API key for provider \"google\", or login with 'omp /login google-gemini-cli' / 'omp /login google-antigravity' to enable Gemini web search.",
+					: "No Gemini credentials found. Set GEMINI_API_KEY, configure an API key for provider \"google\", or login with 'harvest /login google-gemini-cli' / 'harvest /login google-antigravity' to enable Gemini web search.",
 			);
 		}
 		result = await callGeminiDeveloperSearch(

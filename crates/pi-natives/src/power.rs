@@ -199,7 +199,7 @@ mod platform {
 	const SCREENSAVER_PATH: &str = "/org/freedesktop/ScreenSaver";
 	const SCREENSAVER_INTERFACE: &str = "org.freedesktop.ScreenSaver";
 	const INHIBIT_MODE: &str = "block";
-	const INHIBIT_WHO: &str = "Oh My Pi";
+	const INHIBIT_WHO: &str = "Harvest";
 
 	// The connections own their D-Bus transports, while each assertion owns
 	// only its login1 inhibitor fd and ScreenSaver cookie. Reuse healthy

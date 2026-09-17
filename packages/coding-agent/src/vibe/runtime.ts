@@ -1317,7 +1317,7 @@ export class VibeSessionRegistry {
 	): Promise<ExecutorOptions> {
 		const sessionFile = session.getSessionFile();
 		const sessionArtifactsDir = sessionFile ? sessionFile.slice(0, -6) : null;
-		const artifactsDir = sessionArtifactsDir ?? path.join(os.tmpdir(), `omp-vibe-${Snowflake.next()}`);
+		const artifactsDir = sessionArtifactsDir ?? path.join(os.tmpdir(), `harvest-vibe-${Snowflake.next()}`);
 		await fs.mkdir(artifactsDir, { recursive: true });
 		if (!sessionArtifactsDir) registerArtifactsDir(artifactsDir);
 		const localProtocolOptions: LocalProtocolOptions = session.localProtocolOptions ?? {

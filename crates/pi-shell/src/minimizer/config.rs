@@ -424,7 +424,7 @@ mod tests {
 	#[test]
 	fn explicit_disabled_option_overrides_enabled_settings_file() {
 		let path = std::env::temp_dir()
-			.join(format!("omp-minimizer-config-disabled-{}.toml", std::process::id()));
+			.join(format!("harvest-minimizer-config-disabled-{}.toml", std::process::id()));
 		std::fs::write(&path, "enabled = true\n").unwrap();
 		let cfg = MinimizerConfig::from_options(&MinimizerOptions {
 			enabled: Some(false),
@@ -438,7 +438,7 @@ mod tests {
 	#[test]
 	fn explicit_legacy_true_overrides_disabled_settings_file() {
 		let path = std::env::temp_dir()
-			.join(format!("omp-minimizer-config-legacy-{}.toml", std::process::id()));
+			.join(format!("harvest-minimizer-config-legacy-{}.toml", std::process::id()));
 		std::fs::write(&path, "legacy_filters = false\n").unwrap();
 		let cfg = MinimizerConfig::from_options(&MinimizerOptions {
 			enabled: Some(true),

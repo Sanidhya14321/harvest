@@ -1,6 +1,6 @@
 # security_scan
 
-> Plan and run OMP-native security reviews, validate stored findings, and explicitly interact with Codex Security cloud scans.
+> Plan and run Harvest-native security reviews, validate stored findings, and explicitly interact with Codex Security cloud scans.
 
 ## Availability and prerequisites
 

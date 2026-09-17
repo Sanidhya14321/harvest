@@ -1,5 +1,5 @@
 // =============================================================================
-// Plugin Manifest Types (from package.json omp/pi field)
+// Plugin Manifest Types (from package.json harvest/omp/pi field)
 // =============================================================================
 
 /**
@@ -22,7 +22,7 @@ export interface PluginFeature {
 }
 
 /**
- * Plugin manifest from package.json omp or pi field.
+ * Plugin manifest from package.json harvest, omp, or pi field.
  */
 export interface PluginManifest {
 	/** Plugin display name (defaults to package name) */
@@ -106,7 +106,7 @@ export interface InstalledPlugin {
 	version: string;
 	/** Absolute path to package directory */
 	path: string;
-	/** Parsed omp/pi manifest */
+	/** Parsed harvest/omp/pi manifest */
 	manifest: PluginManifest;
 	/**
 	 * Enabled features:
@@ -119,7 +119,7 @@ export interface InstalledPlugin {
 }
 
 // =============================================================================
-// Runtime Config Types (stored in omp-plugins.lock.json)
+// Runtime Config Types (stored in harvest-plugins.lock.json / omp-plugins.lock.json)
 // =============================================================================
 
 /**
@@ -135,7 +135,7 @@ export interface PluginRuntimeState {
 }
 
 /**
- * Runtime configuration persisted to omp-plugins.lock.json.
+ * Runtime configuration persisted to harvest-plugins.lock.json (with omp-plugins.lock.json fallback).
  * Tracks plugin states and settings across sessions.
  */
 export interface PluginRuntimeConfig {

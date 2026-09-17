@@ -572,7 +572,7 @@ export async function openAutoresearchStorageIfExists(cwd: string): Promise<Auto
 }
 
 async function resolveAutoresearchPaths(cwd: string): Promise<{ dbPath: string; projectDir: string }> {
-	const override = process.env.OMP_AUTORESEARCH_DB_DIR;
+	const override = process.env.HARVEST_AUTORESEARCH_DB_DIR ?? process.env.OMP_AUTORESEARCH_DB_DIR;
 	const repoRoot = vcs.repo(cwd)?.root() ?? cwd;
 	const encoded = encodeProjectKey(repoRoot);
 	if (override) {

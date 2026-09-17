@@ -20,9 +20,9 @@ import { throwIfAborted } from "../../tool-errors";
 import { probeCdpStatus } from "../attach";
 
 /** Stable broker daemon name for the relay server. */
-export const RELAY_DAEMON_NAME = "omp.browser.relay";
+export const RELAY_DAEMON_NAME = "harvest.browser.relay";
 const RELAY_BROKER_SCOPE = "browser-relay";
-/** Matches the serve banner (`omp browser relay listening on http://…`). */
+/** Matches the serve banner (`harvest browser relay listening on http://…`). */
 const READY_LOG_PATTERN = String.raw`browser relay listening on http://\S+`;
 const READY_TIMEOUT_MS = 15_000;
 const PROBE_TIMEOUT_MS = 1_500;

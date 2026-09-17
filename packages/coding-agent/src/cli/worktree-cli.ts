@@ -22,7 +22,7 @@ import * as vcs from "@harvest/pi-natives/vcs";
 import { getWorktreesDir, isEnoent } from "@harvest/pi-utils";
 import chalk from "@harvest/pi-utils/chalk";
 import { Settings } from "../config/settings";
-import { hasLiveIsolationOwner, ISOLATION_OWNER_FILE } from "../task/isolation-ownership";
+import { hasLiveIsolationOwner, ISOLATION_OWNER_FILE, LEGACY_ISOLATION_OWNER_FILE } from "../task/isolation-ownership";
 import { formatIsolationBackend, parseIsolationBackend } from "../task/worktree";
 
 type WorktreeKind = "pr-checkout" | "task-isolation" | "empty" | "stray";
@@ -298,7 +298,9 @@ async function classifyDir(dir: string): Promise<WorktreeEntry | null> {
 	// dir itself (legacy dirs and crashed pre-marker runs). Recognizing the
 	// marker alone keeps an in-progress sandbox from being mistaken for a stray
 	// during the window between marker creation and mount materialisation.
-	let isIsolation = await Bun.file(path.join(dir, ISOLATION_OWNER_FILE)).exists();
+	let isIsolation =
+		(await Bun.file(path.join(dir, ISOLATION_OWNER_FILE)).exists()) ||
+		(await Bun.file(path.join(dir, LEGACY_ISOLATION_OWNER_FILE)).exists());
 	if (!isIsolation) {
 		for (const mountDir of TASK_ISOLATION_MOUNT_DIRS) {
 			const mountStat = await fs.stat(path.join(dir, mountDir)).catch(() => null);

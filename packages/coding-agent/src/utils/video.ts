@@ -380,7 +380,7 @@ export async function extractVideoFramePng(
 	selector: VideoSelector,
 	signal?: AbortSignal,
 ): Promise<VideoPng> {
-	const tmp = await TempDir.create("omp-video-frame-");
+	const tmp = await TempDir.create("harvest-video-frame-");
 	try {
 		const out = tmp.join("frame.png");
 		if (selector.kind === "time") {
@@ -438,7 +438,7 @@ export async function buildVideoContactSheetPng(
 	const thumbs = CONTACT_SHEET_THUMBS;
 	const cols = CONTACT_SHEET_COLS;
 	const rows = Math.ceil(thumbs / cols);
-	const tmp = await TempDir.create("omp-video-sheet-");
+	const tmp = await TempDir.create("harvest-video-sheet-");
 	try {
 		const duration = meta.durationSec;
 		const times: number[] =

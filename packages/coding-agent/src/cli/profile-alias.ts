@@ -27,10 +27,10 @@ export interface ProfileAliasProcessOptions {
 }
 
 const DEFAULT_ALIAS_COMMAND: ProfileAliasCommand = {
-	display: "omp",
-	posix: "omp",
-	fish: "omp",
-	powerShell: "omp",
+	display: "harvest",
+	posix: "harvest",
+	fish: "harvest",
+	powerShell: "harvest",
 };
 
 export interface ProfileAliasInstallOptions {
@@ -154,8 +154,8 @@ function validateAliasName(aliasName: string, shell: ProfileAliasShell): string 
 	if (!ALIAS_NAME_RE.test(normalized)) {
 		throw new Error(`Invalid alias "${aliasName}". Alias names must match ${ALIAS_NAME_RE.source}.`);
 	}
-	if (normalized.toLowerCase() === "omp") {
-		throw new Error('Invalid alias "omp". Refusing to shadow the base omp command.');
+	if (normalized.toLowerCase() === "harvest" || normalized.toLowerCase() === "omp") {
+		throw new Error(`Invalid alias "${aliasName}". Refusing to shadow the base ${normalized.toLowerCase()} command.`);
 	}
 	if (getReservedAliasNames(shell).has(normalized.toLowerCase())) {
 		throw new Error(`Invalid alias "${aliasName}". Refusing to create a ${shell} reserved word.`);
@@ -265,7 +265,7 @@ function resolveShellConfigPath(
 			// a hard-coded ~/.config would be silently ignored when the user relocates
 			// their XDG config root, leaving the alias unsourced after a restart.
 			const configHome = env.XDG_CONFIG_HOME ? toPosix(env.XDG_CONFIG_HOME) : posixJoinUnc(posixHome, ".config");
-			return posixJoinUnc(configHome, "fish", "conf.d", "omp-profiles.fish");
+			return posixJoinUnc(configHome, "fish", "conf.d", "harvest-profiles.fish");
 		}
 		case "pwsh":
 			return platform === "win32"
@@ -283,13 +283,13 @@ function renderAliasBlock(
 	command: ProfileAliasCommand,
 ): { block: string; command: string } {
 	const profiledCommand = `${command.display} --profile=${profile}`;
-	const start = `# >>> omp profile alias: ${aliasName} >>>`;
-	const end = `# <<< omp profile alias: ${aliasName} <<<`;
+	const start = `# >>> harvest profile alias: ${aliasName} >>>`;
+	const end = `# <<< harvest profile alias: ${aliasName} <<<`;
 	let body: string;
 	switch (shell) {
 		case "fish":
 			body = [
-				`function ${aliasName} --wraps omp --description 'OMP profile ${profile}'`,
+				`function ${aliasName} --wraps harvest --description 'Harvest profile ${profile}'`,
 				`    command ${command.fish} --profile=${profile} $argv`,
 				"end",
 			].join("\n");
@@ -306,9 +306,22 @@ function renderAliasBlock(
 }
 
 function upsertBlock(content: string, aliasName: string, block: string): string {
-	const start = `# >>> omp profile alias: ${aliasName} >>>`;
-	const end = `# <<< omp profile alias: ${aliasName} <<<`;
-	const startIndex = content.indexOf(start);
+	const harvestStart = `# >>> harvest profile alias: ${aliasName} >>>`;
+	const harvestEnd = `# <<< harvest profile alias: ${aliasName} <<<`;
+	const legacyStart = `# >>> omp profile alias: ${aliasName} >>>`;
+	const legacyEnd = `# <<< omp profile alias: ${aliasName} <<<`;
+
+	let start = harvestStart;
+	let end = harvestEnd;
+	let startIndex = content.indexOf(harvestStart);
+	if (startIndex === -1) {
+		startIndex = content.indexOf(legacyStart);
+		if (startIndex !== -1) {
+			start = legacyStart;
+			end = legacyEnd;
+		}
+	}
+
 	if (startIndex !== -1) {
 		const endIndex = content.indexOf(end, startIndex + start.length);
 		if (endIndex === -1) {

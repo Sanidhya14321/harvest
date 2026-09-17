@@ -44,14 +44,14 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
-/// Default directory name for OMP's per-user state (overridable via
-/// `PI_CONFIG_DIR`, matching `packages/utils/src/dirs.ts`).
-const DEFAULT_CONFIG_DIR: &str = ".omp";
+/// Default directory name for Harvest's per-user state (overridable via
+/// `HARVEST_CONFIG_DIR` / `PI_CONFIG_DIR`, matching `packages/utils/src/dirs.ts`).
+const DEFAULT_CONFIG_DIR: &str = ".harvest";
 
-/// App name used as the XDG-root subdirectory (`$XDG_STATE_HOME/omp/`),
+/// App name used as the XDG-root subdirectory (`$XDG_STATE_HOME/harvest/`),
 /// matching `APP_NAME` in `packages/utils/src/dirs.ts`.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-const APP_NAME: &str = "omp";
+const APP_NAME: &str = "harvest";
 
 static INSTALL: Once = Once::new();
 static ALLOC_HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -266,7 +266,7 @@ fn build_crash_log_path(dir: &Path, kind: CrashKind, pid: u32, now_ms: u128) -> 
 
 fn logs_dir() -> Option<PathBuf> {
 	let home = home_dir()?;
-	let config_override = std::env::var_os("PI_CONFIG_DIR");
+	let config_override = std::env::var_os("HARVEST_CONFIG_DIR").or_else(|| std::env::var_os("PI_CONFIG_DIR"));
 	let xdg_logs = xdg_state_logs_from_env(&home, config_override.as_deref());
 	Some(resolve_logs_dir(&home, config_override.as_deref(), xdg_logs))
 }
@@ -276,7 +276,7 @@ fn resolve_logs_dir(
 	config_dir_override: Option<&OsStr>,
 	xdg_state_logs: Option<PathBuf>,
 ) -> PathBuf {
-	// XDG takes precedence so users who migrated to `$XDG_STATE_HOME/omp/logs/`
+	// XDG takes precedence so users who migrated to `$XDG_STATE_HOME/harvest/logs/`
 	// see native crash reports in the same directory the JS logger rotates.
 	if let Some(p) = xdg_state_logs {
 		return p;
@@ -290,12 +290,12 @@ fn resolve_logs_dir(
 
 /// Compute the XDG-state logs dir if the runtime environment matches the
 /// JS-side eligibility rules in `packages/utils/src/dirs.ts`: linux/macos,
-/// `$XDG_STATE_HOME` set, `$XDG_STATE_HOME/omp` exists on disk, and
-/// `PI_CODING_AGENT_DIR` is unset or pointing at the default agent dir.
+/// `$XDG_STATE_HOME` set, `$XDG_STATE_HOME/harvest` exists on disk, and
+/// `HARVEST_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR` is unset or pointing at the default agent dir.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn xdg_state_logs_from_env(home: &Path, config_dir_override: Option<&OsStr>) -> Option<PathBuf> {
 	let default_agent_dir = default_agent_dir(home, config_dir_override);
-	let agent_override = std::env::var_os("PI_CODING_AGENT_DIR");
+	let agent_override = std::env::var_os("HARVEST_CODING_AGENT_DIR").or_else(|| std::env::var_os("PI_CODING_AGENT_DIR"));
 	let xdg_state_home = std::env::var_os("XDG_STATE_HOME");
 	xdg_state_logs(
 		xdg_state_home.as_deref(),
@@ -447,19 +447,20 @@ mod tests {
 	}
 
 	#[test]
-	fn resolve_logs_dir_defaults_under_dot_omp() {
+	#[test]
+	fn resolve_logs_dir_defaults_under_dot_harvest() {
 		let dir = resolve_logs_dir(Path::new("/tmp/pi-natives-test-home"), None, None);
-		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/logs"));
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest/logs"));
 	}
 
 	#[test]
 	fn resolve_logs_dir_honors_relative_pi_config_dir() {
 		let dir = resolve_logs_dir(
 			Path::new("/tmp/pi-natives-test-home"),
-			Some(OsStr::new(".omp-dev")),
+			Some(OsStr::new(".harvest-dev")),
 			None,
 		);
-		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp-dev/logs"));
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest-dev/logs"));
 	}
 
 	#[test]
@@ -479,10 +480,10 @@ mod tests {
 	fn resolve_logs_dir_normalizes_parent_components_like_path_join() {
 		let dir = resolve_logs_dir(
 			Path::new("/tmp/pi-natives-test-home"),
-			Some(OsStr::new("nested/../.omp-dev")),
+			Some(OsStr::new("nested/../.harvest-dev")),
 			None,
 		);
-		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp-dev/logs"));
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest-dev/logs"));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -493,17 +494,17 @@ mod tests {
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			Some(OsStr::new("")),
-			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
+			Path::new("/tmp/pi-natives-test-home/.harvest/agent"),
 			|_p| true,
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/harvest/logs")));
 	}
 
 	#[test]
 	fn resolve_logs_dir_ignores_empty_pi_config_dir() {
 		let dir =
 			resolve_logs_dir(Path::new("/tmp/pi-natives-test-home"), Some(OsStr::new("")), None);
-		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/logs"));
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest/logs"));
 	}
 
 	#[test]
@@ -511,9 +512,9 @@ mod tests {
 		let dir = resolve_logs_dir(
 			Path::new("/tmp/pi-natives-test-home"),
 			None,
-			Some(PathBuf::from("/xdg/state/omp/logs")),
+			Some(PathBuf::from("/xdg/state/harvest/logs")),
 		);
-		assert_eq!(dir, PathBuf::from("/xdg/state/omp/logs"));
+		assert_eq!(dir, PathBuf::from("/xdg/state/harvest/logs"));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -522,19 +523,19 @@ mod tests {
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			None,
-			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
+			Path::new("/tmp/pi-natives-test-home/.harvest/agent"),
 			|_p| true,
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/harvest/logs")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
-	fn xdg_state_logs_skipped_when_omp_dir_missing() {
+	fn xdg_state_logs_skipped_when_harvest_dir_missing() {
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			None,
-			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
+			Path::new("/tmp/pi-natives-test-home/.harvest/agent"),
 			|_p| false,
 		);
 		assert_eq!(dir, None);
@@ -543,7 +544,7 @@ mod tests {
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn xdg_state_logs_skipped_when_xdg_state_home_unset_or_empty() {
-		let default_agent = Path::new("/tmp/pi-natives-test-home/.omp/agent");
+		let default_agent = Path::new("/tmp/pi-natives-test-home/.harvest/agent");
 		assert_eq!(xdg_state_logs(None, None, default_agent, |_p| true), None);
 		assert_eq!(xdg_state_logs(Some(OsStr::new("")), None, default_agent, |_p| true), None);
 	}
@@ -556,7 +557,7 @@ mod tests {
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			Some(OsStr::new("/some/custom/agent")),
-			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
+			Path::new("/tmp/pi-natives-test-home/.harvest/agent"),
 			|_p| true,
 		);
 		assert_eq!(dir, None);
@@ -565,42 +566,42 @@ mod tests {
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn xdg_state_logs_honored_when_agent_override_matches_default() {
-		let default_agent = std::path::absolute(Path::new("./.omp/agent")).unwrap();
+		let default_agent = std::path::absolute(Path::new("./.harvest/agent")).unwrap();
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
-			Some(OsStr::new("./.omp/agent")),
+			Some(OsStr::new("./.harvest/agent")),
 			&default_agent,
 			|_p| true,
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/harvest/logs")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
-	fn default_agent_dir_uses_dot_omp_by_default() {
+	fn default_agent_dir_uses_dot_harvest_by_default() {
 		let dir = default_agent_dir(Path::new("/tmp/pi-natives-test-home"), None);
-		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/agent"));
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest/agent"));
 	}
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn default_agent_dir_respects_pi_config_dir() {
 		let dir =
-			default_agent_dir(Path::new("/tmp/pi-natives-test-home"), Some(OsStr::new(".omp-dev")));
-		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp-dev/agent"));
+			default_agent_dir(Path::new("/tmp/pi-natives-test-home"), Some(OsStr::new(".harvest-dev")));
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest-dev/agent"));
 	}
 
 	#[test]
 	fn build_crash_log_path_tags_kind_and_pid() {
-		let dir = Path::new("/tmp/pi-natives-test-home/.omp/logs");
+		let dir = Path::new("/tmp/pi-natives-test-home/.harvest/logs");
 		let panic_log = build_crash_log_path(dir, CrashKind::Panic, 4242, 1_700_000_000_000);
 		assert_eq!(
 			panic_log,
-			PathBuf::from("/tmp/pi-natives-test-home/.omp/logs/native-panic-4242-1700000000000.log")
+			PathBuf::from("/tmp/pi-natives-test-home/.harvest/logs/native-panic-4242-1700000000000.log")
 		);
 		let alloc_log = build_crash_log_path(dir, CrashKind::Alloc, 99, 1);
 		assert_eq!(
 			alloc_log,
-			PathBuf::from("/tmp/pi-natives-test-home/.omp/logs/native-alloc-99-1.log")
+			PathBuf::from("/tmp/pi-natives-test-home/.harvest/logs/native-alloc-99-1.log")
 		);
 	}
 }

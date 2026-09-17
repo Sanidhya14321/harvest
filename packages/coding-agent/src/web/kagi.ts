@@ -313,7 +313,7 @@ export async function searchWithKagi(
 		},
 		{
 			signal: options.signal,
-			missingKeyMessage: "Kagi credentials not found. Set KAGI_API_KEY or login with 'omp /login kagi'.",
+			missingKeyMessage: "Kagi credentials not found. Set KAGI_API_KEY or login with 'harvest /login kagi'.",
 		},
 	);
 

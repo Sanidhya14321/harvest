@@ -102,7 +102,7 @@ mod tests {
 	/// removed, and a second removal on the now-missing file must stay a no-op.
 	#[test]
 	fn removes_orphaned_remote_desktop_token() {
-		let dir = std::env::temp_dir().join(format!("omp-token-test-{}", std::process::id()));
+		let dir = std::env::temp_dir().join(format!("harvest-token-test-{}", std::process::id()));
 		fs::create_dir_all(&dir).expect("create token test dir");
 		let token = dir.join(ORPHANED_REMOTE_DESKTOP_TOKEN);
 		fs::write(&token, "cafef00d").expect("plant orphaned token");

@@ -19,7 +19,7 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-That is a working extension. Drop it into `~/.omp/agent/extensions/hello.ts` and restart omp to see the notification.
+That is a working extension. Drop it into `~/.harvest/agent/extensions/hello.ts` and restart harvest to see the notification.
 
 ## Full example
 
@@ -77,16 +77,16 @@ export default function myExtension(pi: ExtensionAPI) {
 
 omp loads extension modules from these sources:
 
-1. Native `.omp` locations discovered through the capability system:
+1. Native `.harvest` locations discovered through the capability system:
    - `<cwd>/.omp/extensions/`
-   - `~/.omp/agent/extensions/`
-   - legacy extension paths listed in `.omp/settings.json#extensions` or `~/.omp/agent/settings.json#extensions`
-2. Enabled installed plugins under `~/.omp/plugins/node_modules` or a project plugin root — including npm, marketplace, and `omp plugin link` installs — via their `omp.extensions`/`pi.extensions` manifests.
-3. Explicit configured paths passed by the CLI (`omp --extension ./my-ext.ts`, also `-e`; `--hook` is treated as an alias) and by the `extensions:` setting in config.
+   - `~/.harvest/agent/extensions/`
+   - legacy extension paths listed in `.omp/settings.json#extensions` or `~/.harvest/agent/settings.json#extensions`
+2. Enabled installed plugins under `~/.harvest/plugins/node_modules` or a project plugin root — including npm, marketplace, and `harvest plugin link` installs — via their `omp.extensions`/`pi.extensions` manifests.
+3. Explicit configured paths passed by the CLI (`harvest --extension ./my-ext.ts`, also `-e`; `--hook` is treated as an alias) and by the `extensions:` setting in config.
 
 The runtime de-duplicates by resolved absolute path — first seen wins.
 
-The user directory is the active profile's agent directory: the default is `~/.omp/agent`, while `omp --profile <name>` uses `~/.omp/profiles/<name>/agent` (and `PI_CODING_AGENT_DIR` overrides it).
+The user directory is the active profile's agent directory: the default is `~/.harvest/agent`, while `harvest --profile <name>` uses `~/.harvest/profiles/<name>/agent` (and `PI_CODING_AGENT_DIR` overrides it).
 
 When a path points to a directory, omp resolves the entry point in this order:
 
@@ -96,11 +96,11 @@ When a path points to a directory, omp resolves the entry point in this order:
 
 When scanning an `extensions/` directory, omp also loads direct `*.ts`/`*.js` files and one-level subdirectories that have `index.ts`, `index.js`, or a manifest.
 
-Extension packages can also bundle sibling capability directories. When a package is loaded through `extensions:` or `--extension`/`-e`, the `omp-plugins` provider discovers its `skills/`, `hooks/pre|post/`, `tools/`, `commands/`, `rules/`, `prompts/`, and `.mcp.json`.
+Extension packages can also bundle sibling capability directories. When a package is loaded through `extensions:` or `--extension`/`-e`, the `harvest-plugins` provider discovers its `skills/`, `hooks/pre|post/`, `tools/`, `commands/`, `rules/`, `prompts/`, and `.mcp.json`.
 
 ## package.json manifest
 
-To package an extension as an installable plugin, add an `omp` field to `package.json`:
+To package an extension as an installable plugin, add an `harvest` field to `package.json`:
 
 ```json
 {
@@ -232,10 +232,10 @@ Extensions are a strict superset of hooks. New authoring should use `ExtensionAP
 
 ## Debugging
 
-omp writes structured logs under the active state root's `logs/` directory (by default `~/.omp/logs/`; debug level is always on, and nothing is written to the console because that would corrupt the TUI). Each filename includes the process ID. Tail today's default-profile logs to see extension load diagnostics:
+harvest writes structured logs under the active state root's `logs/` directory (by default `~/.harvest/logs/`; debug level is always on, and nothing is written to the console because that would corrupt the TUI). Each filename includes the process ID. Tail today's default-profile logs to see extension load diagnostics:
 
 ```
-tail -f ~/.omp/logs/omp.$(date +%F).*.log
+tail -f ~/.harvest/logs/omp.$(date +%F).*.log
 ```
 
 Failed extension loads are logged with their path and error. Loaded extensions may also emit their own debug logs via `pi.logger`.
@@ -243,7 +243,7 @@ Failed extension loads are logged with their path and error. Loaded extensions m
 To temporarily disable a specific extension module by name without removing the file:
 
 ```yaml
-# ~/.omp/agent/config.yml
+# ~/.harvest/agent/config.yml
 disabledExtensions:
   - extension-module:my-ext
 ```

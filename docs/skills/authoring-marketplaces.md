@@ -211,7 +211,7 @@ my-plugin/
 
 > Note: MCP servers may instead be declared by the manifest's `mcpServers` field — either an inline server map or a path to a config file inside the plugin root (`{ "mcpServers": "./mcp-omp.json" }`). omp reads `.omp-plugin/plugin.json` first, then `.claude-plugin/plugin.json`; a manifest declaration replaces the default `.mcp.json` rather than merging with it, so one published tree can carry a per-harness MCP config.
 
-> Note: extension modules declared via `package.json` `omp.extensions` **are** loaded from marketplace installs — installation symlinks the cached plugin into the scope's `node_modules` and records it in `omp-plugins.lock.json`, the same runtime surfaces used by npm-installed and `omp plugin link`ed plugins.
+> Note: extension modules declared via `package.json` `omp.extensions` **are** loaded from marketplace installs — installation symlinks the cached plugin into the scope's `node_modules` and records it in `harvest-plugins.lock.json`, the same runtime surfaces used by npm-installed and `harvest plugin link`ed plugins.
 
 ## Install command
 
@@ -224,13 +224,13 @@ my-plugin/
 CLI equivalent:
 
 ```
-omp plugin marketplace add owner/repo
-omp plugin install name@marketplace-name
+harvest plugin marketplace add owner/repo
+harvest plugin install name@marketplace-name
 ```
 
 Scope behavior:
 
-- **user** (default) — installed in the user plugins data root's `installed_plugins.json` (`~/.omp/plugins/installed_plugins.json` by default), available in all projects. On Linux and macOS, `omp config init-xdg` creates (but does not migrate data into) the XDG roots; once the relevant roots exist and the XDG variables are set, new user state uses `$XDG_DATA_HOME/omp/plugins/installed_plugins.json`.
+- **user** (default) — installed in the user plugins data root's `installed_plugins.json` (`~/.harvest/plugins/installed_plugins.json` by default), available in all projects. On Linux and macOS, `harvest config init-xdg` creates (but does not migrate data into) the XDG roots; once the relevant roots exist and the XDG variables are set, new user state uses `$XDG_DATA_HOME/harvest/plugins/installed_plugins.json`.
 - **project** — installed in `<project>/.omp/plugins/installed_plugins.json`, available only in that project
 
 An enabled project-scoped install shadows an enabled user-scoped install of the same `name@marketplace` ID. A disabled project copy leaves the user copy active.

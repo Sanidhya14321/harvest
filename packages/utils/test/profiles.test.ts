@@ -42,6 +42,8 @@ describe("profile directories", () => {
 	let originalAgentDir = "";
 	let originalProfile: string | undefined;
 	let originalAgentDirEnv: string | undefined;
+	let originalHarvestAgentDirEnv: string | undefined;
+	let originalHarvestProfileEnv: string | undefined;
 	let originalOmpProfileEnv: string | undefined;
 	let originalPiProfileEnv: string | undefined;
 	let originalConfigDir: string | undefined;
@@ -53,6 +55,8 @@ describe("profile directories", () => {
 		originalAgentDir = getAgentDir();
 		originalProfile = getActiveProfile();
 		originalAgentDirEnv = process.env.PI_CODING_AGENT_DIR;
+		originalHarvestAgentDirEnv = process.env.HARVEST_CODING_AGENT_DIR;
+		originalHarvestProfileEnv = process.env.HARVEST_PROFILE;
 		originalOmpProfileEnv = process.env.OMP_PROFILE;
 		originalPiProfileEnv = process.env.PI_PROFILE;
 		originalConfigDir = process.env.PI_CONFIG_DIR;
@@ -67,7 +71,9 @@ describe("profile directories", () => {
 		// called `setAgentDir`, which permanently mutates the module-level
 		// pre-profile snapshot. Reset it here so each test starts from a clean
 		// `PI_CODING_AGENT_DIR` baseline matching the env we just configured.
+		delete process.env.HARVEST_CODING_AGENT_DIR;
 		delete process.env.PI_CODING_AGENT_DIR;
+		delete process.env.HARVEST_PROFILE;
 		__resetProfileSnapshotForTests();
 		delete process.env.XDG_DATA_HOME;
 		delete process.env.XDG_STATE_HOME;
@@ -102,6 +108,16 @@ describe("profile directories", () => {
 			setAgentDir(originalAgentDir);
 		} else {
 			setProfile(undefined);
+		}
+		if (originalHarvestProfileEnv === undefined) {
+			delete process.env.HARVEST_PROFILE;
+		} else {
+			process.env.HARVEST_PROFILE = originalHarvestProfileEnv;
+		}
+		if (originalHarvestAgentDirEnv === undefined) {
+			delete process.env.HARVEST_CODING_AGENT_DIR;
+		} else {
+			process.env.HARVEST_CODING_AGENT_DIR = originalHarvestAgentDirEnv;
 		}
 		if (originalOmpProfileEnv === undefined) {
 			delete process.env.OMP_PROFILE;
@@ -188,8 +204,8 @@ describe("profile directories", () => {
 	});
 
 	it("rejects path-like profile names", () => {
-		expect(() => setProfile("../work")).toThrow("Invalid OMP profile");
-		expect(() => setProfile("work/team")).toThrow("Invalid OMP profile");
+		expect(() => setProfile("../work")).toThrow("Invalid Harvest profile");
+		expect(() => setProfile("work/team")).toThrow("Invalid Harvest profile");
 	});
 
 	it("rejects trailing-dot profile names to avoid Windows path collisions", () => {
@@ -216,12 +232,14 @@ describe("profile directories", () => {
 	});
 
 	it("clears PI_CODING_AGENT_DIR on reset when nothing was set originally", () => {
+		delete process.env.HARVEST_CODING_AGENT_DIR;
 		delete process.env.PI_CODING_AGENT_DIR;
 		// Force a baseline snapshot of "no override" via setProfile so a stale
 		// module-load snapshot from a previous test cannot leak in.
 		setProfile("work");
 		setProfile(undefined);
 		expect(process.env.PI_CODING_AGENT_DIR).toBeUndefined();
+		expect(process.env.HARVEST_CODING_AGENT_DIR).toBeUndefined();
 	});
 
 	it("rejects Windows reserved device names case-insensitively", () => {
@@ -269,8 +287,8 @@ describe("profile env + name validation", () => {
 	it("rejects uppercase profile names so isolation is filesystem-independent", () => {
 		// `work` and `WORK` would collide on case-insensitive macOS/Windows but
 		// differ on Linux; reject uppercase to keep profile identity stable.
-		expect(() => normalizeProfileName("WORK")).toThrow("Invalid OMP profile");
-		expect(() => normalizeProfileName("Work")).toThrow("Invalid OMP profile");
+		expect(() => normalizeProfileName("WORK")).toThrow("Invalid Harvest profile");
+		expect(() => normalizeProfileName("Work")).toThrow("Invalid Harvest profile");
 		expect(normalizeProfileName("work")).toBe("work");
 		expect(normalizeProfileName("work-2.0_a")).toBe("work-2.0_a");
 	});
@@ -391,7 +409,9 @@ describe("dirs module import behavior", () => {
 					OMP_PROFILE: ompProfile,
 					PI_PROFILE: "work",
 					PI_CODING_AGENT_DIR: workAgentDir,
+					HARVEST_CODING_AGENT_DIR: workAgentDir,
 				};
+				delete childEnv.HARVEST_PROFILE;
 				const proc = Bun.spawn([process.execPath, probePath], {
 					stdout: "pipe",
 					stderr: "pipe",

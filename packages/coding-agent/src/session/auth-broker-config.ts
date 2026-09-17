@@ -57,7 +57,9 @@ let cachedConfigPromise: Promise<AuthBrokerClientConfig | null> | null = null;
  * retried. Concurrent callers share one in-flight resolution.
  */
 export function resolveAuthBrokerConfig(): Promise<AuthBrokerClientConfig | null> {
-	const key = `${process.env.OMP_AUTH_BROKER_URL ?? ""}\u0000${process.env.OMP_AUTH_BROKER_TOKEN ?? ""}\u0000${getAgentDir()}`;
+	const brokerUrl = process.env.HARVEST_AUTH_BROKER_URL ?? process.env.OMP_AUTH_BROKER_URL ?? "";
+	const brokerToken = process.env.HARVEST_AUTH_BROKER_TOKEN ?? process.env.OMP_AUTH_BROKER_TOKEN ?? "";
+	const key = `${brokerUrl}\u0000${brokerToken}\u0000${getAgentDir()}`;
 	if (cachedConfigPromise && cachedConfigKey === key) return cachedConfigPromise;
 	const promise = resolveAuthBrokerConfigShared({
 		agentDir: getAgentDir(),

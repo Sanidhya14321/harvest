@@ -87,7 +87,7 @@ export async function searchSynthetic(params: SearchParamsWithFetch): Promise<Se
 		{
 			signal: params.signal,
 			missingKeyMessage:
-				"Synthetic credentials not found. Set SYNTHETIC_API_KEY or login with 'omp /login synthetic'.",
+				"Synthetic credentials not found. Set SYNTHETIC_API_KEY or login with 'harvest /login synthetic'.",
 		},
 	);
 	const sources: SearchSource[] = [];
