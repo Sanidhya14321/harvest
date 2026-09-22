@@ -244,6 +244,16 @@ Eval's `browser.open(...)` returns a tab handle with direct navigation, inspecti
 
 Eval's `computer` helpers — `computer.window(...)`, `win.screenshot()`, `win.ax()`, `el.press()`, plus `computer.run(fnOrCode, options)` for multi-step scripts — control the real host: enumerate windows and displays, capture screenshots, send native input, walk the OS accessibility tree, and use the clipboard. It exposes no browser DOM.
 
+### 22 · Local Decision Layer with Laya (Zero-Cost Typed Decisions)
+
+Harvest embeds **Laya** (`convaiinnovations/laya-typed-decisions`, ModernBERT-large 421M) as a fast, self-hosted, local typed decision layer at specific narrow judgment points in the agent loop — with zero cloud API token cost and sub-second local latency:
+
+1. **Tool-Call Gating**: Intercepts high-risk mutations (`bash`, `write`, `edit`, `ast-edit`, `patch`) and evaluates irreversibility via a `noul` question (*"does this call write, delete, publish, or change access irreversibly?"*). Fails **CLOSED** (requires human approval) if the sidecar is offline, times out (300ms), or detects irreversible actions ($P > 0.35$).
+2. **Model Tier Routing**: Evaluates prompt complexity via a `choice` question to dynamically route between `smol`, `slow`, and `default` model tiers. Fails **OPEN** to the configured default.
+3. **Step & Task Completion**: Evaluates execution outputs and unexpected stop states with batched `noul` questions before calling expensive cloud models. Fails **OPEN**.
+
+Integrated into `harvest setup`: the interactive onboarding wizard includes a **"Configure Laya"** step that auto-detects Python 3.9+, verifies dependencies, caches the single model checkpoint, launches the local daemon (`127.0.0.1:8177`), and links it to Harvest settings.
+
 ## Whatever the task needs, _it's already in the box_.
 
 Core tools live in the same namespace as `read` and `bash`. Pin the active set with `--tools read,edit,bash,…`; rarely used discoverable tools stay behind `xd://` devices. `read xd://` lists them, and `write xd://<tool>` runs one when `tools.xdev` is enabled.

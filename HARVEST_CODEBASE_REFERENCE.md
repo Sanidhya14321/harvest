@@ -24,6 +24,7 @@
    - 4.12 [Deterministic Compaction with Verification Preservation (`compaction.ts`)](#412-deterministic-compaction-with-verification-preservation)
    - 4.13 [Enterprise Sandbox & AST-Level Security Auditing (`security.ts`)](#413-enterprise-sandbox--ast-level-security-auditing)
    - 4.14 [Resilient Provider Normalization & Streaming JSON Repair](#414-resilient-provider-normalization--streaming-json-repair)
+   - 4.15 [Laya Local Decision Layer (`laya-client.ts`, `laya-gating.ts`, `laya-routing.ts`, `laya-completion.ts`, `laya-service.ts`)](#415-laya-local-decision-layer)
 5. [Agent Session Engine (`packages/coding-agent/src/session`)](#5-agent-session-engine)
    - 5.1 [`AgentSession` Class Architecture](#51-agentsession-class-architecture)
    - 5.2 [Session State & Turn Execution Loop](#52-session-state--turn-execution-loop)
@@ -301,6 +302,18 @@ flowchart TD
   - `repairJson(raw: string): string`
   - `parseStreamingJson(partial: string): unknown`
 - **Mechanism**: Handles half-streamed tool arguments, missing closing braces, unescaped newlines in string literals, and malformed model outputs in real time without crashing the agent event loop.
+
+### 4.15 Laya Local Decision Layer
+- **Modules**:
+  - `packages/coding-agent/src/core/harvest/laya-client.ts`: Low-overhead local HTTP client (300ms timeout, non-English upstream filter, batched `/v1/decide` requests).
+  - `packages/coding-agent/src/core/harvest/laya-gating.ts`: Tool-call gating for high-risk tools (`bash`, `write`, `edit`, `ast-edit`, `patch`) evaluating irreversibility via `noul` question; fails CLOSED to require human approval.
+  - `packages/coding-agent/src/core/harvest/laya-routing.ts`: Evaluates prompt complexity via `choice` question to assign `smol`, `slow`, or `default` model tier; fails OPEN to default tier.
+  - `packages/coding-agent/src/core/harvest/laya-completion.ts`: Evaluates execution outputs and stop classifications with batched `noul` checks before invoking heavy cloud LLMs; fails OPEN.
+  - `packages/coding-agent/src/core/harvest/laya-service.ts`: Local daemon lifecycle manager (Python 3.9+ discovery, single checkpoint caching, daemon auto-start, and Harvest settings configuration).
+  - `packages/coding-agent/src/modes/setup-wizard/scenes/laya.ts`: Interactive TUI onboarding scene ("Configure Laya") in `harvest setup`.
+  - `decision-sidecar/`: Standalone Python microservice (`server.py`, `calibration.py`) running on `127.0.0.1:8177`.
+- **Model**: Exclusively `convaiinnovations/laya-typed-decisions` (ModernBERT-large 421M, single-model mode, no Router).
+- **Temperature Calibration**: Evaluates Expected Calibration Error (ECE) and fits temperature parameters ($T$) per call site to eliminate raw model overconfidence.
 
 ---
 

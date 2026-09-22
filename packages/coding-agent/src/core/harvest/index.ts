@@ -15,3 +15,8 @@ export * from "./model-tier";
 export * from "./security";
 export * from "./compaction";
 export * from "./prompt-assembler";
+export * from "./laya-client";
+export * from "./laya-gating";
+export * from "./laya-routing";
+export * from "./laya-completion";
+export * from "./laya-service";

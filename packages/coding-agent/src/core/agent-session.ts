@@ -12,7 +12,13 @@ import { routeRole, type RoleRoutingResult, type SpecialistRole } from "./harves
 import { FileSession } from "./tools/file-session";
 import { FreshnessTracker } from "./tools/freshness";
 
+import { checkToolCallGating, type ToolGatingDecision } from "./harvest/laya-gating";
+
 export * from "../session/agent-session";
+export * from "./harvest/laya-client";
+export * from "./harvest/laya-gating";
+export * from "./harvest/laya-routing";
+export * from "./harvest/laya-completion";
 
 export interface HarvestSessionHooks {
 	readonly preReadEnforcement: PreReadEnforcement;
@@ -100,4 +106,15 @@ export function interceptSessionToolCall(
 	}
 
 	return { allowed: true };
+}
+
+/**
+ * Laya Tool-Call Gating Interceptor for session loops.
+ * Evaluates high-risk tool calls with a noul question.
+ */
+export async function interceptSessionToolCallLaya(
+	toolCall: ToolCallPayload,
+	sessionId?: string,
+): Promise<ToolGatingDecision> {
+	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, { sessionId });
 }

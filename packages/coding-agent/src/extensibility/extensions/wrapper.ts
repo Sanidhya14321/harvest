@@ -263,9 +263,15 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		// them on the user's behalf.
 		const explicitPrompt = resolved.override || Object.hasOwn(userPolicies, resolved.policyKey ?? this.tool.name);
 		const xdevBypass = context?.xdevApproved === true && effectiveParams === params;
+		const layaGated = context?.toolCall?.providerMetadata?.layaGatingRequired === true;
 		const approvalCheck = {
-			required: pendingSafetyChecks.length > 0 || (resolved.policy === "prompt" && (explicitPrompt || !xdevBypass)),
-			reason: resolved.reason,
+			required:
+				layaGated ||
+				pendingSafetyChecks.length > 0 ||
+				(resolved.policy === "prompt" && (explicitPrompt || !xdevBypass)),
+			reason:
+				(layaGated ? (context?.toolCall?.providerMetadata?.layaGatingReason as string) : undefined) ||
+				resolved.reason,
 		};
 
 		if (approvalCheck.required) {

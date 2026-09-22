@@ -202,7 +202,7 @@ export const TAB_METADATA: Record<SettingTab, { label: string; icon: `tab.${stri
  */
 export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
 	appearance: ["Theme", "Composer", "Status Line", "Display", "Images"],
-	model: ["Thinking", "Sampling", "Prompt", "Retry & Fallback", "Advisor", "Prewalk", "Vision"],
+	model: ["Thinking", "Sampling", "Prompt", "Retry & Fallback", "Advisor", "Prewalk", "Vision", "Local Decisions"],
 	interaction: [
 		"Input",
 		"Approvals",
@@ -540,6 +540,37 @@ export const SETTINGS_SCHEMA = {
 			label: "Enable Advisor",
 			description:
 				"Pair a second model (assigned to the 'advisor' role) that passively reviews each turn and injects notes.",
+		},
+	},
+	"laya.enabled": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Laya Decision Layer",
+			description:
+				"Enable local ModernBERT-based typed decisions for tool gating, model routing, and step completion checks.",
+		},
+	},
+	"laya.url": {
+		type: "string",
+		default: "http://127.0.0.1:8177",
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Laya Sidecar URL",
+			description: "HTTP endpoint for the local Laya decision sidecar process.",
+		},
+	},
+	"laya.autostart": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Auto-start Sidecar",
+			description: "Automatically spawn the local Laya sidecar daemon when Harvest runs if not already active.",
 		},
 	},
 	"prewalk.enabled": {

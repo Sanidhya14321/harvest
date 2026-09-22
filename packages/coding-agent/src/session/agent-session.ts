@@ -256,6 +256,7 @@ import { writeArtifact } from "./artifacts";
 import {
 	createHarvestSession,
 	interceptSessionToolCall,
+	interceptSessionToolCallLaya,
 	installGroundingNudge,
 	type HarvestSessionHooks,
 } from "../core/agent-session";
@@ -3918,6 +3919,43 @@ export class AgentSession {
 				block: true,
 				reason: harvestCheck.error ?? `Pre-read enforcement blocked tool '${ctx.tool.name}'`,
 			};
+		}
+
+		// Harvest Laya Tool-Call Gating (Decision Point 1: Gating high-risk actions)
+		if (process.env.LAYA_GATING !== "false") {
+			try {
+				const gating = await interceptSessionToolCallLaya(
+					{
+						name: ctx.tool.name,
+						args: (ctx.args ?? {}) as Record<string, unknown>,
+					},
+					this.sessionManager?.getSessionId(),
+				);
+				if (gating.isHighRiskTool && gating.requireApproval) {
+					if (ctx.toolCall.providerMetadata?.type === "computer") {
+						ctx.toolCall.providerMetadata.layaGatingRequired = true;
+						ctx.toolCall.providerMetadata.layaGatingReason = gating.reason;
+					} else {
+						ctx.toolCall.providerMetadata = {
+							type: "laya",
+							layaGatingRequired: true,
+							layaGatingReason: gating.reason,
+						};
+					}
+				}
+			} catch (err) {
+				// Fail CLOSED on gating error
+				if (ctx.toolCall.providerMetadata?.type === "computer") {
+					ctx.toolCall.providerMetadata.layaGatingRequired = true;
+					ctx.toolCall.providerMetadata.layaGatingReason = `Laya gating error: ${String(err)}`;
+				} else {
+					ctx.toolCall.providerMetadata = {
+						type: "laya",
+						layaGatingRequired: true,
+						layaGatingReason: `Laya gating error: ${String(err)}`,
+					};
+				}
+			}
 		}
 
 		const runner = this.#extensionRunner;

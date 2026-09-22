@@ -7,6 +7,7 @@ import type { Settings } from "../config/settings";
 import unexpectedStopClassifierPrompt from "../prompts/system/unexpected-stop-classifier.md" with { type: "text" };
 import { isTinyMemoryLocalModelKey, ONLINE_MEMORY_MODEL_KEY } from "../tiny/models";
 import { tinyModelClient } from "../tiny/title-client";
+import { checkCompletionWithLaya } from "../core/harvest/laya-completion";
 
 const CLASSIFIER_SYSTEM_PROMPT = prompt.render(unexpectedStopClassifierPrompt);
 
@@ -66,6 +67,23 @@ export async function classifyUnexpectedStop(
 	text: string,
 	deps: ClassifyUnexpectedStopDeps,
 ): Promise<boolean | undefined> {
+	// Harvest Laya Decision Layer (Decision Point 3: Step/Task Completion Check)
+	if (process.env.LAYA_COMPLETION !== "false") {
+		try {
+			const layaRes = await checkCompletionWithLaya(
+				{ assistantText: text },
+				{ sessionId: deps.sessionId },
+			);
+			if (!layaRes.fallback) {
+				return layaRes.isPrematureStop;
+			}
+		} catch (err) {
+			logger.debug("unexpected-stop: Laya completion check failed, falling open to main LLM", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	const backend = deps.settings.get("providers.unexpectedStopModel");
 	try {
 		if (backend === ONLINE_MEMORY_MODEL_KEY) {

@@ -1,0 +1,20 @@
+{
+  "tool_gating": {
+    "temperature": 2.6386,
+    "uncalibrated_ece": 0.4667,
+    "calibrated_ece": 0.3021,
+    "sample_count": 150
+  },
+  "model_routing": {
+    "temperature": 1.1333,
+    "uncalibrated_ece": 0.0819,
+    "calibrated_ece": 0.0598,
+    "sample_count": 150
+  },
+  "completion_check": {
+    "temperature": 1.4002,
+    "uncalibrated_ece": 0.1842,
+    "calibrated_ece": 0.175,
+    "sample_count": 150
+  }
+}

@@ -828,9 +828,17 @@ export interface ComputerToolCallMetadata {
 	providerItemId: string;
 	actions: ComputerAction[];
 	pendingSafetyChecks: ComputerSafetyCheck[];
+	layaGatingRequired?: boolean;
+	layaGatingReason?: string;
 }
 
-export type ToolCallProviderMetadata = ComputerToolCallMetadata;
+export interface LayaToolCallMetadata {
+	type: "laya";
+	layaGatingRequired: boolean;
+	layaGatingReason?: string;
+}
+
+export type ToolCallProviderMetadata = ComputerToolCallMetadata | LayaToolCallMetadata;
 
 export type ComputerScreenshotRef =
 	| { type: "computer_screenshot"; image_url: string; file_id?: never }

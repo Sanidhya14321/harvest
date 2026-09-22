@@ -1,0 +1,134 @@
+/**
+ * Laya Step & Task Completion Evaluation Layer.
+ *
+ * Gating point 3: Evaluates step execution / tool output or assistant stop
+ * using batched `noul` questions ("did this succeed / is this done?").
+ *
+ * Contract:
+ * - Fail OPEN: If sidecar is unavailable, times out (~300ms), or state is
+ *   non-English, fall back to the existing full-LLM evaluation check.
+ * - Batches multiple questions into a single `/v1/decide` call per state.
+ */
+
+import { logger } from "@harvest/pi-utils";
+import { type Settings, settings } from "../../config/settings";
+import { getLayaClient, type LayaClient } from "./laya-client";
+
+export interface StepCompletionState {
+	readonly command?: string;
+	readonly output?: string;
+	readonly assistantText?: string;
+	readonly taskContext?: string;
+}
+
+export interface CompletionDecision {
+	readonly isSuccess: boolean;
+	readonly isPrematureStop: boolean;
+	readonly confidence?: number;
+	readonly fallback: boolean;
+	readonly fallbackReason?: string;
+	readonly latencyMs: number;
+}
+
+export async function checkCompletionWithLaya(
+	state: StepCompletionState,
+	options: {
+		client?: LayaClient;
+		sessionId?: string;
+		settings?: Settings;
+	} = {},
+): Promise<CompletionDecision> {
+	if (process.env.LAYA_ENABLED === "false") {
+		return {
+			isSuccess: true,
+			isPrematureStop: false,
+			fallback: true,
+			fallbackReason: "laya_disabled",
+			latencyMs: 0,
+		};
+	}
+	const currentSettings = options.settings ?? settings;
+	try {
+		if (currentSettings.get("laya.enabled") === false) {
+			return {
+				isSuccess: true,
+				isPrematureStop: false,
+				fallback: true,
+				fallbackReason: "laya_disabled_by_settings",
+				latencyMs: 0,
+			};
+		}
+	} catch {
+		// Ignore if settings context not initialized
+	}
+
+	const client = options.client ?? getLayaClient();
+
+	const statePayload = {
+		command: state.command || "",
+		output: (state.output || "").slice(-1500), // inspect recent diagnostic tail
+		text: (state.assistantText || "").slice(0, 1000),
+	};
+
+	// Batch two questions against the same state:
+	// 1. Success check: Did the command/step execute cleanly without errors?
+	// 2. Completion check: Did the assistant stop unexpectedly while promising more actions?
+	const questions = {
+		step_success: {
+			type: "noul" as const,
+			instructions: "did this execution complete successfully with zero unhandled errors or test failures?",
+		},
+		unexpected_stop: {
+			type: "noul" as const,
+			instructions: "does this message indicate an unexpected premature stop where the agent promised more actions but ended?",
+		},
+	};
+
+	const decision = await client.decide(statePayload, questions, {
+		callSite: "completion_check",
+		sessionId: options.sessionId,
+	});
+
+	// If sidecar failed or timed out: FAIL OPEN to main LLM / heuristic
+	if (decision.fallback || !decision.data) {
+		logger.warn("Laya completion check fallback [FAIL OPEN]: delegating to main LLM / heuristic", {
+			reason: decision.fallbackReason,
+			latencyMs: decision.latencyMs,
+		});
+
+		return {
+			isSuccess: true, // Fail OPEN
+			isPrematureStop: false, // Fail OPEN
+			fallback: true,
+			fallbackReason: decision.fallbackReason || "unknown",
+			latencyMs: decision.latencyMs,
+		};
+	}
+
+	const successAnswer = decision.data.step_success;
+	const stopAnswer = decision.data.unexpected_stop;
+
+	// In noul questions, action/act_probability indicates affirmative detection
+	const successScore = typeof successAnswer?.noul === "number" ? successAnswer.noul : 0.5;
+	const prematureStopScore = typeof stopAnswer?.noul === "number" ? stopAnswer.noul : 0.0;
+	const avgConfidence = ((successAnswer?.confidence ?? 0.5) + (stopAnswer?.confidence ?? 0.5)) / 2;
+
+	const isSuccess = successScore >= 0.40;
+	const isPrematureStop = prematureStopScore >= 0.50;
+
+	logger.info("Laya completion check evaluated", {
+		isSuccess,
+		isPrematureStop,
+		successScore,
+		prematureStopScore,
+		latencyMs: decision.latencyMs,
+	});
+
+	return {
+		isSuccess,
+		isPrematureStop,
+		confidence: avgConfidence,
+		fallback: false,
+		latencyMs: decision.latencyMs,
+	};
+}
