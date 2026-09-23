@@ -19,6 +19,7 @@ export * from "./harvest/laya-client";
 export * from "./harvest/laya-gating";
 export * from "./harvest/laya-routing";
 export * from "./harvest/laya-completion";
+export * from "./harvest/laya-pruning";
 
 export interface HarvestSessionHooks {
 	readonly preReadEnforcement: PreReadEnforcement;

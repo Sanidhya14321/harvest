@@ -573,6 +573,91 @@ export const SETTINGS_SCHEMA = {
 			description: "Automatically spawn the local Laya sidecar daemon when Harvest runs if not already active.",
 		},
 	},
+	"laya.pruning": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Context Pruning",
+			description:
+				"Use Laya to score and prune low-relevance historical turns and tool results before calling the main LLM.",
+		},
+	},
+	"laya.pruningKeepRecentTurns": {
+		type: "number",
+		default: 2,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Pruning Recent Turns Kept",
+			description: "Number of most recent conversation turns that are always kept and never pruned.",
+		},
+	},
+	"laya.pruningMinKeptTurns": {
+		type: "number",
+		default: 3,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Pruning Safety Floor (Turns)",
+			description: "Minimum total turns kept as a safety floor to prevent degenerate empty context.",
+		},
+	},
+	"laya.pruningTokenBudget": {
+		type: "number",
+		default: 32000,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Pruning Token Budget",
+			description: "Target token budget for prunable historical context.",
+		},
+	},
+	"laya.subagentSelection": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Subagent Selection",
+			description:
+				"Use Laya to evaluate tasks and select the optimal specialized subagent from Harvest's roster. Defaults to false pending empirical calibration against >= 100 real sessions (avoids inert 100% escalation or CPU timeout fallback).",
+		},
+	},
+	"laya.subagentSelectionConfidenceThreshold": {
+		type: "number",
+		default: 0.8,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Subagent Selection Confidence Threshold",
+			description:
+				"Minimum Laya confidence required to auto-pick a subagent without escalating to the main LLM. Kept at conservative 0.80 default until calibrated empirically against real Harvest session traces.",
+		},
+	},
+	"laya.subagentSelectionTimeoutMs": {
+		type: "number",
+		default: 300,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Subagent Selection Timeout (ms)",
+			description:
+				"Maximum latency budget in milliseconds for Laya subagent selection before failing open to default agent. Derived automatically from local hardware calibration (~2x measured choice latency) when unset. Can be explicitly overridden.",
+		},
+	},
+	"laya.maxAcceptableLatencyPerTurnMs": {
+		type: "number",
+		default: 200,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Max Acceptable Turn Latency (ms)",
+			description:
+				"Maximum added latency in milliseconds permitted per main-LLM turn for local Laya decision features (e.g. context pruning). If measured batched scoring latency exceeds this budget during calibration, pruning is disabled by default to protect interactive responsiveness.",
+		},
+	},
 	"prewalk.enabled": {
 		type: "boolean",
 		default: false,

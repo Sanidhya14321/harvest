@@ -13,6 +13,7 @@ import type { CustomTool } from "../extensibility/custom-tools/types";
 import type { LocalProtocolOptions } from "../internal-urls";
 import { registerArtifactsDir } from "../internal-urls/registry-helpers";
 import { MCPManager } from "../mcp/manager";
+import { selectSubagentWithLaya } from "../core/harvest/laya-subagent-selection";
 import { loadOverallPlanReference } from "../plan-mode/plan-handoff";
 import planModeSubagentPrompt from "../prompts/system/plan-mode-subagent.md" with { type: "text" };
 import subagentUserPromptTemplate from "../prompts/system/subagent-user-prompt.md" with { type: "text" };
@@ -264,12 +265,29 @@ export async function resolveEffectiveSubagentPolicy(
 ): Promise<EffectiveSubagentPolicy> {
 	await request.session.settings.reloadFromDisk();
 	const spawnPolicy = resolveSpawnPolicy(request.session.getSessionSpawns());
-	const agentName = request.agent?.trim() || spawnPolicy.defaultAgent;
+	let agentName = request.agent?.trim() || spawnPolicy.defaultAgent;
 	const planMode = request.session.getPlanModeState?.()?.enabled === true;
 	assertPlanControlsAllowed(request, planMode);
 	assertDepthAndSpawnAllowed(request, agentName);
 
 	const discovery = await discoverAgents(request.session.cwd, undefined, request.session.effectiveExtensionRoots?.());
+
+	// If the subagent was not explicitly specialized (or was set to the generic default 'task'),
+	// consult Laya subagent selection with confidence gating and fail-open fallback.
+	if (!request.agent?.trim() || request.agent.trim() === spawnPolicy.defaultAgent) {
+		const layaDecision = await selectSubagentWithLaya(request.assignment, {
+			availableAgents: discovery.agents,
+			defaultAgent: spawnPolicy.defaultAgent,
+			context: request.context,
+			sessionId: (request.session as { sessionId?: string }).sessionId,
+			settings: request.session.settings,
+		});
+		if (layaDecision.decisionType === "auto_pick") {
+			agentName = layaDecision.selectedAgent;
+			assertDepthAndSpawnAllowed(request, agentName);
+		}
+	}
+
 	const agent = getAgent(discovery.agents, agentName);
 	if (!agent) {
 		const available = discovery.agents.map(candidate => candidate.name).join(", ") || "none";

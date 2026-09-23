@@ -20,3 +20,5 @@ export * from "./laya-gating";
 export * from "./laya-routing";
 export * from "./laya-completion";
 export * from "./laya-service";
+export * from "./laya-pruning";
+export * from "./laya-subagent-selection";

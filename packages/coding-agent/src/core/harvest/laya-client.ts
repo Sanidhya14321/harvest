@@ -18,6 +18,7 @@ export interface LayaQuestionDefinition {
 
 export interface LayaAnswerResult {
 	readonly type: string;
+	readonly choice?: string;
 	readonly answer?: string;
 	readonly confidence: number;
 	readonly calibratedConfidence?: number;
@@ -110,7 +111,7 @@ export class LayaClient {
 	async isHealthy(): Promise<boolean> {
 		try {
 			const controller = new AbortController();
-			const timer = setTimeout(() => controller.abort(), Math.min(this.#timeoutMs, 500));
+			const timer = setTimeout(() => controller.abort(), Math.max(this.#timeoutMs, 1000));
 			const res = await fetch(`${this.#baseUrl}/health`, {
 				method: "GET",
 				signal: controller.signal,
@@ -125,12 +126,31 @@ export class LayaClient {
 	}
 
 	/**
+	 * Retrieve hardware detection result, device details, and signature from sidecar.
+	 */
+	async getHardwareInfo(): Promise<import("./laya-calibration").HardwareInfo | null> {
+		try {
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), Math.max(this.#timeoutMs, 2000));
+			const res = await fetch(`${this.#baseUrl}/v1/hardware`, {
+				method: "GET",
+				signal: controller.signal,
+			});
+			clearTimeout(timer);
+			if (!res.ok) return null;
+			return (await res.json()) as import("./laya-calibration").HardwareInfo;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
 	 * Send batch of typed decision questions against state.
 	 */
 	async decide(
 		state: string | Record<string, unknown> | unknown[],
 		questions: Record<string, LayaQuestionDefinition>,
-		metadata: { callSite: string; sessionId?: string } = { callSite: "unknown" },
+		metadata: { callSite: string; sessionId?: string; timeoutMs?: number } = { callSite: "unknown" },
 	): Promise<DecisionResult<Record<string, LayaAnswerResult>>> {
 		const startTime = performance.now();
 
@@ -151,9 +171,10 @@ export class LayaClient {
 		}
 
 		const controller = new AbortController();
+		const effectiveTimeout = metadata.timeoutMs ?? this.#timeoutMs;
 		const timeoutId = setTimeout(() => {
 			controller.abort();
-		}, this.#timeoutMs);
+		}, effectiveTimeout);
 
 		try {
 			const response = await fetch(`${this.#baseUrl}/v1/decide`, {
@@ -215,7 +236,7 @@ export class LayaClient {
 			clearTimeout(timeoutId);
 			const latencyMs = performance.now() - startTime;
 			const isAbort = (err as Error)?.name === "AbortError";
-			const reason = isAbort ? `timeout_exceeded_${this.#timeoutMs}ms` : `connection_error: ${(err as Error)?.message}`;
+			const reason = isAbort ? `timeout_exceeded_${effectiveTimeout}ms` : `connection_error: ${(err as Error)?.message}`;
 
 			logger.warn(`Laya sidecar call failed, triggering fallback [${metadata.callSite}]`, {
 				reason,
