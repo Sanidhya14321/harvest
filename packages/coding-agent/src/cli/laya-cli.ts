@@ -75,25 +75,43 @@ function formatStatus(cal: CalibrationRecord | null, isOnline: boolean): void {
 	writeLine(`  Signature: ${chalk.dim(hw.signature)}`);
 	writeLine(`  Details:   ${chalk.dim(hw.reason)}`);
 
+	const chain = (hw.details?.detection_chain as Array<{ probe: string; status: string; message: string }>) ?? [];
+	if (chain.length > 0) {
+		writeLine(`  Detection Chain:`);
+		for (const p of chain) {
+			const statusColor = p.status === "pass" || p.status === "active" ? chalk.green : p.status === "misconfigured" ? chalk.red : chalk.dim;
+			writeLine(`    ${chalk.dim("•")} ${p.probe.padEnd(24)} ${statusColor(`[${p.status}]`)} ${chalk.dim(p.message)}`);
+		}
+	}
+
 	writeLine(`\n${chalk.cyan("Measured Latency Benchmarks:")}`);
 	writeLine(`  Ultra-short (~40 tok):         ${b.ultraShort.medianMs.toFixed(1)}ms (min: ${b.ultraShort.minMs.toFixed(1)}ms)`);
 	writeLine(`  Single Choice (~350 tok):      ${b.singleChoice.medianMs.toFixed(1)}ms (min: ${b.singleChoice.minMs.toFixed(1)}ms)`);
 	writeLine(`  Single Score (~150 tok):       ${b.singleScore.medianMs.toFixed(1)}ms (min: ${b.singleScore.minMs.toFixed(1)}ms)`);
 	writeLine(`  Batched Score (B=2, L=1024):   ${b.batchedScore.medianMs.toFixed(1)}ms (min: ${b.batchedScore.minMs.toFixed(1)}ms)`);
 
-	writeLine(`\n${chalk.cyan("Derived Operational Settings:")}`);
+	writeLine(`\n${chalk.cyan("Derived Operational Settings (Latency-Only):")}`);
 	writeLine(
 		`  Subagent Selection: ${
 			derived.subagentSelectionRecommendEnabled ? chalk.green("RECOMMENDED") : chalk.yellow("NOT RECOMMENDED")
 		} (${derived.subagentSelectionReason})`,
 	);
-	writeLine(`  Subagent Timeout:   ${chalk.bold(`${derived.subagentSelectionTimeoutMs}ms`)} (safety margin over measured latency)`);
+	writeLine(
+		`  Subagent Timeout:   ${chalk.bold(`${derived.subagentSelectionTimeoutMs}ms`)} ` +
+			`(2x safety margin over raw ${derived.rawSingleChoiceLatencyMs?.toFixed(1) ?? b.singleChoice.medianMs.toFixed(1)}ms measured choice latency)`,
+	);
 	writeLine(
 		`  Context Pruning:    ${
 			derived.pruningRecommendEnabled ? chalk.green("RECOMMENDED") : chalk.yellow("NOT RECOMMENDED")
 		} (${derived.pruningReason})`,
 	);
-	writeLine(`  Turn Latency Cap:   ${derived.maxAcceptableLatencyPerTurnMs}ms acceptable added time`);
+	writeLine(
+		`  Turn Latency Budget:${derived.maxAcceptableLatencyPerTurnMs}ms max acceptable added time ` +
+			`(realistic turn cost: ~${derived.estimatedAddedLatencyPerTurnMs.toFixed(0)}ms, worst-case batch: ${derived.worstCaseBatchLatencyMs?.toFixed(0) ?? b.batchedScore.medianMs.toFixed(0)}ms)`,
+	);
+	if (derived.subagentSelectionConfidenceThreshold !== undefined) {
+		writeLine(`  Confidence Thresh:  ${chalk.bold(derived.subagentSelectionConfidenceThreshold.toFixed(3))} (owned by shadow-mode review)`);
+	}
 
 	// Check explicit user overrides in settings
 	writeLine(`\n${chalk.cyan("Active User Overrides & Configuration:")}`);
@@ -134,8 +152,8 @@ function formatStatus(cal: CalibrationRecord | null, isOnline: boolean): void {
 	// Warnings on overrides contradicting calibration
 	if (userPruning === true && !derived.pruningRecommendEnabled) {
 		writeLine(
-			`\n${chalk.yellow("WARNING:")} Pruning is explicitly enabled in user settings, but measured batched latency ` +
-				`(${derived.estimatedAddedLatencyPerTurnMs.toFixed(0)}ms) exceeds the turn budget (${derived.maxAcceptableLatencyPerTurnMs}ms). ` +
+			`\n${chalk.yellow("WARNING:")} Pruning is explicitly enabled in user settings, but estimated turn latency ` +
+				`(~${derived.estimatedAddedLatencyPerTurnMs.toFixed(0)}ms) exceeds the turn budget (${derived.maxAcceptableLatencyPerTurnMs}ms). ` +
 				`This may add noticeable delay to interactive turns.`,
 		);
 	}

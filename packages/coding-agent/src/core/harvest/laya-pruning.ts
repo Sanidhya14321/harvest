@@ -72,6 +72,41 @@ export interface LayaPruningOptions {
 	readonly minChunkTokens?: number;
 	readonly safetyTokenFloor?: number;
 	readonly timeoutMs?: number;
+	readonly lockedDecisions?: Map<string, LockedPruningDecision>;
+	readonly lockDecisions?: boolean;
+}
+
+export interface LockedPruningDecision {
+	readonly chunkId: string;
+	readonly action: "kept" | "dropped";
+	readonly placeholder?: string;
+	readonly score: number;
+	readonly normalizedScore: number;
+	readonly confidence: number;
+	readonly timestamp: number;
+	readonly estimatedTokens: number;
+}
+
+/**
+ * In-memory registry of locked pruning decisions.
+ * Keyed by `${sessionId}::${chunkId}`.
+ * Once a candidate chunk ages out of the recent window and is evaluated,
+ * its keep/drop decision is locked here permanently for the session.
+ * Subsequent turns never re-score or re-drop it, guaranteeing prefix byte-stability.
+ */
+export const LOCKED_PRUNING_DECISIONS = new Map<string, LockedPruningDecision>();
+
+export function resetLockedPruningDecisions(sessionId?: string): void {
+	if (!sessionId) {
+		LOCKED_PRUNING_DECISIONS.clear();
+		return;
+	}
+	const prefix = `${sessionId}::`;
+	for (const key of LOCKED_PRUNING_DECISIONS.keys()) {
+		if (key.startsWith(prefix)) {
+			LOCKED_PRUNING_DECISIONS.delete(key);
+		}
+	}
 }
 
 export interface PruningAuditRecord {
@@ -153,7 +188,9 @@ export function createScoringExcerpt(text: string, maxTokens: number = MAX_SCORI
  * Group flat messages array into logical interaction turns.
  * In Harvest, each user-initiated message marks the start of a turn.
  */
-export function partitionMessagesIntoTurns(messages: readonly AgentMessage[]): Array<{ turnIndex: number; messageIndices: number[] }> {
+export function partitionMessagesIntoTurns(
+	messages: readonly AgentMessage[],
+): Array<{ turnIndex: number; messageIndices: number[] }> {
 	const turns: Array<{ turnIndex: number; messageIndices: number[] }> = [];
 	let currentTurn: number[] = [];
 
@@ -218,16 +255,27 @@ export async function pruneContextWithLaya(
 		);
 	}
 	if (explicitPruningSetting === true && !getDerivedPruningEnabledSync(true)) {
-		logger.warn("Laya pruning is explicitly enabled in settings, but local hardware calibration advised against it due to high latency.");
+		logger.warn(
+			"Laya pruning is explicitly enabled in settings, but local hardware calibration advised against it due to high latency.",
+		);
 	}
 
 	if (messages.length === 0) {
 		return createPassthroughResult(messages, "empty_messages");
 	}
 
-	const keepRecentTurns = options.keepRecentTurns ?? safeGetSetting<number>(activeSettings, "laya.pruningKeepRecentTurns") ?? DEFAULT_PRUNING_KEEP_RECENT_TURNS;
-	const minKeptTurns = options.minKeptTurns ?? safeGetSetting<number>(activeSettings, "laya.pruningMinKeptTurns") ?? DEFAULT_PRUNING_MIN_KEPT_TURNS;
-	const minChunkTokens = options.minChunkTokens ?? safeGetSetting<number>(activeSettings, "laya.pruningMinChunkTokens") ?? DEFAULT_PRUNING_MIN_CHUNK_TOKENS;
+	const keepRecentTurns =
+		options.keepRecentTurns ??
+		safeGetSetting<number>(activeSettings, "laya.pruningKeepRecentTurns") ??
+		DEFAULT_PRUNING_KEEP_RECENT_TURNS;
+	const minKeptTurns =
+		options.minKeptTurns ??
+		safeGetSetting<number>(activeSettings, "laya.pruningMinKeptTurns") ??
+		DEFAULT_PRUNING_MIN_KEPT_TURNS;
+	const minChunkTokens =
+		options.minChunkTokens ??
+		safeGetSetting<number>(activeSettings, "laya.pruningMinChunkTokens") ??
+		DEFAULT_PRUNING_MIN_CHUNK_TOKENS;
 	const safetyTokenFloor = options.safetyTokenFloor ?? DEFAULT_PRUNING_SAFETY_TOKEN_FLOOR;
 
 	// Partition messages into logical turns
@@ -241,6 +289,11 @@ export async function pruneContextWithLaya(
 
 	const taskGoal = options.taskGoal || extractTaskGoal(messages);
 	const alwaysKeepTurnThreshold = totalTurns - keepRecentTurns; // turns at or after this are always kept
+
+	const sessionId = options.sessionId || "default";
+	const lockStore = options.lockedDecisions ?? (options.sessionId ? LOCKED_PRUNING_DECISIONS : undefined);
+	const useLocking = options.lockDecisions !== false && lockStore !== undefined;
+	const preLockedByMsgIdx = new Map<number, LockedPruningDecision>();
 
 	// Step 1: Identify prunable candidate pool
 	const candidates: PruningCandidateChunk[] = [];
@@ -270,6 +323,13 @@ export async function pruneContextWithLaya(
 
 				if (tokens >= minChunkTokens) {
 					const chunkId = `tool_${turn.turnIndex}_${msgIdx}_${toolMsg.toolName || "tool"}`;
+
+					const lockKey = `${sessionId}::${chunkId}`;
+					if (useLocking && lockStore.has(lockKey)) {
+						preLockedByMsgIdx.set(msgIdx, lockStore.get(lockKey)!);
+						continue;
+					}
+
 					candidates.push({
 						id: chunkId,
 						messageIndex: msgIdx,
@@ -289,6 +349,12 @@ export async function pruneContextWithLaya(
 				// Only consider very large assistant outputs in older turns
 				if (tokens >= minChunkTokens * 2) {
 					const chunkId = `assistant_${turn.turnIndex}_${msgIdx}`;
+					const lockKey = `${sessionId}::${chunkId}`;
+					if (useLocking && lockStore.has(lockKey)) {
+						preLockedByMsgIdx.set(msgIdx, lockStore.get(lockKey)!);
+						continue;
+					}
+
 					candidates.push({
 						id: chunkId,
 						messageIndex: msgIdx,
@@ -304,9 +370,66 @@ export async function pruneContextWithLaya(
 		}
 	}
 
-	// If no candidate chunks exceed minimum size, pass through
+	// If no new candidate chunks exceed minimum size, apply pre-locked decisions directly or pass through
 	if (candidates.length === 0) {
-		return createPassthroughResult(messages, "no_prunable_candidates");
+		if (preLockedByMsgIdx.size === 0) {
+			return createPassthroughResult(messages, "no_prunable_candidates");
+		}
+
+		let tokensSaved = 0;
+		let droppedCount = 0;
+		const clonedMessages: AgentMessage[] = [];
+		const auditRecords: PruningAuditRecord[] = [];
+
+		for (let i = 0; i < messages.length; i++) {
+			const original = messages[i];
+			const locked = preLockedByMsgIdx.get(i);
+			if (locked && locked.action === "dropped") {
+				droppedCount++;
+				tokensSaved += locked.estimatedTokens;
+				auditRecords.push({
+					timestamp: locked.timestamp,
+					sessionId,
+					chunkId: locked.chunkId,
+					role: original.role,
+					toolName: (original as ToolResultMessage).toolName,
+					estimatedTokens: locked.estimatedTokens,
+					score: locked.score,
+					normalizedScore: locked.normalizedScore,
+					confidence: locked.confidence,
+					action: "dropped",
+				});
+				if (original.role === "toolResult") {
+					clonedMessages.push({
+						...(original as ToolResultMessage),
+						content: [{ type: "text", text: locked.placeholder ?? "" } as TextContent],
+						prunedAt: locked.timestamp,
+					});
+				} else if (original.role === "assistant") {
+					clonedMessages.push({
+						...original,
+						content: [{ type: "text", text: locked.placeholder ?? "" } as TextContent],
+					});
+				} else {
+					clonedMessages.push(original);
+				}
+			} else {
+				clonedMessages.push(original);
+			}
+		}
+
+		return {
+			messages: clonedMessages,
+			pruned: droppedCount > 0,
+			fallback: false,
+			totalOriginalTokens: tokensSaved,
+			totalPrunedTokens: 0,
+			tokensSaved,
+			candidatesCount: preLockedByMsgIdx.size,
+			droppedCount,
+			latencyMs: performance.now() - startTime,
+			auditRecords,
+		};
 	}
 
 	// Step 3: Batch scoring call against Laya sidecar
@@ -372,7 +495,8 @@ export async function pruneContextWithLaya(
 
 	// Step 4: Budget-based selection in Harvest
 	// If prunableTokenBudget is not explicitly configured, retain 40% of candidate tokens
-	const prunableBudget = options.prunableTokenBudget ?? Math.max(safetyTokenFloor, Math.floor(totalCandidateTokens * 0.4));
+	const prunableBudget =
+		options.prunableTokenBudget ?? Math.max(safetyTokenFloor, Math.floor(totalCandidateTokens * 0.4));
 
 	// Rank candidates descending by score (highest relevance first)
 	const rankedCandidates = [...candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -398,6 +522,31 @@ export async function pruneContextWithLaya(
 		}
 	}
 
+	const now = Date.now();
+
+	// Step 4b: Lock decisions permanently for newly evaluated candidates
+	if (useLocking) {
+		for (const c of candidates) {
+			const lockKey = `${sessionId}::${c.id}`;
+			const placeholder = c.dropped
+				? c.role === "toolResult"
+					? `[Earlier tool output for '${c.toolName || "tool"}' omitted for relevance (Laya score: ${(c.normalizedScore ?? 0).toFixed(2)})]`
+					: `[Earlier assistant output omitted for relevance (Laya score: ${(c.normalizedScore ?? 0).toFixed(2)})]`
+				: undefined;
+
+			lockStore.set(lockKey, {
+				chunkId: c.id,
+				action: c.dropped ? "dropped" : "kept",
+				placeholder,
+				score: c.score ?? 0,
+				normalizedScore: c.normalizedScore ?? 0,
+				confidence: c.confidence ?? 0,
+				timestamp: now,
+				estimatedTokens: c.estimatedTokens,
+			});
+		}
+	}
+
 	// Replace dropped chunks with transparent placeholders
 	let tokensSaved = 0;
 	let droppedCount = 0;
@@ -408,19 +557,48 @@ export async function pruneContextWithLaya(
 
 	const clonedMessages: AgentMessage[] = [];
 	const auditRecords: PruningAuditRecord[] = [];
-	const now = Date.now();
 
 	for (let i = 0; i < messages.length; i++) {
 		const original = messages[i];
 		const candidate = candidateByMsgIdx.get(i);
+		const preLocked = preLockedByMsgIdx.get(i);
 
-		if (candidate && candidate.dropped) {
+		if (preLocked && preLocked.action === "dropped") {
+			droppedCount++;
+			tokensSaved += preLocked.estimatedTokens;
+			auditRecords.push({
+				timestamp: preLocked.timestamp,
+				sessionId,
+				chunkId: preLocked.chunkId,
+				role: original.role,
+				toolName: (original as ToolResultMessage).toolName,
+				estimatedTokens: preLocked.estimatedTokens,
+				score: preLocked.score,
+				normalizedScore: preLocked.normalizedScore,
+				confidence: preLocked.confidence,
+				action: "dropped",
+			});
+			if (original.role === "toolResult") {
+				clonedMessages.push({
+					...(original as ToolResultMessage),
+					content: [{ type: "text", text: preLocked.placeholder ?? "" } as TextContent],
+					prunedAt: preLocked.timestamp,
+				});
+			} else if (original.role === "assistant") {
+				clonedMessages.push({
+					...original,
+					content: [{ type: "text", text: preLocked.placeholder ?? "" } as TextContent],
+				});
+			} else {
+				clonedMessages.push(original);
+			}
+		} else if (candidate && candidate.dropped) {
 			droppedCount++;
 			tokensSaved += candidate.estimatedTokens;
 
 			auditRecords.push({
 				timestamp: now,
-				sessionId: options.sessionId || "default",
+				sessionId,
 				chunkId: candidate.id,
 				role: candidate.role,
 				toolName: candidate.toolName,
@@ -452,7 +630,7 @@ export async function pruneContextWithLaya(
 			if (candidate) {
 				auditRecords.push({
 					timestamp: now,
-					sessionId: options.sessionId || "default",
+					sessionId,
 					chunkId: candidate.id,
 					role: candidate.role,
 					toolName: candidate.toolName,

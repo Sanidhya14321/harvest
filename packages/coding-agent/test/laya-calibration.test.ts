@@ -34,17 +34,22 @@ describe("Laya Hardware Detection & Self-Calibration", () => {
 				ultraShort: makeMeasurement(12.5),
 				singleChoice: makeMeasurement(45.0),
 				singleScore: makeMeasurement(28.0),
-				batchedScore: makeMeasurement(110.0), // 110ms added turn latency
+				batchedScore: makeMeasurement(110.0), // 110ms worst-case full batch
 			};
 
-			const derived = deriveSettingsFromBenchmarks(fastGpuBenchmarks, 200);
+			const derived = deriveSettingsFromBenchmarks(fastGpuBenchmarks, 150);
 
+			// 45ms raw measurement recorded
+			expect(derived.rawSingleChoiceLatencyMs).toBe(45.0);
 			// 45ms * 2 = 90ms, but floor is 300ms to absorb OS scheduling jitter
 			expect(derived.subagentSelectionTimeoutMs).toBe(300);
 			expect(derived.subagentSelectionRecommendEnabled).toBe(true);
-			// 110ms <= 200ms max acceptable turn latency budget
+			// Realistic per-turn cost: 28ms * 1.5 = 42ms <= 150ms max acceptable turn latency budget
 			expect(derived.pruningRecommendEnabled).toBe(true);
-			expect(derived.estimatedAddedLatencyPerTurnMs).toBe(110.0);
+			expect(derived.estimatedAddedLatencyPerTurnMs).toBe(42.0);
+			expect(derived.worstCaseBatchLatencyMs).toBe(110.0);
+			// Calibration NEVER touches confidence threshold
+			expect(derived.subagentSelectionConfidenceThreshold).toBeUndefined();
 		});
 
 		it("derives safe timeout multiplier and automatically disables pruning on slow CPU hardware", () => {
@@ -52,17 +57,20 @@ describe("Laya Hardware Detection & Self-Calibration", () => {
 				ultraShort: makeMeasurement(950.0),
 				singleChoice: makeMeasurement(2600.0),
 				singleScore: makeMeasurement(1400.0),
-				batchedScore: makeMeasurement(22500.0), // 22.5s added turn latency
+				batchedScore: makeMeasurement(22500.0), // 22.5s worst case batch
 			};
 
-			const derived = deriveSettingsFromBenchmarks(slowCpuBenchmarks, 200);
+			const derived = deriveSettingsFromBenchmarks(slowCpuBenchmarks, 150);
 
+			expect(derived.rawSingleChoiceLatencyMs).toBe(2600.0);
 			// 2600ms * 2 = 5200ms timeout budget for subagent selection
 			expect(derived.subagentSelectionTimeoutMs).toBe(5200);
 			expect(derived.subagentSelectionRecommendEnabled).toBe(true);
-			// 22500ms > 200ms -> pruning MUST be automatically disabled by default
+			// Realistic per-turn: 1400 * 1.5 = 2100ms > 150ms -> pruning MUST be automatically disabled by default
 			expect(derived.pruningRecommendEnabled).toBe(false);
-			expect(derived.pruningReason).toContain("exceeds acceptable added turn budget of 200ms");
+			expect(derived.estimatedAddedLatencyPerTurnMs).toBe(2100.0);
+			expect(derived.worstCaseBatchLatencyMs).toBe(22500.0);
+			expect(derived.pruningReason).toContain("exceeds acceptable added turn budget of 150ms");
 		});
 
 		it("flags subagent selection as not recommended when single choice latency exceeds 3.5s", () => {
@@ -73,11 +81,12 @@ describe("Laya Hardware Detection & Self-Calibration", () => {
 				batchedScore: makeMeasurement(38000.0),
 			};
 
-			const derived = deriveSettingsFromBenchmarks(overloadedCpuBenchmarks, 200);
+			const derived = deriveSettingsFromBenchmarks(overloadedCpuBenchmarks, 150);
 
 			expect(derived.subagentSelectionRecommendEnabled).toBe(false);
 			expect(derived.subagentSelectionReason).toContain("exceeds 3.5s");
 			expect(derived.subagentSelectionTimeoutMs).toBe(8400);
+			expect(derived.rawSingleChoiceLatencyMs).toBe(4200.0);
 		});
 	});
 
@@ -166,6 +175,59 @@ describe("Laya Hardware Detection & Self-Calibration", () => {
 			const nonExistentDir = path.join(os.tmpdir(), `non-existent-${Date.now()}`);
 			const loaded = await loadCalibration(nonExistentDir);
 			expect(loaded).toBeNull();
+		});
+
+		it("preserves subagentSelectionConfidenceThreshold across hardware recalibration runs", async () => {
+			const { ensureCalibrated } = await import("../src/core/harvest/laya-calibration");
+			const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-preserve-thresh-"));
+			try {
+				// Seed initial calibration with an empirical confidence threshold derived from shadow review
+				const initialRecord: CalibrationRecord = {
+					timestamp: 1720000000000,
+					hardware: sampleHardware,
+					benchmarks: {
+						ultraShort: makeMeasurement(15),
+						singleChoice: makeMeasurement(65),
+						singleScore: makeMeasurement(35),
+						batchedScore: makeMeasurement(140),
+					},
+					derivedSettings: {
+						rawSingleChoiceLatencyMs: 65,
+						subagentSelectionTimeoutMs: 300,
+						subagentSelectionRecommendEnabled: true,
+						subagentSelectionReason: "Fast choice latency",
+						pruningRecommendEnabled: true,
+						pruningReason: "Within budget",
+						maxAcceptableLatencyPerTurnMs: 150,
+						estimatedAddedLatencyPerTurnMs: 52.5,
+						worstCaseBatchLatencyMs: 140,
+						subagentSelectionConfidenceThreshold: 0.935, // Set by shadow-mode review!
+					},
+				};
+				await saveCalibration(initialRecord, tmpDir);
+
+				// Mock client for recalibration on updated hardware signature
+				const mockClient: any = {
+					getHardwareInfo: async () => ({
+						...sampleHardware,
+						signature: "new-hardware-sig-456",
+					}),
+					decide: async () => ({
+						success: true,
+						latencyMs: 50,
+						data: { test: {} },
+					}),
+				};
+
+				// Trigger recalibration due to new hardware signature
+				const recalibrated = await ensureCalibrated(mockClient, { agentDir: tmpDir, iterations: 1 });
+
+				expect(recalibrated.hardware.signature).toBe("new-hardware-sig-456");
+				// Verify confidence threshold was strictly preserved and NOT wiped or altered
+				expect(recalibrated.derivedSettings.subagentSelectionConfidenceThreshold).toBe(0.935);
+			} finally {
+				await fs.rm(tmpDir, { recursive: true, force: true });
+			}
 		});
 	});
 });

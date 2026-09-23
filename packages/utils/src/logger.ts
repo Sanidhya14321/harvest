@@ -20,6 +20,49 @@ import { drainModuleLoadEvents } from "./timing-buffer";
 /** Severity names accepted by the centralized logger. */
 export type LogLevel = "error" | "warn" | "info" | "debug";
 
+export type LogContext = Record<string, unknown>;
+export type LogContextOrFactory = LogContext | (() => LogContext);
+
+const LOG_LEVEL_SEVERITY: Record<LogLevel, number> = {
+	error: 0,
+	warn: 1,
+	info: 2,
+	debug: 3,
+};
+
+function parseLogLevel(val: string | undefined): LogLevel | undefined {
+	if (!val) return undefined;
+	const lower = val.toLowerCase().trim();
+	if (lower in LOG_LEVEL_SEVERITY) {
+		return lower as LogLevel;
+	}
+	return undefined;
+}
+
+let configuredLogLevel: LogLevel | undefined;
+
+/** Return the currently active log level threshold. */
+export function getLogLevel(): LogLevel {
+	if (configuredLogLevel !== undefined) {
+		return configuredLogLevel;
+	}
+	const envLevel =
+		parseLogLevel(process.env.HARVEST_LOG_LEVEL) ??
+		parseLogLevel(process.env.PI_LOG_LEVEL) ??
+		parseLogLevel(process.env.LOG_LEVEL);
+	return envLevel ?? "info";
+}
+
+/** Explicitly set the active log level threshold, or undefined to revert to environment variables. */
+export function setLogLevel(level: LogLevel | undefined): void {
+	configuredLogLevel = level;
+}
+
+/** Check if the given log level is enabled under the current log level threshold. */
+export function isLevelEnabled(level: LogLevel): boolean {
+	return LOG_LEVEL_SEVERITY[level] <= LOG_LEVEL_SEVERITY[getLogLevel()];
+}
+
 /** Structured log event forwarded to out-of-band sinks such as OpenTelemetry. */
 export interface LogEvent {
 	readonly level: LogLevel;
@@ -298,60 +341,78 @@ export function setTransports(opts: { console?: boolean; file?: boolean | string
 	activeTransports = buildTransports(opts);
 }
 
+/** Asynchronously flush any buffered log entries to disk. */
+export async function flush(): Promise<void> {
+	await activeTransports?.file?.flush();
+}
+
+/** Synchronously flush any buffered log entries to disk. */
+export function flushSync(): void {
+	activeTransports?.file?.flushSync();
+}
+
 /**
  * Log an error message.
  * @param message - The message to log.
- * @param context - The context to log.
+ * @param context - The context to log (or factory function).
  */
-export function error(message: string, context?: Record<string, unknown>): void {
+export function error(message: string, context?: LogContextOrFactory): void {
+	if (!isLevelEnabled("error")) return;
+	const ctx = typeof context === "function" ? context() : context;
 	try {
-		emitLocally("error", message, context);
+		emitLocally("error", message, ctx);
 	} catch {
 		// Silently ignore logging failures
 	}
-	emitToSinks("error", message, context);
+	emitToSinks("error", message, ctx);
 }
 
 /**
  * Log a warning message.
  * @param message - The message to log.
- * @param context - The context to log.
+ * @param context - The context to log (or factory function).
  */
-export function warn(message: string, context?: Record<string, unknown>): void {
+export function warn(message: string, context?: LogContextOrFactory): void {
+	if (!isLevelEnabled("warn")) return;
+	const ctx = typeof context === "function" ? context() : context;
 	try {
-		emitLocally("warn", message, context);
+		emitLocally("warn", message, ctx);
 	} catch {
 		// Silently ignore logging failures
 	}
-	emitToSinks("warn", message, context);
+	emitToSinks("warn", message, ctx);
 }
 
 /**
  * Log an informational message.
  * @param message - The message to log.
- * @param context - The context to log.
+ * @param context - The context to log (or factory function).
  */
-export function info(message: string, context?: Record<string, unknown>): void {
+export function info(message: string, context?: LogContextOrFactory): void {
+	if (!isLevelEnabled("info")) return;
+	const ctx = typeof context === "function" ? context() : context;
 	try {
-		emitLocally("info", message, context);
+		emitLocally("info", message, ctx);
 	} catch {
 		// Silently ignore logging failures
 	}
-	emitToSinks("info", message, context);
+	emitToSinks("info", message, ctx);
 }
 
 /**
  * Log a debug message.
  * @param message - The message to log.
- * @param context - The context to log.
+ * @param context - The context to log (or factory function).
  */
-export function debug(message: string, context?: Record<string, unknown>): void {
+export function debug(message: string, context?: LogContextOrFactory): void {
+	if (!isLevelEnabled("debug")) return;
+	const ctx = typeof context === "function" ? context() : context;
 	try {
-		emitLocally("debug", message, context);
+		emitLocally("debug", message, ctx);
 	} catch {
 		// Silently ignore logging failures
 	}
-	emitToSinks("debug", message, context);
+	emitToSinks("debug", message, ctx);
 }
 
 /**

@@ -387,28 +387,30 @@ describe("Laya Shadow-Mode Review & Recalibration", () => {
 		it("recalibrate-subagent respects dry-run and only updates calibration when --yes is provided", async () => {
 			// Populate tmpDir with a baseline calibration file
 			const initialCal: CalibrationRecord = {
-				version: 1,
 				timestamp: Date.now(),
 				hardware: {
 					tier: "cpu",
+					device: "cpu",
 					device_name: "Test CPU",
 					signature: "test-cpu-sig",
 					reason: "Test",
 				},
 				benchmarks: {
-					ultraShort: { minMs: 10, medianMs: 15, runsMs: [10, 15, 20] },
-					singleChoice: { minMs: 50, medianMs: 60, runsMs: [50, 60, 70] },
-					singleScore: { minMs: 30, medianMs: 35, runsMs: [30, 35, 40] },
-					batchedScore: { minMs: 80, medianMs: 90, runsMs: [80, 90, 100] },
+					ultraShort: { minMs: 10, medianMs: 15, samplesMs: [10, 15, 20] },
+					singleChoice: { minMs: 50, medianMs: 60, samplesMs: [50, 60, 70] },
+					singleScore: { minMs: 30, medianMs: 35, samplesMs: [30, 35, 40] },
+					batchedScore: { minMs: 80, medianMs: 90, samplesMs: [80, 90, 100] },
 				},
 				derivedSettings: {
+					rawSingleChoiceLatencyMs: 60,
 					subagentSelectionRecommendEnabled: true,
 					subagentSelectionTimeoutMs: 300,
 					subagentSelectionConfidenceThreshold: 0.05, // initial threshold
 					subagentSelectionReason: "Test",
 					pruningRecommendEnabled: true,
-					estimatedAddedLatencyPerTurnMs: 100,
-					maxAcceptableLatencyPerTurnMs: 1500,
+					estimatedAddedLatencyPerTurnMs: 52.5,
+					worstCaseBatchLatencyMs: 90,
+					maxAcceptableLatencyPerTurnMs: 150,
 					pruningReason: "Test",
 				},
 			};

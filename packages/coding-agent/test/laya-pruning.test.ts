@@ -8,6 +8,7 @@ import {
 	partitionMessagesIntoTurns,
 	PRUNING_AUDIT_LOG,
 	pruneContextWithLaya,
+	resetLockedPruningDecisions,
 } from "../src/core/harvest/laya-pruning";
 import type { LayaClient } from "../src/core/harvest/laya-client";
 
@@ -151,8 +152,8 @@ describe("Laya Context Pruning (Phase 1)", () => {
 				fallback: false,
 				latencyMs: 15,
 				data: {
-					"tool_0_2_read_file": { score: 0.1, confidence: 0.9 },
-					"tool_1_4_read_file": { score: 2.8, confidence: 0.95 },
+					tool_0_2_read_file: { score: 0.1, confidence: 0.9 },
+					tool_1_4_read_file: { score: 2.8, confidence: 0.95 },
 				},
 			} as LayaDecideResult);
 
@@ -219,8 +220,8 @@ describe("Laya Context Pruning (Phase 1)", () => {
 					fallback: false,
 					latencyMs: 20,
 					data: {
-						"tool_0_1_bash": { score: 0.2, confidence: 0.8 },
-						"tool_1_3_write_file": { score: 2.7, confidence: 0.9 },
+						tool_0_1_bash: { score: 0.2, confidence: 0.8 },
+						tool_1_3_write_file: { score: 2.7, confidence: 0.9 },
 					},
 				}),
 				getHealth: async () => ({ status: "ok", device: "cpu" }),
@@ -239,7 +240,9 @@ describe("Laya Context Pruning (Phase 1)", () => {
 
 			// Dropped chunk has visible placeholder indicating tool name and score
 			const dropped = result.messages[1] as ToolResultMessage;
-			expect(extractMessageText(dropped)).toMatch(/\[Earlier tool output for 'bash' omitted for relevance \(Laya score: 0\.07\)]/);
+			expect(extractMessageText(dropped)).toMatch(
+				/\[Earlier tool output for 'bash' omitted for relevance \(Laya score: 0\.07\)]/,
+			);
 
 			// Kept chunk is completely intact
 			const kept = result.messages[3] as ToolResultMessage;
@@ -269,9 +272,9 @@ describe("Laya Context Pruning (Phase 1)", () => {
 					fallback: false,
 					latencyMs: 10,
 					data: {
-						"tool_0_1_bash": { score: 0.0, confidence: 0.9 },
-						"tool_1_3_bash": { score: 0.0, confidence: 0.9 },
-						"tool_2_5_bash": { score: 0.0, confidence: 0.9 },
+						tool_0_1_bash: { score: 0.0, confidence: 0.9 },
+						tool_1_3_bash: { score: 0.0, confidence: 0.9 },
+						tool_2_5_bash: { score: 0.0, confidence: 0.9 },
 					},
 				}),
 				getHealth: async () => ({ status: "ok", device: "cpu" }),
@@ -280,7 +283,7 @@ describe("Laya Context Pruning (Phase 1)", () => {
 			const result = await pruneContextWithLaya(messages, {
 				client: mockClient,
 				keepRecentTurns: 2, // Turns 3 & 4
-				minKeptTurns: 3,    // Turns 2, 3 & 4 are protected by safety floor
+				minKeptTurns: 3, // Turns 2, 3 & 4 are protected by safety floor
 				prunableTokenBudget: 0, // Budget 0 would drop everything if not for safety floor
 			});
 
@@ -352,7 +355,7 @@ describe("Laya Context Pruning (Phase 1)", () => {
 					fallback: false,
 					latencyMs: 12,
 					data: {
-						"tool_0_1_grep": { score: 1.8, confidence: 0.88 },
+						tool_0_1_grep: { score: 1.8, confidence: 0.88 },
 					},
 				}),
 				getHealth: async () => ({ status: "ok", device: "cpu" }),
@@ -376,41 +379,136 @@ describe("Laya Context Pruning (Phase 1)", () => {
 	});
 
 	describe("Live Sidecar Integration (Step 8)", () => {
-		it(
-			"communicates with live Laya daemon if running on port 8177",
-			async () => {
-				const { getLayaClient } = await import("../src/core/harvest/laya-client");
-				const liveClient = getLayaClient();
-				const isOnline = await liveClient.isHealthy();
-				if (!isOnline) {
-					console.log("Live sidecar not running on port 8177 - skipping live probe");
-					return;
+		it("communicates with live Laya daemon if running on port 8177", async () => {
+			const { getLayaClient } = await import("../src/core/harvest/laya-client");
+			const liveClient = getLayaClient();
+			const isOnline = await liveClient.isHealthy();
+			if (!isOnline) {
+				console.log("Live sidecar not running on port 8177 - skipping live probe");
+				return;
+			}
+
+			const messages: AgentMessage[] = [
+				makeUserMessage("Task: Fix race condition in connection pool"),
+				makeAssistantMessage("I will start by reviewing the connection pool logs"),
+				makeToolResultMessage("c0", "read_file", "IRRELEVANT_CSS_STYLES { color: red; } ".repeat(50)),
+				makeUserMessage("Turn 1: Check pool lock mechanism"),
+				makeToolResultMessage("c1", "grep", "ACQUIRE_LOCK mutex.lock() connection_pool.acquire()".repeat(30)),
+				makeUserMessage("Turn 2: Most recent turn"),
+				makeAssistantMessage("Proceeding with patch"),
+			];
+
+			const result = await pruneContextWithLaya(messages, {
+				client: liveClient,
+				keepRecentTurns: 1,
+				minKeptTurns: 1,
+				prunableTokenBudget: 150,
+				timeoutMs: 60000,
+			});
+
+			expect(result.fallback).toBe(false);
+			expect(result.candidatesCount).toBe(2);
+			expect(result.latencyMs).toBeGreaterThan(0);
+			expect(result.messages.length).toBe(messages.length);
+		}, 70000);
+	});
+
+	describe("Prompt-cache prefix stability & decision locking (Phase 4 Step 4)", () => {
+		it("produces byte-identical prefixes for already-committed chunks across subsequent turns", async () => {
+			const mockDecide = vi.fn(async (_state, questions) => {
+				const answers: Record<string, any> = {};
+				for (const qid of Object.keys(questions)) {
+					// Low relevance for compiler trace, high for pool config
+					answers[qid] = qid.includes("bash") ? { score: 0.1, confidence: 0.9 } : { score: 2.8, confidence: 0.95 };
 				}
+				return { fallback: false, latencyMs: 10, data: answers };
+			});
 
-				const messages: AgentMessage[] = [
-					makeUserMessage("Task: Fix race condition in connection pool"),
-					makeAssistantMessage("I will start by reviewing the connection pool logs"),
-					makeToolResultMessage("c0", "read_file", "IRRELEVANT_CSS_STYLES { color: red; } ".repeat(50)),
-					makeUserMessage("Turn 1: Check pool lock mechanism"),
-					makeToolResultMessage("c1", "grep", "ACQUIRE_LOCK mutex.lock() connection_pool.acquire()".repeat(30)),
-					makeUserMessage("Turn 2: Most recent turn"),
-					makeAssistantMessage("Proceeding with patch"),
-				];
+			const mockClient: LayaClient = {
+				isAvailable: async () => true,
+				decide: mockDecide as any,
+				getHealth: async () => ({ status: "ok", device: "cpu" }),
+			};
 
-				const result = await pruneContextWithLaya(messages, {
-					client: liveClient,
-					keepRecentTurns: 1,
-					minKeptTurns: 1,
-					prunableTokenBudget: 150,
-					timeoutMs: 60000,
-				});
+			const testSessionId = `test-prefix-stability-${Date.now()}`;
 
-				expect(result.fallback).toBe(false);
-				expect(result.candidatesCount).toBe(2);
-				expect(result.latencyMs).toBeGreaterThan(0);
-				expect(result.messages.length).toBe(messages.length);
-			},
-			70000,
-		);
+			// Turn 1 messages
+			const turn1 = [
+				makeUserMessage("Goal: Fix pool connection bug"),
+				makeAssistantMessage("Checking compiler error"),
+				makeToolResultMessage("c0", "bash", "ERROR_TRACE_".repeat(80)), // large prunable chunk
+			];
+
+			// Turn 2 messages
+			const turn2 = [
+				makeUserMessage("Turn 2: View pool interface"),
+				makeAssistantMessage("Reading pool.ts"),
+				makeToolResultMessage("c1", "read_file", "POOL_INTERFACE_CONFIG_".repeat(60)),
+			];
+
+			// Turn 3 messages
+			const turn3 = [makeUserMessage("Turn 3: Fix syntax in pool.ts"), makeAssistantMessage("Applying fix")];
+
+			// Turn 4 messages
+			const turn4 = [
+				makeUserMessage("Turn 4: Run unit tests"),
+				makeAssistantMessage("Running test suite"),
+				makeToolResultMessage("c2", "bash", "PASS test/pool.test.ts\n"),
+			];
+
+			// Execute Turn 3 (Turn 1 chunk ages out of keepRecentTurns=1 and is evaluated/locked)
+			const sessionHistoryT3 = [...turn1, ...turn2, ...turn3];
+			const testSettings = {
+				get: (k: string) => (k === "laya.enabled" || k === "laya.pruning" ? true : undefined),
+			} as any;
+
+			const resultT3 = await pruneContextWithLaya(sessionHistoryT3, {
+				client: mockClient,
+				settings: testSettings,
+				sessionId: testSessionId,
+				keepRecentTurns: 1,
+				minKeptTurns: 1,
+				prunableTokenBudget: 200,
+			});
+
+			expect(resultT3.pruned).toBe(true);
+			expect(mockDecide).toHaveBeenCalledTimes(1);
+
+			// Serialized wire representation of Turn 3's pruned messages
+			const wireT3 = resultT3.messages.map(m => ({
+				role: m.role,
+				content: extractMessageText(m),
+			}));
+
+			// Execute Turn 4 (adds new turn, Turn 2 chunk ages out, but Turn 1 chunk was already committed)
+			const sessionHistoryT4 = [...turn1, ...turn2, ...turn3, ...turn4];
+			const resultT4 = await pruneContextWithLaya(sessionHistoryT4, {
+				client: mockClient,
+				settings: testSettings,
+				sessionId: testSessionId,
+				keepRecentTurns: 1,
+				minKeptTurns: 1,
+				prunableTokenBudget: 200,
+			});
+
+			const wireT4 = resultT4.messages.map(m => ({
+				role: m.role,
+				content: extractMessageText(m),
+			}));
+
+			// Turn 1's tool result was dropped at index 2
+			expect(wireT3[2].content).toContain("omitted for relevance");
+			// Assert that Turn 4 retains the EXACT byte-identical placeholder for message index 2
+			expect(wireT4[2].content).toBe(wireT3[2].content);
+
+			// Assert that the entire prefix corresponding to Turn 3's message count is byte-identical
+			for (let i = 0; i < resultT3.messages.length; i++) {
+				expect(wireT4[i].role).toBe(wireT3[i].role);
+				expect(wireT4[i].content).toBe(wireT3[i].content);
+			}
+
+			// Clean up test session locks
+			resetLockedPruningDecisions(testSessionId);
+		});
 	});
 });

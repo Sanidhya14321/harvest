@@ -21,6 +21,7 @@ function writeResult(value: unknown): void {
 
 switch (scenario) {
 	case "matrix": {
+		logger.setLogLevel("debug");
 		logger.setTransports({ console: false, file: primaryDir });
 		logger.error("level-error", { ordinal: 1 });
 		logger.warn("level-warn", { ordinal: 2 });

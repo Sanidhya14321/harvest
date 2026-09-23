@@ -26,6 +26,8 @@ export interface BenchmarkMeasurement {
 }
 
 export interface DerivedLayaSettings {
+	/** Measured raw single-choice latency (ms) */
+	rawSingleChoiceLatencyMs: number;
 	/** Safe timeout for subagent selection (roughly 2x measured single choice latency) */
 	subagentSelectionTimeoutMs: number;
 	/** Whether subagent selection is recommended to be auto-enabled on this hardware */
@@ -38,8 +40,12 @@ export interface DerivedLayaSettings {
 	pruningReason: string;
 	/** Configured or default maximum acceptable added latency per turn (ms) */
 	maxAcceptableLatencyPerTurnMs: number;
-	/** Estimated added latency per turn for pruning candidate scoring (ms) */
+	/** Realistic estimated added latency per turn for scoring 1-2 aged-out chunks (ms) */
 	estimatedAddedLatencyPerTurnMs: number;
+	/** Worst-case batch scoring latency for full candidate pool (B=2, L=1024) (ms) */
+	worstCaseBatchLatencyMs: number;
+	/** Preserved from shadow-mode review; calibration NEVER derives or overwrites this */
+	subagentSelectionConfidenceThreshold?: number;
 }
 
 export interface CalibrationRecord {
@@ -59,7 +65,7 @@ export interface CalibrationRecord {
 }
 
 const CALIBRATION_FILENAME = "laya-calibration.json";
-export const DEFAULT_MAX_ACCEPTABLE_TURN_LATENCY_MS = 200;
+export const DEFAULT_MAX_ACCEPTABLE_TURN_LATENCY_MS = 150;
 const SANITY_TIMEOUT_CEILING_MS = 15000;
 const MINIMUM_TIMEOUT_FLOOR_MS = 300;
 
@@ -168,14 +174,14 @@ export async function measureBenchmarkShape(
 	// Warmup run (discarded to avoid counting one-time JIT/cold-path overhead)
 	await client.decide(payload.state as any, payload.questions, {
 		callSite: "calibration_warmup",
-		timeoutMs: 60000,
+		timeoutMs: 180000,
 	});
 
 	const samples: number[] = [];
 	for (let i = 0; i < iterations; i++) {
 		const res = await client.decide(payload.state as any, payload.questions, {
 			callSite: `calibration_run_${i + 1}`,
-			timeoutMs: 60000,
+			timeoutMs: 180000,
 		});
 		if (res.success && res.latencyMs > 0) {
 			samples.push(res.latencyMs);
@@ -198,6 +204,7 @@ export function deriveSettingsFromBenchmarks(
 	maxAcceptableLatencyPerTurnMs: number = DEFAULT_MAX_ACCEPTABLE_TURN_LATENCY_MS,
 ): DerivedLayaSettings {
 	const choiceMedian = benchmarks.singleChoice.medianMs;
+	const singleScoreMedian = benchmarks.singleScore.medianMs;
 	const batchedMedian = benchmarks.batchedScore.medianMs;
 
 	// Subagent selection timeout: roughly 2x measured latency with safety floor and ceiling
@@ -222,17 +229,22 @@ export function deriveSettingsFromBenchmarks(
 		subagentSelectionReason = `Moderate choice latency (${choiceMedian}ms); auto-enabled with ${subagentSelectionTimeoutMs}ms safety timeout.`;
 	}
 
-	// Pruning enablement: compare batched candidate evaluation against user turn budget
-	const estimatedAddedLatencyPerTurnMs = batchedMedian;
+	// Pruning enablement:
+	// Under decision-locking, turns score only newly-aged-out chunks (typically 1-2 chunks, not B=2/L=1024).
+	// Realistic per-turn cost is modeled as ~1.5x singleScore latency (~1-2 chunks of ~150-300 tokens).
+	// Batched score (B=2, L=1024) remains stored as the worst-case upper bound.
+	const estimatedAddedLatencyPerTurnMs = Math.round(singleScoreMedian * 1.5 * 10) / 10;
+	const worstCaseBatchLatencyMs = batchedMedian;
 	const pruningRecommendEnabled = estimatedAddedLatencyPerTurnMs <= maxAcceptableLatencyPerTurnMs;
 	let pruningReason = "";
 	if (pruningRecommendEnabled) {
-		pruningReason = `Batched scoring latency (${estimatedAddedLatencyPerTurnMs}ms) is within acceptable turn budget of ${maxAcceptableLatencyPerTurnMs}ms.`;
+		pruningReason = `Realistic per-turn scoring latency (${estimatedAddedLatencyPerTurnMs}ms) is within acceptable turn budget of ${maxAcceptableLatencyPerTurnMs}ms (worst-case full batch: ${worstCaseBatchLatencyMs}ms).`;
 	} else {
-		pruningReason = `Batched scoring latency (${estimatedAddedLatencyPerTurnMs}ms) exceeds acceptable added turn budget of ${maxAcceptableLatencyPerTurnMs}ms. Auto-disabled to avoid slowing down main LLM turns.`;
+		pruningReason = `Realistic per-turn scoring latency (${estimatedAddedLatencyPerTurnMs}ms) exceeds acceptable added turn budget of ${maxAcceptableLatencyPerTurnMs}ms (worst-case full batch: ${worstCaseBatchLatencyMs}ms). Auto-disabled to avoid slowing down interactive turns.`;
 	}
 
 	return {
+		rawSingleChoiceLatencyMs: choiceMedian,
 		subagentSelectionTimeoutMs,
 		subagentSelectionRecommendEnabled,
 		subagentSelectionReason,
@@ -240,6 +252,7 @@ export function deriveSettingsFromBenchmarks(
 		pruningReason,
 		maxAcceptableLatencyPerTurnMs,
 		estimatedAddedLatencyPerTurnMs,
+		worstCaseBatchLatencyMs,
 	};
 }
 
@@ -396,6 +409,12 @@ export async function ensureCalibrated(
 		maxAcceptableLatencyPerTurnMs: options.maxAcceptableLatencyPerTurnMs,
 		iterations: options.iterations,
 	});
+
+	// Preserve confidence threshold if one was set by shadow-mode review
+	if (cached?.derivedSettings?.subagentSelectionConfidenceThreshold !== undefined) {
+		record.derivedSettings.subagentSelectionConfidenceThreshold =
+			cached.derivedSettings.subagentSelectionConfidenceThreshold;
+	}
 
 	await saveCalibration(record, agentDir);
 	return record;
