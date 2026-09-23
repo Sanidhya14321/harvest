@@ -13,7 +13,7 @@ import type { CustomTool } from "../extensibility/custom-tools/types";
 import type { LocalProtocolOptions } from "../internal-urls";
 import { registerArtifactsDir } from "../internal-urls/registry-helpers";
 import { MCPManager } from "../mcp/manager";
-import { selectSubagentWithLaya } from "../core/harvest/laya-subagent-selection";
+import * as layaSubagent from "../core/harvest/laya-subagent-selection";
 import { loadOverallPlanReference } from "../plan-mode/plan-handoff";
 import planModeSubagentPrompt from "../prompts/system/plan-mode-subagent.md" with { type: "text" };
 import subagentUserPromptTemplate from "../prompts/system/subagent-user-prompt.md" with { type: "text" };
@@ -148,6 +148,7 @@ export interface EffectiveSubagentPolicy {
 	applyChanges: boolean;
 	enableLsp: boolean;
 	enableIrc: boolean;
+	layaTraceId?: string;
 }
 
 /** Settled child execution plus data needed by the frontends' own rendering. */
@@ -272,16 +273,18 @@ export async function resolveEffectiveSubagentPolicy(
 
 	const discovery = await discoverAgents(request.session.cwd, undefined, request.session.effectiveExtensionRoots?.());
 
+	let layaTraceId: string | undefined;
 	// If the subagent was not explicitly specialized (or was set to the generic default 'task'),
 	// consult Laya subagent selection with confidence gating and fail-open fallback.
 	if (!request.agent?.trim() || request.agent.trim() === spawnPolicy.defaultAgent) {
-		const layaDecision = await selectSubagentWithLaya(request.assignment, {
+		const layaDecision = await layaSubagent.selectSubagentWithLaya(request.assignment, {
 			availableAgents: discovery.agents,
 			defaultAgent: spawnPolicy.defaultAgent,
 			context: request.context,
 			sessionId: (request.session as { sessionId?: string }).sessionId,
 			settings: request.session.settings,
 		});
+		layaTraceId = layaDecision.traceId;
 		if (layaDecision.decisionType === "auto_pick") {
 			agentName = layaDecision.selectedAgent;
 			assertDepthAndSpawnAllowed(request, agentName);
@@ -359,6 +362,7 @@ export async function resolveEffectiveSubagentPolicy(
 			(request.enableIrc ??
 				(request.session.enableIrc !== false &&
 					isIrcEnabled(request.session.settings, request.session.taskDepth ?? 0))),
+		layaTraceId,
 	};
 }
 
@@ -591,6 +595,7 @@ function attachStructuredOutputMetadata(result: SingleResult, schema: Structured
  * lease or child dispatch; callers keep responsibility for their result text.
  */
 export async function runStructuredSubagent(request: StructuredSubagentRequest): Promise<StructuredSubagentResult> {
+	const subagentStartTime = performance.now();
 	const policy = await resolveEffectiveSubagentPolicy(request);
 	const lease = await leaseArtifacts(request.session, request.invocationKind);
 	let changesApplied: boolean | null = null;
@@ -690,6 +695,15 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 		}
 
 		completedSuccessfully = result.exitCode === 0 && !result.error && !result.aborted;
+		if (policy.layaTraceId) {
+			layaSubagent.recordSubagentOutcome(policy.layaTraceId, {
+				completedCleanly: completedSuccessfully,
+				exitCode: result.exitCode,
+				error: result.error,
+				durationMs: performance.now() - subagentStartTime,
+				timestamp: Date.now(),
+			}).catch(() => {});
+		}
 		return {
 			result,
 			policy,
@@ -699,6 +713,14 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 			temporaryArtifacts: lease.temporary,
 		};
 	} catch (error) {
+		if (policy?.layaTraceId) {
+			layaSubagent.recordSubagentOutcome(policy.layaTraceId, {
+				completedCleanly: false,
+				error: error instanceof Error ? error.message : String(error),
+				durationMs: performance.now() - subagentStartTime,
+				timestamp: Date.now(),
+			}).catch(() => {});
+		}
 		if (error instanceof StructuredSubagentError) throw error;
 		throw new StructuredSubagentError(
 			"execution",

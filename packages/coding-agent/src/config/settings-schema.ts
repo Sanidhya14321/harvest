@@ -625,15 +625,26 @@ export const SETTINGS_SCHEMA = {
 				"Use Laya to evaluate tasks and select the optimal specialized subagent from Harvest's roster. Defaults to false pending empirical calibration against >= 100 real sessions (avoids inert 100% escalation or CPU timeout fallback).",
 		},
 	},
+	"laya.subagentSelectionShadow": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "model",
+			group: "Local Decisions",
+			label: "Subagent Selection Shadow Mode",
+			description:
+				"Run Laya subagent selection in shadow mode in the background for real dispatches, recording model pick and confidence to telemetry while preserving the caller/default agent selection unchanged. Defaults to true to build an empirical dataset of >= 100 real session traces.",
+		},
+	},
 	"laya.subagentSelectionConfidenceThreshold": {
 		type: "number",
-		default: 0.8,
+		default: 0.01,
 		ui: {
 			tab: "model",
 			group: "Local Decisions",
 			label: "Subagent Selection Confidence Threshold",
 			description:
-				"Minimum Laya confidence required to auto-pick a subagent without escalating to the main LLM. Kept at conservative 0.80 default until calibrated empirically against real Harvest session traces.",
+				"Minimum Laya confidence required to auto-pick a subagent without escalating to the main LLM. Calibrated to 0.010 for Format C criteria, which maximizes correct auto-picks while avoiding false positives.",
 		},
 	},
 	"laya.subagentSelectionTimeoutMs": {

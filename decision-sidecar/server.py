@@ -87,6 +87,43 @@ def log_decision_record(record: dict[str, Any]) -> None:
         logger.warning(f"Failed to write decision log: {e}")
 
 
+def bucket_items_by_length(
+    items: list[dict[str, Any]],
+    max_ratio: float = 1.5,
+    max_abs_diff: int = 256,
+) -> list[list[dict[str, Any]]]:
+    """Group items by sequence length to minimize padding waste during collation.
+
+    Items are sorted by sequence length. A bucket is split when adding an item
+    would exceed `max_ratio` (curr_len / min_len) or `max_abs_diff` (curr_len - min_len).
+    """
+    if not items:
+        return []
+    if len(items) == 1:
+        return [items]
+
+    sorted_items = sorted(items, key=lambda x: len(x["seq"]))
+    buckets: list[list[dict[str, Any]]] = []
+    curr_bucket = [sorted_items[0]]
+
+    for item in sorted_items[1:]:
+        min_len = len(curr_bucket[0]["seq"])
+        curr_len = len(item["seq"])
+        ratio = curr_len / max(1, min_len)
+        abs_diff = curr_len - min_len
+
+        if ratio <= max_ratio and abs_diff <= max_abs_diff:
+            curr_bucket.append(item)
+        else:
+            buckets.append(curr_bucket)
+            curr_bucket = [item]
+
+    if curr_bucket:
+        buckets.append(curr_bucket)
+
+    return buckets
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model once at startup, never reload per request."""
@@ -211,7 +248,7 @@ async def decide(req: DecideRequest) -> DecideResponse:
         ids = list(req.questions.keys())
         per_question = isinstance(state, dict) and any(qid in state for qid in ids)
 
-        if per_question:
+        if per_question or len(ids) > 1:
             import numpy as np
             import torch
             from laya.agent import (
@@ -223,78 +260,91 @@ async def decide(req: DecideRequest) -> DecideResponse:
                 confidence_from_probs,
             )
 
-            items = []
             max_len = _agent.cfg.get("max_len", 1024)
             head_max_len = _agent.cfg.get("head_max_len", 256)
 
+            raw_items = []
             for qid in ids:
                 q = _agent._to_internal(req.questions[qid])
-                q_state = state.get(qid, state)
+                q_state = state.get(qid, state) if isinstance(state, dict) else state
                 seq, markers = build_sequence(_agent.tok, q_state, q, max_len, head_max_len)
                 if len(markers) != len(render_options(q)):
                     raise ValueError(f"question {qid!r} options exceed head_max_len={head_max_len}")
-                items.append({"ids": seq, "markers": markers, "qtype": QTYPES[q["t"]]})
+                raw_items.append({
+                    "qid": qid,
+                    "q": q,
+                    "seq": seq,
+                    "markers": markers,
+                    "qtype": QTYPES[q["t"]],
+                })
 
-            b = collate_items([items], _agent.tok.pad_token_id)
-            use_amp = _agent.device.type == "cuda"
-            with torch.no_grad():
-                with torch.autocast(device_type=_agent.device.type, dtype=_agent.dtype, enabled=use_amp):
-                    logits, act = _agent.model(
-                        b["input_ids"].to(_agent.device),
-                        b["attention_mask"].to(_agent.device),
-                        b["marker_pos"].to(_agent.device),
-                        b["marker_mask"].to(_agent.device),
-                        b["qtype"].to(_agent.device),
-                    )
-
-                logits = logits.detach().float().cpu().numpy()
-                act = torch.softmax(act.detach().float(), -1).cpu().numpy()
+            buckets = bucket_items_by_length(raw_items)
             answers = {}
-            n_tokens = int(b["attention_mask"].sum())
+            total_tokens = 0
+            use_amp = _agent.device.type == "cuda"
 
-            for r, qid in enumerate(ids):
-                q = _agent._to_internal(req.questions[qid])
-                k = len(items[r]["markers"])
-                qt = QTYPES[q["t"]]
-                t_scale = _agent.temperature_by_options.get(temp_bucket(qt, k), _agent.temperature[qt])
-                z = logits[r, :k] / t_scale
-                p = np.exp(z - z.max())
-                p = p / p.sum()
+            for bucket in buckets:
+                b_items = [{"ids": it["seq"], "markers": it["markers"], "qtype": it["qtype"]} for it in bucket]
+                b = collate_items([b_items], _agent.tok.pad_token_id)
+                total_tokens += int(b["attention_mask"].sum())
 
-                conf_score = round(confidence_from_probs(p, k), 4)
-                ext = {"act_probability": round(float(act[r, 0]), 4)}
+                with torch.no_grad():
+                    with torch.autocast(device_type=_agent.device.type, dtype=_agent.dtype, enabled=use_amp):
+                        logits, act = _agent.model(
+                            b["input_ids"].to(_agent.device),
+                            b["attention_mask"].to(_agent.device),
+                            b["marker_pos"].to(_agent.device),
+                            b["marker_mask"].to(_agent.device),
+                            b["qtype"].to(_agent.device),
+                        )
 
-                if q["t"] == "choice":
-                    keys = list(q["crit"].keys())
-                    answers[qid] = {
-                        "type": "choice",
-                        "choice": keys[int(p.argmax())],
-                        "probabilities": {kk: round(float(v), 4) for kk, v in zip(keys, p)},
-                        "confidence": conf_score,
-                        "action": ext,
-                    }
-                elif q["t"] == "score":
-                    exp_score = float((np.arange(k) * p).sum())
-                    answers[qid] = {
-                        "type": "score",
-                        "score": round(exp_score, 4),
-                        "legend": {str(i): c for i, c in enumerate(q["crit"])},
-                        "probabilities": {str(i): round(float(v), 4) for i, v in enumerate(p)},
-                        "confidence": conf_score,
-                        "action": ext,
-                    }
-                else:
-                    answers[qid] = {
-                        "type": "noul",
-                        "noul": round(float(p[1]), 4),
-                        "confidence": round(max(float(p[1]), 1.0 - float(p[1])), 4),
-                        "action": ext,
-                    }
+                    b_logits = logits.detach().float().cpu().numpy()
+                    b_act = torch.softmax(act.detach().float(), -1).cpu().numpy()
+
+                for r, it in enumerate(bucket):
+                    qid = it["qid"]
+                    q = it["q"]
+                    k = len(it["markers"])
+                    qt = it["qtype"]
+                    t_scale = _agent.temperature_by_options.get(temp_bucket(qt, k), _agent.temperature[qt])
+                    z = b_logits[r, :k] / t_scale
+                    p = np.exp(z - z.max())
+                    p = p / p.sum()
+
+                    conf_score = round(confidence_from_probs(p, k), 4)
+                    ext = {"act_probability": round(float(b_act[r, 0]), 4)}
+
+                    if q["t"] == "choice":
+                        keys = list(q["crit"].keys())
+                        answers[qid] = {
+                            "type": "choice",
+                            "choice": keys[int(p.argmax())],
+                            "probabilities": {kk: round(float(v), 4) for kk, v in zip(keys, p)},
+                            "confidence": conf_score,
+                            "action": ext,
+                        }
+                    elif q["t"] == "score":
+                        exp_score = float((np.arange(k) * p).sum())
+                        answers[qid] = {
+                            "type": "score",
+                            "score": round(exp_score, 4),
+                            "legend": {str(i): c for i, c in enumerate(q["crit"])},
+                            "probabilities": {str(i): round(float(v), 4) for i, v in enumerate(p)},
+                            "confidence": conf_score,
+                            "action": ext,
+                        }
+                    else:
+                        answers[qid] = {
+                            "type": "noul",
+                            "noul": round(float(p[1]), 4),
+                            "confidence": round(max(float(p[1]), 1.0 - float(p[1])), 4),
+                            "action": ext,
+                        }
 
             result = {
                 "model": "laya-rl-agent",
                 "answers": answers,
-                "usage": {"input_tokens": n_tokens, "output_tokens": 0},
+                "usage": {"input_tokens": total_tokens, "output_tokens": 0},
             }
         else:
             # Run prediction on the singleton agent

@@ -75,7 +75,7 @@ export const installHelp = {
 export const joinHelp = { description: "Join a shared collab session (same as /join)" } satisfies CommandMetadata;
 
 export const layaHelp = {
-	description: "Manage local Laya decision model: hardware self-calibration and status",
+	description: "Manage local Laya decision model: calibration, shadow-mode trace review, and threshold recalibration",
 } satisfies CommandMetadata;
 
 export const modelsHelp = { description: "List, search, and refresh available models" } satisfies CommandMetadata;

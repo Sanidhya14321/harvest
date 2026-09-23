@@ -17,26 +17,28 @@
  *    - Records every decision in SUBAGENT_SELECTION_AUDIT_LOG and central logger.
  */
 
-import { logger } from "@harvest/pi-utils";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { getAgentDir, isEnoent, logger } from "@harvest/pi-utils";
 import { type Settings, settings as globalSettings, type SettingPath } from "../../config/settings";
 import type { AgentDefinition } from "../../task/types";
 import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
 import { getDerivedTimeoutMsSync } from "./laya-calibration";
 
-export const DEFAULT_SUBAGENT_SELECTION_CONFIDENCE_THRESHOLD = 0.8;
+export const DEFAULT_SUBAGENT_SELECTION_CONFIDENCE_THRESHOLD = 0.01;
 export const DEFAULT_SUBAGENT_TIMEOUT_MS = 300;
 
 export const BUILTIN_AGENT_CRITERIA: Record<string, string> = {
 	scout:
-		"Exploratory codebase research, rapid code analysis, broad pattern searches, symbol location, finding where things are defined without modifying files",
+		"Codebase navigation and discovery. Select when the user wants to understand or find code without modifying it. Example tasks: 'Where is the auth handler defined?', 'Find all references to AgentMessage', 'Trace the request lifecycle'.",
 	reviewer:
-		"Code review specialist for analyzing quality, logic correctness, regressions, edge cases, and reviewing PR diffs",
+		"Code review and pull request inspection. Select when the user wants qualitative feedback or bug inspection on changes. Example tasks: 'Review this diff for bugs', 'Check this PR for edge cases', 'Verify correctness of this commit'.",
 	"security-reviewer":
-		"Read-only security specialist for evidence-backed repository vulnerability discovery, CWE analysis, and security audits",
+		"Security and vulnerability assessment. Select when the task is specifically focused on security threats or sensitive data leaks. Example tasks: 'Check for SQL injection or path traversal', 'Scan for hardcoded API keys', 'Audit permissions'.",
 	sonic:
-		"Low-reasoning agent for strictly mechanical updates, bulk formatting, or simple data collection",
+		"Mechanical and repetitive tasks. Select for non-creative, simple bulk edits that don't need deep reasoning. Example tasks: 'Replace tab indents with spaces across all files', 'Convert CRLF to LF', 'Rename imports'.",
 	task:
-		"General-purpose multi-step implementation, complex coding, refactoring, and feature additions requiring full tool capabilities",
+		"Implementation and active software engineering. Select when the agent must write code, create files, implement algorithms, or execute end-to-end tasks. Example tasks: 'Build a rate limiter', 'Fix this bug and write tests', 'Implement feature X'.",
 };
 
 export interface LayaSubagentSelectionOptions {
@@ -49,20 +51,32 @@ export interface LayaSubagentSelectionOptions {
 	readonly context?: string;
 	readonly timeoutMs?: number;
 	readonly forcedAuto?: boolean;
+	readonly shadow?: boolean;
+	readonly agentDir?: string;
+}
+
+export interface SubagentOutcome {
+	readonly completedCleanly: boolean;
+	readonly exitCode?: number;
+	readonly error?: string;
+	readonly durationMs?: number;
+	readonly timestamp: number;
 }
 
 export interface SubagentSelectionDecision {
+	readonly traceId?: string;
 	readonly selectedAgent: string;
 	readonly layaPick?: string;
 	readonly confidence?: number;
 	readonly threshold: number;
-	readonly decisionType: "auto_pick" | "escalation" | "fallback";
+	readonly decisionType: "auto_pick" | "escalation" | "fallback" | "shadow";
 	readonly fallback: boolean;
 	readonly fallbackReason?: string;
 	readonly latencyMs: number;
 }
 
 export interface SubagentSelectionAuditRecord {
+	readonly id: string;
 	readonly timestamp: number;
 	readonly sessionId: string;
 	readonly assignment: string;
@@ -70,8 +84,10 @@ export interface SubagentSelectionAuditRecord {
 	readonly layaPick?: string;
 	readonly confidence?: number;
 	readonly selectedAgent: string;
-	readonly decisionType: "auto_pick" | "escalation" | "fallback";
+	readonly groundTruth?: string;
+	readonly decisionType: "auto_pick" | "escalation" | "fallback" | "shadow";
 	readonly latencyMs: number;
+	outcome?: SubagentOutcome;
 }
 
 /** In-memory log of recent subagent selection decisions for inspection and calibration. */
@@ -126,6 +142,7 @@ export async function selectSubagentWithLaya(
 	options: LayaSubagentSelectionOptions = {},
 ): Promise<SubagentSelectionDecision> {
 	const startTime = performance.now();
+	const traceId = generateTraceId();
 	const activeSettings = options.settings ?? globalSettings;
 	const defaultAgent = options.defaultAgent ?? "task";
 
@@ -136,15 +153,23 @@ export async function selectSubagentWithLaya(
 
 	// Check if Laya or subagent selection is disabled
 	if (process.env.LAYA_ENABLED === "false" || process.env.LAYA_SUBAGENT_SELECTION === "false") {
-		return createFallbackResult(defaultAgent, threshold, "laya_subagent_selection_disabled_by_env", startTime);
+		return createFallbackResult(defaultAgent, threshold, "laya_subagent_selection_disabled_by_env", startTime, traceId);
 	}
 
 	if (safeGetSetting<boolean>(activeSettings, "laya.enabled") === false) {
-		return createFallbackResult(defaultAgent, threshold, "laya_disabled_by_settings", startTime);
+		return createFallbackResult(defaultAgent, threshold, "laya_disabled_by_settings", startTime, traceId);
 	}
 
-	if (safeGetSetting<boolean>(activeSettings, "laya.subagentSelection" as SettingPath) === false) {
-		return createFallbackResult(defaultAgent, threshold, "laya_subagent_selection_disabled_by_settings", startTime);
+	const activeSelectionEnabled = safeGetSetting<boolean>(activeSettings, "laya.subagentSelection" as SettingPath) === true;
+	const shadowSetting = safeGetSetting<boolean>(activeSettings, "laya.subagentSelectionShadow" as SettingPath);
+	const shadowSelectionEnabled =
+		options.shadow ??
+		(shadowSetting !== undefined
+			? shadowSetting
+			: safeGetSetting<boolean>(activeSettings, "laya.subagentSelection" as SettingPath) !== false);
+
+	if (!activeSelectionEnabled && !shadowSelectionEnabled && !options.forcedAuto) {
+		return createFallbackResult(defaultAgent, threshold, "laya_subagent_selection_disabled_by_settings", startTime, traceId);
 	}
 
 	const available = options.availableAgents ?? [];
@@ -152,6 +177,7 @@ export async function selectSubagentWithLaya(
 		// Only 0 or 1 agent available; no selection decision to make
 		const onlyAgent = available[0]?.name ?? defaultAgent;
 		return {
+			traceId,
 			selectedAgent: onlyAgent,
 			threshold,
 			decisionType: "auto_pick",
@@ -193,8 +219,8 @@ export async function selectSubagentWithLaya(
 	const latencyMs = performance.now() - startTime;
 
 	// Step 3: Fail OPEN if sidecar is down, times out, or errors
-	if (decideResult.fallback || !decideResult.data?.subagent_choice) {
-		const fallbackReason = decideResult.fallbackReason || "sidecar_unavailable";
+	if (!decideResult || decideResult.fallback || !decideResult.data?.subagent_choice) {
+		const fallbackReason = decideResult?.fallbackReason || "sidecar_unavailable";
 		logger.warn("Laya subagent selection fallback [FAIL OPEN]: using default agent", {
 			defaultAgent,
 			reason: fallbackReason,
@@ -202,6 +228,7 @@ export async function selectSubagentWithLaya(
 		});
 
 		recordAuditLog({
+			id: traceId,
 			timestamp: Date.now(),
 			sessionId: options.sessionId || "default",
 			assignment,
@@ -209,9 +236,10 @@ export async function selectSubagentWithLaya(
 			selectedAgent: defaultAgent,
 			decisionType: "fallback",
 			latencyMs,
-		});
+		}, options.agentDir);
 
 		return {
+			traceId,
 			selectedAgent: defaultAgent,
 			threshold,
 			decisionType: "fallback",
@@ -224,13 +252,51 @@ export async function selectSubagentWithLaya(
 	const answer = decideResult.data.subagent_choice;
 	const rawChoice = answer.choice || answer.answer || (answer as { selected?: string }).selected || "";
 	const layaPick = rawChoice.toLowerCase().trim();
-	const confidence = answer.confidence ?? 0.5;
+	const confidence = answer.confidence ?? 0.0;
 
 	// Validate that Laya's pick is in the available roster
 	const validPick = agentNames.includes(layaPick) ? layaPick : defaultAgent;
 
-	// Step 2: Confidence-gated escalation
-	// If forcedAuto is true (benchmarking mode) or confidence meets threshold: auto-pick
+	// Step 2a: Shadow mode - record telemetry and audit logs, but ALWAYS dispatch default/caller agent
+	if (!activeSelectionEnabled && !options.forcedAuto) {
+		logger.info(
+			`Laya subagent selection [SHADOW MODE]: suggested '${validPick}' (conf: ${confidence.toFixed(4)}), executing with default '${defaultAgent}'`,
+			{
+				layaPick: validPick,
+				confidence,
+				threshold,
+				actualAgent: defaultAgent,
+				latencyMs,
+			},
+		);
+
+		recordAuditLog({
+			id: traceId,
+			timestamp: Date.now(),
+			sessionId: options.sessionId || "default",
+			assignment,
+			availableAgents: agentNames,
+			layaPick: validPick,
+			confidence,
+			selectedAgent: defaultAgent,
+			groundTruth: defaultAgent,
+			decisionType: "shadow",
+			latencyMs,
+		}, options.agentDir);
+
+		return {
+			traceId,
+			selectedAgent: defaultAgent,
+			layaPick: validPick,
+			confidence,
+			threshold,
+			decisionType: "shadow",
+			fallback: false,
+			latencyMs,
+		};
+	}
+
+	// Step 2b: Active selection mode - confidence-gated auto-pick vs escalation
 	const shouldAutoPick = options.forcedAuto || confidence >= threshold;
 
 	if (shouldAutoPick) {
@@ -241,6 +307,7 @@ export async function selectSubagentWithLaya(
 		});
 
 		recordAuditLog({
+			id: traceId,
 			timestamp: Date.now(),
 			sessionId: options.sessionId || "default",
 			assignment,
@@ -250,9 +317,10 @@ export async function selectSubagentWithLaya(
 			selectedAgent: validPick,
 			decisionType: "auto_pick",
 			latencyMs,
-		});
+		}, options.agentDir);
 
 		return {
+			traceId,
 			selectedAgent: validPick,
 			layaPick: validPick,
 			confidence,
@@ -264,7 +332,7 @@ export async function selectSubagentWithLaya(
 	}
 
 	// Below threshold: escalate to caller/default
-	logger.info(`Laya subagent selection escalated (confidence ${confidence.toFixed(2)} < ${threshold.toFixed(2)})`, {
+	logger.info(`Laya subagent selection escalated (confidence ${confidence.toFixed(4)} < ${threshold.toFixed(4)})`, {
 		layaPick: validPick,
 		confidence,
 		threshold,
@@ -273,6 +341,7 @@ export async function selectSubagentWithLaya(
 	});
 
 	recordAuditLog({
+		id: traceId,
 		timestamp: Date.now(),
 		sessionId: options.sessionId || "default",
 		assignment,
@@ -282,9 +351,10 @@ export async function selectSubagentWithLaya(
 		selectedAgent: defaultAgent,
 		decisionType: "escalation",
 		latencyMs,
-	});
+	}, options.agentDir);
 
 	return {
+		traceId,
 		selectedAgent: defaultAgent,
 		layaPick: validPick,
 		confidence,
@@ -295,13 +365,24 @@ export async function selectSubagentWithLaya(
 	};
 }
 
+function generateTraceId(): string {
+	return `laya_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function getAuditLogPath(agentDir?: string): string {
+	const dir = agentDir ?? getAgentDir();
+	return path.join(dir, "laya-subagent-selection-audit.jsonl");
+}
+
 function createFallbackResult(
 	defaultAgent: string,
 	threshold: number,
 	reason: string,
 	startTime: number,
+	traceId?: string,
 ): SubagentSelectionDecision {
 	return {
+		traceId: traceId ?? generateTraceId(),
 		selectedAgent: defaultAgent,
 		threshold,
 		decisionType: "fallback",
@@ -311,9 +392,91 @@ function createFallbackResult(
 	};
 }
 
-function recordAuditLog(record: SubagentSelectionAuditRecord): void {
+export function recordAuditLog(record: SubagentSelectionAuditRecord, agentDir?: string): void {
 	SUBAGENT_SELECTION_AUDIT_LOG.push(record);
 	if (SUBAGENT_SELECTION_AUDIT_LOG.length > 500) {
 		SUBAGENT_SELECTION_AUDIT_LOG.splice(0, SUBAGENT_SELECTION_AUDIT_LOG.length - 500);
 	}
+	// Append record to disk asynchronously
+	const filePath = getAuditLogPath(agentDir);
+	const line = JSON.stringify({ type: "decision", ...record }) + "\n";
+	fs.appendFile(filePath, line, "utf-8").catch(err => {
+		logger.warn("Failed to append subagent selection audit record to disk", { filePath, error: String(err) });
+	});
+}
+
+export async function recordSubagentOutcome(
+	traceId: string,
+	outcome: SubagentOutcome,
+	agentDir?: string,
+): Promise<void> {
+	if (!traceId) return;
+
+	const inMemory = SUBAGENT_SELECTION_AUDIT_LOG.find(r => r.id === traceId);
+	if (inMemory) {
+		inMemory.outcome = outcome;
+	}
+
+	try {
+		const filePath = getAuditLogPath(agentDir);
+		const line = JSON.stringify({ type: "outcome", traceId, ...outcome }) + "\n";
+		await fs.appendFile(filePath, line, "utf-8");
+	} catch (err) {
+		logger.warn("Failed to append subagent outcome to disk audit log", { traceId, error: String(err) });
+	}
+}
+
+export async function loadAuditRecords(agentDir?: string): Promise<SubagentSelectionAuditRecord[]> {
+	const filePath = getAuditLogPath(agentDir);
+	let content: string;
+	try {
+		content = await fs.readFile(filePath, "utf-8");
+	} catch (err) {
+		if (isEnoent(err)) return [];
+		logger.warn("Failed to read subagent selection audit log", { filePath, error: String(err) });
+		return [];
+	}
+
+	const recordMap = new Map<string, SubagentSelectionAuditRecord>();
+	const lines = content.split("\n");
+
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (!line) continue;
+		try {
+			const entry = JSON.parse(line);
+			if (entry.type === "outcome" && entry.traceId) {
+				const existing = recordMap.get(entry.traceId);
+				if (existing) {
+					existing.outcome = {
+						completedCleanly: Boolean(entry.completedCleanly),
+						exitCode: entry.exitCode,
+						error: entry.error,
+						durationMs: entry.durationMs,
+						timestamp: entry.timestamp ?? Date.now(),
+					};
+				}
+			} else if (entry.id) {
+				const record: SubagentSelectionAuditRecord = {
+					id: entry.id,
+					timestamp: entry.timestamp ?? Date.now(),
+					sessionId: entry.sessionId ?? "default",
+					assignment: entry.assignment ?? "",
+					availableAgents: entry.availableAgents ?? [],
+					layaPick: entry.layaPick,
+					confidence: entry.confidence,
+					selectedAgent: entry.selectedAgent,
+					groundTruth: entry.groundTruth,
+					decisionType: entry.decisionType,
+					latencyMs: entry.latencyMs ?? 0,
+					outcome: entry.outcome,
+				};
+				recordMap.set(entry.id, record);
+			}
+		} catch {
+			// Skip corrupted or unparseable lines
+		}
+	}
+
+	return Array.from(recordMap.values());
 }

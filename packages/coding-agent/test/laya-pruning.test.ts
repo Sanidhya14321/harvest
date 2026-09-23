@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from "bun:test";
 import type { AgentMessage, AssistantMessage, ToolResultMessage, UserMessage } from "@harvest/pi-ai";
 import {
 	createScoringExcerpt,
-	DEFAULT_PRUNING_KEEP_RECENT_TURNS,
-	DEFAULT_PRUNING_MIN_KEPT_TURNS,
 	estimateTextTokens,
 	extractMessageText,
 	extractTaskGoal,
@@ -11,7 +9,7 @@ import {
 	PRUNING_AUDIT_LOG,
 	pruneContextWithLaya,
 } from "../src/core/harvest/laya-pruning";
-import type { LayaClient, LayaDecideResult } from "../src/core/harvest/laya-client";
+import type { LayaClient } from "../src/core/harvest/laya-client";
 
 function makeUserMessage(text: string, pinned?: boolean): UserMessage {
 	return {
@@ -173,7 +171,7 @@ describe("Laya Context Pruning (Phase 1)", () => {
 
 			// Verify Step 3: Exactly ONE batch decide call was made
 			expect(mockDecide).toHaveBeenCalledTimes(1);
-			const [stateArg, questionsArg] = mockDecide.mock.calls[0];
+			const [_stateArg, questionsArg] = mockDecide.mock.calls[0];
 
 			// Only candidate chunks from older turns (Turn 0 and Turn 1) were scored
 			expect(Object.keys(questionsArg)).toContain("tool_0_2_read_file");
@@ -360,7 +358,7 @@ describe("Laya Context Pruning (Phase 1)", () => {
 				getHealth: async () => ({ status: "ok", device: "cpu" }),
 			};
 
-			const result = await pruneContextWithLaya(messages, {
+			await pruneContextWithLaya(messages, {
 				client: mockClient,
 				keepRecentTurns: 1,
 				minKeptTurns: 1,

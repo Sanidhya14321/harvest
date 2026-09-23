@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import {
 	buildSubagentCriteria,
-	BUILTIN_AGENT_CRITERIA,
-	DEFAULT_SUBAGENT_SELECTION_CONFIDENCE_THRESHOLD,
 	selectSubagentWithLaya,
 	SUBAGENT_SELECTION_AUDIT_LOG,
 } from "../src/core/harvest/laya-subagent-selection";
-import type { LayaClient, LayaDecideResult } from "../src/core/harvest/laya-client";
+import type { LayaClient } from "../src/core/harvest/laya-client";
 import type { AgentDefinition } from "../src/task/types";
 import { Settings } from "../src/config/settings";
 
@@ -62,11 +60,11 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 			expect(uniqueValues.size).toBe(5);
 
 			// Must accurately reflect the confirmed purposes
-			expect(criteria.scout).toContain("Exploratory codebase research");
-			expect(criteria.reviewer).toContain("Code review specialist");
-			expect(criteria["security-reviewer"]).toContain("vulnerability discovery");
-			expect(criteria.sonic).toContain("mechanical updates");
-			expect(criteria.task).toContain("General-purpose multi-step implementation");
+			expect(criteria.scout).toContain("Codebase navigation and discovery");
+			expect(criteria.reviewer).toContain("Code review and pull request inspection");
+			expect(criteria["security-reviewer"]).toContain("Security and vulnerability assessment");
+			expect(criteria.sonic).toContain("Mechanical and repetitive tasks");
+			expect(criteria.task).toContain("Implementation and active software engineering");
 		});
 
 		it("supports custom subagents with custom descriptions or generated fallbacks", () => {
@@ -108,8 +106,14 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 				getMetrics: vi.fn(),
 			};
 
+			const activeSettings = Settings.isolated({
+				"laya.enabled": true,
+				"laya.subagentSelection": true,
+			});
+
 			const decision = await selectSubagentWithLaya("Find where git status is parsed in the codebase", {
 				client: mockClient,
+				settings: activeSettings,
 				availableAgents: TEST_AGENTS,
 				defaultAgent: "task",
 				confidenceThreshold: 0.8,
@@ -145,8 +149,14 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 				getMetrics: vi.fn(),
 			};
 
+			const activeSettings = Settings.isolated({
+				"laya.enabled": true,
+				"laya.subagentSelection": true,
+			});
+
 			const decision = await selectSubagentWithLaya("Maybe check this code or maybe rewrite it", {
 				client: mockClient,
+				settings: activeSettings,
 				availableAgents: TEST_AGENTS,
 				defaultAgent: "task",
 				confidenceThreshold: 0.8,
@@ -164,6 +174,48 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 			expect(recentRecord?.selectedAgent).toBe("task");
 			expect(recentRecord?.layaPick).toBe("reviewer");
 			expect(recentRecord?.decisionType).toBe("escalation");
+		});
+
+		it("records decision in shadow mode without altering actual subagent dispatch", async () => {
+			const mockClient: LayaClient = {
+				decide: vi.fn(async () => ({
+					data: {
+						subagent_choice: {
+							answer: "scout",
+							confidence: 0.08,
+						},
+					},
+					fallback: false,
+					latencyMs: 15,
+				})),
+				batchDecide: vi.fn(),
+				isHealthy: vi.fn(async () => true),
+				getMetrics: vi.fn(),
+			};
+
+			// Active selection disabled, shadow mode enabled
+			const shadowSettings = Settings.isolated({
+				"laya.enabled": true,
+				"laya.subagentSelection": false,
+				"laya.subagentSelectionShadow": true,
+			});
+
+			const decision = await selectSubagentWithLaya("Explore codebase structure", {
+				client: mockClient,
+				settings: shadowSettings,
+				availableAgents: TEST_AGENTS,
+				defaultAgent: "task",
+			});
+
+			expect(decision.selectedAgent).toBe("task"); // Dispatched agent NEVER altered in shadow mode!
+			expect(decision.layaPick).toBe("scout");
+			expect(decision.decisionType).toBe("shadow");
+			expect(decision.fallback).toBe(false);
+
+			const recentRecord = SUBAGENT_SELECTION_AUDIT_LOG[SUBAGENT_SELECTION_AUDIT_LOG.length - 1];
+			expect(recentRecord?.selectedAgent).toBe("task");
+			expect(recentRecord?.layaPick).toBe("scout");
+			expect(recentRecord?.decisionType).toBe("shadow");
 		});
 
 		it("allows forced-auto mode to bypass confidence threshold for benchmark comparison", async () => {
@@ -273,10 +325,11 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 			expect(mockClient.decide).not.toHaveBeenCalled();
 		});
 
-		it("falls back immediately when laya.subagentSelection is disabled in settings", async () => {
+		it("falls back immediately when laya.subagentSelection and shadow are disabled in settings", async () => {
 			const settings = Settings.isolated({
 				"laya.enabled": true,
 				"laya.subagentSelection": false,
+				"laya.subagentSelectionShadow": false,
 			});
 
 			const mockClient: LayaClient = {
@@ -385,7 +438,7 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 			}
 
 			const decision = await selectSubagentWithLaya(
-				"Search through the codebase to find where the tool definitions are registered and trace the imports.",
+				"Review this pull request diff for bugs, regressions, and edge cases before merging.",
 				{
 					availableAgents: TEST_AGENTS,
 					defaultAgent: "task",
@@ -395,8 +448,8 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 			);
 
 			expect(decision.fallback).toBe(false);
-			expect(decision.layaPick).toBe("scout");
-			expect(decision.selectedAgent).toBe("scout");
+			expect(decision.layaPick).toBe("reviewer");
+			expect(decision.selectedAgent).toBe("reviewer");
 			expect(decision.decisionType).toBe("auto_pick");
 		}, 50000);
 	});
