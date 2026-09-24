@@ -35,6 +35,7 @@ class LayaSceneController implements SetupSceneController {
 		{ id: "dependencies", label: "Verify Python dependencies (laya, torch, fastapi, uvicorn)", status: "pending" },
 		{ id: "model", label: "Verify single-model checkpoint (convaiinnovations/laya-typed-decisions)", status: "pending" },
 		{ id: "sidecar", label: "Connect to local sidecar daemon (127.0.0.1:8177)", status: "pending" },
+		{ id: "calibrate", label: "Perform hardware self-calibration", status: "pending" },
 		{ id: "connect", label: "Connect to Harvest settings", status: "pending" },
 	];
 	#listRowStart = 0;

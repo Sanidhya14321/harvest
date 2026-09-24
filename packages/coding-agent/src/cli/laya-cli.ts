@@ -8,7 +8,7 @@
 import * as readline from "node:readline/promises";
 import chalk from "@harvest/pi-utils/chalk";
 import { getAgentDir } from "@harvest/pi-utils";
-import { settings } from "../config/settings";
+import { Settings, settings } from "../config/settings";
 import {
 	DEFAULT_MAX_ACCEPTABLE_TURN_LATENCY_MS,
 	ensureCalibrated,
@@ -17,6 +17,7 @@ import {
 	type CalibrationRecord,
 } from "../core/harvest/laya-calibration";
 import { getLayaClient } from "../core/harvest/laya-client";
+import { configureLayaLocally } from "../core/harvest/laya-service";
 import { loadAuditRecords } from "../core/harvest/laya-subagent-selection";
 import {
 	deriveOptimalThreshold,
@@ -29,12 +30,15 @@ import {
 	type LayaLabeledTrace,
 } from "../core/harvest/laya-shadow-review";
 
-export type LayaAction = "calibrate" | "status" | "review-shadow" | "recalibrate-subagent";
+export type LayaAction = "setup" | "calibrate" | "status" | "review-shadow" | "recalibrate-subagent";
 
 export interface LayaCommandArgs {
 	action: LayaAction;
 	flags: {
 		force?: boolean;
+		reinstall?: boolean;
+		port?: number;
+		url?: string;
 		json?: boolean;
 		yes?: boolean;
 		label?: string;
@@ -54,7 +58,7 @@ function formatStatus(cal: CalibrationRecord | null, isOnline: boolean): void {
 	if (!isOnline) {
 		writeLine(`${chalk.red("● Sidecar Status:")} Offline / Unreachable`);
 		writeLine(chalk.dim("  The local sidecar is not responding at its configured URL."));
-		writeLine(chalk.dim("  Start it with: python decision-sidecar/server.py"));
+		writeLine(chalk.cyan("  Run `harvest laya setup` to automatically install, calibrate, and start Laya."));
 	} else {
 		writeLine(`${chalk.green("● Sidecar Status:")} Online & Ready`);
 	}
@@ -393,9 +397,78 @@ async function runRecalibrateSubagent(command: LayaCommandArgs, agentDir: string
 	}
 }
 
+async function runLayaSetup(command: LayaCommandArgs, agentDir: string): Promise<void> {
+	if (!command.flags.json) {
+		writeLine(chalk.bold("\n🚀 Harvest Laya Autonomous Setup"));
+		writeLine("=".repeat(60));
+		writeLine(chalk.dim("Configuring local ModernBERT-large typed decisions for zero-API-cost tool gating, routing, and completion checks.\n"));
+	}
+
+	const baseUrl = command.flags.url || (command.flags.port ? `http://127.0.0.1:${command.flags.port}` : undefined);
+
+	const stepTitles: Record<string, string> = {
+		python: "Detecting Python runtime & managed virtualenv",
+		dependencies: "Verifying dependencies (laya, torch, fastapi, uvicorn)",
+		model: "Verifying model checkpoint (convaiinnovations/laya-typed-decisions)",
+		sidecar: "Starting local decision sidecar daemon",
+		calibrate: "Performing hardware self-calibration",
+		connect: "Connecting Harvest settings",
+	};
+
+	let activeSettings = settings;
+	try {
+		settings.get("laya.enabled");
+	} catch {
+		try {
+			await Settings.init();
+			activeSettings = settings;
+		} catch {
+			activeSettings = Settings.isolated();
+		}
+	}
+
+	const result = await configureLayaLocally({
+		settings: activeSettings,
+		baseUrl,
+		forceReinstall: command.flags.reinstall,
+		onStepUpdate: (stepId, status, message) => {
+			if (command.flags.json) return;
+			const title = stepTitles[stepId] || stepId;
+			if (status === "running") {
+				writeLine(`  ${chalk.cyan("⠋")} ${chalk.bold(title)}... ${message ? chalk.dim(`(${message})`) : ""}`);
+			} else if (status === "done") {
+				writeLine(`  ${chalk.green("✔")} ${chalk.bold(title)}: ${chalk.green(message || "Done")}`);
+			} else if (status === "error") {
+				writeLine(`  ${chalk.red("✖")} ${chalk.bold(title)}: ${chalk.red(message || "Failed")}`);
+			}
+		},
+	});
+
+	if (command.flags.json) {
+		writeLine(JSON.stringify(result, null, 2));
+		if (!result.success) process.exitCode = 1;
+		return;
+	}
+
+	if (!result.success) {
+		writeLine(`\n${chalk.red("Setup Error:")} ${result.error}`);
+		writeLine(chalk.dim("Run with `harvest laya setup --reinstall` or check logs at ~/.harvest/logs.\n"));
+		process.exitCode = 1;
+		return;
+	}
+
+	writeLine(chalk.green.bold("\n✔ Laya setup completed and verified successfully!\n"));
+	formatStatus(result.calibration ?? (await loadCalibration(agentDir)), true);
+}
+
 export async function runLayaCommand(command: LayaCommandArgs): Promise<void> {
 	const client = getLayaClient();
 	const agentDir = command.flags.agentDir ?? getAgentDir();
+
+	if (command.action === "setup") {
+		await runLayaSetup(command, agentDir);
+		return;
+	}
 
 	if (command.action === "review-shadow") {
 		await runReviewShadow(command, agentDir);
@@ -413,10 +486,17 @@ export async function runLayaCommand(command: LayaCommandArgs): Promise<void> {
 
 		const isOnline = await client.isHealthy();
 		if (!isOnline) {
-			const hw = await client.getHardwareInfo();
-			if (!hw) {
-				writeLine(chalk.red("Error: Cannot connect to Laya sidecar at " + client.baseUrl));
-				writeLine("Please ensure the sidecar is running (e.g. `python decision-sidecar/server.py`).");
+			writeLine(chalk.yellow("Laya sidecar is offline. Launching autonomous setup and startup..."));
+			const setupRes = await configureLayaLocally({
+				settings,
+				baseUrl: client.baseUrl,
+				onStepUpdate: (id, status, msg) => {
+					if (status === "running") writeLine(chalk.dim(`  [setup] ${id}: ${msg ?? ""}`));
+					if (status === "error") writeLine(chalk.red(`  [setup] ${id} error: ${msg ?? ""}`));
+				},
+			});
+			if (!setupRes.success) {
+				writeLine(chalk.red("Cannot start sidecar: " + setupRes.error));
 				process.exitCode = 1;
 				return;
 			}
