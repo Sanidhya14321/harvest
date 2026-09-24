@@ -427,6 +427,10 @@ async function runLayaSetup(command: LayaCommandArgs, agentDir: string): Promise
 		}
 	}
 
+	const isTTY = Boolean(process.stdout.isTTY && !process.env.CI);
+	let lastNonTtyUpdate = 0;
+	let currentStepId = "";
+
 	const result = await configureLayaLocally({
 		settings: activeSettings,
 		baseUrl,
@@ -435,11 +439,28 @@ async function runLayaSetup(command: LayaCommandArgs, agentDir: string): Promise
 			if (command.flags.json) return;
 			const title = stepTitles[stepId] || stepId;
 			if (status === "running") {
-				writeLine(`  ${chalk.cyan("⠋")} ${chalk.bold(title)}... ${message ? chalk.dim(`(${message})`) : ""}`);
+				if (isTTY) {
+					process.stdout.write(`\r\x1b[K  ${chalk.cyan("⠋")} ${chalk.bold(title)}... ${message ? chalk.dim(`(${message})`) : ""}`);
+				} else {
+					const now = Date.now();
+					if (stepId !== currentStepId || now - lastNonTtyUpdate > 1500) {
+						currentStepId = stepId;
+						lastNonTtyUpdate = now;
+						writeLine(`  ${chalk.cyan("⠋")} ${chalk.bold(title)}... ${message ? chalk.dim(`(${message})`) : ""}`);
+					}
+				}
 			} else if (status === "done") {
-				writeLine(`  ${chalk.green("✔")} ${chalk.bold(title)}: ${chalk.green(message || "Done")}`);
+				if (isTTY) {
+					process.stdout.write(`\r\x1b[K  ${chalk.green("✔")} ${chalk.bold(title)}: ${chalk.green(message || "Done")}\n`);
+				} else {
+					writeLine(`  ${chalk.green("✔")} ${chalk.bold(title)}: ${chalk.green(message || "Done")}`);
+				}
 			} else if (status === "error") {
-				writeLine(`  ${chalk.red("✖")} ${chalk.bold(title)}: ${chalk.red(message || "Failed")}`);
+				if (isTTY) {
+					process.stdout.write(`\r\x1b[K  ${chalk.red("✖")} ${chalk.bold(title)}: ${chalk.red(message || "Failed")}\n`);
+				} else {
+					writeLine(`  ${chalk.red("✖")} ${chalk.bold(title)}: ${chalk.red(message || "Failed")}`);
+				}
 			}
 		},
 	});

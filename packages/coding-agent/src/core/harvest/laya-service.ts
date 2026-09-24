@@ -95,7 +95,7 @@ export async function findPythonExecutable(): Promise<{ path: string; version: s
 	if (process.platform === "win32") {
 		const localAppData = process.env.LOCALAPPDATA || "";
 		const programFiles = process.env.ProgramFiles || "C:\\Program Files";
-		for (const v of ["Python312", "Python311", "Python310", "Python39"]) {
+		for (const v of ["Python314", "Python313", "Python312", "Python311", "Python310", "Python39"]) {
 			extraPaths.push(path.join(localAppData, "Programs", "Python", v, "python.exe"));
 			extraPaths.push(path.join(programFiles, v, "python.exe"));
 		}
@@ -114,6 +114,118 @@ export async function findPythonExecutable(): Promise<{ path: string; version: s
 }
 
 /**
+ * Execute a subprocess while streaming stdout and stderr in real-time,
+ * protecting against OS pipe saturation deadlocks and enforcing activity timeouts.
+ */
+export async function streamProcessOutput(
+	proc: Bun.Subprocess,
+	onLine?: (line: string) => void,
+	options: { activityTimeoutMs?: number; totalTimeoutMs?: number } = {},
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+	const textDecoder = new TextDecoder();
+	let lastActivity = Date.now();
+	const startTime = Date.now();
+	let timer: ReturnType<typeof setInterval> | undefined;
+
+	const activityTimeout = options.activityTimeoutMs ?? 180_000;
+	const totalTimeout = options.totalTimeoutMs ?? 900_000;
+	let timedOut = false;
+	let timeoutReason = "";
+
+	if (activityTimeout > 0 || totalTimeout > 0) {
+		timer = setInterval(() => {
+			const now = Date.now();
+			if (activityTimeout > 0 && now - lastActivity > activityTimeout) {
+				timedOut = true;
+				timeoutReason = `Process timed out after ${activityTimeout / 1000}s with no output/activity`;
+				try { proc.kill(); } catch {}
+			} else if (totalTimeout > 0 && now - startTime > totalTimeout) {
+				timedOut = true;
+				timeoutReason = `Process exceeded maximum run time limit of ${totalTimeout / 1000}s`;
+				try { proc.kill(); } catch {}
+			}
+		}, 1000);
+	}
+
+	let stdoutAccum = "";
+	let stderrAccum = "";
+
+	async function readPipe(stream: ReadableStream<Uint8Array> | null, isStderr: boolean) {
+		if (!stream) return;
+		const reader = stream.getReader();
+		let buffer = "";
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				lastActivity = Date.now();
+				const text = textDecoder.decode(value, { stream: true });
+				buffer += text;
+				if (isStderr) stderrAccum += text;
+				else stdoutAccum += text;
+
+				// Split on either \n or \r so interactive progress bars (\r) update immediately
+				const parts = buffer.split(/\r\n|\r|\n/);
+				buffer = parts.pop() ?? "";
+				for (const rawLine of parts) {
+					const line = rawLine.trim();
+					if (line.length > 0 && onLine) {
+						onLine(line);
+					}
+				}
+			}
+			if (buffer.trim().length > 0 && onLine) {
+				onLine(buffer.trim());
+			}
+		} catch {}
+	}
+
+	try {
+		await Promise.all([
+			readPipe(proc.stdout as ReadableStream<Uint8Array>, false),
+			readPipe(proc.stderr as ReadableStream<Uint8Array>, true),
+			proc.exited,
+		]);
+	} finally {
+		if (timer) clearInterval(timer);
+	}
+
+	const exitCode = await proc.exited;
+	if (timedOut) {
+		throw new Error(timeoutReason);
+	}
+	return { exitCode, stdout: stdoutAccum, stderr: stderrAccum };
+}
+
+/**
+ * Detect whether an NVIDIA GPU is physically present with drivers on the host OS.
+ * Used to avoid downloading 5GB+ CUDA PyTorch packages when a 180MB CPU wheel suffices.
+ */
+export async function isHostNvidiaGpuPresent(): Promise<boolean> {
+	if (process.platform === "win32") {
+		const sysRoot = process.env.SystemRoot || "C:\\Windows";
+		const nvcuda = path.join(sysRoot, "System32", "nvcuda.dll");
+		try {
+			if (Bun.file(nvcuda).size > 0) return true;
+		} catch {}
+	} else if (process.platform === "linux") {
+		try {
+			if (Bun.file("/proc/driver/nvidia/version").size > 0) return true;
+		} catch {}
+		for (const p of ["/usr/lib/x86_64-linux-gnu/libcuda.so", "/usr/lib64/libcuda.so", "/usr/lib/libcuda.so"]) {
+			try {
+				if (Bun.file(p).size > 0) return true;
+			} catch {}
+		}
+	}
+	try {
+		const res = Bun.spawnSync(["nvidia-smi", "-L"]);
+		if (res.exitCode === 0) return true;
+	} catch {}
+	return false;
+}
+
+/**
  * Attempt autonomous installation of Python if entirely missing.
  */
 export async function bootstrapPythonIfMissing(
@@ -128,7 +240,7 @@ export async function bootstrapPythonIfMissing(
 		try {
 			const checkWinget = Bun.spawnSync(["winget", "--version"]);
 			if (checkWinget.exitCode === 0) {
-				onProgress?.("Installing Python 3.11 via Windows Package Manager (winget)...");
+				onProgress?.("Installing Python 3.11 via Windows Package Manager (winget, user scope)...");
 				const installProc = Bun.spawn([
 					"winget",
 					"install",
@@ -136,10 +248,16 @@ export async function bootstrapPythonIfMissing(
 					"Python.Python.3.11",
 					"-e",
 					"--silent",
+					"--scope",
+					"user",
+					"--disable-interactivity",
 					"--accept-package-agreements",
 					"--accept-source-agreements",
 				], { stdout: "pipe", stderr: "pipe" });
-				await installProc.exited;
+				await streamProcessOutput(installProc, line => onProgress?.(`winget: ${line}`), {
+					activityTimeoutMs: 120_000,
+					totalTimeoutMs: 300_000,
+				});
 				py = await findPythonExecutable();
 				if (py) return py;
 			}
@@ -152,7 +270,10 @@ export async function bootstrapPythonIfMissing(
 			if (checkBrew.exitCode === 0) {
 				onProgress?.("Installing Python 3.11 via Homebrew...");
 				const brewProc = Bun.spawn(["brew", "install", "python@3.11"], { stdout: "pipe", stderr: "pipe" });
-				await brewProc.exited;
+				await streamProcessOutput(brewProc, line => onProgress?.(`brew: ${line}`), {
+					activityTimeoutMs: 120_000,
+					totalTimeoutMs: 600_000,
+				});
 				py = await findPythonExecutable();
 				if (py) return py;
 			}
@@ -362,15 +483,66 @@ export async function installLayaDependencies(
 
 	try {
 		onProgress?.("Upgrading pip and wheel...");
-		Bun.spawnSync([pythonPath, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], {
+		const upgradeProc = Bun.spawn([
+			pythonPath,
+			"-m",
+			"pip",
+			"install",
+			"--upgrade",
+			"pip",
+			"setuptools",
+			"wheel",
+			"--no-input",
+			"--prefer-binary",
+			"--retries",
+			"3",
+			"--timeout",
+			"30",
+		], {
 			cwd: sidecarDir,
+			stdout: "pipe",
+			stderr: "pipe",
 		});
+		await streamProcessOutput(upgradeProc, undefined, { activityTimeoutMs: 60_000, totalTimeoutMs: 120_000 });
 
-		onProgress?.("Installing Python dependencies (laya, fastapi, uvicorn, torch)...");
+		const hasNvidia = await isHostNvidiaGpuPresent();
+		const extraIndexArgs = (!hasNvidia && process.platform !== "darwin")
+			? ["--extra-index-url", "https://download.pytorch.org/whl/cpu"]
+			: [];
+
+		const targetDesc = hasNvidia
+			? "CUDA GPU runtime"
+			: (process.platform === "darwin" ? "Apple Silicon / CPU runtime" : "CPU runtime (~180MB lightweight wheel)");
+		onProgress?.(`Installing Python dependencies (laya, fastapi, uvicorn, torch for ${targetDesc})...`);
+
 		const hasReq = Bun.file(reqPath).size > 0;
-		const baseArgs = hasReq
-			? [pythonPath, "-m", "pip", "install", "-r", reqPath]
-			: [pythonPath, "-m", "pip", "install", "laya>=0.3.5", "fastapi>=0.115.0", "uvicorn>=0.30.0", "torch", "pydantic>=2.0.0"];
+		const baseArgs = [
+			pythonPath,
+			"-m",
+			"pip",
+			"install",
+			"--no-input",
+			"--prefer-binary",
+			"--retries",
+			"3",
+			"--timeout",
+			"30",
+			...extraIndexArgs,
+			...(hasReq ? ["-r", reqPath] : ["laya>=0.3.5", "fastapi>=0.115.0", "uvicorn>=0.30.0", "torch", "pydantic>=2.0.0"]),
+		];
+
+		const filterPipProgress = (rawLine: string) => {
+			if (
+				rawLine.startsWith("Collecting ") ||
+				rawLine.startsWith("Downloading ") ||
+				rawLine.startsWith("Installing collected packages") ||
+				rawLine.startsWith("Successfully installed") ||
+				rawLine.includes("MB/s") ||
+				rawLine.includes("%")
+			) {
+				onProgress?.(rawLine);
+			}
+		};
 
 		let proc = Bun.spawn(baseArgs, {
 			cwd: sidecarDir,
@@ -378,10 +550,13 @@ export async function installLayaDependencies(
 			stderr: "pipe",
 		});
 
-		let exitCode = await proc.exited;
-		if (exitCode !== 0) {
-			const errText = await new Response(proc.stderr).text();
-			if (errText.includes("externally-managed-environment")) {
+		let res = await streamProcessOutput(proc, filterPipProgress, {
+			activityTimeoutMs: 180_000,
+			totalTimeoutMs: 900_000,
+		});
+
+		if (res.exitCode !== 0) {
+			if (res.stderr.includes("externally-managed-environment") || res.stdout.includes("externally-managed-environment")) {
 				onProgress?.("Externally-managed Python environment detected; retrying with --break-system-packages...");
 				const breakArgs = [
 					pythonPath,
@@ -389,6 +564,13 @@ export async function installLayaDependencies(
 					"pip",
 					"install",
 					"--break-system-packages",
+					"--no-input",
+					"--prefer-binary",
+					"--retries",
+					"3",
+					"--timeout",
+					"30",
+					...extraIndexArgs,
 					...(hasReq ? ["-r", reqPath] : ["laya>=0.3.5", "fastapi>=0.115.0", "uvicorn>=0.30.0", "torch", "pydantic>=2.0.0"]),
 				];
 				proc = Bun.spawn(breakArgs, {
@@ -396,11 +578,13 @@ export async function installLayaDependencies(
 					stdout: "pipe",
 					stderr: "pipe",
 				});
-				exitCode = await proc.exited;
+				res = await streamProcessOutput(proc, filterPipProgress, {
+					activityTimeoutMs: 180_000,
+					totalTimeoutMs: 900_000,
+				});
 			}
-			if (exitCode !== 0) {
-				const finalErr = await new Response(proc.stderr).text();
-				return { success: false, error: finalErr || `pip install failed with exit code ${exitCode}` };
+			if (res.exitCode !== 0) {
+				return { success: false, error: res.stderr || res.stdout || `pip install failed with exit code ${res.exitCode}` };
 			}
 		}
 
@@ -447,33 +631,89 @@ sys.exit(1)
 			return { success: true, alreadyCached: true };
 		}
 
-		onProgress?.("Downloading single-model checkpoint convaiinnovations/laya-typed-decisions (~1.7GB)...");
+		onProgress?.("Downloading single-model checkpoint convaiinnovations/laya-typed-decisions (~842MB)...");
 
-		const downloadCode = `
-import os, sys
+		const downloadScript = `
+import os, sys, socket
+socket.setdefaulttimeout(30.0)
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+try:
+    import tqdm.auto
+    class StreamTqdm(tqdm.auto.tqdm):
+        def __init__(self, *args, **kwargs):
+            kwargs["file"] = sys.stdout
+            kwargs["mininterval"] = 0.5
+            kwargs["ascii"] = True
+            super().__init__(*args, **kwargs)
+        def display(self, msg=None, pos=None):
+            super().display(msg, pos)
+            sys.stdout.write("\\n")
+            sys.stdout.flush()
+    tqdm.auto.tqdm = StreamTqdm
+    import huggingface_hub.utils
+    huggingface_hub.utils.tqdm = StreamTqdm
+except Exception:
+    pass
+
 try:
     from huggingface_hub import snapshot_download
-    snapshot_download("convaiinnovations/laya-typed-decisions", repo_type="model", resume_download=True)
+    snapshot_download(
+        "convaiinnovations/laya-typed-decisions",
+        repo_type="model",
+        allow_patterns=["*.json", "*.safetensors", "tokenizer/*", "encoder/*"],
+        max_workers=4,
+    )
     print("DOWNLOAD_OK")
-except Exception:
-    import laya
-    m = laya.load("convaiinnovations/laya-typed-decisions")
-    print("DOWNLOAD_OK")
+except Exception as e:
+    # If primary download failed (e.g. timeout / network block), try official mirror
+    try:
+        sys.stderr.write(f"Primary HF download failed ({e}); retrying via hf-mirror.com...\\n")
+        sys.stderr.flush()
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            "convaiinnovations/laya-typed-decisions",
+            repo_type="model",
+            allow_patterns=["*.json", "*.safetensors", "tokenizer/*", "encoder/*"],
+            max_workers=4,
+        )
+        print("DOWNLOAD_OK")
+    except Exception as e2:
+        import laya
+        laya.load("convaiinnovations/laya-typed-decisions")
+        print("DOWNLOAD_OK")
 `;
-		const downloadProc = Bun.spawn([pythonPath, "-c", downloadCode], {
+
+		const downloadProc = Bun.spawn([pythonPath, "-c", downloadScript], {
 			stdout: "pipe",
 			stderr: "pipe",
 			env: {
 				...process.env,
+				PYTHONUNBUFFERED: "1",
 				HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
 			},
 		});
 
-		const exitCode = await downloadProc.exited;
-		if (exitCode !== 0) {
-			const err = await new Response(downloadProc.stderr).text();
-			return { success: false, error: err || `Model loading failed with exit code ${exitCode}` };
+		const filterHfProgress = (rawLine: string) => {
+			if (
+				rawLine.includes("%") ||
+				rawLine.includes("Fetching") ||
+				rawLine.includes("model.safetensors") ||
+				rawLine.includes("retrying via") ||
+				rawLine.includes("MB/s")
+			) {
+				onProgress?.(rawLine);
+			}
+		};
+
+		const res = await streamProcessOutput(downloadProc, filterHfProgress, {
+			activityTimeoutMs: 120_000,
+			totalTimeoutMs: 900_000,
+		});
+
+		if (res.exitCode !== 0) {
+			return { success: false, error: res.stderr || res.stdout || `Model loading failed with exit code ${res.exitCode}` };
 		}
 		return { success: true };
 	} catch (err) {

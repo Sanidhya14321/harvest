@@ -242,4 +242,52 @@ describe("Laya Service & Autonomous Setup", () => {
 			expect(output).toContain('"tier": "cuda"');
 		});
 	});
+
+	describe("Hardware Probing & Stream Processing", () => {
+		it("probes host NVIDIA GPU presence safely without throwing", async () => {
+			const hasNvidia = await layaService.isHostNvidiaGpuPresent();
+			expect(typeof hasNvidia).toBe("boolean");
+		});
+
+		it("streams process output lines and captures stdout/stderr", async () => {
+			const mockLines: string[] = [];
+			const proc = Bun.spawn([
+				"python",
+				"-c",
+				"import sys; sys.stdout.write('line 1\\n'); sys.stderr.write('err 1\\n'); sys.stdout.write('line 2\\r'); sys.stdout.flush()",
+			], {
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+
+			const res = await layaService.streamProcessOutput(proc, line => mockLines.push(line), {
+				activityTimeoutMs: 5000,
+				totalTimeoutMs: 10000,
+			});
+
+			expect(res.exitCode).toBe(0);
+			expect(mockLines).toContain("line 1");
+			expect(mockLines).toContain("err 1");
+			expect(mockLines).toContain("line 2");
+		});
+
+		it("terminates and throws when activity timeout expires", async () => {
+			const proc = Bun.spawn([
+				"python",
+				"-c",
+				"import time; time.sleep(10)",
+			], {
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+
+			const promise = layaService.streamProcessOutput(proc, undefined, {
+				activityTimeoutMs: 200,
+				totalTimeoutMs: 1000,
+			});
+
+			await expect(promise).rejects.toThrow("Process timed out");
+		});
+	});
 });
+

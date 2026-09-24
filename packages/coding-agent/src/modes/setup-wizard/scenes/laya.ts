@@ -197,7 +197,7 @@ class LayaSceneController implements SetupSceneController {
 				const step = this.#steps.find(s => s.id === stepId);
 				if (step) {
 					step.status = status;
-					if (message && status === "done") {
+					if (message) {
 						step.label = message;
 					}
 					if (status === "error" && message) {
