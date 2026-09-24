@@ -272,13 +272,26 @@ export async function resolveEffectiveSubagentPolicy(
 	assertDepthAndSpawnAllowed(request, agentName);
 
 	const discovery = await discoverAgents(request.session.cwd, undefined, request.session.effectiveExtensionRoots?.());
+	const disabledAgents = (request.session.settings.get("task.disabledAgents") as string[]) ?? [];
+	const taskDepth = request.session.taskDepth ?? 0;
+	const maxDepth = request.session.settings.get("task.maxRecursionDepth") ?? 2;
+	const blockedAgent = request.blockedAgent ?? $env.PI_BLOCKED_AGENT;
+
+	const eligibleAgents = canSpawnAtDepth(maxDepth, taskDepth)
+		? discovery.agents.filter(cand => {
+				if (blockedAgent && blockedAgent === cand.name) return false;
+				if (disabledAgents.includes(cand.name)) return false;
+				if (spawnPolicy.allowedAgents !== null && !spawnPolicy.allowedAgents.includes(cand.name)) return false;
+				return true;
+		  })
+		: [];
 
 	let layaTraceId: string | undefined;
 	// If the subagent was not explicitly specialized (or was set to the generic default 'task'),
 	// consult Laya subagent selection with confidence gating and fail-open fallback.
 	if (!request.agent?.trim() || request.agent.trim() === spawnPolicy.defaultAgent) {
 		const layaDecision = await layaSubagent.selectSubagentWithLaya(request.assignment, {
-			availableAgents: discovery.agents,
+			availableAgents: eligibleAgents,
 			defaultAgent: spawnPolicy.defaultAgent,
 			context: request.context,
 			sessionId: (request.session as { sessionId?: string }).sessionId,
@@ -286,8 +299,18 @@ export async function resolveEffectiveSubagentPolicy(
 		});
 		layaTraceId = layaDecision.traceId;
 		if (layaDecision.decisionType === "auto_pick") {
-			agentName = layaDecision.selectedAgent;
-			assertDepthAndSpawnAllowed(request, agentName);
+			const candidatePick = layaDecision.selectedAgent;
+			try {
+				assertDepthAndSpawnAllowed(request, candidatePick);
+				const candidateAgent = getAgent(eligibleAgents, candidatePick);
+				if (candidateAgent && !disabledAgents.includes(candidatePick)) {
+					agentName = candidateAgent.name;
+				} else {
+					agentName = spawnPolicy.defaultAgent;
+				}
+			} catch {
+				agentName = spawnPolicy.defaultAgent;
+			}
 		}
 	}
 
@@ -296,7 +319,6 @@ export async function resolveEffectiveSubagentPolicy(
 		const available = discovery.agents.map(candidate => candidate.name).join(", ") || "none";
 		throw new StructuredSubagentError("preflight", `Unknown agent "${agentName}". Available: ${available}`);
 	}
-	const disabledAgents = request.session.settings.get("task.disabledAgents") as string[];
 	if (disabledAgents.includes(agentName)) {
 		const enabled = discovery.agents
 			.filter(candidate => !disabledAgents.includes(candidate.name))

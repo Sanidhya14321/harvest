@@ -150,7 +150,7 @@ export class LayaClient {
 	async decide(
 		state: string | Record<string, unknown> | unknown[],
 		questions: Record<string, LayaQuestionDefinition>,
-		metadata: { callSite: string; sessionId?: string; timeoutMs?: number } = { callSite: "unknown" },
+		metadata: { callSite: string; sessionId?: string; timeoutMs?: number; signal?: AbortSignal } = { callSite: "unknown" },
 	): Promise<DecisionResult<Record<string, LayaAnswerResult>>> {
 		const startTime = performance.now();
 
@@ -170,11 +170,26 @@ export class LayaClient {
 			};
 		}
 
+		if (metadata.signal?.aborted) {
+			const latencyMs = performance.now() - startTime;
+			return {
+				success: false,
+				fallback: true,
+				fallbackReason: "operation_cancelled",
+				latencyMs,
+			};
+		}
+
 		const controller = new AbortController();
 		const effectiveTimeout = metadata.timeoutMs ?? this.#timeoutMs;
 		const timeoutId = setTimeout(() => {
 			controller.abort();
 		}, effectiveTimeout);
+
+		const onAbort = () => controller.abort(metadata.signal?.reason);
+		if (metadata.signal) {
+			metadata.signal.addEventListener("abort", onAbort, { once: true });
+		}
 
 		try {
 			const response = await fetch(`${this.#baseUrl}/v1/decide`, {
@@ -192,8 +207,6 @@ export class LayaClient {
 				}),
 				signal: controller.signal,
 			});
-
-			clearTimeout(timeoutId);
 
 			if (!response.ok) {
 				const latencyMs = performance.now() - startTime;
@@ -233,10 +246,14 @@ export class LayaClient {
 				latencyMs,
 			};
 		} catch (err) {
-			clearTimeout(timeoutId);
 			const latencyMs = performance.now() - startTime;
 			const isAbort = (err as Error)?.name === "AbortError";
-			const reason = isAbort ? `timeout_exceeded_${effectiveTimeout}ms` : `connection_error: ${(err as Error)?.message}`;
+			const wasUserCancelled = metadata.signal?.aborted;
+			const reason = wasUserCancelled
+				? "operation_cancelled"
+				: isAbort
+					? `timeout_exceeded_${effectiveTimeout}ms`
+					: `connection_error: ${(err as Error)?.message}`;
 
 			logger.warn(`Laya sidecar call failed, triggering fallback [${metadata.callSite}]`, {
 				reason,
@@ -249,6 +266,11 @@ export class LayaClient {
 				fallbackReason: reason,
 				latencyMs,
 			};
+		} finally {
+			clearTimeout(timeoutId);
+			if (metadata.signal) {
+				metadata.signal.removeEventListener("abort", onAbort);
+			}
 		}
 	}
 }

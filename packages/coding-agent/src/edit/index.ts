@@ -575,6 +575,19 @@ export class EditTool implements AgentTool<TInput> {
 	}
 
 	async #write(request: EditWriteRequest, signal?: AbortSignal): Promise<EditWriteResponse> {
+		// Realpath Workspace Jailing (Harvest Feature 3.14)
+		const sandbox = new SecuritySandbox(this.session.cwd);
+		const jailCheck = sandbox.assertPathJailed(request.path);
+		if (!jailCheck.jailed) {
+			throw new ToolError(jailCheck.error ?? `Path traversal rejected: ${request.path}`);
+		}
+		if (request.moveTo) {
+			const moveJailCheck = sandbox.assertPathJailed(request.moveTo);
+			if (!moveJailCheck.jailed) {
+				throw new ToolError(moveJailCheck.error ?? `Path traversal rejected: ${request.moveTo}`);
+			}
+		}
+
 		if (request.op === "delete") {
 			await deleteFileWithFallback(request.path, Bun.file(request.path));
 			if (this.session.enableLsp ?? true) {
@@ -598,19 +611,6 @@ export class EditTool implements AgentTool<TInput> {
 
 		if (request.content === undefined) {
 			throw new ToolError(`Native edit ${request.op} request omitted content`, { path: request.path });
-		}
-
-		// Realpath Workspace Jailing (Harvest Feature 3.14)
-		const sandbox = new SecuritySandbox(this.session.cwd);
-		const jailCheck = sandbox.assertPathJailed(request.path);
-		if (!jailCheck.jailed) {
-			throw new ToolError(jailCheck.error ?? `Path traversal rejected: ${request.path}`);
-		}
-		if (request.moveTo) {
-			const moveJailCheck = sandbox.assertPathJailed(request.moveTo);
-			if (!moveJailCheck.jailed) {
-				throw new ToolError(moveJailCheck.error ?? `Path traversal rejected: ${request.moveTo}`);
-			}
 		}
 
 		if (request.op === "move") {

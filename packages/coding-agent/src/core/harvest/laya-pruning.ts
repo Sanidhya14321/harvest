@@ -18,7 +18,8 @@
  * 7. Calibration Logging: Logs relevance scores, kept/dropped status, and latency.
  */
 
-import type { AgentMessage, ToolResultMessage, TextContent } from "@harvest/pi-ai";
+import type { ToolResultMessage, TextContent } from "@harvest/pi-ai";
+import type { AgentMessage } from "@harvest/pi-agent-core";
 import { logger } from "@harvest/pi-utils";
 import { type Settings, settings as globalSettings, type SettingPath } from "../../config/settings";
 import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
@@ -74,6 +75,7 @@ export interface LayaPruningOptions {
 	readonly timeoutMs?: number;
 	readonly lockedDecisions?: Map<string, LockedPruningDecision>;
 	readonly lockDecisions?: boolean;
+	readonly signal?: AbortSignal;
 }
 
 export interface LockedPruningDecision {
@@ -151,12 +153,13 @@ export function estimateTextTokens(text: string): number {
  * Extract clean string representation of an AgentMessage's content.
  */
 export function extractMessageText(message: AgentMessage): string {
-	if (typeof message.content === "string") {
-		return message.content;
+	const content = (message as { content?: unknown }).content;
+	if (typeof content === "string") {
+		return content;
 	}
-	if (Array.isArray(message.content)) {
-		return message.content
-			.map(part => {
+	if (Array.isArray(content)) {
+		return (content as Array<{ text?: string; thinking?: string }>)
+			.map((part: { text?: string; thinking?: string }) => {
 				if ("text" in part && typeof part.text === "string") return part.text;
 				if ("thinking" in part && typeof part.thinking === "string") return part.thinking;
 				return "";
@@ -264,6 +267,10 @@ export async function pruneContextWithLaya(
 		return createPassthroughResult(messages, "empty_messages");
 	}
 
+	if (options.signal?.aborted) {
+		return createPassthroughResult(messages, "operation_cancelled");
+	}
+
 	const keepRecentTurns =
 		options.keepRecentTurns ??
 		safeGetSetting<number>(activeSettings, "laya.pruningKeepRecentTurns") ??
@@ -274,7 +281,6 @@ export async function pruneContextWithLaya(
 		DEFAULT_PRUNING_MIN_KEPT_TURNS;
 	const minChunkTokens =
 		options.minChunkTokens ??
-		safeGetSetting<number>(activeSettings, "laya.pruningMinChunkTokens") ??
 		DEFAULT_PRUNING_MIN_CHUNK_TOKENS;
 	const safetyTokenFloor = options.safetyTokenFloor ?? DEFAULT_PRUNING_SAFETY_TOKEN_FLOOR;
 
@@ -343,6 +349,11 @@ export async function pruneContextWithLaya(
 					totalCandidateTokens += tokens;
 				}
 			} else if (msg.role === "assistant") {
+				// Exclude assistant messages containing tool calls from pruning to prevent orphan tool results
+				if (Array.isArray(msg.content) && msg.content.some((b: any) => b && (b.type === "toolCall" || b.type === "tool_call"))) {
+					continue;
+				}
+
 				const text = extractMessageText(msg);
 				const tokens = estimateTextTokens(text);
 
@@ -451,6 +462,7 @@ export async function pruneContextWithLaya(
 		callSite: "context_pruning",
 		sessionId: options.sessionId,
 		timeoutMs: options.timeoutMs,
+		signal: options.signal,
 	});
 
 	// Step 6: Fallback - fail OPEN if sidecar is down, times out, or errors
@@ -494,9 +506,13 @@ export async function pruneContextWithLaya(
 	}
 
 	// Step 4: Budget-based selection in Harvest
-	// If prunableTokenBudget is not explicitly configured, retain 40% of candidate tokens
+	// Respect configured laya.pruningTokenBudget or retain 40% of candidate tokens
+	const configuredBudget =
+		options.prunableTokenBudget ??
+		safeGetSetting<number>(activeSettings, "laya.pruningTokenBudget" as SettingPath);
+
 	const prunableBudget =
-		options.prunableTokenBudget ?? Math.max(safetyTokenFloor, Math.floor(totalCandidateTokens * 0.4));
+		configuredBudget ?? Math.max(safetyTokenFloor, Math.floor(totalCandidateTokens * 0.4));
 
 	// Rank candidates descending by score (highest relevance first)
 	const rankedCandidates = [...candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -585,9 +601,12 @@ export async function pruneContextWithLaya(
 					prunedAt: preLocked.timestamp,
 				});
 			} else if (original.role === "assistant") {
+				const nonTextBlocks = Array.isArray(original.content)
+					? (original.content as Array<{ type?: string }>).filter(b => b && b.type !== "text")
+					: [];
 				clonedMessages.push({
 					...original,
-					content: [{ type: "text", text: preLocked.placeholder ?? "" } as TextContent],
+					content: [{ type: "text", text: preLocked.placeholder ?? "" } as TextContent, ...(nonTextBlocks as any[])],
 				});
 			} else {
 				clonedMessages.push(original);
@@ -619,9 +638,12 @@ export async function pruneContextWithLaya(
 				});
 			} else if (original.role === "assistant") {
 				const placeholder = `[Earlier assistant output omitted for relevance (Laya score: ${(candidate.normalizedScore ?? 0).toFixed(2)})]`;
+				const nonTextBlocks = Array.isArray(original.content)
+					? (original.content as Array<{ type?: string }>).filter(b => b && b.type !== "text")
+					: [];
 				clonedMessages.push({
 					...original,
-					content: [{ type: "text", text: placeholder } as TextContent],
+					content: [{ type: "text", text: placeholder } as TextContent, ...(nonTextBlocks as any[])],
 				});
 			} else {
 				clonedMessages.push(original);

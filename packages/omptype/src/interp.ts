@@ -41,6 +41,14 @@ export function walk(ir: IR, value: unknown, path: PropertyKey[] = []): unknown 
 	}
 }
 
+function setProp(obj: Record<PropertyKey, unknown>, key: PropertyKey, value: unknown): void {
+	if (key === "__proto__") {
+		Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
+	} else {
+		obj[key] = value;
+	}
+}
+
 function fail(path: PropertyKey[], expected: string, data: unknown): OmpErrors {
 	const storedPath = path.length === 0 ? undefined : path.length === 1 ? path[0] : [...path];
 	return new OmpErrors(storedPath, expected, data);
@@ -416,10 +424,10 @@ function visitNode(ir: IR, v: unknown, path: PropertyKey[]): unknown {
 								if (errors) errors.append(resolved);
 								else errors = resolved;
 							} else {
-								out[p.key] = resolved;
+								setProp(out, p.key, resolved);
 							}
 						} else {
-							out[p.key] = materializeDefault(payload);
+							setProp(out, p.key, materializeDefault(payload));
 						}
 						continue;
 					}
@@ -438,7 +446,7 @@ function visitNode(ir: IR, v: unknown, path: PropertyKey[]): unknown {
 					if (errors) errors.append(result);
 					else errors = result;
 				} else if (out) {
-					out[p.key] = result;
+					setProp(out, p.key, result);
 				}
 			}
 			for (const key in rec) {
@@ -453,7 +461,7 @@ function visitNode(ir: IR, v: unknown, path: PropertyKey[]): unknown {
 						if (errors) errors.append(result);
 						else errors = result;
 					} else if (out) {
-						out[key] = result;
+						setProp(out, key, result);
 					}
 				}
 				if (ir.patternIndexes !== undefined) {
@@ -467,7 +475,7 @@ function visitNode(ir: IR, v: unknown, path: PropertyKey[]): unknown {
 							if (errors) errors.append(result);
 							else errors = result;
 						} else if (out) {
-							out[key] = result;
+							setProp(out, key, result);
 						}
 					}
 				}

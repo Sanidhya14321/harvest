@@ -54,3 +54,17 @@ export function parseBind(raw: string): ParsedBind {
 	}
 	return { hostname: hostPart, port: parsePort(portPart, raw) };
 }
+
+/**
+ * Determine whether a parsed or configured hostname represents a loopback interface.
+ */
+export function isLoopbackHost(hostname: string): boolean {
+	const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+	return (
+		h === "localhost" ||
+		h === "localhost6" ||
+		h === "::1" ||
+		h === "127.0.0.1" ||
+		/^127\.\d+\.\d+\.\d+$/.test(h)
+	);
+}

@@ -6,6 +6,24 @@ import { overlayTitleSlotContent, type SessionTitleUpdate, serializeTitleSlot } 
 
 const utf8Decoder = new TextDecoder("utf-8");
 
+export function enforcePrivateDir(dir: string): void {
+	if (process.platform === "win32") return;
+	try {
+		fs.chmodSync(dir, 0o700);
+	} catch {
+		// Ignore if cannot chmod
+	}
+}
+
+export function enforcePrivateFile(file: string): void {
+	if (process.platform === "win32") return;
+	try {
+		fs.chmodSync(file, 0o600);
+	} catch {
+		// Ignore if cannot chmod
+	}
+}
+
 export interface SessionStorageStat {
 	size: number;
 	mtimeMs: number;
@@ -112,10 +130,12 @@ class FileSessionStorageWriter implements SessionStorageWriter {
 		// Ensure parent directory exists
 		const dir = path.dirname(fpath);
 		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
+			fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 		}
+		enforcePrivateDir(dir);
 		// Open file once, keep fd for lifetime
-		this.#fd = fs.openSync(fpath, flags === "w" ? "w" : "a");
+		this.#fd = fs.openSync(fpath, flags === "w" ? "w" : "a", 0o600);
+		enforcePrivateFile(fpath);
 		// Register for cleanup if abandoned without close()
 		writerRegistry.register(this, this.#fd, this);
 	}
@@ -203,8 +223,9 @@ class FileSessionStorageWriter implements SessionStorageWriter {
 export class FileSessionStorage implements SessionStorage {
 	ensureDirSync(dir: string): void {
 		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
+			fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 		}
+		enforcePrivateDir(dir);
 	}
 
 	existsSync(path: string): boolean {
@@ -216,8 +237,10 @@ export class FileSessionStorage implements SessionStorage {
 		this.ensureDirSync(dir);
 		const tempPath = path.join(dir, `.${path.basename(fpath)}.${Snowflake.next()}.tmp`);
 		try {
-			fs.writeFileSync(tempPath, content);
+			fs.writeFileSync(tempPath, content, { mode: 0o600 });
+			enforcePrivateFile(tempPath);
 			fs.renameSync(tempPath, fpath);
+			enforcePrivateFile(fpath);
 		} catch (err) {
 			try {
 				if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
@@ -291,16 +314,21 @@ export class FileSessionStorage implements SessionStorage {
 		]);
 	}
 
-	async writeText(path: string, content: string): Promise<void> {
-		await Bun.write(path, content, { createPath: true });
+	async writeText(pathStr: string, content: string): Promise<void> {
+		const dir = path.dirname(pathStr);
+		this.ensureDirSync(dir);
+		await Bun.write(pathStr, content, { createPath: true });
+		enforcePrivateFile(pathStr);
 	}
 
 	async writeTextAtomic(fpath: string, content: string, options?: WriteTextAtomicOptions): Promise<void> {
 		const dir = path.resolve(fpath, "..");
 		const tempPath = path.join(dir, `.${path.basename(fpath)}.${Snowflake.next()}.tmp`);
-		await fs.promises.mkdir(dir, { recursive: true });
+		await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+		enforcePrivateDir(dir);
 		try {
-			await fs.promises.writeFile(tempPath, content);
+			await fs.promises.writeFile(tempPath, content, { mode: 0o600 });
+			enforcePrivateFile(tempPath);
 		} catch (err) {
 			this.#discardTemp(tempPath, fpath);
 			throw toError(err);

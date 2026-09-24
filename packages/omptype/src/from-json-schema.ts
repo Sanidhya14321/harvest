@@ -88,9 +88,11 @@ class Importer {
 		}
 		if ("const" in node) return { k: "lit", v: node.const };
 
-		const branches = node.anyOf ?? node.oneOf;
-		if (Array.isArray(branches)) {
-			return { k: "union", members: branches.map(branch => this.lower(branch)) };
+		if (node.oneOf !== undefined) {
+			throw new OmpTypeError("unsupported JSON Schema keyword: oneOf (requires exactly one matching branch)");
+		}
+		if (Array.isArray(node.anyOf)) {
+			return { k: "union", members: node.anyOf.map(branch => this.lower(branch)) };
 		}
 		if (Array.isArray(node.allOf)) {
 			const members = node.allOf.map(branch => this.lower(branch));
@@ -170,8 +172,10 @@ class Importer {
 	#lowerObject(node: JsonSchema): IR {
 		const required = new Set(Array.isArray(node.required) ? node.required.map(String) : []);
 		const props: PropIR[] = [];
+		const definedProps = new Set<string>();
 		if (typeof node.properties === "object" && node.properties !== null) {
 			for (const [key, value] of Object.entries(node.properties)) {
+				definedProps.add(key);
 				const prop: PropIR = { key, opt: !required.has(key), val: this.lower(value) };
 				if (typeof value === "object" && value !== null && "default" in value) {
 					prop.hasDefault = true;
@@ -179,6 +183,11 @@ class Importer {
 					prop.opt = true;
 				}
 				props.push(prop);
+			}
+		}
+		for (const reqKey of required) {
+			if (!definedProps.has(reqKey)) {
+				props.push({ key: reqKey, opt: false, val: { k: "unknown" } });
 			}
 		}
 		const extra = node.additionalProperties;

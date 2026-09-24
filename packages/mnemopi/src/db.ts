@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { dbPath } from "./config";
 
@@ -77,12 +77,29 @@ type TxDatabase = Database & { [TX_STATE]?: TxState };
 type ExtensionDatabase = Database & { loadExtension(path: string): void };
 
 export function openDatabase(path: DatabasePath = dbPath(), options: OpenDatabaseOptions = {}): Database {
-	if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+	if (path !== ":memory:") {
+		const dir = dirname(path);
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		if (process.platform !== "win32") {
+			try {
+				chmodSync(dir, 0o700);
+			} catch {
+				// Ignore if cannot chmod
+			}
+		}
+	}
 	const db = new Database(path, {
 		create: options.create ?? true,
 		readwrite: options.readwrite ?? true,
 		strict: options.strict ?? true,
 	});
+	if (path !== ":memory:" && process.platform !== "win32") {
+		try {
+			chmodSync(path, 0o600);
+		} catch {
+			// Ignore if cannot chmod
+		}
+	}
 	if (options.pragmas !== false) enablePragmas(db, path, options.pageSize);
 	else if (options.readwrite !== false) applyPageSize(db, path, options.pageSize);
 	if (options.loadExtension !== undefined) loadExtensions(db, options.loadExtension);

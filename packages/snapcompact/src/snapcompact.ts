@@ -199,7 +199,7 @@ export const SHAPE_VARIANT_NAMES = Object.keys(SHAPE_VARIANTS) as readonly Shape
 
 /** Runtime guard for variant names loaded from config. */
 export function isShapeVariantName(value: unknown): value is ShapeVariantName {
-	return typeof value === "string" && value in SHAPE_VARIANTS;
+	return typeof value === "string" && Object.hasOwn(SHAPE_VARIANTS, value);
 }
 
 /** Provider families with distinct image billing. */

@@ -40,6 +40,44 @@ export interface BrowserFetchOptions {
  * hang, so cleanup needs its own deadline (issue #8865).
  */
 const PAGE_CLOSE_TIMEOUT_MS = 5_000;
+const MAX_SEARCH_HTML_BYTES = 4 * 1024 * 1024;
+
+async function readBoundedText(response: Response, maxBytes: number): Promise<string> {
+	if (!response.body) {
+		const text = await response.text();
+		return text.length > maxBytes ? text.slice(0, maxBytes) : text;
+	}
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let bytesRead = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value) {
+				const remaining = maxBytes - bytesRead;
+				if (value.byteLength > remaining) {
+					chunks.push(value.subarray(0, remaining));
+					bytesRead += remaining;
+					await reader.cancel();
+					break;
+				} else {
+					chunks.push(value);
+					bytesRead += value.byteLength;
+				}
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
+	const combined = new Uint8Array(bytesRead);
+	let offset = 0;
+	for (const chunk of chunks) {
+		combined.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return new TextDecoder().decode(combined);
+}
 
 async function fetchHtmlPage(url: string, options: BrowserFetchOptions, fetchImpl: FetchImpl): Promise<LoadedHtmlPage> {
 	const response = await fetchImpl(url, {
@@ -51,7 +89,7 @@ async function fetchHtmlPage(url: string, options: BrowserFetchOptions, fetchImp
 		},
 		signal: options.signal,
 	});
-	return { html: await response.text(), status: response.status, url: response.url || url };
+	return { html: await readBoundedText(response, MAX_SEARCH_HTML_BYTES), status: response.status, url: response.url || url };
 }
 
 async function browseHtmlPage(
@@ -106,8 +144,9 @@ async function browseHtmlPage(
 					activePage.waitForSelector(ready.selector, { timeout: ready.timeoutMs }).catch(() => null),
 				);
 			}
+			const rawContent = await untilAborted(signal, () => activePage.content());
 			const loaded = {
-				html: await untilAborted(signal, () => activePage.content()),
+				html: rawContent.length > MAX_SEARCH_HTML_BYTES ? rawContent.slice(0, MAX_SEARCH_HTML_BYTES) : rawContent,
 				status: response?.status() ?? 200,
 				url: activePage.url(),
 			};

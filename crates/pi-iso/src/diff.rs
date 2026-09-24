@@ -343,6 +343,18 @@ fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, Metadata>) -> IsoRe
 	Ok(())
 }
 
+fn read_entry_bytes(path: &Path) -> IsoResult<Vec<u8>> {
+	let meta = std::fs::symlink_metadata(path)
+		.map_err(|err| IsoError::other(format!("metadata {}: {err}", path.display())))?;
+	if meta.file_type().is_symlink() {
+		let target = std::fs::read_link(path)
+			.map_err(|err| IsoError::other(format!("read_link {}: {err}", path.display())))?;
+		Ok(target.to_string_lossy().into_owned().into_bytes())
+	} else {
+		std::fs::read(path).map_err(|err| IsoError::other(format!("read {}: {err}", path.display())))
+	}
+}
+
 /// Build a [`FileChange`] for an entry observed by [`walk_diff_blocking`].
 ///
 /// `op == Modified` requires `peer_root = Some(lower)` so we can read the
@@ -354,8 +366,7 @@ fn plain_change(
 	peer_root: Option<&Path>,
 ) -> IsoResult<FileChange> {
 	let full = side.join(rel);
-	let primary = std::fs::read(&full)
-		.map_err(|err| IsoError::other(format!("read {}: {err}", full.display())))?;
+	let primary = read_entry_bytes(&full)?;
 	if looks_binary(&primary) {
 		return Ok(FileChange { path: rel.to_path_buf(), op, diff: None });
 	}
@@ -365,8 +376,7 @@ fn plain_change(
 		ChangeKind::Modified => {
 			let peer = peer_root.expect("modified change requires peer root");
 			let peer_full = peer.join(rel);
-			let peer_bytes = std::fs::read(&peer_full)
-				.map_err(|err| IsoError::other(format!("read {}: {err}", peer_full.display())))?;
+			let peer_bytes = read_entry_bytes(&peer_full)?;
 			if looks_binary(&peer_bytes) {
 				return Ok(FileChange { path: rel.to_path_buf(), op, diff: None });
 			}

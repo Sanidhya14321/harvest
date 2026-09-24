@@ -42,6 +42,8 @@ const POLL_WAIT_LADDER_MS = [5_000, 10_000, 30_000, 60_000, 300_000] as const;
  * the poll loop to do real work — the next poll drops back to the ladder floor.
  */
 const POLL_ESCALATION_RESET_MS = 60_000;
+const MAX_CONCURRENT_DELIVERIES = 16;
+const DELIVERY_TIMEOUT_MS = 30_000;
 
 interface PollEscalationState {
 	/** Index into POLL_WAIT_LADDER_MS used for the most recent poll wait. */
@@ -117,6 +119,8 @@ export interface AsyncJob {
 	 * until the caller invokes `markRunning()` from the run context.
 	 */
 	queued?: boolean;
+	/** True when the underlying run() promise has settled (resolved or rejected). */
+	settled?: boolean;
 	/**
 	 * Disposal closure for a detached spawn's temporary artifacts directory
 	 * that `runStructuredSubagent()` retained past completion (so a
@@ -278,7 +282,7 @@ export class AsyncJobManager {
 		// Mirror register(): queued jobs hold no execution slot.
 		let activeCount = 0;
 		for (const job of this.#jobs.values()) {
-			if (job.status === "running" && !job.queued) activeCount++;
+			if (!job.queued && (job.status === "running" || !job.settled)) activeCount++;
 		}
 		return activeCount >= this.#maxRunningJobs;
 	}
@@ -299,10 +303,10 @@ export class AsyncJobManager {
 			throw new Error("Async job manager is disposed");
 		}
 		// Queued jobs hold no execution slot yet — only count jobs that are
-		// actually running so a large parked batch cannot starve registration.
+		// actually running or unsettled so a large parked batch cannot starve registration.
 		let activeCount = 0;
 		for (const existing of this.#jobs.values()) {
-			if (existing.status === "running" && !existing.queued) activeCount++;
+			if (!existing.queued && (existing.status === "running" || !existing.settled)) activeCount++;
 		}
 		if (activeCount >= this.#maxRunningJobs) {
 			throw new Error(
@@ -327,6 +331,7 @@ export class AsyncJobManager {
 			ownerId: options?.ownerId,
 			agentId: options?.agentId,
 			queued: options?.queued === true,
+			settled: false,
 		};
 
 		const reportProgress = async (text: string, details?: AsyncJobDetails): Promise<void> => {
@@ -375,6 +380,8 @@ export class AsyncJobManager {
 				job.errorText = errorText;
 				this.#enqueueDelivery(id, errorText);
 				this.#scheduleEviction(id);
+			} finally {
+				job.settled = true;
 			}
 		})();
 
@@ -1010,6 +1017,10 @@ export class AsyncJobManager {
 
 	async #runDeliveryLoop(): Promise<void> {
 		while (this.#deliveries.length > 0) {
+			if (this.#inFlightDeliveries.length >= MAX_CONCURRENT_DELIVERIES) {
+				await this.#waitForDeliveryQueueChange(250);
+				continue;
+			}
 			const delivery = this.#deliveries[0];
 			if (this.isDeliverySuppressed(delivery.jobId)) {
 				this.#deliveries.shift();
@@ -1063,11 +1074,22 @@ export class AsyncJobManager {
 		const promise = (async () => {
 			this.#inFlightDeliveries.push(delivery);
 			try {
-				await sink(
-					delivery.jobId,
-					delivery.text,
-					this.#jobs.get(delivery.jobId) ?? this.#reconstructEvictedJob(delivery),
-				);
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				const timeoutPromise = new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Error("Async job delivery sink timed out")), DELIVERY_TIMEOUT_MS);
+				});
+				try {
+					await Promise.race([
+						sink(
+							delivery.jobId,
+							delivery.text,
+							this.#jobs.get(delivery.jobId) ?? this.#reconstructEvictedJob(delivery),
+						),
+						timeoutPromise,
+					]);
+				} finally {
+					if (timer) clearTimeout(timer);
+				}
 				this.#consumeJobResult(delivery.jobId);
 			} catch (error) {
 				delivery.attempt += 1;

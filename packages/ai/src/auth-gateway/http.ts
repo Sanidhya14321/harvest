@@ -9,6 +9,7 @@ import * as os from "node:os";
 import { getInstallId } from "@harvest/pi-utils";
 import type { Api, AssistantMessage, Model } from "../types";
 import type { ClientUsageIdentity } from "../usage";
+export { parseBind, isLoopbackHost, type ParsedBind } from "../utils/parse-bind";
 
 const JSON_HEADERS = {
 	"Content-Type": "application/json",

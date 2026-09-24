@@ -113,16 +113,10 @@ def reset_index_cache() -> None:
 
 
 def render_index(replay_token: str | None) -> str:
-    """Render the dashboard HTML with the server's replay token baked in.
-
-    The token lands inside a `<script type="application/json">` block that the
-    page parses at startup and attaches to every privileged fetch. The user
-    never sees or types it; the only credential to manage is the env var on
-    the server itself.
-    """
+    """Render the dashboard HTML without embedding the privileged token."""
     config = {
         "replayEnabled": bool(replay_token),
-        "replayToken": replay_token or "",
+        "replayToken": "",
     }
     # `</` would otherwise let an attacker-controlled token break out of the
     # script element; escape it the standard way.

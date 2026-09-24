@@ -1290,15 +1290,33 @@ async function runChecker(
 	}
 }
 
+const MAX_CHECKER_OUTPUT_CHARS = 1024 * 1024; // 1 MB text cap
+
 interface OutputAccumulator {
 	text: string;
+	truncated?: boolean;
 }
 
 async function pumpStream(stream: ReadableStream<Uint8Array> | undefined, into: OutputAccumulator): Promise<void> {
 	if (!stream) return;
 	const decoder = new TextDecoder();
-	for await (const chunk of stream) into.text += decoder.decode(chunk, { stream: true });
-	into.text += decoder.decode();
+	for await (const chunk of stream) {
+		if (into.text.length < MAX_CHECKER_OUTPUT_CHARS) {
+			const decoded = decoder.decode(chunk, { stream: true });
+			const remaining = MAX_CHECKER_OUTPUT_CHARS - into.text.length;
+			if (decoded.length > remaining) {
+				into.text += decoded.slice(0, remaining);
+				into.truncated = true;
+			} else {
+				into.text += decoded;
+			}
+		} else {
+			into.truncated = true;
+		}
+	}
+	if (into.text.length < MAX_CHECKER_OUTPUT_CHARS) {
+		into.text += decoder.decode();
+	}
 }
 
 /** Truncate to the last complete line so partial parses never see a torn record. */

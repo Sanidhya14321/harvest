@@ -173,6 +173,14 @@ export async function selectSubagentWithLaya(
 	}
 
 	const available = options.availableAgents ?? [];
+	const nameMap = new Map<string, string>();
+	for (const a of available) {
+		nameMap.set(a.name.toLowerCase(), a.name);
+	}
+	if (!nameMap.has(defaultAgent.toLowerCase())) {
+		nameMap.set(defaultAgent.toLowerCase(), defaultAgent);
+	}
+
 	if (available.length <= 1) {
 		// Only 0 or 1 agent available; no selection decision to make
 		const onlyAgent = available[0]?.name ?? defaultAgent;
@@ -251,11 +259,12 @@ export async function selectSubagentWithLaya(
 
 	const answer = decideResult.data.subagent_choice;
 	const rawChoice = answer.choice || answer.answer || (answer as { selected?: string }).selected || "";
-	const layaPick = rawChoice.toLowerCase().trim();
+	const layaPickNormalized = rawChoice.toLowerCase().trim();
 	const confidence = answer.confidence ?? 0.0;
 
-	// Validate that Laya's pick is in the available roster
-	const validPick = agentNames.includes(layaPick) ? layaPick : defaultAgent;
+	// Validate that Laya's pick is in the available roster and restore original exact case
+	const validPickNormalized = agentNames.includes(layaPickNormalized) ? layaPickNormalized : defaultAgent.toLowerCase();
+	const validPick = nameMap.get(validPickNormalized) ?? defaultAgent;
 
 	// Step 2a: Shadow mode - record telemetry and audit logs, but ALWAYS dispatch default/caller agent
 	if (!activeSelectionEnabled && !options.forcedAuto) {

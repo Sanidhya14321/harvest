@@ -192,6 +192,7 @@ export function computeDefaultSessionDir(
 	const sessionDir = path.join(sessionsRoot, encodedDirName);
 	migrateLegacyAbsoluteSessionDir(resolvedCwd, sessionDir, sessionsRoot);
 	migrateHashedSessionDir(hashedDirName, sessionDir, sessionsRoot);
+	storage.ensureDirSync(sessionsRoot);
 	storage.ensureDirSync(sessionDir);
 	return sessionDir;
 }

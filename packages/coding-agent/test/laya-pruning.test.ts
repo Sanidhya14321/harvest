@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
-import type { AgentMessage, AssistantMessage, ToolResultMessage, UserMessage } from "@harvest/pi-ai";
+import type { AssistantMessage, ToolResultMessage, UserMessage } from "@harvest/pi-ai";
+import type { AgentMessage } from "@harvest/pi-agent-core";
 import {
 	createScoringExcerpt,
 	estimateTextTokens,
@@ -104,11 +105,9 @@ describe("Laya Context Pruning (Phase 1)", () => {
 	describe("Always-keep set and candidate filtering (Step 1)", () => {
 		it("bypasses scoring and never prunes if total turns <= keepRecentTurns", async () => {
 			const mockDecide = vi.fn();
-			const mockClient: LayaClient = {
-				isAvailable: async () => true,
+			const mockClient = {
 				decide: mockDecide,
-				getHealth: async () => ({ status: "ok", device: "cpu" }),
-			};
+			} as unknown as LayaClient;
 
 			const messages: AgentMessage[] = [
 				makeUserMessage("Turn 0 user"),
@@ -149,19 +148,18 @@ describe("Laya Context Pruning (Phase 1)", () => {
 			];
 
 			const mockDecide = vi.fn().mockResolvedValue({
+				success: true,
 				fallback: false,
 				latencyMs: 15,
 				data: {
 					tool_0_2_read_file: { score: 0.1, confidence: 0.9 },
 					tool_1_4_read_file: { score: 2.8, confidence: 0.95 },
 				},
-			} as LayaDecideResult);
+			});
 
-			const mockClient: LayaClient = {
-				isAvailable: async () => true,
+			const mockClient = {
 				decide: mockDecide,
-				getHealth: async () => ({ status: "ok", device: "cpu" }),
-			};
+			} as unknown as LayaClient;
 
 			const result = await pruneContextWithLaya(messages, {
 				client: mockClient,
@@ -214,9 +212,9 @@ describe("Laya Context Pruning (Phase 1)", () => {
 				makeAssistantMessage("Done"),
 			];
 
-			const mockClient: LayaClient = {
-				isAvailable: async () => true,
+			const mockClient = {
 				decide: async () => ({
+					success: true,
 					fallback: false,
 					latencyMs: 20,
 					data: {
@@ -224,8 +222,7 @@ describe("Laya Context Pruning (Phase 1)", () => {
 						tool_1_3_write_file: { score: 2.7, confidence: 0.9 },
 					},
 				}),
-				getHealth: async () => ({ status: "ok", device: "cpu" }),
-			};
+			} as unknown as LayaClient;
 
 			const result = await pruneContextWithLaya(messages, {
 				client: mockClient,
@@ -266,9 +263,9 @@ describe("Laya Context Pruning (Phase 1)", () => {
 			];
 
 			// All candidates score zero
-			const mockClient: LayaClient = {
-				isAvailable: async () => true,
+			const mockClient = {
 				decide: async () => ({
+					success: true,
 					fallback: false,
 					latencyMs: 10,
 					data: {
@@ -277,8 +274,7 @@ describe("Laya Context Pruning (Phase 1)", () => {
 						tool_2_5_bash: { score: 0.0, confidence: 0.9 },
 					},
 				}),
-				getHealth: async () => ({ status: "ok", device: "cpu" }),
-			};
+			} as unknown as LayaClient;
 
 			const result = await pruneContextWithLaya(messages, {
 				client: mockClient,
@@ -310,16 +306,15 @@ describe("Laya Context Pruning (Phase 1)", () => {
 			];
 
 			// Mock sidecar failure (timeout or network error)
-			const mockClient: LayaClient = {
-				isAvailable: async () => false,
+			const mockClient = {
 				decide: async () => ({
+					success: false,
 					fallback: true,
 					fallbackReason: "sidecar_connection_refused",
 					latencyMs: 300,
 					data: null,
 				}),
-				getHealth: async () => ({ status: "error", error: "Connection refused" }),
-			};
+			} as unknown as LayaClient;
 
 			const result = await pruneContextWithLaya(messages, {
 				client: mockClient,
@@ -349,17 +344,16 @@ describe("Laya Context Pruning (Phase 1)", () => {
 				makeAssistantMessage("Done"),
 			];
 
-			const mockClient: LayaClient = {
-				isAvailable: async () => true,
+			const mockClient = {
 				decide: async () => ({
+					success: true,
 					fallback: false,
 					latencyMs: 12,
 					data: {
 						tool_0_1_grep: { score: 1.8, confidence: 0.88 },
 					},
 				}),
-				getHealth: async () => ({ status: "ok", device: "cpu" }),
-			};
+			} as unknown as LayaClient;
 
 			await pruneContextWithLaya(messages, {
 				client: mockClient,
@@ -421,14 +415,12 @@ describe("Laya Context Pruning (Phase 1)", () => {
 					// Low relevance for compiler trace, high for pool config
 					answers[qid] = qid.includes("bash") ? { score: 0.1, confidence: 0.9 } : { score: 2.8, confidence: 0.95 };
 				}
-				return { fallback: false, latencyMs: 10, data: answers };
+				return { success: true, fallback: false, latencyMs: 10, data: answers };
 			});
 
-			const mockClient: LayaClient = {
-				isAvailable: async () => true,
-				decide: mockDecide as any,
-				getHealth: async () => ({ status: "ok", device: "cpu" }),
-			};
+			const mockClient = {
+				decide: mockDecide,
+			} as unknown as LayaClient;
 
 			const testSessionId = `test-prefix-stability-${Date.now()}`;
 

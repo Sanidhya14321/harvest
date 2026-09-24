@@ -176,23 +176,45 @@ impl PathPolicy {
 		};
 		let absolute = lexical_absolute(absolute, &self.cwd);
 		let root = lexical_absolute(root, &self.cwd);
-		if is_within(&absolute, &root) {
-			return true;
+		let real_root = match std::fs::canonicalize(&root) {
+			Ok(r) => r,
+			Err(_) => root.clone(),
+		};
+		// Lexical pre-check: must be lexically under root or real_root
+		if !is_within(&absolute, &root) && !is_within(&absolute, &real_root) {
+			return false;
 		}
-		let Ok(real_root) = std::fs::canonicalize(&root) else {
-			return false;
-		};
-		if is_within(&absolute, &real_root) {
-			return true;
+		// If target exists, canonicalize directly and check containment
+		if let Ok(real_target) = std::fs::canonicalize(&absolute) {
+			return is_within(&real_target, &real_root);
 		}
-		let Some(parent) = absolute.parent() else {
+		// If it is an unresolvable symlink, reject
+		if std::fs::symlink_metadata(&absolute).is_ok_and(|m| m.file_type().is_symlink()) {
 			return false;
-		};
-		let Some(name) = absolute.file_name() else {
-			return false;
-		};
-		std::fs::canonicalize(parent)
-			.is_ok_and(|real_parent| is_within(&real_parent.join(name), &real_root))
+		}
+		// Walk up to find deepest existing ancestor
+		let mut ancestor = absolute.parent();
+		let mut tail = Vec::new();
+		if let Some(name) = absolute.file_name() {
+			tail.push(name);
+		}
+		while let Some(current) = ancestor {
+			if let Ok(real_parent) = std::fs::canonicalize(current) {
+				let mut reconstructed = real_parent;
+				for part in tail.into_iter().rev() {
+					reconstructed.push(part);
+				}
+				return is_within(&reconstructed, &real_root);
+			}
+			if std::fs::symlink_metadata(current).is_ok_and(|m| m.file_type().is_symlink()) {
+				return false;
+			}
+			if let Some(name) = current.file_name() {
+				tail.push(name);
+			}
+			ancestor = current.parent();
+		}
+		false
 	}
 
 	/// Whether hashline tag recovery may rebind onto `recovered`.

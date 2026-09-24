@@ -13,31 +13,31 @@ const TEST_AGENTS: AgentDefinition[] = [
 		name: "scout",
 		description: "Fast exploration agent",
 		systemPrompt: "You are scout",
-		source: "bundle",
+		source: "bundled",
 	},
 	{
 		name: "reviewer",
 		description: "Code review specialist",
 		systemPrompt: "You are reviewer",
-		source: "bundle",
+		source: "bundled",
 	},
 	{
 		name: "security-reviewer",
 		description: "Security audit specialist",
 		systemPrompt: "You are security reviewer",
-		source: "bundle",
+		source: "bundled",
 	},
 	{
 		name: "sonic",
 		description: "Mechanical execution agent",
 		systemPrompt: "You are sonic",
-		source: "bundle",
+		source: "bundled",
 	},
 	{
 		name: "task",
 		description: "General-purpose agent",
 		systemPrompt: "You are task",
-		source: "bundle",
+		source: "bundled",
 	},
 ];
 
@@ -77,6 +77,7 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 				},
 				{
 					name: "unannotated-agent",
+					description: "",
 					systemPrompt: "You are unannotated",
 					source: "project",
 				},
@@ -90,8 +91,9 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 
 	describe("Step 2: Confidence-Gated Auto-Pick vs Escalation", () => {
 		it("auto-picks subagent directly when confidence >= threshold (0.80)", async () => {
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(async () => ({
+					success: true,
 					data: {
 						subagent_choice: {
 							answer: "scout",
@@ -101,10 +103,8 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 					fallback: false,
 					latencyMs: 15,
 				})),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => true),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			const activeSettings = Settings.isolated({
 				"laya.enabled": true,
@@ -133,8 +133,9 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 		});
 
 		it("escalates to default/caller agent when confidence is below threshold (< 0.80)", async () => {
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(async () => ({
+					success: true,
 					data: {
 						subagent_choice: {
 							answer: "reviewer",
@@ -144,10 +145,8 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 					fallback: false,
 					latencyMs: 12,
 				})),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => true),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			const activeSettings = Settings.isolated({
 				"laya.enabled": true,
@@ -177,8 +176,9 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 		});
 
 		it("records decision in shadow mode without altering actual subagent dispatch", async () => {
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(async () => ({
+					success: true,
 					data: {
 						subagent_choice: {
 							answer: "scout",
@@ -188,10 +188,8 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 					fallback: false,
 					latencyMs: 15,
 				})),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => true),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			// Active selection disabled, shadow mode enabled
 			const shadowSettings = Settings.isolated({
@@ -219,8 +217,9 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 		});
 
 		it("allows forced-auto mode to bypass confidence threshold for benchmark comparison", async () => {
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(async () => ({
+					success: true,
 					data: {
 						subagent_choice: {
 							answer: "security-reviewer",
@@ -230,10 +229,8 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 					fallback: false,
 					latencyMs: 14,
 				})),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => true),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			const decision = await selectSubagentWithLaya("Check for possible path traversal in file loader", {
 				client: mockClient,
@@ -251,16 +248,15 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 
 	describe("Step 3: Fail-Open Fallback", () => {
 		it("fails OPEN to default agent when sidecar is unreachable or errors", async () => {
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(async () => ({
+					success: false,
 					fallback: true,
 					fallbackReason: "fetch_failed: connection refused",
 					latencyMs: 5,
 				})),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => false),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			const decision = await selectSubagentWithLaya("Investigate memory leak", {
 				client: mockClient,
@@ -280,16 +276,15 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 		});
 
 		it("fails OPEN to default agent when sidecar times out (~300ms budget)", async () => {
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(async () => ({
+					success: false,
 					fallback: true,
 					fallbackReason: "timeout: exceeded 300ms budget",
 					latencyMs: 301,
 				})),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => false),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			const decision = await selectSubagentWithLaya("Audit dependencies", {
 				client: mockClient,
@@ -308,12 +303,10 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 	describe("Settings and Roster Boundary Bypasses", () => {
 		it("immediately returns the only agent without calling sidecar when roster has <= 1 agent", async () => {
 			const singleAgent = [TEST_AGENTS[0]!];
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => true),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			const decision = await selectSubagentWithLaya("Do something", {
 				client: mockClient,
@@ -332,12 +325,10 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 				"laya.subagentSelectionShadow": false,
 			});
 
-			const mockClient: LayaClient = {
+			const mockClient = {
 				decide: vi.fn(),
-				batchDecide: vi.fn(),
 				isHealthy: vi.fn(async () => true),
-				getMetrics: vi.fn(),
-			};
+			} as unknown as LayaClient;
 
 			const decision = await selectSubagentWithLaya("Do something", {
 				client: mockClient,

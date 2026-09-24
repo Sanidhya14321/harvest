@@ -29,6 +29,16 @@ try:
 except ImportError:
     from .hardware import detect_hardware
 
+try:
+    from bucketing import bucket_items_by_length
+except ImportError:
+    from .bucketing import bucket_items_by_length
+
+try:
+    from calibration import CalibrationManager, CALIBRATION_PARAMS_PATH
+except ImportError:
+    from .calibration import CalibrationManager, CALIBRATION_PARAMS_PATH
+
 if sys.platform == "win32":
     # Prevent IOCP WinError 64 (ERROR_NETNAME_DELETED) on abrupt client disconnections
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -58,15 +68,31 @@ logging.basicConfig(
 logger = logging.getLogger("laya-sidecar")
 
 MODEL_ID = "convaiinnovations/laya-typed-decisions"
-DEFAULT_HOST = "127.0.0.1"
+DEFAULT_HOST = os.getenv("LAYA_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("LAYA_PORT", "8177"))
-LOG_FILE_PATH = Path(os.getenv("LAYA_LOG_FILE", Path(__file__).parent / "decisions.jsonl"))
+log_dir = os.getenv("LAYA_LOG_DIR")
+if log_dir:
+    LOG_FILE_PATH = Path(log_dir) / "decisions.jsonl"
+else:
+    LOG_FILE_PATH = Path(os.getenv("LAYA_LOG_FILE", Path(__file__).parent / "decisions.jsonl"))
+
+MAX_QUESTIONS = 64
+MAX_STATE_CHARS = 500_000
 
 # Module-level singleton and hardware state
 _hardware_info: Dict[str, Any] = detect_hardware()
 _agent: Optional[laya.agent.Agent] = None
 _model_ready: bool = False
 _device: str = _hardware_info.get("device", "cpu")
+_calibration_manager: CalibrationManager = CalibrationManager()
+_inference_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def get_inference_semaphore() -> asyncio.Semaphore:
+    global _inference_semaphore
+    if _inference_semaphore is None:
+        _inference_semaphore = asyncio.Semaphore(2)
+    return _inference_semaphore
 
 
 def get_agent() -> laya.agent.Agent:
@@ -86,42 +112,6 @@ def log_decision_record(record: dict[str, Any]) -> None:
     except Exception as e:
         logger.warning(f"Failed to write decision log: {e}")
 
-
-def bucket_items_by_length(
-    items: list[dict[str, Any]],
-    max_ratio: float = 1.5,
-    max_abs_diff: int = 256,
-) -> list[list[dict[str, Any]]]:
-    """Group items by sequence length to minimize padding waste during collation.
-
-    Items are sorted by sequence length. A bucket is split when adding an item
-    would exceed `max_ratio` (curr_len / min_len) or `max_abs_diff` (curr_len - min_len).
-    """
-    if not items:
-        return []
-    if len(items) == 1:
-        return [items]
-
-    sorted_items = sorted(items, key=lambda x: len(x["seq"]))
-    buckets: list[list[dict[str, Any]]] = []
-    curr_bucket = [sorted_items[0]]
-
-    for item in sorted_items[1:]:
-        min_len = len(curr_bucket[0]["seq"])
-        curr_len = len(item["seq"])
-        ratio = curr_len / max(1, min_len)
-        abs_diff = curr_len - min_len
-
-        if ratio <= max_ratio and abs_diff <= max_abs_diff:
-            curr_bucket.append(item)
-        else:
-            buckets.append(curr_bucket)
-            curr_bucket = [item]
-
-    if curr_bucket:
-        buckets.append(curr_bucket)
-
-    return buckets
 
 
 @asynccontextmanager
@@ -161,19 +151,6 @@ app = FastAPI(
     version="1.0.0",
     description="Local typed decision microservice for Harvest agent harness",
     lifespan=lifespan,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1",
-        "http://127.0.0.1:8177",
-        "http://localhost",
-        "http://localhost:8177",
-    ],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
 )
 
 
@@ -227,6 +204,18 @@ async def decide(req: DecideRequest) -> DecideResponse:
             detail="Model is still loading or unavailable",
         )
 
+    if len(req.questions) > MAX_QUESTIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Question count {len(req.questions)} exceeds maximum limit of {MAX_QUESTIONS}",
+        )
+    state_str = str(req.state)
+    if len(state_str) > MAX_STATE_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"State size {len(state_str)} exceeds maximum limit of {MAX_STATE_CHARS} characters",
+        )
+
     state = req.state
     # Check English language requirement
     # ModernBERT-large English checkpoint will hallucinate or degrade on non-English text.
@@ -242,126 +231,136 @@ async def decide(req: DecideRequest) -> DecideResponse:
     except Exception as e:
         logger.debug(f"Language detection check failed: {e}")
 
-    start_time = time.perf_counter()
-    try:
-        # Check if state is a dictionary providing per-question states (for batched multi-chunk scoring)
-        ids = list(req.questions.keys())
-        per_question = isinstance(state, dict) and any(qid in state for qid in ids)
+    semaphore = get_inference_semaphore()
+    async with semaphore:
+        start_time = time.perf_counter()
+        try:
+            # Check if state is a dictionary providing per-question states (for batched multi-chunk scoring)
+            ids = list(req.questions.keys())
+            per_question = isinstance(state, dict) and any(qid in state for qid in ids)
 
-        if per_question or len(ids) > 1:
-            import numpy as np
-            import torch
-            from laya.agent import (
-                QTYPES,
-                build_sequence,
-                collate_items,
-                render_options,
-                temp_bucket,
-                confidence_from_probs,
+            if per_question or len(ids) > 1:
+                import numpy as np
+                import torch
+                from laya.agent import (
+                    QTYPES,
+                    build_sequence,
+                    collate_items,
+                    render_options,
+                    temp_bucket,
+                    confidence_from_probs,
+                )
+
+                max_len = _agent.cfg.get("max_len", 1024)
+                head_max_len = _agent.cfg.get("head_max_len", 256)
+
+                raw_items = []
+                for qid in ids:
+                    q = _agent._to_internal(req.questions[qid])
+                    q_state = state.get(qid, state) if isinstance(state, dict) else state
+                    seq, markers = build_sequence(_agent.tok, q_state, q, max_len, head_max_len)
+                    if len(markers) != len(render_options(q)):
+                        raise ValueError(f"question {qid!r} options exceed head_max_len={head_max_len}")
+                    raw_items.append({
+                        "qid": qid,
+                        "q": q,
+                        "seq": seq,
+                        "markers": markers,
+                        "qtype": QTYPES[q["t"]],
+                    })
+
+                buckets = bucket_items_by_length(raw_items)
+                answers = {}
+                total_tokens = 0
+                use_amp = _agent.device.type == "cuda"
+
+                for bucket in buckets:
+                    b_items = [{"ids": it["seq"], "markers": it["markers"], "qtype": it["qtype"]} for it in bucket]
+                    b = collate_items([b_items], _agent.tok.pad_token_id)
+                    total_tokens += int(b["attention_mask"].sum())
+
+                    with torch.no_grad():
+                        with torch.autocast(device_type=_agent.device.type, dtype=_agent.dtype, enabled=use_amp):
+                            logits, act = _agent.model(
+                                b["input_ids"].to(_agent.device),
+                                b["attention_mask"].to(_agent.device),
+                                b["marker_pos"].to(_agent.device),
+                                b["marker_mask"].to(_agent.device),
+                                b["qtype"].to(_agent.device),
+                            )
+
+                        b_logits = logits.detach().float().cpu().numpy()
+                        b_act = torch.softmax(act.detach().float(), -1).cpu().numpy()
+
+                    for r, it in enumerate(bucket):
+                        qid = it["qid"]
+                        q = it["q"]
+                        k = len(it["markers"])
+                        qt = it["qtype"]
+                        t_scale = _agent.temperature_by_options.get(temp_bucket(qt, k), _agent.temperature[qt])
+                        z = b_logits[r, :k] / t_scale
+                        p = np.exp(z - z.max())
+                        p = p / p.sum()
+
+                        conf_score = round(confidence_from_probs(p, k), 4)
+                        ext = {"act_probability": round(float(b_act[r, 0]), 4)}
+
+                        if q["t"] == "choice":
+                            keys = list(q["crit"].keys())
+                            answers[qid] = {
+                                "type": "choice",
+                                "choice": keys[int(p.argmax())],
+                                "probabilities": {kk: round(float(v), 4) for kk, v in zip(keys, p)},
+                                "confidence": conf_score,
+                                "action": ext,
+                            }
+                        elif q["t"] == "score":
+                            exp_score = float((np.arange(k) * p).sum())
+                            answers[qid] = {
+                                "type": "score",
+                                "score": round(exp_score, 4),
+                                "legend": {str(i): c for i, c in enumerate(q["crit"])},
+                                "probabilities": {str(i): round(float(v), 4) for i, v in enumerate(p)},
+                                "confidence": conf_score,
+                                "action": ext,
+                            }
+                        else:
+                            answers[qid] = {
+                                "type": "noul",
+                                "noul": round(float(p[1]), 4),
+                                "confidence": round(max(float(p[1]), 1.0 - float(p[1])), 4),
+                                "action": ext,
+                            }
+
+                result = {
+                    "model": "laya-rl-agent",
+                    "answers": answers,
+                    "usage": {"input_tokens": total_tokens, "output_tokens": 0},
+                }
+            else:
+                # Run prediction on the singleton agent
+                result = _agent.predict(state=state, questions=req.questions)
+        except Exception as e:
+            logger.error(f"Inference error during predict: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Laya inference error: {str(e)}",
             )
-
-            max_len = _agent.cfg.get("max_len", 1024)
-            head_max_len = _agent.cfg.get("head_max_len", 256)
-
-            raw_items = []
-            for qid in ids:
-                q = _agent._to_internal(req.questions[qid])
-                q_state = state.get(qid, state) if isinstance(state, dict) else state
-                seq, markers = build_sequence(_agent.tok, q_state, q, max_len, head_max_len)
-                if len(markers) != len(render_options(q)):
-                    raise ValueError(f"question {qid!r} options exceed head_max_len={head_max_len}")
-                raw_items.append({
-                    "qid": qid,
-                    "q": q,
-                    "seq": seq,
-                    "markers": markers,
-                    "qtype": QTYPES[q["t"]],
-                })
-
-            buckets = bucket_items_by_length(raw_items)
-            answers = {}
-            total_tokens = 0
-            use_amp = _agent.device.type == "cuda"
-
-            for bucket in buckets:
-                b_items = [{"ids": it["seq"], "markers": it["markers"], "qtype": it["qtype"]} for it in bucket]
-                b = collate_items([b_items], _agent.tok.pad_token_id)
-                total_tokens += int(b["attention_mask"].sum())
-
-                with torch.no_grad():
-                    with torch.autocast(device_type=_agent.device.type, dtype=_agent.dtype, enabled=use_amp):
-                        logits, act = _agent.model(
-                            b["input_ids"].to(_agent.device),
-                            b["attention_mask"].to(_agent.device),
-                            b["marker_pos"].to(_agent.device),
-                            b["marker_mask"].to(_agent.device),
-                            b["qtype"].to(_agent.device),
-                        )
-
-                    b_logits = logits.detach().float().cpu().numpy()
-                    b_act = torch.softmax(act.detach().float(), -1).cpu().numpy()
-
-                for r, it in enumerate(bucket):
-                    qid = it["qid"]
-                    q = it["q"]
-                    k = len(it["markers"])
-                    qt = it["qtype"]
-                    t_scale = _agent.temperature_by_options.get(temp_bucket(qt, k), _agent.temperature[qt])
-                    z = b_logits[r, :k] / t_scale
-                    p = np.exp(z - z.max())
-                    p = p / p.sum()
-
-                    conf_score = round(confidence_from_probs(p, k), 4)
-                    ext = {"act_probability": round(float(b_act[r, 0]), 4)}
-
-                    if q["t"] == "choice":
-                        keys = list(q["crit"].keys())
-                        answers[qid] = {
-                            "type": "choice",
-                            "choice": keys[int(p.argmax())],
-                            "probabilities": {kk: round(float(v), 4) for kk, v in zip(keys, p)},
-                            "confidence": conf_score,
-                            "action": ext,
-                        }
-                    elif q["t"] == "score":
-                        exp_score = float((np.arange(k) * p).sum())
-                        answers[qid] = {
-                            "type": "score",
-                            "score": round(exp_score, 4),
-                            "legend": {str(i): c for i, c in enumerate(q["crit"])},
-                            "probabilities": {str(i): round(float(v), 4) for i, v in enumerate(p)},
-                            "confidence": conf_score,
-                            "action": ext,
-                        }
-                    else:
-                        answers[qid] = {
-                            "type": "noul",
-                            "noul": round(float(p[1]), 4),
-                            "confidence": round(max(float(p[1]), 1.0 - float(p[1])), 4),
-                            "action": ext,
-                        }
-
-            result = {
-                "model": "laya-rl-agent",
-                "answers": answers,
-                "usage": {"input_tokens": total_tokens, "output_tokens": 0},
-            }
-        else:
-            # Run prediction on the singleton agent
-            result = _agent.predict(state=state, questions=req.questions)
-    except Exception as e:
-        logger.error(f"Inference error during predict: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Laya inference error: {str(e)}",
-        )
 
     latency_ms = (time.perf_counter() - start_time) * 1000
     answers = result.get("answers", {})
     usage = result.get("usage", {})
 
+    # Apply calibration per call-site
+    call_site = (req.metadata or {}).get("call_site", "default")
+    for qid, ans in answers.items():
+        if isinstance(ans, dict) and "confidence" in ans and ans["confidence"] is not None:
+            raw_conf = float(ans["confidence"])
+            calibrated_conf = round(_calibration_manager.get_calibrated_confidence(raw_conf, call_site), 4)
+            ans["raw_confidence"] = raw_conf
+            ans["confidence"] = calibrated_conf
+
     # Log for calibration and auditing
-    call_site = (req.metadata or {}).get("call_site", "unknown")
     session_id = (req.metadata or {}).get("session_id", "unknown")
     state_snippet = str(state)[:200]
 

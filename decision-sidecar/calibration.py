@@ -231,31 +231,37 @@ class CalibrationManager:
 def run_calibration_cli():
     """CLI runner to fit calibration parameters on log or synthetic benchmark."""
     parser = argparse.ArgumentParser(description="Calibrate Laya Decision Confidence")
-    parser.add_argument("--synthetic", action="store_true", help="Generate 150 synthetic samples per site if logs are sparse")
+    parser.add_argument("--decisions", type=str, default=str(LOG_FILE_PATH), help="Path to decisions jsonl log file")
+    parser.add_argument("--out", type=str, default=str(CALIBRATION_PARAMS_PATH), help="Path to output calibration params json")
+    parser.add_argument("--synthetic", action="store_true", help="Run separate synthetic calibration mode without mixing into observed records")
     args = parser.parse_args()
 
+    decisions_path = Path(args.decisions)
+    out_path = Path(args.out)
     records: List[Dict[str, Any]] = []
 
-    if LOG_FILE_PATH.exists():
-        with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.trim() if hasattr(line, "trim") else line.strip()
-                if line:
-                    try:
-                        rec = json.loads(line)
-                        if rec.get("ground_truth") is not None:
-                            records.append(rec)
-                    except Exception:
-                        pass
+    if args.synthetic:
+        print("Running synthetic calibration mode (isolated from observed records)...")
+        records = generate_synthetic_calibration_dataset(count_per_site=150)
+    else:
+        if decisions_path.exists():
+            with open(decisions_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            rec = json.loads(line)
+                            if rec.get("ground_truth") is not None:
+                                records.append(rec)
+                        except Exception:
+                            pass
 
-    print(f"Loaded {len(records)} ground-truth records from {LOG_FILE_PATH}")
+        print(f"Loaded {len(records)} ground-truth records from {decisions_path}")
+        if len(records) == 0:
+            print("No ground-truth records found for calibration. To run synthetic benchmark calibration, use --synthetic.")
+            return
 
-    if len(records) < 50 or args.synthetic:
-        print("Generating 150 synthetic benchmark records per site for Step 4 calibration...")
-        synthetic = generate_synthetic_calibration_dataset(count_per_site=150)
-        records.extend(synthetic)
-
-    manager = CalibrationManager()
+    manager = CalibrationManager(params_path=out_path)
     results = manager.calibrate_from_records(records)
 
     print("\n=== Calibration Results (Step 4) ===")

@@ -2,21 +2,21 @@
  * Tests for Laya Setup Wizard Scene and Local Configuration.
  */
 
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
 import { Settings } from "../src/config/settings";
 import { ALL_SCENES, selectSetupScenes } from "../src/modes/setup-wizard";
 import { layaSetupScene } from "../src/modes/setup-wizard/scenes/laya";
 import type { SetupSceneHost, SetupSceneResult } from "../src/modes/setup-wizard/scenes/types";
 import type { InteractiveModeContext } from "../src/modes/types";
 import { initTheme } from "../src/modes/theme/theme";
-import {
-	findPythonExecutable,
-	isLayaSidecarRunning,
-	configureLayaLocally,
-} from "../src/core/harvest/laya-service";
+import * as layaService from "../src/core/harvest/laya-service";
 import { checkToolCallGating } from "../src/core/harvest/laya-gating";
 import { routeModelWithLaya } from "../src/core/harvest/laya-routing";
 import { checkCompletionWithLaya } from "../src/core/harvest/laya-completion";
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 function createMockHost(settings: Settings): {
 	host: SetupSceneHost;
@@ -131,20 +131,28 @@ describe("Laya Setup Scene in Harvest Setup Wizard", () => {
 	});
 
 	it("probes local python and sidecar service", async () => {
-		const py = await findPythonExecutable();
-		expect(py).not.toBeNull();
-		expect(py?.version).toBeDefined();
+		vi.spyOn(layaService, "findPythonExecutable").mockResolvedValue({ path: "/usr/bin/python3", version: "3.10.12" });
+		vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(false);
 
-		const running = await isLayaSidecarRunning();
-		// Sidecar was started as daemon in previous step
+		const py = await layaService.findPythonExecutable();
+		expect(py).not.toBeNull();
+		expect(py?.version).toBe("3.10.12");
+
+		const running = await layaService.isLayaSidecarRunning();
 		expect(typeof running).toBe("boolean");
 	});
 
 	it("configures Laya locally and connects to Harvest settings when user confirms", async () => {
+		vi.spyOn(layaService, "findPythonExecutable").mockResolvedValue({ path: "/usr/bin/python3", version: "3.10.12" });
+		vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(false);
+		vi.spyOn(layaService, "checkLayaDependencies").mockResolvedValue(true);
+		vi.spyOn(layaService, "ensureLayaModelCached").mockResolvedValue({ success: true });
+		vi.spyOn(layaService, "startLayaSidecarProcess").mockResolvedValue({ success: true });
+
 		const settings = Settings.isolated();
 		const stepsLogged: string[] = [];
 
-		const result = await configureLayaLocally({
+		const result = await layaService.configureLayaLocally({
 			settings,
 			onStepUpdate: (id, status, msg) => {
 				stepsLogged.push(`${id}:${status}:${msg ?? ""}`);
@@ -158,5 +166,5 @@ describe("Laya Setup Scene in Harvest Setup Wizard", () => {
 
 		expect(stepsLogged.some(s => s.startsWith("python:done"))).toBe(true);
 		expect(stepsLogged.some(s => s.startsWith("connect:done"))).toBe(true);
-	}, 45000);
+	});
 });

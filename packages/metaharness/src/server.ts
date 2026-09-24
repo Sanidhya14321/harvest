@@ -79,15 +79,17 @@ interface SseClient {
 	state: SseState;
 }
 
-function parseServerArgs(argv: string[]): { port: number; jobsDir: string } {
+function parseServerArgs(argv: string[]): { port: number; host: string; jobsDir: string } {
 	let port = 4700;
+	let host = "127.0.0.1";
 	let jobsDir = DEFAULT_JOBS_DIR;
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--port" && argv[i + 1]) port = Number(argv[++i]);
+		else if (argv[i] === "--host" && argv[i + 1]) host = argv[++i];
 		else if (argv[i] === "--jobs-dir" && argv[i + 1]) jobsDir = path.resolve(argv[++i]);
 	}
 	if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error("--port must be 1..65535");
-	return { port, jobsDir };
+	return { port, host, jobsDir };
 }
 
 /** Job names are single path segments; anything else could escape the jobs dir. */
@@ -204,12 +206,13 @@ export class ManagerServer {
 		return this.#store;
 	}
 
-	start(port: number): Server<undefined> {
+	start(port: number, hostname: string = "127.0.0.1"): Server<undefined> {
 		this.#store.discover();
 		this.#store.syncAll();
 		this.#syncTimer = setInterval(() => this.#tick(), 2000);
 		this.#server = Bun.serve({
 			port,
+			hostname,
 			idleTimeout: 0,
 			// Bun bundles the dashboard (React + TSX) from the HTML import and
 			// serves it on the same port as the API — one process, no Vite.
@@ -760,11 +763,11 @@ if (import.meta.main) {
 		__metaharnessHooks?: boolean;
 	};
 	await host.__metaharnessServer?.stop();
-	const { port, jobsDir } = parseServerArgs(process.argv.slice(2));
+	const { port, host: bindHost, jobsDir } = parseServerArgs(process.argv.slice(2));
 	const manager = new ManagerServer(jobsDir);
 	host.__metaharnessServer = manager;
-	const server = manager.start(port);
-	process.stdout.write(`metaharness listening on http://localhost:${server.port} (jobs: ${jobsDir})\n`);
+	const server = manager.start(port, bindHost);
+	process.stdout.write(`metaharness listening on http://${bindHost}:${server.port} (jobs: ${jobsDir})\n`);
 	// Process-wide hooks register once; `--hot` re-evals reuse them via `host`.
 	if (!host.__metaharnessHooks) {
 		host.__metaharnessHooks = true;

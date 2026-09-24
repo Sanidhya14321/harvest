@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEexist, isEnoent, logger } from "@harvest/pi-utils";
+import { SecuritySandbox } from "../core/harvest/security";
 import { formatPathRelativeToCwd } from "../tools/path-utils";
 import { ToolError } from "../tools/tool-errors";
 import type {
@@ -325,8 +326,31 @@ export async function applyWorkspaceEdit(
 		onExecuted?.(change);
 	};
 
+	const sandbox = new SecuritySandbox(cwd);
+
 	if (edit.documentChanges) {
 		const ops = planDocumentChanges(edit.documentChanges);
+		for (const op of ops) {
+			if (op.kind === "text" || op.kind === "create" || op.kind === "delete") {
+				const filePath = uriToFile(op.uri);
+				const check = sandbox.assertPathJailed(filePath);
+				if (!check.jailed) {
+					throw new ToolError(check.error ?? `LSP mutation rejected: ${filePath} is outside workspace root`);
+				}
+			} else if (op.kind === "rename") {
+				const oldPath = uriToFile(op.oldUri);
+				const newPath = uriToFile(op.newUri);
+				const oldCheck = sandbox.assertPathJailed(oldPath);
+				if (!oldCheck.jailed) {
+					throw new ToolError(oldCheck.error ?? `LSP rename source rejected: ${oldPath} is outside workspace root`);
+				}
+				const newCheck = sandbox.assertPathJailed(newPath);
+				if (!newCheck.jailed) {
+					throw new ToolError(newCheck.error ?? `LSP rename target rejected: ${newPath} is outside workspace root`);
+				}
+			}
+		}
+
 		for (const op of ops) {
 			if (op.kind === "text") sortAndValidateTextEdits(op.edits);
 		}
@@ -433,8 +457,15 @@ export async function applyWorkspaceEdit(
 			}
 		}
 	} else if (edit.changes) {
-		// Legacy changes-map path: validate every file's edits before writing any.
 		const changes = edit.changes;
+		for (const uri in changes) {
+			const filePath = uriToFile(uri);
+			const check = sandbox.assertPathJailed(filePath);
+			if (!check.jailed) {
+				throw new ToolError(check.error ?? `LSP edit target rejected: ${filePath} is outside workspace root`);
+			}
+		}
+		// Legacy changes-map path: validate every file's edits before writing any.
 		for (const uri in changes) {
 			sortAndValidateTextEdits(changes[uri]);
 		}

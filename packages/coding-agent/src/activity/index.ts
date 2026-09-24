@@ -281,7 +281,9 @@ export class AgentActivityIndex {
 		const merged = persisted.filter(row => !liveKeys.has(`${row.kind}:${row.toolName ?? row.title}:${row.summary}`));
 		merged.push(...live);
 		merged.sort(compareRows);
-		return merged.slice(-Math.max(0, limit));
+		const clamped = Math.max(0, limit);
+		if (clamped === 0) return [];
+		return merged.slice(-clamped);
 	}
 
 	query(query: AgentActivityQuery = {}): AgentActivityRow[] {
@@ -310,6 +312,7 @@ export class AgentActivityIndex {
 		}
 		rows.sort(compareRows);
 		const limit = Math.max(0, Math.min(MAX_QUERY_LIMIT, query.limit ?? DEFAULT_QUERY_LIMIT));
+		if (limit === 0) return [];
 		return rows.slice(-limit);
 	}
 

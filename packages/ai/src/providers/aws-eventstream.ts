@@ -24,6 +24,7 @@ const PRELUDE_CRC_LEN = 4;
 const MESSAGE_CRC_LEN = 4;
 const HEADER_BLOCK_OFFSET = PRELUDE_LEN + PRELUDE_CRC_LEN;
 const MIN_MESSAGE_LEN = HEADER_BLOCK_OFFSET + MESSAGE_CRC_LEN;
+const MAX_MESSAGE_LEN = 16 * 1024 * 1024;
 
 export interface EventStreamMessage {
 	/** Lower-cased copy is *not* applied — Bedrock uses casing like `:event-type` verbatim. */
@@ -162,12 +163,16 @@ export async function* decodeEventStream(source: ReadableStream<Uint8Array>): As
 				const dv = new DataView(buf.buffer, buf.byteOffset + offset, buf.length - offset);
 				const total = dv.getUint32(0, false);
 				if (total < MIN_MESSAGE_LEN) throw new AIError.EventStreamFrameError(`total length ${total} below minimum`);
+				if (total > MAX_MESSAGE_LEN) throw new AIError.EventStreamFrameError(`total length ${total} exceeds maximum ${MAX_MESSAGE_LEN}`);
 				if (buf.length - offset < total) break;
 				const frame = buf.subarray(offset, offset + total);
 				yield decodeMessage(frame);
 				offset += total;
 			}
 			if (offset > 0) buf = buf.slice(offset);
+			if (buf.length > MAX_MESSAGE_LEN) {
+				throw new AIError.EventStreamFrameError(`event-stream buffer exceeds maximum ${MAX_MESSAGE_LEN}`);
+			}
 			if (done) break;
 		}
 		if (buf.length > 0) throw new AIError.EventStreamFrameError("truncated message at end of stream");

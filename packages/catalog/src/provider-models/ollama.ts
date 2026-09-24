@@ -84,7 +84,7 @@ function getContextWindow(modelInfo: Record<string, unknown> | undefined): numbe
 		return undefined;
 	}
 	for (const [key, value] of Object.entries(modelInfo)) {
-		if (typeof value !== "number") {
+		if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
 			continue;
 		}
 		if (key.endsWith(".context_length") || key.endsWith(".num_ctx") || key.endsWith(".context_window")) {
@@ -180,7 +180,7 @@ export function ollamaCloudModelManagerOptions(
 					// cap. DeepSeek V4 Pro/Flash deployments enforce a 65536 output ceiling
 					// (ollama/ollama#16890, #7266); every other id keeps the trusted
 					// reference limit, falling back to the historical safe cap otherwise.
-					const contextWindow = discoveredContextWindow ?? 128000;
+					const contextWindow = discoveredContextWindow ?? reference?.contextWindow ?? 128000;
 					const reasoning = capabilities ? capabilities.includes("thinking") : (reference?.reasoning ?? false);
 					const thinking = capabilities ? getThinkingConfig(id, capabilities) : reference?.thinking;
 					const input = capabilities

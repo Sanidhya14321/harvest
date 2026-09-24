@@ -13,7 +13,7 @@
 import { type Type, type } from "@harvest/omptype";
 import { logger } from "@harvest/pi-utils";
 import type { AuthStorage, StoredCredentialBlock } from "../auth-storage";
-import { parseBind } from "../utils/parse-bind";
+import { parseBind, isLoopbackHost } from "../utils/parse-bind";
 import { AuthBrokerRefresher, type AuthBrokerRefresherSchedule } from "./refresher";
 import type {
 	ClientUsageReportRequest,
@@ -648,6 +648,11 @@ function serveSnapshotStream(
 export function startAuthBroker(opts: AuthBrokerServerOptions): AuthBrokerServerHandle {
 	const bind = parseBind(opts.bind ?? DEFAULT_AUTH_BROKER_BIND);
 	const tokens = new Set<string>(opts.bearerTokens);
+	if (tokens.size === 0 && !isLoopbackHost(bind.hostname)) {
+		throw new Error(
+			`Unauthenticated auth-broker cannot bind to non-loopback host '${bind.hostname}'. Either configure bearerTokens or bind to a loopback address (127.0.0.1 or localhost).`,
+		);
+	}
 	const version = opts.version;
 	const streamKeepaliveMs = opts.streamKeepaliveMs ?? DEFAULT_STREAM_KEEPALIVE_MS;
 	const externalChangePollMs = opts.externalChangePollMs ?? DEFAULT_EXTERNAL_CHANGE_POLL_MS;

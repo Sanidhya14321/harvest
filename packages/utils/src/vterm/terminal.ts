@@ -9,6 +9,7 @@ import {
 } from "./buffer";
 
 const segmenter = new Intl.Segmenter();
+const MAX_CSI_SEQUENCE_LENGTH = 512;
 
 /** Construction options supported by the headless virtual terminal. */
 export interface TerminalOptions {
@@ -182,6 +183,10 @@ export class Terminal {
 					this.#sequence = "";
 				} else {
 					this.#sequence += char;
+					if (this.#sequence.length >= MAX_CSI_SEQUENCE_LENGTH) {
+						this.#sequence = "";
+						this.#state = "ground";
+					}
 				}
 				continue;
 			}

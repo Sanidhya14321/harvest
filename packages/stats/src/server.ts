@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isEnoent } from "@harvest/pi-utils";
+import { isEnoent, logger } from "@harvest/pi-utils";
 import { $, type Server } from "bun";
 import {
 	getBehaviorDashboardStats,
@@ -166,7 +166,7 @@ const ensureClientBuild = async () => {
 
 	await fs.rm(STATIC_DIR, { recursive: true, force: true });
 
-	console.log("Building stats client...");
+	logger.info("Building stats client...");
 	const packageRoot = path.join(import.meta.dir, "..");
 	const buildResult = await $`bun run build.ts`.cwd(packageRoot).quiet().nothrow();
 	if (buildResult.exitCode !== 0) {
@@ -389,7 +389,7 @@ function createDashboardServer(port: number, hostname: string): Server<undefined
 					headers,
 				});
 			} catch (error) {
-				console.error("Server error:", error);
+				logger.error("Server error in stats dashboard", { error: error instanceof Error ? error.message : String(error) });
 				return Response.json(
 					{ error: error instanceof Error ? error.message : "Unknown error" },
 					{ status: 500, headers: dashboardHeaders },

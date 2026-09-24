@@ -789,13 +789,18 @@ def create_app(settings: Settings | None = None, *, pool_factory: _PoolFactory =
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
         cfg: Settings = request.app.state.bag["settings"]
-        token = cfg.replay_token.get_secret_value() if cfg.replay_token else None
-        return HTMLResponse(render_index(token))
+        replay_enabled = cfg.replay_token is not None
+        return HTMLResponse(render_index(replay_enabled))
 
     @app.get("/api/status")
-    async def api_status(request: Request) -> dict[str, Any]:
+    async def api_status(
+        request: Request,
+        x_robomp_token: str | None = Header(None, alias="X-Robomp-Replay-Token"),
+    ) -> dict[str, Any]:
         bag = request.app.state.bag
         cfg: Settings = bag["settings"]
+        if cfg.replay_token is not None and x_robomp_token != cfg.replay_token.get_secret_value():
+            raise HTTPException(401, "authentication required")
         db: Database = bag["db"]
         pool: _AppPool = bag["pool"]
         started = float(bag.get("started_at") or time.time())

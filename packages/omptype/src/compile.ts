@@ -114,6 +114,13 @@ class Builder {
 		return typeof key === "string" && IDENT.test(key) ? `${base}.${key}` : `${base}[${this.lit(key)}]`;
 	}
 
+	assignProp(base: string, key: PropertyKey, value: string): string {
+		if (key === "__proto__") {
+			return `Object.defineProperty(${base},"__proto__",{value:${value},writable:true,enumerable:true,configurable:true});`;
+		}
+		return `${this.access(base, key)}=${value};`;
+	}
+
 	pathExpr(segs: PathSeg[]): string {
 		const parts = segs.map(seg => ("s" in seg ? this.lit(seg.s) : seg.d));
 		return `[${parts.join(",")}]`;
@@ -625,18 +632,33 @@ class Builder {
 	}
 
 	/** Fill `target` with a validated default (factory output revalidated per call). */
-	emitDefaultFill(val: IR, def: unknown, isFactory: boolean, target: string, segs: PathSeg[], errors: string): void {
+	emitDefaultFill(
+		val: IR,
+		def: unknown,
+		isFactory: boolean,
+		target: string,
+		segs: PathSeg[],
+		errors: string,
+		propKey?: PropertyKey,
+		obj?: string,
+	): void {
+		const assign = (expr: string) => {
+			if (propKey === "__proto__" && obj) {
+				return `Object.defineProperty(${obj},"__proto__",{value:${expr},writable:true,enumerable:true,configurable:true});`;
+			}
+			return `${target}=${expr};`;
+		};
 		if (isFactory && typeof def === "function") {
 			const candidate = this.next("d");
 			const resolved = this.next("t");
 			const label = this.next("L");
 			this.push(`const ${candidate}=${this.ref(def)}();let ${resolved};${label}:{`);
 			this.emitCollectProduce(val, candidate, segs, resolved, errors, label);
-			this.push(`${target}=${resolved};}`);
+			this.push(`${assign(resolved)}}`);
 		} else {
 			// Static defaults were prevalidated at construction; MD clones
 			// mutable payloads so callers cannot alias the schema's copy.
-			this.push(`${target}=${litSource(def) ?? `MD(${this.ref(def)})`};`);
+			this.push(assign(litSource(def) ?? `MD(${this.ref(def)})`));
 		}
 	}
 
@@ -858,7 +880,16 @@ class Builder {
 					const label = this.next("L");
 					this.push(`if(!(${present})){`);
 					if (prop.hasDefault) {
-						this.emitDefaultFill(prop.val, prop.def, prop.defFactory === true, output, propSegs, errors);
+						this.emitDefaultFill(
+							prop.val,
+							prop.def,
+							prop.defFactory === true,
+							output,
+							propSegs,
+							errors,
+							prop.key,
+							object,
+						);
 					} else if (!prop.opt) {
 						this.push(this.appendError(errors, this.error(propSegs, expectedOf(prop.val), "M")));
 					}
@@ -867,10 +898,10 @@ class Builder {
 						const temporary = this.next("t");
 						this.push(`let ${temporary};`);
 						this.emitCollectProduce(prop.val, input, propSegs, temporary, errors, label);
-						this.push(`${output}=${temporary};`);
+						this.push(this.assignProp(object, prop.key, temporary));
 					} else {
 						this.emitCollectCheck(prop.val, input, propSegs, errors);
-						if (fresh) this.push(`${output}=${input};`);
+						if (fresh) this.push(this.assignProp(object, prop.key, input));
 					}
 					this.push("}}");
 				}
@@ -882,7 +913,9 @@ class Builder {
 						const temporary = this.next("t");
 						this.push(`let ${temporary};`);
 						this.emitCollectProduce(node.index, `${v}[${key}]`, [...segs, { d: key }], temporary, errors, label);
-						this.push(`${object}[${key}]=${temporary};`);
+						this.push(
+							`if(${key}==="__proto__"){Object.defineProperty(${object},"__proto__",{value:${temporary},writable:true,enumerable:true,configurable:true});}else{${object}[${key}]=${temporary};}`,
+						);
 					} else {
 						this.emitCollectCheck(node.index, `${v}[${key}]`, [...segs, { d: key }], errors);
 					}

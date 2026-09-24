@@ -28,14 +28,61 @@ const stagedPaths = new Map<string, string>();
  */
 export async function stageRunnerScript(dirName: string, ext: string, script: string): Promise<string> {
 	const memoized = stagedPaths.get(dirName);
-	if (memoized && fs.existsSync(memoized)) return memoized;
-	const dir = path.join(os.tmpdir(), dirName);
-	await fs.promises.mkdir(dir, { recursive: true });
+	if (memoized && fs.existsSync(memoized)) {
+		try {
+			const stat = await fs.promises.lstat(memoized);
+			if (!stat.isSymbolicLink()) {
+				const existing = await fs.promises.readFile(memoized, "utf8");
+				if (existing === script) return memoized;
+			}
+		} catch {}
+	}
+
+	const uidSuffix = typeof process.getuid === "function" ? String(process.getuid()) : os.userInfo().username;
+	const dir = path.join(os.tmpdir(), `omp-eval-${uidSuffix}`, dirName);
+	await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+	if (process.platform !== "win32") {
+		try {
+			await fs.promises.chmod(dir, 0o700);
+		} catch {}
+	}
+	const stat = await fs.promises.lstat(dir);
+	if (stat.isSymbolicLink()) {
+		throw new Error(`Eval runner directory '${dir}' is a symbolic link`);
+	}
+	if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
+		throw new Error(`Eval runner directory '${dir}' is not owned by current user`);
+	}
+
 	const hash = Bun.hash(script).toString(36);
 	const target = path.join(dir, `runner-${hash}.${ext}`);
-	if (!fs.existsSync(target)) {
-		await Bun.write(target, script);
+
+	let writeNeeded = true;
+	try {
+		const targetStat = await fs.promises.lstat(target);
+		if (targetStat.isSymbolicLink()) {
+			await fs.promises.unlink(target);
+		} else {
+			const existing = await fs.promises.readFile(target, "utf8");
+			if (existing === script) {
+				writeNeeded = false;
+			}
+		}
+	} catch {
+		writeNeeded = true;
 	}
+
+	if (writeNeeded) {
+		const tmp = path.join(dir, `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`);
+		await fs.promises.writeFile(tmp, script, { mode: 0o600, flag: "wx" });
+		await fs.promises.rename(tmp, target);
+		if (process.platform !== "win32") {
+			try {
+				await fs.promises.chmod(target, 0o600);
+			} catch {}
+		}
+	}
+
 	stagedPaths.set(dirName, target);
 	return target;
 }

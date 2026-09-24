@@ -101,6 +101,7 @@ fn build_workspace_walk_request(config: &WorkspaceConfig) -> pi_walker::WalkRequ
 		.depth(1, config.walk_max_depth)
 		.directory_errors(pi_walker::DirectoryErrorMode::SkipSkippable)
 		.cache(false)
+		.limit(MAX_ENTRIES + 1)
 }
 
 fn glob_match_from_path(root: &Path, path: &Path) -> Option<GlobMatch> {
@@ -150,7 +151,7 @@ fn collect_agents_md_in_directory(
 	entries: &mut Vec<GlobMatch>,
 	agents_md_files: &mut Vec<String>,
 ) {
-	if !config.collect_agents_md {
+	if !config.collect_agents_md || agents_md_files.len() >= AGENTS_MD_LIMIT {
 		return;
 	}
 	let candidate = directory.join(AGENTS_MD_FILENAME);
@@ -193,6 +194,7 @@ fn run_list_workspace(
 		.collect_with_heartbeat(|| ct.heartbeat())
 		.map_err(iofs::map_walker_error)?;
 
+	let mut entries_truncated = outcome.truncated;
 	for entry in outcome.entries {
 		let file_type = iofs::from_walker_file_type(entry.file_type);
 		if is_excluded_workspace_entry(&entry.path, file_type) {
@@ -213,18 +215,22 @@ fn run_list_workspace(
 
 		if entry_depth <= config.max_depth {
 			entries.push(entry.into());
+			if entries.len() >= MAX_ENTRIES {
+				entries_truncated = true;
+				break;
+			}
 		}
 	}
 
 	sort_dedup_entries(&mut entries);
 	sort_dedup_paths(&mut agents_md_files);
 
-	let entries_truncated = entries.len() > MAX_ENTRIES;
-	if entries_truncated {
+	if entries.len() > MAX_ENTRIES {
+		entries_truncated = true;
 		entries.truncate(MAX_ENTRIES);
 	}
-	let agents_md_truncated = agents_md_files.len() > AGENTS_MD_LIMIT;
-	if agents_md_truncated {
+	let agents_md_truncated = agents_md_files.len() >= AGENTS_MD_LIMIT;
+	if agents_md_files.len() > AGENTS_MD_LIMIT {
 		agents_md_files.truncate(AGENTS_MD_LIMIT);
 	}
 

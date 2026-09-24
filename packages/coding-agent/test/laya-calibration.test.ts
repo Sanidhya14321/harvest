@@ -108,6 +108,8 @@ describe("Laya Hardware Detection & Self-Calibration", () => {
 				pruningReason: "Within budget",
 				maxAcceptableLatencyPerTurnMs: 200,
 				estimatedAddedLatencyPerTurnMs: 100,
+				rawSingleChoiceLatencyMs: 50,
+				worstCaseBatchLatencyMs: 100,
 			},
 		};
 
@@ -154,6 +156,8 @@ describe("Laya Hardware Detection & Self-Calibration", () => {
 						pruningReason: "Batched scoring within budget",
 						maxAcceptableLatencyPerTurnMs: 200,
 						estimatedAddedLatencyPerTurnMs: 140,
+						rawSingleChoiceLatencyMs: 65,
+						worstCaseBatchLatencyMs: 140,
 					},
 				};
 

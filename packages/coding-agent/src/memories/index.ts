@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type * as fsNode from "node:fs";
+import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { AgentMessage } from "@harvest/pi-agent-core";
@@ -647,7 +647,7 @@ async function collectThreads(session: AgentSession, currentThreadId?: string): 
 	for (const name of files) {
 		if (!name.endsWith(".jsonl")) continue;
 		const fullPath = path.join(sessionDir, name);
-		let stat: fsNode.Stats;
+		let stat: fsSync.Stats;
 		try {
 			stat = await fs.stat(fullPath);
 		} catch {
@@ -1278,7 +1278,20 @@ function loadMemoryConfig(settings: Settings): MemoryRuntimeConfig {
 }
 
 export function getMemoryRoot(agentDir: string, cwd: string): string {
-	return path.join(getMemoriesDir(agentDir), encodeProjectPath(cwd));
+	const base = getMemoriesDir(agentDir);
+	const newName = encodeProjectPath(cwd);
+	const legacyName = encodeLegacyProjectPath(cwd);
+	const newPath = path.join(base, newName);
+	const legacyPath = path.join(base, legacyName);
+
+	if (!fsSync.existsSync(newPath) && fsSync.existsSync(legacyPath)) {
+		try {
+			fsSync.renameSync(legacyPath, newPath);
+		} catch {
+			return legacyPath;
+		}
+	}
+	return newPath;
 }
 
 /**
@@ -1419,8 +1432,14 @@ async function readLearnedLessons(memoryRoot: string): Promise<string> {
 		.join("\n");
 }
 
-function encodeProjectPath(cwd: string): string {
+function encodeLegacyProjectPath(cwd: string): string {
 	return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+}
+
+function encodeProjectPath(cwd: string): string {
+	const canonical = path.resolve(cwd).replaceAll("\\", "/");
+	const digest = Bun.hash(canonical).toString(16);
+	return `--${canonical.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}-${digest}--`;
 }
 
 function unixNow(): number {

@@ -33,7 +33,7 @@ import { completeSimple, streamSimple } from "../stream";
 import type { Api, AssistantMessage, AssistantMessageEventStream, Context, Model, SimpleStreamOptions } from "../types";
 import type { ClientUsageIdentity } from "../usage";
 import { deterministicUuid } from "../utils/deterministic-id";
-import { parseBind } from "../utils/parse-bind";
+import { parseBind, isLoopbackHost } from "../utils/parse-bind";
 import {
 	captureRequestHeaders,
 	corsHeaders,
@@ -846,6 +846,11 @@ function handleModelsList(opts: AuthGatewayBootOptions): Response {
 export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServerHandle {
 	const bind = parseBind(opts.bind ?? DEFAULT_AUTH_GATEWAY_BIND);
 	const tokens = new Set<string>(opts.bearerTokens);
+	if (tokens.size === 0 && !isLoopbackHost(bind.hostname)) {
+		throw new AIError.ConfigurationError(
+			`Unauthenticated auth-gateway cannot bind to non-loopback host '${bind.hostname}'. Either configure bearerTokens or bind to a loopback address (127.0.0.1 or localhost).`,
+		);
+	}
 	const version = opts.version;
 
 	const server = Bun.serve({

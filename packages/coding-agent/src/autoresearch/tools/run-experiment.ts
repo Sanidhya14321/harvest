@@ -297,6 +297,10 @@ async function executeProcess(opts: {
 			}, 1000)
 		: undefined;
 
+	const MAX_BENCHMARK_LOG_BYTES = 10 * 1024 * 1024;
+	let totalBytesWritten = 0;
+	let logTruncated = false;
+
 	const logSink = Bun.file(opts.logPath).writer();
 	let logSinkClosed = false;
 	const closeLogSink = async (): Promise<void> => {
@@ -313,7 +317,20 @@ async function executeProcess(opts: {
 			chunkThrottleMs: 0,
 			onChunk: chunk => {
 				tailBuffer.append(chunk);
-				logSink.write(chunk);
+				if (!logTruncated) {
+					const chunkSize = Buffer.byteLength(chunk);
+					if (totalBytesWritten + chunkSize > MAX_BENCHMARK_LOG_BYTES) {
+						const remaining = Math.max(0, MAX_BENCHMARK_LOG_BYTES - totalBytesWritten);
+						if (remaining > 0) {
+							logSink.write(chunk.slice(0, remaining));
+						}
+						logSink.write("\n\n[Output truncated: reached maximum log size limit of 10MB]\n");
+						logTruncated = true;
+					} else {
+						logSink.write(chunk);
+						totalBytesWritten += chunkSize;
+					}
+				}
 			},
 		});
 		await closeLogSink();
@@ -321,7 +338,20 @@ async function executeProcess(opts: {
 			throw new Error("aborted");
 		}
 
-		const output = await fs.promises.readFile(opts.logPath, "utf8");
+		const stat = await fs.promises.stat(opts.logPath);
+		let output: string;
+		if (stat.size <= MAX_BENCHMARK_LOG_BYTES) {
+			output = await fs.promises.readFile(opts.logPath, "utf8");
+		} else {
+			const fd = await fs.promises.open(opts.logPath, "r");
+			try {
+				const buf = Buffer.allocUnsafe(MAX_BENCHMARK_LOG_BYTES);
+				const { bytesRead } = await fd.read(buf, 0, MAX_BENCHMARK_LOG_BYTES, stat.size - MAX_BENCHMARK_LOG_BYTES);
+				output = `[Output truncated: showing last 10MB]\n` + buf.subarray(0, bytesRead).toString("utf8");
+			} finally {
+				await fd.close();
+			}
+		}
 
 		return {
 			exitCode: result.exitCode ?? null,

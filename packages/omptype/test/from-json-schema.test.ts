@@ -159,4 +159,22 @@ describe("fromJsonSchema", () => {
 		const props = wrappedOut.properties as Record<string, unknown>;
 		expect(props.id).toEqual({ type: "integer", exclusiveMinimum: 0 });
 	});
+
+	it("rejects oneOf explicitly as unsupported", () => {
+		expect(() =>
+			fromJsonSchema({
+				oneOf: [{ type: "number", minimum: 0 }, { type: "number", maximum: 10 }],
+			}),
+		).toThrow("unsupported JSON Schema keyword: oneOf");
+	});
+
+	it("enforces required property presence even without properties declaration", () => {
+		const schema = fromJsonSchema({
+			type: "object",
+			required: ["token"],
+		});
+		expect(schema({ token: "secret" })).toEqual({ token: "secret" });
+		expect(schema({})).toBeInstanceOf(OmpErrors);
+	});
 });
+

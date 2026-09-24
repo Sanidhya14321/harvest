@@ -47,6 +47,7 @@ class TestHardwareDetection(unittest.TestCase):
         with patch("sys.platform", "darwin"), \
              patch("platform.machine", return_value="arm64"), \
              patch("platform.processor", return_value="Apple M3 Max"), \
+             patch("platform.mac_ver", return_value=("14.5", ("", "", ""), "")), \
              patch.dict("sys.modules", {"torch": mock_torch, "laya_mlx": None}):
             res = hardware.detect_hardware()
             self.assertEqual(res["tier"], "apple_silicon_mps")
@@ -63,6 +64,7 @@ class TestHardwareDetection(unittest.TestCase):
         with patch("sys.platform", "darwin"), \
              patch("platform.machine", return_value="arm64"), \
              patch("platform.processor", return_value="Apple M1"), \
+             patch("platform.mac_ver", return_value=("14.5", ("", "", ""), "")), \
              patch.dict("sys.modules", {"torch": mock_torch, "laya_mlx": None}):
             res = hardware.detect_hardware()
             self.assertEqual(res["tier"], "cpu")

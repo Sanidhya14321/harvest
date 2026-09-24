@@ -1497,14 +1497,54 @@ fn write_worktree_map(
 	Ok(())
 }
 
+fn validate_repo_worktree_path(repo_root: &Path, rel_path: &str) -> Result<PathBuf> {
+	validate_repo_path(rel_path).map_err(ApplyFailure::into_error)?;
+	let real_root = repo_root.canonicalize().unwrap_or_else(|_| repo_root.to_path_buf());
+	let mut current = repo_root.to_path_buf();
+	let path_buf = Path::new(rel_path);
+	if let Some(parent) = path_buf.parent() {
+		for comp in parent.components() {
+			current.push(comp);
+			let is_link = std::fs::symlink_metadata(&current)
+				.map(|m| m.file_type().is_symlink())
+				.unwrap_or(false);
+			if is_link {
+				let resolved = current.canonicalize()?;
+				if !resolved.starts_with(&real_root) {
+					return Err(ApplyFailure::Invalid(format!(
+						"patch path parent symlink resolves outside repo root: {}",
+						current.display()
+					))
+					.into());
+				}
+			}
+		}
+	}
+	let target = repo_root.join(rel_path);
+	let is_target_link = std::fs::symlink_metadata(&target)
+		.map(|m| m.file_type().is_symlink())
+		.unwrap_or(false);
+	if is_target_link {
+		if let Ok(resolved) = target.canonicalize() {
+			if !resolved.starts_with(&real_root) {
+				return Err(ApplyFailure::Invalid(format!(
+					"patch target symlink resolves outside repo root: {}",
+					target.display()
+				))
+				.into());
+			}
+		}
+	}
+	Ok(target)
+}
+
 fn write_worktree_entry(
 	repo: &GitRepo,
 	path: &str,
 	entry: &FileEntry,
 	gix_repo: &gix::Repository,
 ) -> Result<()> {
-	validate_repo_path(path).map_err(ApplyFailure::into_error)?;
-	let absolute = repo.root().join(path);
+	let absolute = validate_repo_worktree_path(repo.root(), path)?;
 	if let Some(parent) = absolute.parent() {
 		fs::create_dir_all(parent)?;
 	}
@@ -1535,8 +1575,7 @@ fn write_worktree_entry(
 }
 
 fn remove_worktree_path(repo: &GitRepo, path: &str) -> Result<()> {
-	validate_repo_path(path).map_err(ApplyFailure::into_error)?;
-	let absolute = repo.root().join(path);
+	let absolute = validate_repo_worktree_path(repo.root(), path)?;
 	match fs::remove_file(&absolute) {
 		Ok(()) => {},
 		Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),

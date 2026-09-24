@@ -30,7 +30,7 @@ import {
 	RemoteAuthCredentialStore,
 	type SnapshotResponse,
 } from "@harvest/pi-ai/auth-broker";
-import { DEFAULT_AUTH_GATEWAY_BIND, startAuthGateway } from "@harvest/pi-ai/auth-gateway";
+import { DEFAULT_AUTH_GATEWAY_BIND, isLoopbackHost, parseBind, startAuthGateway } from "@harvest/pi-ai/auth-gateway";
 import { type GeneratedProvider, getBundledModels } from "@harvest/pi-catalog/models";
 import { getConfigRootDir, isEnoent, logger, VERSION } from "@harvest/pi-utils";
 import chalk from "@harvest/pi-utils/chalk";
@@ -176,6 +176,12 @@ async function runServe(flags: AuthGatewayCommandArgs["flags"]): Promise<void> {
 		);
 	}
 	const bind = flags.bind ?? DEFAULT_AUTH_GATEWAY_BIND;
+	const parsed = parseBind(bind);
+	if (flags.noAuth && !isLoopbackHost(parsed.hostname)) {
+		throw new Error(
+			`--no-auth is only permitted when binding to loopback interfaces (e.g. 127.0.0.1 or localhost), got '${parsed.hostname}'.`,
+		);
+	}
 	const gatewayToken = flags.noAuth ? null : await ensureToken();
 
 	// Build a broker-backed AuthStorage — same pattern as discoverAuthStorage()

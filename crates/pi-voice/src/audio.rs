@@ -8,7 +8,7 @@
 
 use std::sync::{
 	Arc,
-	atomic::{AtomicBool, AtomicU32, Ordering},
+	atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
 };
 
 use flume::TryRecvError;
@@ -40,24 +40,33 @@ const CAPTURE_PERIOD_MS: u32 = 20;
 // write is always the last one, which is margin rather than accounted flush.
 const PLAYBACK_DRAIN_MARGIN_CALLBACKS: usize = 1;
 
+/// Maximum samples allowed in a single `write` call (~10 seconds at 48 kHz).
+pub const MAX_PLAYBACK_CHUNK_SAMPLES: usize = 480_000;
+/// Maximum aggregate unrendered samples queued (~40 seconds at 48 kHz).
+pub const MAX_PLAYBACK_QUEUED_SAMPLES: usize = 1_920_000;
+/// Channel capacity in chunks.
+pub const MAX_PLAYBACK_QUEUE_CHUNKS: usize = 256;
+
 /// Shared render-time state for one playback device: gain, drain, stop.
 ///
 /// Held as an `Arc` by both the stream and its N-API wrapper so
 /// [`PlaybackState::wait_for_drain`] can outlive the stream lock.
 pub struct PlaybackState {
-	gain_bits: AtomicU32,
-	drained:   AtomicBool,
-	stopped:   AtomicBool,
-	notify:    Notify,
+	gain_bits:      AtomicU32,
+	drained:        AtomicBool,
+	stopped:        AtomicBool,
+	notify:         Notify,
+	queued_samples: AtomicUsize,
 }
 
 impl PlaybackState {
 	fn new() -> Self {
 		Self {
-			gain_bits: AtomicU32::new(1.0f32.to_bits()),
-			drained:   AtomicBool::new(false),
-			stopped:   AtomicBool::new(false),
-			notify:    Notify::new(),
+			gain_bits:      AtomicU32::new(1.0f32.to_bits()),
+			drained:        AtomicBool::new(false),
+			stopped:        AtomicBool::new(false),
+			notify:         Notify::new(),
+			queued_samples: AtomicUsize::new(0),
 		}
 	}
 
@@ -67,6 +76,10 @@ impl PlaybackState {
 
 	fn set_gain(&self, gain: f32) {
 		self.gain_bits.store(gain.to_bits(), Ordering::Release);
+	}
+
+	pub fn queued_samples(&self) -> usize {
+		self.queued_samples.load(Ordering::Acquire)
 	}
 
 	fn mark_drained(&self) {
@@ -119,13 +132,32 @@ impl PlaybackWriter {
 		if samples.is_empty() {
 			return Ok(());
 		}
+		if samples.len() > MAX_PLAYBACK_CHUNK_SAMPLES {
+			return Err(format!(
+				"Sample chunk size {} exceeds maximum allowed chunk size of {}",
+				samples.len(),
+				MAX_PLAYBACK_CHUNK_SAMPLES
+			));
+		}
 		if self.state.stopped.load(Ordering::Acquire) || self.state.drained.load(Ordering::Acquire) {
 			return Err("Native audio playback is closed".to_owned());
 		}
-		self
-			.tx
-			.send(samples.to_vec())
-			.map_err(|_| "Native audio playback is closed".to_owned())
+		let current_queued = self.state.queued_samples.load(Ordering::Acquire);
+		if current_queued.saturating_add(samples.len()) > MAX_PLAYBACK_QUEUED_SAMPLES {
+			return Err("Audio playback queue is full (buffer overflow)".to_owned());
+		}
+		self.state.queued_samples.fetch_add(samples.len(), Ordering::SeqCst);
+		match self.tx.try_send(samples.to_vec()) {
+			Ok(()) => Ok(()),
+			Err(flume::TrySendError::Full(_)) => {
+				self.state.queued_samples.fetch_sub(samples.len(), Ordering::SeqCst);
+				Err("Audio playback queue is full".to_owned())
+			},
+			Err(flume::TrySendError::Disconnected(_)) => {
+				self.state.queued_samples.fetch_sub(samples.len(), Ordering::SeqCst);
+				Err("Native audio playback is closed".to_owned())
+			},
+		}
 	}
 }
 
@@ -141,7 +173,7 @@ impl PlaybackStream {
 	pub fn start(sample_rate: u32) -> VoiceResult<Self> {
 		let sample_rate = audio_sample_rate(sample_rate)?;
 		let state = Arc::new(PlaybackState::new());
-		let (tx, rx) = flume::unbounded::<Vec<f32>>();
+		let (tx, rx) = flume::bounded::<Vec<f32>>(MAX_PLAYBACK_QUEUE_CHUNKS);
 		let callback_state = Arc::clone(&state);
 		let mut current = Vec::new();
 		let mut cursor = 0;
@@ -210,6 +242,7 @@ impl PlaybackStream {
 	pub fn stop(&mut self) -> VoiceResult<()> {
 		self.writer.take();
 		self.state.mark_stopped();
+		self.state.queued_samples.store(0, Ordering::Release);
 		let Some(mut device) = self.device.take() else {
 			return Ok(());
 		};
@@ -281,6 +314,9 @@ fn fill_playback(
 		}
 		*cursor += count;
 		output_offset += count;
+		let _ = state
+			.queued_samples
+			.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |q| Some(q.saturating_sub(count)));
 	}
 }
 
@@ -468,5 +504,27 @@ mod tests {
 			panic!("capture device started but delivered no frames within five seconds");
 		}
 		stream.stop().expect("capture device stops");
+	}
+
+	#[test]
+	fn playback_writer_enforces_chunk_and_aggregate_queue_limits() {
+		let state = Arc::new(PlaybackState::new());
+		let (tx, _rx) = flume::bounded::<Vec<f32>>(MAX_PLAYBACK_QUEUE_CHUNKS);
+		let writer = PlaybackWriter { tx, state: Arc::clone(&state) };
+
+		// 1. Oversized chunk is rejected immediately.
+		let oversized = vec![0.0f32; MAX_PLAYBACK_CHUNK_SAMPLES + 1];
+		assert!(writer.write(&oversized).is_err());
+
+		// 2. Normal write updates queued_samples.
+		let normal_chunk = vec![0.1f32; 1000];
+		assert!(writer.write(&normal_chunk).is_ok());
+		assert_eq!(state.queued_samples(), 1000);
+
+		// 3. Overflowing aggregate queued samples returns error without mutating queued_samples.
+		state.queued_samples.store(MAX_PLAYBACK_QUEUED_SAMPLES - 500, Ordering::SeqCst);
+		let overflowing = vec![0.2f32; 1000];
+		assert!(writer.write(&overflowing).is_err());
+		assert_eq!(state.queued_samples(), MAX_PLAYBACK_QUEUED_SAMPLES - 500);
 	}
 }

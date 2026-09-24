@@ -95,6 +95,26 @@ const CODE_SECURITY_RULES = [
 	},
 ];
 
+function tryRealpathSync(target: string): string | null {
+	try {
+		return fs.realpathSync.native ? fs.realpathSync.native(target) : fs.realpathSync(target);
+	} catch {
+		return null;
+	}
+}
+
+function isSymlinkSync(target: string): boolean {
+	try {
+		return fs.lstatSync(target).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
+
+function stripVerbatim(p: string): string {
+	return p.startsWith("\\\\?\\") ? p.slice(4) : p;
+}
+
 export class SecuritySandbox {
 	readonly #workspaceRoot: string;
 
@@ -132,16 +152,61 @@ export class SecuritySandbox {
 	assertPathJailed(targetPath: string): { jailed: boolean; resolvedPath: string; error?: string } {
 		const absolute = path.isAbsolute(targetPath) ? targetPath : path.resolve(this.#workspaceRoot, targetPath);
 
-		let resolved: string;
-		try {
-			// Realpath resolves symlinks across Linux, macOS, and Windows
-			resolved = fs.realpathSync.native ? fs.realpathSync.native(absolute) : fs.realpathSync(absolute);
-		} catch {
-			resolved = path.normalize(absolute);
+		// Lexical containment pre-check against workspace root
+		const lexicalRel = path.relative(this.#workspaceRoot, absolute);
+		if (lexicalRel.startsWith("..") || path.isAbsolute(lexicalRel)) {
+			return {
+				jailed: false,
+				resolvedPath: absolute,
+				error: `Path traversal rejected: '${targetPath}' resolves outside workspace root '${this.#workspaceRoot}' (to '${absolute}').`,
+			};
 		}
 
-		const rel = path.relative(this.#workspaceRoot, resolved);
-		// If rel starts with '..' or is an absolute drive jump, it's outside
+		const realRoot = tryRealpathSync(this.#workspaceRoot) ?? path.resolve(this.#workspaceRoot);
+
+		let resolved: string;
+		const realTarget = tryRealpathSync(absolute);
+		if (realTarget !== null) {
+			resolved = realTarget;
+		} else {
+			// If target is an unresolvable symlink (dangling link), reject outright
+			if (isSymlinkSync(absolute)) {
+				return {
+					jailed: false,
+					resolvedPath: absolute,
+					error: `Path traversal rejected: '${targetPath}' is an unresolvable symlink.`,
+				};
+			}
+
+			// Nonexistent leaf: find the deepest existing ancestor and resolve it
+			let ancestor = path.dirname(absolute);
+			const tail: string[] = [path.basename(absolute)];
+			for (;;) {
+				const realAncestor = tryRealpathSync(ancestor);
+				if (realAncestor !== null) {
+					resolved = path.join(realAncestor, ...tail.reverse());
+					break;
+				}
+				if (isSymlinkSync(ancestor)) {
+					return {
+						jailed: false,
+						resolvedPath: absolute,
+						error: `Path traversal rejected: '${targetPath}' contains an unresolvable symlink ancestor '${ancestor}'.`,
+					};
+				}
+				const parent = path.dirname(ancestor);
+				if (parent === ancestor || !path.relative(this.#workspaceRoot, ancestor) || path.relative(this.#workspaceRoot, ancestor).startsWith("..")) {
+					resolved = path.normalize(absolute);
+					break;
+				}
+				tail.push(path.basename(ancestor));
+				ancestor = parent;
+			}
+		}
+
+		const normRealRoot = stripVerbatim(realRoot);
+		const normResolved = stripVerbatim(resolved);
+		const rel = path.relative(normRealRoot, normResolved);
 		const isOutside = rel.startsWith("..") || path.isAbsolute(rel);
 
 		if (isOutside) {

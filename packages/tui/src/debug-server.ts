@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { type Component, isFocusable, type OverlayOptions, type TUI } from "./tui";
 import { replaceTabs } from "./utils";
@@ -27,6 +27,9 @@ export interface TuiDebugTree {
 
 type DebugRequest = Record<string, unknown> & { op?: unknown };
 type DebugResponse = { ok: boolean; [key: string]: unknown };
+
+const MAX_REQUEST_LINE_LENGTH = 64 * 1024;
+const MAX_REQUESTS_PER_TICK = 50;
 
 const SPECIAL_KEYS: Readonly<Record<string, string>> = {
 	enter: "\r",
@@ -221,7 +224,16 @@ export class TuiDebugServer {
 	start(): void {
 		if (this.#server !== undefined) return;
 		try {
-			if (existsSync(this.#path)) unlinkSync(this.#path);
+			if (existsSync(this.#path)) {
+				const stat = lstatSync(this.#path);
+				if (!stat.isSocket()) {
+					return;
+				}
+				if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
+					return;
+				}
+				unlinkSync(this.#path);
+			}
 		} catch {
 			// The listen error below is isolated from the host application.
 		}
@@ -261,12 +273,25 @@ export class TuiDebugServer {
 		socket.setEncoding("utf8");
 		socket.on("data", chunk => {
 			buffer += chunk;
+			if (buffer.length > MAX_REQUEST_LINE_LENGTH && buffer.indexOf("\n") === -1) {
+				socket.destroy(new Error("Request line exceeds maximum allowed size"));
+				return;
+			}
 			let newline = buffer.indexOf("\n");
-			while (newline !== -1) {
+			let processed = 0;
+			while (newline !== -1 && processed < MAX_REQUESTS_PER_TICK) {
 				const line = buffer.slice(0, newline).replace(/\r$/, "");
 				buffer = buffer.slice(newline + 1);
+				if (line.length > MAX_REQUEST_LINE_LENGTH) {
+					socket.destroy(new Error("Request line exceeds maximum allowed size"));
+					return;
+				}
 				if (line.length > 0) this.#handleLine(socket, line);
+				processed++;
 				newline = buffer.indexOf("\n");
+			}
+			if (buffer.length > MAX_REQUEST_LINE_LENGTH) {
+				socket.destroy(new Error("Request line exceeds maximum allowed size"));
 			}
 		});
 		socket.on("error", error => {
