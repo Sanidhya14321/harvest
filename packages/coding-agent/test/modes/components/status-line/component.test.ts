@@ -175,7 +175,7 @@ describe("StatusLineComponent", () => {
 		);
 
 		const stripped = statusLine.getTopBorder(WIDE_ENOUGH_FOR_COST_SEGMENT).content.replace(/\x1b\[[0-9;]*m/g, "");
-		expect(stripped).toContain("S2.67 + 👁 $0.41");
+		expect(stripped).toContain(`S2.67 + ${theme.icon.advisor} $0.41`);
 	});
 
 	it("renders advisor cost with subscription prefix when advisor is on subscription in Unicode preset", () => {
@@ -189,7 +189,7 @@ describe("StatusLineComponent", () => {
 		);
 
 		const stripped = statusLine.getTopBorder(WIDE_ENOUGH_FOR_COST_SEGMENT).content.replace(/\x1b\[[0-9;]*m/g, "");
-		expect(stripped).toContain("S2.67 + 👁 S0.41");
+		expect(stripped).toContain(`S2.67 + ${theme.icon.advisor} S0.41`);
 	});
 
 	it("renders ASCII preset fallback with (adv) for advisor costs", async () => {

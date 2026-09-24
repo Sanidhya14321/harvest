@@ -44,10 +44,12 @@ import type {
 	StatusLineSegmentOptions,
 	StatusLineSettings,
 } from "./types";
+import { DEFAULT_LAYA_URL, isLayaSidecarRunning } from "../../../core/harvest/laya-service";
 
 const JJ_REFRESH_TTL_MS = 5000;
 const JJ_COMMAND_TIMEOUT_MS = 5_000;
 const WATCHER_FAILURE_POLL_TTL_MS = 5000;
+const LAYA_CHECK_TTL_MS = 5000;
 /** Brand-color fade duration across working-state edges (rust omp's `BRAND_FADE`). */
 const BRAND_FADE_MS = 450;
 /** Repaint cadence while the brand fade is in flight (rust omp's `FADE_FRAME`). */
@@ -486,6 +488,10 @@ export class StatusLineComponent implements Component {
 	#usageFetchedAt = 0;
 	#usageInFlight = false;
 	#usageStartTimer: Timer | null = null;
+
+	// Laya status caching (5s TTL)
+	#cachedLayaStatus: { enabled: boolean; connected: boolean; checkedAt: number } | null = null;
+	#layaCheckInFlight = false;
 	// A timed-out request may still resolve. Its result remains eligible only
 	// until a newer request has applied.
 	#usageRefreshSequence = 0;
@@ -1463,6 +1469,57 @@ export class StatusLineComponent implements Component {
 		if (event) this.#onCodexResetFireworks?.(event);
 	}
 
+	setLayaStatus(status: { enabled: boolean; connected: boolean } | null): void {
+		this.#cachedLayaStatus = status ? { ...status, checkedAt: Date.now() } : null;
+	}
+
+	#resolveLayaStatus(): { enabled: boolean; connected: boolean } {
+		if (this.#cachedLayaStatus) {
+			return { enabled: this.#cachedLayaStatus.enabled, connected: this.#cachedLayaStatus.connected };
+		}
+		const enabled = settings.get("laya.enabled") === true;
+		return { enabled, connected: false };
+	}
+
+	refreshLayaStatusInBackground(): void {
+		const now = Date.now();
+		if (this.#layaCheckInFlight) return;
+		if (this.#cachedLayaStatus && now - this.#cachedLayaStatus.checkedAt < LAYA_CHECK_TTL_MS) {
+			return;
+		}
+
+		const enabled = settings.get("laya.enabled") === true;
+		if (!enabled) {
+			if (this.#cachedLayaStatus === null || this.#cachedLayaStatus.enabled !== false) {
+				this.#cachedLayaStatus = { enabled: false, connected: false, checkedAt: now };
+			}
+			return;
+		}
+
+		this.#layaCheckInFlight = true;
+		const url = settings.get("laya.url") || DEFAULT_LAYA_URL;
+		void isLayaSidecarRunning(url)
+			.then(connected => {
+				if (this.#disposed) return;
+				const prev = this.#cachedLayaStatus;
+				this.#cachedLayaStatus = { enabled: true, connected, checkedAt: Date.now() };
+				if (!prev || prev.enabled !== true || prev.connected !== connected) {
+					this.#onBranchChange?.();
+				}
+			})
+			.catch(() => {
+				if (this.#disposed) return;
+				const prev = this.#cachedLayaStatus;
+				this.#cachedLayaStatus = { enabled: true, connected: false, checkedAt: Date.now() };
+				if (!prev || prev.enabled !== true || prev.connected !== false) {
+					this.#onBranchChange?.();
+				}
+			})
+			.finally(() => {
+				this.#layaCheckInFlight = false;
+			});
+	}
+
 	#observeLateUsageRefresh(session: AgentSession, reportsPromise: Promise<unknown>, sequence: number): void {
 		void reportsPromise
 			.then(reports => {
@@ -1795,6 +1852,7 @@ export class StatusLineComponent implements Component {
 
 		// Trigger background fetch (5-min TTL); render uses cached value
 		this.refreshUsageInBackground();
+		this.refreshLayaStatusInBackground();
 
 		// Get usage statistics
 		const aggregateUsageStats = this.session.sessionManager?.getUsageStatistics() ?? {
@@ -1884,6 +1942,7 @@ export class StatusLineComponent implements Component {
 			},
 			worktree: activeRepoCache.worktree,
 			usage: this.#cachedUsage,
+			laya: this.#resolveLayaStatus(),
 		};
 	}
 

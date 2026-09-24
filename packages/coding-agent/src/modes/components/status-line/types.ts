@@ -24,6 +24,7 @@ export interface StatusLineSegmentOptions {
 	path?: { abbreviate?: boolean; maxLength?: number; stripWorkPrefix?: boolean };
 	git?: { showBranch?: boolean; showStaged?: boolean; showUnstaged?: boolean; showUntracked?: boolean };
 	time?: { format?: "12h" | "24h"; showSeconds?: boolean };
+	laya?: { hideWhenOff?: boolean };
 }
 
 export interface StatusLineSettings {
@@ -97,6 +98,10 @@ export interface SegmentContext {
 		enabled: boolean;
 	} | null;
 	collab: CollabStatus | null;
+	laya?: {
+		enabled: boolean;
+		connected: boolean;
+	};
 	// Cached values for performance (computed once per render)
 	usageStats: {
 		input: number;

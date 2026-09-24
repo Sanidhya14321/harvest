@@ -8,6 +8,7 @@ import { theme } from "../../modes/theme/theme";
 import type { AgentSession } from "../../session/agent-session";
 import { shortenPath } from "../../tools/render-utils";
 import { sanitizeStatusText } from "../shared";
+import { DEFAULT_LAYA_URL, isLayaSidecarRunning } from "../../core/harvest/laya-service";
 import { formatContextUsage, getContextUsageLevel, getContextUsageThemeColor } from "./status-line/context-thresholds";
 
 /**
@@ -22,8 +23,56 @@ export class FooterComponent implements Component {
 	#disposed = false;
 	#autoCompactEnabled: boolean = true;
 	#extensionStatuses: Map<string, string> = new Map();
+	#cachedLayaStatus: { enabled: boolean; connected: boolean; checkedAt: number } | null = null;
+	#layaCheckInFlight = false;
+	#showLayaWhenOff = false;
 
 	constructor(private readonly session: AgentSession) {}
+
+	setLayaStatus(status: { enabled: boolean; connected: boolean } | null): void {
+		this.#cachedLayaStatus = status ? { ...status, checkedAt: Date.now() } : null;
+	}
+
+	setShowLayaWhenOff(show: boolean): void {
+		this.#showLayaWhenOff = show;
+	}
+
+	#refreshLayaStatusInBackground(): void {
+		const now = Date.now();
+		if (this.#layaCheckInFlight) return;
+		if (this.#cachedLayaStatus && now - this.#cachedLayaStatus.checkedAt < 5000) return;
+
+		const enabled = settings.get("laya.enabled") === true;
+		if (!enabled) {
+			if (this.#cachedLayaStatus === null || this.#cachedLayaStatus.enabled !== false) {
+				this.#cachedLayaStatus = { enabled: false, connected: false, checkedAt: now };
+			}
+			return;
+		}
+
+		this.#layaCheckInFlight = true;
+		const url = settings.get("laya.url") || DEFAULT_LAYA_URL;
+		void isLayaSidecarRunning(url)
+			.then(connected => {
+				if (this.#disposed) return;
+				const prev = this.#cachedLayaStatus;
+				this.#cachedLayaStatus = { enabled: true, connected, checkedAt: Date.now() };
+				if (!prev || prev.enabled !== true || prev.connected !== connected) {
+					this.#onBranchChange?.();
+				}
+			})
+			.catch(() => {
+				if (this.#disposed) return;
+				const prev = this.#cachedLayaStatus;
+				this.#cachedLayaStatus = { enabled: true, connected: false, checkedAt: Date.now() };
+				if (!prev || prev.enabled !== true || prev.connected !== false) {
+					this.#onBranchChange?.();
+				}
+			})
+			.finally(() => {
+				this.#layaCheckInFlight = false;
+			});
+	}
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.#autoCompactEnabled = enabled;
@@ -246,6 +295,21 @@ export class FooterComponent implements Component {
 			contextPercentStr = contextPercentDisplay;
 		}
 		statsParts.push(contextPercentStr);
+
+		this.#refreshLayaStatusInBackground();
+		const layaEnabled = this.#cachedLayaStatus !== null
+			? this.#cachedLayaStatus.enabled
+			: settings.get("laya.enabled") === true;
+		if (layaEnabled) {
+			const layaConnected = this.#cachedLayaStatus?.connected ?? false;
+			statsParts.push(
+				layaConnected
+					? theme.fg("success", `${theme.status.success} Laya`)
+					: theme.fg("error", `${theme.status.error} Laya (disconnected)`),
+			);
+		} else if (this.#showLayaWhenOff) {
+			statsParts.push(theme.fg("dim", `${theme.status.disabled} Laya off`));
+		}
 
 		let statsLeft = statsParts.join(" ");
 

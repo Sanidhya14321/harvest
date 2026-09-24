@@ -8,6 +8,7 @@ import { shortenPath, TRUNCATE_LENGTHS, truncateToWidth } from "../../../tools/r
 import { fileHyperlink } from "../../../tui/hyperlink";
 import { getSessionAccentAnsi, getSessionAccentHex } from "../../../utils/session-color";
 import { sanitizeStatusText } from "../../shared";
+import { settings } from "../../../config/settings";
 import { formatContextUsage, getContextUsageLevel, getContextUsageThemeColor } from "./context-thresholds";
 import type { RenderedSegment, SegmentContext, StatusLineSegment, StatusLineSegmentId } from "./types";
 
@@ -771,6 +772,34 @@ const collabSegment: StatusLineSegment = {
 	},
 };
 
+const layaSegment: StatusLineSegment = {
+	id: "laya",
+	render(ctx) {
+		const opts = ctx.options.laya ?? {};
+		const enabled = ctx.laya !== undefined ? ctx.laya.enabled : settings.get("laya.enabled") === true;
+		const connected = ctx.laya !== undefined ? ctx.laya.connected : false;
+
+		if (!enabled) {
+			if (opts.hideWhenOff) {
+				return { content: "", visible: false };
+			}
+			const label = statusValue(ctx, "Laya off");
+			const content = withIcon(theme.status.disabled, label);
+			return { content: theme.fg("dim", content), visible: true };
+		}
+
+		if (connected) {
+			const label = statusValue(ctx, "Laya");
+			const content = withIcon(theme.status.success, label);
+			return { content: theme.fg("success", content), visible: true };
+		}
+
+		const label = statusValue(ctx, "Laya (disconnected)");
+		const content = withIcon(theme.status.error, label);
+		return { content: theme.fg("error", content), visible: true };
+	},
+};
+
 function pickUsageColor(percent: number): "muted" | "warning" | "error" {
 	if (percent >= 80) return "error";
 	if (percent >= 50) return "warning";
@@ -892,6 +921,7 @@ export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	session_name: sessionNameSegment,
 	usage: usageSegment,
 	collab: collabSegment,
+	laya: layaSegment,
 };
 
 export function renderSegment(id: StatusLineSegmentId, ctx: SegmentContext): RenderedSegment {
