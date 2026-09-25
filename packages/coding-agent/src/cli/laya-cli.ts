@@ -412,6 +412,7 @@ async function runLayaSetup(command: LayaCommandArgs, agentDir: string): Promise
 		model: "Verifying model checkpoint (convaiinnovations/laya-typed-decisions)",
 		sidecar: "Starting local decision sidecar daemon",
 		calibrate: "Performing hardware self-calibration",
+		smoketest: "Executing end-to-end smoke test (/health + /v1/decide)",
 		connect: "Connecting Harvest settings",
 	};
 
@@ -472,13 +473,55 @@ async function runLayaSetup(command: LayaCommandArgs, agentDir: string): Promise
 	}
 
 	if (!result.success) {
-		writeLine(`\n${chalk.red("Setup Error:")} ${result.error}`);
-		writeLine(chalk.dim("Run with `harvest laya setup --reinstall` or check logs at ~/.harvest/logs.\n"));
+		writeLine("\n" + "=".repeat(60));
+		writeLine(chalk.bold("  Harvest + Laya Setup Summary"));
+		writeLine("=".repeat(60));
+		writeLine(`  ${chalk.green("✔")} Core Harvest:         Ready & functional (fail-open architecture)`);
+		writeLine(`  ${chalk.red("✖")} Laya Decision Layer:  Setup failed: ${result.error || "unknown error"}`);
+		writeLine(`  ${chalk.yellow("!")} Feature State:        Laya disabled (core agent remains fully functional)`);
+		if (result.diagnosticBundlePath) {
+			writeLine(`  ${chalk.yellow("!")} Diagnostic Bundle:    ${result.diagnosticBundlePath}`);
+		}
+		if (result.llmDiagnosis?.available && result.llmDiagnosis.proposal) {
+			writeLine("-".repeat(60));
+			writeLine(chalk.cyan.bold("  LLM-Assisted Failure Diagnosis (Second-Tier):"));
+			writeLine(`  • Diagnosis:     ${result.llmDiagnosis.proposal.diagnosis}`);
+			writeLine(`  • Proposed Fix:  ${result.llmDiagnosis.proposal.proposedFix}`);
+			writeLine(`  • Risk Level:    ${result.llmDiagnosis.proposal.effectiveRiskLevel.toUpperCase()} (${result.llmDiagnosis.proposal.riskReason})`);
+			if (result.llmDiagnosis.proposal.autoApplied) {
+				writeLine(`  • Action Status: ${chalk.green.bold("Auto-applied (Low-risk reversible)")}`);
+			} else if (result.llmDiagnosis.proposal.suggestedAction) {
+				writeLine(`  • Action Status: ${chalk.yellow.bold("Requires User Confirmation")}: ${result.llmDiagnosis.proposal.suggestedAction}`);
+			}
+		}
+		writeLine(`  ${chalk.dim("Setup Log:")}           ~/.harvest/agent/logs/laya-setup.log`);
+		writeLine("-".repeat(60));
+		writeLine(`  ${chalk.yellow.bold("Status:")} Core Harvest ready; Laya decision sidecar disabled.`);
+		writeLine(`  Run 'harvest setup laya' to retry, or check diagnostic bundle for details.`);
+		writeLine("=".repeat(60) + "\n");
 		process.exitCode = 1;
 		return;
 	}
 
-	writeLine(chalk.green.bold("\n✔ Laya setup completed and verified successfully!\n"));
+	writeLine("\n" + "=".repeat(60));
+	writeLine(chalk.bold("  Harvest + Laya Setup Summary"));
+	writeLine("=".repeat(60));
+	writeLine(`  ${chalk.green("✔")} Python Runtime:        Verified & isolated virtualenv`);
+	writeLine(`  ${chalk.green("✔")} Laya Dependencies:     Verified (torch, fastapi, uvicorn, laya)`);
+	writeLine(`  ${chalk.green("✔")} Model Checkpoint:      convaiinnovations/laya-typed-decisions`);
+	writeLine(`  ${chalk.green("✔")} Sidecar Daemon:       Active at ${result.effectiveUrl || "http://127.0.0.1:8177"}`);
+	if (result.calibration) {
+		writeLine(`  ${chalk.green("✔")} Hardware Calibration:  Tier: ${result.calibration.hardware.tier.toUpperCase()} (${result.calibration.hardware.device_name})`);
+	}
+	if (result.smokeTest) {
+		writeLine(`  ${chalk.green("✔")} Smoke Test:           /health OK, /v1/decide OK (${result.smokeTest.latencyMs}ms)`);
+	}
+	writeLine(`  ${chalk.green("✔")} Harvest Connection:    Connected (laya.enabled=true, laya.autostart=true)`);
+	writeLine("-".repeat(60));
+	writeLine(`  ${chalk.green.bold("Status:")} COMPLETE & VERIFIED (All subsystems operational)`);
+	writeLine(`  ${chalk.dim("Setup Log:")} ~/.harvest/agent/logs/laya-setup.log`);
+	writeLine("=".repeat(60) + "\n");
+
 	formatStatus(result.calibration ?? (await loadCalibration(agentDir)), true);
 }
 

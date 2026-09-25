@@ -30,6 +30,71 @@ The most capable agent surface that ships. Continuously tuned by real-world use 
 
 ## Install
 
+### Single-Command Setup (Harvest + Local Laya Decision Layer)
+
+Harvest integrates **Laya** (`convaiinnovations/laya-typed-decisions`), a local ModernBERT decision sidecar providing zero-API-cost specialized subagent routing, tool output pruning, and hardware-adaptive self-calibration. A single command sets up both Harvest and the isolated Laya environment:
+
+**Windows (PowerShell)**:
+```powershell
+irm https://omp.sh/install.ps1 | iex -WithLaya
+```
+
+**macOS · Linux**:
+```sh
+curl -fsSL https://omp.sh/install | bash -s -- --laya
+```
+
+**Bun (recommended for developers)**:
+```sh
+bun install -g @harvest/pi-coding-agent && harvest setup laya
+```
+
+> [!TIP]
+> **Idempotent & Self-Healing**: If Laya is already set up and verified, re-running setup executes an instant verification in **< 100ms**. If a known environmental issue occurs (such as a port collision or symlink restriction), Harvest heals it automatically.
+> **Graceful Degradation**: Laya is strictly fail-open. If sidecar setup cannot complete on an unsupported system, core Harvest CLI features remain 100% operational.
+
+---
+
+### Quick Start
+
+1. **Run single-command setup**:
+   ```sh
+   harvest setup laya
+   ```
+2. **Start coding**:
+   ```sh
+   harvest
+   ```
+3. **Check decision status & live hardware benchmarks**:
+   ```sh
+   harvest laya status
+   harvest laya calibrate
+   ```
+
+---
+
+### Troubleshooting & Bounded Self-Healing
+
+Harvest includes a bounded self-healing subsystem for Laya setup. If an issue occurs, Harvest automatically diagnoses and applies bounded remediation, logging every event to `~/.harvest/agent/logs/laya-setup.log`. If an error falls outside the 8 known deterministic signatures, Harvest activates a second-tier LLM-assisted diagnosis using Harvest's already-configured model/credentials to analyze the diagnostic bundle and propose a candidate fix. Actions are strictly gated by risk level (low-risk virtualenv actions may auto-apply with transparent logging; system-touching fixes require explicit confirmation). If the LLM connection is unavailable, Harvest emits a diagnostic bundle (`laya-diagnostic-<timestamp>.json`) and keeps core Harvest fully functional.
+
+| Known Issue | Detection Signature | Automated Remediation | Logging |
+| :--- | :--- | :--- | :--- |
+| **Wrong PyTorch Wheel** | Host NVIDIA driver detected while `torch.cuda.is_available()` returns `False` | Reinstalls PyTorch using CUDA 12.4 index (`cu124`) | Before/after CUDA availability logged to `laya-setup.log` |
+| **Windows Symlink Error** | `WinError 1314` ("A required privilege is not held by the client") during HuggingFace cache operations | Enables `HF_HUB_DISABLE_SYMLINKS=1` with safe file-copy fallback | Symlink bypass logged to `laya-setup.log` |
+| **Port 8177 In Use** | TCP bind failure / `EADDRINUSE` on port 8177 | Reuses existing Harvest sidecar if `/health` passes; preserves foreign processes and allocates alternate port (8178–8185) | Port reuse or reassignment logged to `laya-setup.log` |
+| **Corrupted Model Download** | `model.safetensors` size < 800 MB or corrupt header on load | Purges corrupt cache directory and retries download exactly once (halts on second failure) | Cache purge and retry result logged to `laya-setup.log` |
+| **Accidental Router Download** | Audit detects `laya.Router` import or secondary checkpoint downloading | Enforces single-checkpoint contract (`laya.load('convaiinnovations/laya-typed-decisions')`) | Structural verification outcome logged to `laya-setup.log` |
+| **Insufficient Disk Space** | Pre-flight volume check detects < 2,000 MB free space | Halts download before starting to prevent partial write corruption | Available vs required MB logged to `laya-setup.log` |
+| **Stale Calibration** | Calibration hardware signature doesn't match current machine or checkpoint | Automatically triggers recalibration benchmark | Signature mismatch and new baseline logged to `laya-setup.log` |
+| **Missing Python Runtime** | Python 3.9+ missing from `PATH` and standard install paths | Automatic installation via `winget` (Windows) or `brew` (macOS), or OS-specific instructions | Missing runtime and resolution steps logged to `laya-setup.log` |
+
+> [!NOTE]
+> If any Laya setup step fails irrecoverably, Harvest **fails open**: core CLI features remain 100% operational with Laya gracefully disabled (`laya.enabled = false`). Check `harvest setup laya` logs at `~/.harvest/agent/logs/laya-setup.log` or run `harvest laya status` to inspect health.
+
+---
+
+### Core CLI Only
+
 **macOS · Linux**
 
 ```sh
@@ -665,6 +730,31 @@ For architecture and contribution guidelines, see [packages/coding-agent/DEVELOP
 | **[pi-walker](crates/pi-walker)**                  | Parallel ignore-aware filesystem walker with the scan cache shared by grep, glob, and workspace     |
 | **[brush-core](crates/vendor/brush-core)**         | Vendored fork of [brush-shell](https://github.com/reubeno/brush) for embedded bash execution        |
 | **[pi-builtins](crates/pi-builtins)**              | Bash builtins (cd, echo, test, printf, read, export, …) plus 67 in-process command-line utilities |
+
+## Troubleshooting: Self-Healing Decision Layer
+
+Harvest includes an automated, bounded self-repair engine for the Laya decision sidecar. It actively detects and remediates 8 known failure modes without user intervention. All setup actions are recorded to `~/.harvest/agent/logs/laya-setup.log`.
+
+| Issue Signature | Detection Mechanism | Automated Self-Healing Fix | Logged Details |
+|---|---|---|---|
+| `WRONG_TORCH_WHEEL` | Host NVIDIA GPU driver detected while `torch.cuda.is_available()` reports `False`. | Reinstalls PyTorch using CUDA 12.4 index (`https://download.pytorch.org/whl/cu124`). | Logs before/after `torch.cuda.is_available()` state. |
+| `WINDOWS_HF_SYMLINK_RESTRICTION` | `WinError 1314` ("A required privilege is not held by the client") during model cache writes. | Injects `HF_HUB_DISABLE_SYMLINKS=1` and `HF_HUB_DISABLE_SYMLINKS_WARNING=1` with safe copy fallback. | Logs symlink bypass activation. |
+| `PORT_CONFLICT` | Port 8177 occupied on startup. | Hits `/health`: reuses active Harvest sidecar; if foreign process, preserves foreign process (never terminates) and allocates alternate port in range `8178-8185`. | Logs whether port was reused or redirected without killing foreign processes. |
+| `CORRUPTED_CHECKPOINT` | Cached `model.safetensors` < 800MB or corrupt header on `safe_open`. | Purges corrupt snapshot directory and retries clean download **exactly once** (halts on second failure). | Logs corruption signature, purge event, and retry outcome. |
+| `ROUTER_ACCIDENTAL_INVOCATION` | Static audit reveals `Router` import in `server.py` or secondary checkpoint in cache. | Enforces single-checkpoint contract (`laya.load('convaiinnovations/laya-typed-decisions')`). | Logs architecture validation outcome. |
+| `INSUFFICIENT_DISK_SPACE` | Pre-flight `statfs` check detects < 2,000 MB available on cache volume. | Halts download before starting, preventing partial write corruption. | Logs available vs required MB. |
+| `STALE_CALIBRATION_SIGNATURE` | Hardware signature in `laya-calibration.json` does not match active hardware signature. | Triggers automatic recalibration benchmark to derive fresh latency thresholds. | Logs signature mismatch and recalibration event. |
+| `MISSING_PYTHON` | Python 3.9+ binary missing from PATH and standard directories. | Autonomous bootstrap via system package manager (`winget`/`brew`) or emits clear OS-specific commands. | Logs missing runtime and tailored installation instructions. |
+
+### Unrecognized Failures & Diagnostics
+If an unhandled failure occurs outside these 8 signatures:
+- Harvest **never** attempts an open-ended guess or arbitrary system modification.
+- A structured diagnostic bundle (`~/.harvest/agent/logs/laya-diagnostic-<timestamp>.json`) is generated containing OS release, Bun version, Python runtime, disk space, and recent setup logs.
+- Laya features fail-open (`laya.enabled = false`), leaving core Harvest CLI 100% operational.
+
+For full architectural details on sidecar design, prompt cache-locking, and subagent selection, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+---
 
 ## Contributing
 

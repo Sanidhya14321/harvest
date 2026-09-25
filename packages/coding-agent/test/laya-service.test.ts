@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as layaService from "../src/core/harvest/laya-service";
 import * as layaCalibration from "../src/core/harvest/laya-calibration";
+import * as layaSelfHealing from "../src/core/harvest/laya-self-healing";
 import { Settings } from "../src/config/settings";
 import { runLayaCommand } from "../src/cli/laya-cli";
 
@@ -116,10 +117,18 @@ describe("Laya Service & Autonomous Setup", () => {
 				path: "/opt/venv/bin/python",
 				version: "3.11.2",
 			});
+			vi.spyOn(layaService, "ensureLayaVirtualEnv").mockResolvedValue({
+				path: "/opt/venv/bin/python",
+				version: "3.11.2",
+				isVenv: true,
+			});
 			vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(false);
 			vi.spyOn(layaService, "checkLayaDependencies").mockResolvedValue(true);
+			vi.spyOn(layaService, "installLayaDependencies").mockResolvedValue({ success: true });
+			vi.spyOn(layaSelfHealing, "verifyAndRepairTorchWheel").mockResolvedValue({ repaired: false, cudaAvailable: false });
 			vi.spyOn(layaService, "ensureLayaModelCached").mockResolvedValue({ success: true, alreadyCached: true });
 			vi.spyOn(layaService, "startLayaSidecarProcess").mockResolvedValue({ success: true });
+			vi.spyOn(layaSelfHealing, "runLayaSmokeTest").mockResolvedValue({ success: true, healthOk: true, decideOk: true, latencyMs: 12 });
 
 			const mockCalibration: layaCalibration.CalibrationRecord = {
 				timestamp: Date.now(),
@@ -134,7 +143,7 @@ describe("Laya Service & Autonomous Setup", () => {
 					ultraShort: { minMs: 15, medianMs: 20, samplesMs: [15, 20, 25] },
 					singleChoice: { minMs: 25, medianMs: 30, samplesMs: [25, 30, 35] },
 					singleScore: { minMs: 18, medianMs: 22, samplesMs: [18, 22, 26] },
-					multiChunkScore: { minMs: 40, medianMs: 50, samplesMs: [40, 50, 60] },
+					batchedScore: { minMs: 40, medianMs: 50, samplesMs: [40, 50, 60] },
 				},
 				derivedSettings: {
 					rawSingleChoiceLatencyMs: 30,
@@ -156,6 +165,7 @@ describe("Laya Service & Autonomous Setup", () => {
 
 			const result = await layaService.configureLayaLocally({
 				settings,
+				forceReinstall: true,
 				onStepUpdate: (stepId, status) => {
 					stepsRecorded.push(`${stepId}:${status}`);
 				},
@@ -181,7 +191,7 @@ describe("Laya Service & Autonomous Setup", () => {
 			vi.spyOn(layaService, "bootstrapPythonIfMissing").mockResolvedValue(null);
 
 			const settings = Settings.isolated();
-			const result = await layaService.configureLayaLocally({ settings });
+			const result = await layaService.configureLayaLocally({ settings, forceReinstall: true });
 
 			expect(result.success).toBe(false);
 			expect(result.error).toContain("Python 3.9+ not found");
@@ -204,7 +214,7 @@ describe("Laya Service & Autonomous Setup", () => {
 					ultraShort: { minMs: 3, medianMs: 4, samplesMs: [3, 4, 5] },
 					singleChoice: { minMs: 5, medianMs: 6, samplesMs: [5, 6, 7] },
 					singleScore: { minMs: 4, medianMs: 5, samplesMs: [4, 5, 6] },
-					multiChunkScore: { minMs: 8, medianMs: 10, samplesMs: [8, 10, 12] },
+					batchedScore: { minMs: 8, medianMs: 10, samplesMs: [8, 10, 12] },
 				},
 				derivedSettings: {
 					rawSingleChoiceLatencyMs: 6,

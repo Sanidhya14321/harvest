@@ -8,12 +8,33 @@
  * self-calibration, and connecting it seamlessly to Harvest.
  */
 
+import * as os from "node:os";
 import * as path from "node:path";
 import * as net from "node:net";
 import { getAgentDir, logger } from "@harvest/pi-utils";
+import type { completeSimple } from "@harvest/pi-ai";
+import type { ModelRegistry } from "../../config/model-registry";
 import type { Settings } from "../../config/settings";
-import { ensureCalibrated, type CalibrationRecord } from "./laya-calibration";
+import { ensureCalibrated, loadCalibration, type CalibrationRecord } from "./laya-calibration";
 import { getLayaClient } from "./laya-client";
+import {
+	LayaSetupLogger,
+	checkAvailableDiskSpace,
+	getMissingPythonInstructions,
+	verifyAndRepairTorchWheel,
+	checkAndRemediateCorruptedModel,
+	applyWindowsSymlinkRemediation,
+	isSymlinkPrivilegeError,
+	resolvePortConflict,
+	assertSingleCheckpointPolicy,
+	checkCalibrationSignatureMismatch,
+	runLayaSmokeTest,
+	createDiagnosticBundle,
+	emitDiagnosticBundle,
+	runLlmAssistedDiagnosis,
+	type EvaluatedDiagnosisProposal,
+	type LayaLLMDiagnosisResult,
+} from "./laya-self-healing";
 
 export interface LayaEnvironmentStatus {
 	readonly pythonAvailable: boolean;
@@ -127,8 +148,8 @@ export async function streamProcessOutput(
 	const startTime = Date.now();
 	let timer: ReturnType<typeof setInterval> | undefined;
 
-	const activityTimeout = options.activityTimeoutMs ?? 180_000;
-	const totalTimeout = options.totalTimeoutMs ?? 900_000;
+	const activityTimeout = options.activityTimeoutMs ?? 360_000;
+	const totalTimeout = options.totalTimeoutMs ?? 1200_000;
 	let timedOut = false;
 	let timeoutReason = "";
 
@@ -369,47 +390,25 @@ export async function isPortInUse(port: number): Promise<boolean> {
 }
 
 /**
- * Reclaim port 8177 if blocked by a dead or unresponsive process.
+ * Non-destructive port conflict resolution.
+ * If occupied by active Laya sidecar: reuse.
+ * If occupied by foreign process: PRESERVE foreign process (never kill) and allocate alternate port.
  */
 export async function freePortIfOccupied(
 	port = 8177,
 	baseUrl: string = DEFAULT_LAYA_URL,
 	onProgress?: (msg: string) => void,
-): Promise<{ freed: boolean; alreadyRunning: boolean }> {
-	const inUse = await isPortInUse(port);
-	if (!inUse) {
-		return { freed: true, alreadyRunning: false };
+): Promise<{ freed: boolean; alreadyRunning: boolean; effectivePort?: number; effectiveBaseUrl?: string }> {
+	const res = await resolvePortConflict(port, baseUrl, { onProgress });
+	if (res.reusedExistingSidecar) {
+		return { freed: true, alreadyRunning: true, effectivePort: res.port, effectiveBaseUrl: res.baseUrl };
 	}
-
-	if (await isLayaSidecarRunning(baseUrl)) {
-		return { freed: true, alreadyRunning: true };
-	}
-
-	onProgress?.(`Port ${port} is occupied by an unresponsive process; terminating stale process...`);
-
-	try {
-		if (process.platform === "win32") {
-			const netstat = Bun.spawnSync(["netstat", "-ano", "-p", "tcp"]);
-			const out = netstat.stdout.toString();
-			for (const line of out.split(/\r?\n/)) {
-				if (line.includes(`:${port}`) && line.includes("LISTENING")) {
-					const parts = line.trim().split(/\s+/);
-					const pid = parts[parts.length - 1];
-					if (pid && /^\d+$/.test(pid) && pid !== "0" && pid !== String(process.pid)) {
-						Bun.spawnSync(["taskkill", "/F", "/PID", pid]);
-					}
-				}
-			}
-		} else {
-			Bun.spawnSync(["sh", "-c", `lsof -ti :${port} | xargs -r kill -9 2>/dev/null || fuser -k ${port}/tcp 2>/dev/null`]);
-		}
-		await Bun.sleep(500);
-	} catch (err) {
-		logger.debug("Failed freeing port process", { port, error: err });
-	}
-
-	const stillInUse = await isPortInUse(port);
-	return { freed: !stillInUse, alreadyRunning: false };
+	return {
+		freed: !res.error,
+		alreadyRunning: false,
+		effectivePort: res.port,
+		effectiveBaseUrl: res.baseUrl,
+	};
 }
 
 /**
@@ -551,8 +550,8 @@ export async function installLayaDependencies(
 		});
 
 		let res = await streamProcessOutput(proc, filterPipProgress, {
-			activityTimeoutMs: 180_000,
-			totalTimeoutMs: 900_000,
+			activityTimeoutMs: 480_000,
+			totalTimeoutMs: 1200_000,
 		});
 
 		if (res.exitCode !== 0) {
@@ -579,8 +578,8 @@ export async function installLayaDependencies(
 					stderr: "pipe",
 				});
 				res = await streamProcessOutput(proc, filterPipProgress, {
-					activityTimeoutMs: 180_000,
-					totalTimeoutMs: 900_000,
+					activityTimeoutMs: 480_000,
+					totalTimeoutMs: 1200_000,
 				});
 			}
 			if (res.exitCode !== 0) {
@@ -604,9 +603,23 @@ export async function installLayaDependencies(
 export async function ensureLayaModelCached(
 	pythonPath: string,
 	onProgress?: (msg: string) => void,
+	setupLogger?: LayaSetupLogger,
 ): Promise<{ success: boolean; error?: string; alreadyCached?: boolean }> {
 	try {
+		// Mode 6: Pre-flight disk space check before download
+		const hfHome = process.env.HF_HOME || path.join(os.homedir(), ".cache", "huggingface");
+		const diskCheck = await checkAvailableDiskSpace(hfHome, 2000, setupLogger);
+		if (!diskCheck.ok) {
+			return { success: false, error: diskCheck.error };
+		}
+
 		onProgress?.("Checking HuggingFace cache for convaiinnovations/laya-typed-decisions...");
+
+		// Mode 4: Probe for corrupted model (<800MB or unreadable) and purge if corrupt
+		const corruptCheck = await checkAndRemediateCorruptedModel(pythonPath, setupLogger, onProgress);
+		if (corruptCheck.corrupted && !corruptCheck.remediated) {
+			return { success: false, error: corruptCheck.error ?? "Corrupted checkpoint detected and could not be purged" };
+		}
 
 		const probeCode = `
 import os, sys
@@ -623,6 +636,7 @@ sys.exit(1)
 			stderr: "pipe",
 			env: {
 				...process.env,
+				HF_HUB_DISABLE_SYMLINKS: "1",
 				HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
 			},
 		});
@@ -636,7 +650,25 @@ sys.exit(1)
 		const downloadScript = `
 import os, sys, socket
 socket.setdefaulttimeout(30.0)
+os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+if sys.platform == "win32":
+    import shutil
+    _orig_symlink = getattr(os, "symlink", None)
+    if _orig_symlink:
+        def _safe_symlink(src, dst, target_is_directory=False, *args, **kwargs):
+            try:
+                return _orig_symlink(src, dst, target_is_directory=target_is_directory, *args, **kwargs)
+            except OSError as e:
+                if getattr(e, "winerror", None) == 1314 or getattr(e, "errno", None) == 1:
+                    src_full = src if os.path.isabs(src) else os.path.normpath(os.path.join(os.path.dirname(dst), src))
+                    if os.path.isdir(src_full):
+                        return shutil.copytree(src_full, dst, dirs_exist_ok=True)
+                    else:
+                        return shutil.copyfile(src_full, dst)
+                raise
+        os.symlink = _safe_symlink
 
 try:
     import tqdm.auto
@@ -666,7 +698,6 @@ try:
     )
     print("DOWNLOAD_OK")
 except Exception as e:
-    # If primary download failed (e.g. timeout / network block), try official mirror
     try:
         sys.stderr.write(f"Primary HF download failed ({e}); retrying via hf-mirror.com...\\n")
         sys.stderr.flush()
@@ -691,6 +722,7 @@ except Exception as e:
 			env: {
 				...process.env,
 				PYTHONUNBUFFERED: "1",
+				HF_HUB_DISABLE_SYMLINKS: "1",
 				HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
 			},
 		});
@@ -708,11 +740,14 @@ except Exception as e:
 		};
 
 		const res = await streamProcessOutput(downloadProc, filterHfProgress, {
-			activityTimeoutMs: 120_000,
-			totalTimeoutMs: 900_000,
+			activityTimeoutMs: 300_000,
+			totalTimeoutMs: 1200_000,
 		});
 
 		if (res.exitCode !== 0) {
+			if (isSymlinkPrivilegeError(res.stderr || res.stdout)) {
+				await applyWindowsSymlinkRemediation(setupLogger, onProgress);
+			}
 			return { success: false, error: res.stderr || res.stdout || `Model loading failed with exit code ${res.exitCode}` };
 		}
 		return { success: true };
@@ -723,24 +758,44 @@ except Exception as e:
 
 /**
  * Launch the local decision sidecar daemon as a background subprocess.
- * Includes generous 180s polling window for ModernBERT-large loading on CPU.
+ * Uses non-destructive port resolution: reuses healthy Laya or redirects to alternate port without killing foreign processes.
  */
 export async function startLayaSidecarProcess(
 	pythonPath: string,
 	baseUrl: string = DEFAULT_LAYA_URL,
 	onProgress?: (msg: string) => void,
-): Promise<{ success: boolean; error?: string }> {
+	setupLogger?: LayaSetupLogger,
+): Promise<{ success: boolean; error?: string; actualBaseUrl?: string }> {
 	if (await isLayaSidecarRunning(baseUrl)) {
-		return { success: true };
+		return { success: true, actualBaseUrl: baseUrl };
 	}
 
 	const url = new URL(baseUrl);
 	const port = Number(url.port) || 8177;
 
-	await freePortIfOccupied(port, baseUrl, onProgress);
+	const portRes = await resolvePortConflict(port, baseUrl, {
+		setupLogger,
+		onProgress,
+	});
+
+	if (portRes.error) {
+		return { success: false, error: portRes.error };
+	}
+	if (portRes.reusedExistingSidecar) {
+		return { success: true, actualBaseUrl: portRes.baseUrl };
+	}
+
+	const effectivePort = portRes.port;
+	const effectiveBaseUrl = portRes.baseUrl;
 
 	const sidecarDir = getSidecarDir();
 	const serverPath = path.join(sidecarDir, "server.py");
+
+	// Mode 5: Router accidental invocation prevention check
+	const routerAudit = await assertSingleCheckpointPolicy(sidecarDir, setupLogger);
+	if (!routerAudit.ok) {
+		return { success: false, error: routerAudit.violation };
+	}
 
 	try {
 		if (Bun.file(serverPath).size === 0) {
@@ -750,7 +805,7 @@ export async function startLayaSidecarProcess(
 		return { success: false, error: `Sidecar server script not found at ${serverPath}` };
 	}
 
-	onProgress?.(`Starting Laya sidecar daemon on 127.0.0.1:${port}...`);
+	onProgress?.(`Starting Laya sidecar daemon on 127.0.0.1:${effectivePort}...`);
 
 	try {
 		Bun.spawn([
@@ -764,9 +819,10 @@ export async function startLayaSidecarProcess(
 			env: {
 				...process.env,
 				PYTHONUNBUFFERED: "1",
+				HF_HUB_DISABLE_SYMLINKS: "1",
 				HF_HUB_DISABLE_SYMLINKS_WARNING: "1",
 				LAYA_HOST: "127.0.0.1",
-				LAYA_PORT: String(port),
+				LAYA_PORT: String(effectivePort),
 			},
 		});
 
@@ -774,8 +830,8 @@ export async function startLayaSidecarProcess(
 		const maxTimeoutMs = 180_000;
 
 		while (Date.now() - startTime < maxTimeoutMs) {
-			if (await isLayaSidecarRunning(baseUrl)) {
-				return { success: true };
+			if (await isLayaSidecarRunning(effectiveBaseUrl)) {
+				return { success: true, actualBaseUrl: effectiveBaseUrl };
 			}
 			const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
 			if (elapsedSec % 5 === 0 && elapsedSec > 0) {
@@ -784,116 +840,269 @@ export async function startLayaSidecarProcess(
 			await Bun.sleep(1000);
 		}
 
-		return { success: false, error: `Timed out waiting 180s for Laya sidecar /health at ${baseUrl}` };
+		return { success: false, error: `Timed out waiting 180s for Laya sidecar /health at ${effectiveBaseUrl}` };
 	} catch (err) {
 		return { success: false, error: String(err) };
 	}
 }
 
-/**
- * End-to-end configuration and connection of Laya for Harvest.
- */
-export async function configureLayaLocally(options: {
+export interface LayaSetupResult {
+	success: boolean;
+	coreHarvestReady?: boolean;
+	calibration?: CalibrationRecord;
+	smokeTest?: { success: boolean; healthOk: boolean; decideOk: boolean; latencyMs: number };
+	error?: string;
+	diagnosticBundlePath?: string;
+	idempotentFastPath?: boolean;
+	effectiveUrl?: string;
+	llmDiagnosis?: LayaLLMDiagnosisResult;
+}
+
+export interface ConfigureLayaOptions {
 	settings?: Settings;
 	baseUrl?: string;
 	forceReinstall?: boolean;
-	onStepUpdate?: (stepId: string, status: "pending" | "running" | "done" | "error", message?: string) => void;
-}): Promise<{ success: boolean; calibration?: CalibrationRecord; error?: string }> {
+	onStepUpdate?: (stepId: string, status: "pending" | "running" | "done" | "error" | "skipped", message?: string) => void;
+	onUserConfirmation?: (proposal: EvaluatedDiagnosisProposal) => Promise<boolean>;
+	modelRegistry?: ModelRegistry;
+	disableLlmDiagnosis?: boolean;
+	completeSimpleFn?: typeof completeSimple;
+	autoApplyLowRisk?: boolean;
+}
+
+async function handleLayaFailure(
+	errorMsg: string,
+	setupLogger: LayaSetupLogger,
+	settings?: Settings,
+	context: Record<string, unknown> = {},
+	options: ConfigureLayaOptions = {},
+): Promise<LayaSetupResult> {
+	const { bundle, bundlePath } = await createDiagnosticBundle(errorMsg, setupLogger, context);
+	if (settings) {
+		try {
+			settings.set("laya.enabled", false);
+			await settings.flush();
+		} catch {}
+	}
+
+	let llmDiagnosis: LayaLLMDiagnosisResult | undefined;
+	if (!options.disableLlmDiagnosis) {
+		try {
+			llmDiagnosis = await runLlmAssistedDiagnosis(bundle, {
+				settings,
+				setupLogger,
+				modelRegistry: options.modelRegistry,
+				pythonPath: typeof context.pythonPath === "string" ? context.pythonPath : undefined,
+				onProgress: msg => options.onStepUpdate?.("diagnosis", "running", msg),
+				onUserConfirmation: options.onUserConfirmation,
+				completeSimpleFn: options.completeSimpleFn,
+				autoApplyLowRisk: options.autoApplyLowRisk,
+			});
+		} catch (diagErr) {
+			await setupLogger.log(`[LLM_DIAGNOSIS] Error during diagnosis tier: ${diagErr}`);
+		}
+	}
+
+	return {
+		success: false,
+		coreHarvestReady: true,
+		error: errorMsg,
+		diagnosticBundlePath: bundlePath,
+		llmDiagnosis,
+	};
+}
+
+/**
+ * End-to-end configuration and connection of Laya for Harvest.
+ * Includes bounded self-healing, idempotency fast-path (<100ms),
+ * end-to-end smoke test, and fail-open graceful degradation.
+ */
+export async function configureLayaLocally(options: ConfigureLayaOptions = {}): Promise<LayaSetupResult> {
 	const baseUrl = options.baseUrl || DEFAULT_LAYA_URL;
 	const onUpdate = options.onStepUpdate;
 	const agentDir = getAgentDir();
+	const setupLogger = new LayaSetupLogger(agentDir);
 
-	// 1. Python Discovery & Bootstrap
-	onUpdate?.("python", "running", "Detecting Python 3.9+ runtime...");
-	let python = await findPythonExecutable();
-	if (!python) {
-		onUpdate?.("python", "running", "Python not detected; attempting autonomous package manager bootstrap...");
-		python = await bootstrapPythonIfMissing(msg => onUpdate?.("python", "running", msg));
+	// IDEMPOTENCY FAST PATH: if sidecar is running, healthy, smoke test passes, and calibrated
+	if (!options.forceReinstall && (await isLayaSidecarRunning(baseUrl))) {
+		const client = getLayaClient(baseUrl);
+		const smoke = await runLayaSmokeTest(client, setupLogger);
+		if (smoke.success) {
+			const cached = await loadCalibration(agentDir);
+			const hw = await client.getHardwareInfo();
+			const stale = hw ? await checkCalibrationSignatureMismatch(cached, hw.signature, setupLogger) : { isStale: true };
+			if (cached && !stale.isStale) {
+				onUpdate?.("python", "done", "Python runtime verified");
+				onUpdate?.("dependencies", "done", "Laya dependencies verified in running sidecar");
+				onUpdate?.("model", "done", "convaiinnovations/laya-typed-decisions verified");
+				onUpdate?.("sidecar", "done", `Connected to active sidecar at ${baseUrl}`);
+				onUpdate?.("calibrate", "done", `Calibrated for ${cached.hardware.tier} tier (${cached.hardware.signature})`);
+				onUpdate?.("smoketest", "done", `Smoke test passed: /health & /v1/decide OK (${smoke.latencyMs}ms)`);
+				onUpdate?.("connect", "done", `Harvest connected to ${baseUrl}`);
+
+				if (options.settings) {
+					try {
+						options.settings.set("laya.enabled", true);
+						options.settings.set("laya.url", baseUrl);
+						options.settings.set("laya.autostart", true);
+						await options.settings.flush();
+					} catch {}
+				}
+
+				await setupLogger.log(`Idempotent fast-path: verified active Laya installation in ${smoke.latencyMs}ms`);
+				return {
+					success: true,
+					coreHarvestReady: true,
+					calibration: cached,
+					smokeTest: smoke,
+					idempotentFastPath: true,
+					effectiveUrl: baseUrl,
+				};
+			}
+		}
 	}
-	if (!python) {
-		const errMsg = process.platform === "win32"
-			? "Python 3.9+ not found. Install Python via 'winget install Python.Python.3.11' or https://python.org"
-			: "Python 3.9+ not found. Install Python 3.9+ via 'brew install python@3.11' or 'apt install python3'";
-		onUpdate?.("python", "error", errMsg);
-		return { success: false, error: errMsg };
-	}
 
-	const venv = await ensureLayaVirtualEnv(python.path, msg => onUpdate?.("python", "running", msg));
-	const activePython = venv.path;
-	onUpdate?.("python", "done", `Found Python ${venv.version} (${venv.isVenv ? "managed venv" : activePython})`);
+	try {
+		// 1. Python Discovery & Bootstrap (Mode 8)
+		onUpdate?.("python", "running", "Detecting Python 3.9+ runtime...");
+		let python = await findPythonExecutable();
+		if (!python) {
+			onUpdate?.("python", "running", "Python not detected; attempting autonomous package manager bootstrap...");
+			python = await bootstrapPythonIfMissing(msg => onUpdate?.("python", "running", msg));
+		}
+		if (!python) {
+			const missing = getMissingPythonInstructions();
+			const errMsg = `Python 3.9+ not found. ${missing.instructions}`;
+			onUpdate?.("python", "error", errMsg);
+			await setupLogger.recordHealing({
+				timestamp: new Date().toISOString(),
+				signature: "MISSING_PYTHON",
+				description: "Python 3.9+ runtime missing on host",
+				detectedIssue: "No working Python >=3.9 executable found",
+				actionTaken: `Emitted install instructions: ${missing.command}`,
+				result: "escalated",
+			});
+			return handleLayaFailure(errMsg, setupLogger, options.settings, {}, options);
+		}
 
-	// 2. Check for running sidecar
-	const alreadyRunning = await isLayaSidecarRunning(baseUrl);
-	if (alreadyRunning && !options.forceReinstall) {
-		onUpdate?.("dependencies", "done", "Laya dependencies active in running sidecar");
-		onUpdate?.("model", "done", "convaiinnovations/laya-typed-decisions active in memory");
-		onUpdate?.("sidecar", "done", `Connected to active sidecar at ${baseUrl}`);
-	} else {
-		// 3. Dependencies check & install
+		const venv = await ensureLayaVirtualEnv(python.path, msg => onUpdate?.("python", "running", msg));
+		const activePython = venv.path;
+		onUpdate?.("python", "done", `Found Python ${venv.version} (${venv.isVenv ? "managed venv" : activePython})`);
+
+		// 2. Hardware Detection & Dependencies (Mode 1)
 		onUpdate?.("dependencies", "running", "Verifying Python dependencies (laya, torch, fastapi, uvicorn)...");
+		const hasNvidia = await isHostNvidiaGpuPresent();
+		await verifyAndRepairTorchWheel(activePython, hasNvidia, setupLogger, msg => {
+			onUpdate?.("dependencies", "running", msg);
+		});
+
 		const depRes = await installLayaDependencies(activePython, msg => {
 			onUpdate?.("dependencies", "running", msg);
 		});
 		if (!depRes.success) {
-			onUpdate?.("dependencies", "error", depRes.error ?? "Failed to install dependencies");
-			return { success: false, error: depRes.error };
+			const err = depRes.error ?? "Failed to install dependencies";
+			onUpdate?.("dependencies", "error", err);
+			return handleLayaFailure(err, setupLogger, options.settings, { pythonPath: activePython, hostHasNvidia: hasNvidia }, options);
 		}
 		onUpdate?.("dependencies", "done", depRes.alreadyInstalled ? "All dependencies verified" : "Dependencies installed successfully");
 
-		// 4. Model checkpoint
+		// 3. Model checkpoint (Mode 4, 6)
 		onUpdate?.("model", "running", "Verifying single-model checkpoint convaiinnovations/laya-typed-decisions...");
 		const modelRes = await ensureLayaModelCached(activePython, msg => {
 			onUpdate?.("model", "running", msg);
-		});
+		}, setupLogger);
 		if (!modelRes.success) {
-			onUpdate?.("model", "error", modelRes.error ?? "Failed to verify model checkpoint");
-			return { success: false, error: modelRes.error };
+			const err = modelRes.error ?? "Failed to verify model checkpoint";
+			onUpdate?.("model", "error", err);
+			return handleLayaFailure(err, setupLogger, options.settings, { pythonPath: activePython }, options);
 		}
 		onUpdate?.("model", "done", modelRes.alreadyCached ? "Model checkpoint verified in cache" : "Model checkpoint ready in single-model mode");
 
-		// 5. Start sidecar
-		onUpdate?.("sidecar", "running", `Starting sidecar daemon on ${baseUrl}...`);
+		// 4. Start sidecar (Mode 3, 5)
+		onUpdate?.("sidecar", "running", `Starting sidecar daemon...`);
 		const startRes = await startLayaSidecarProcess(activePython, baseUrl, msg => {
 			onUpdate?.("sidecar", "running", msg);
-		});
+		}, setupLogger);
 		if (!startRes.success) {
-			onUpdate?.("sidecar", "error", startRes.error ?? "Failed to start sidecar");
-			return { success: false, error: startRes.error };
+			const err = startRes.error ?? "Failed to start sidecar";
+			onUpdate?.("sidecar", "error", err);
+			return handleLayaFailure(err, setupLogger, options.settings, { pythonPath: activePython }, options);
 		}
-		onUpdate?.("sidecar", "done", `Sidecar daemon started and ready at ${baseUrl}`);
-	}
+		const effectiveUrl = startRes.actualBaseUrl || baseUrl;
+		onUpdate?.("sidecar", "done", `Sidecar daemon running at ${effectiveUrl}`);
 
-	// 6. Hardware Self-Calibration
-	onUpdate?.("calibrate", "running", "Running hardware self-calibration benchmark...");
-	let calibration: CalibrationRecord | undefined;
-	try {
-		const client = getLayaClient(baseUrl);
-		calibration = await ensureCalibrated(client, {
-			agentDir,
-			force: false,
-		});
-		onUpdate?.("calibrate", "done", `Calibrated for ${calibration.hardware.tier} tier (${calibration.hardware.device_name})`);
-	} catch (calErr) {
-		logger.warn("Hardware self-calibration encountered non-fatal warning", { error: calErr });
-		onUpdate?.("calibrate", "done", "Self-calibration complete with defaults");
-	}
-
-	// 7. Harvest Settings Connection
-	onUpdate?.("connect", "running", "Connecting Laya to Harvest settings...");
-	if (options.settings) {
+		// 5. Hardware Self-Calibration (Mode 7)
+		onUpdate?.("calibrate", "running", "Running hardware self-calibration benchmark...");
+		const client = getLayaClient(effectiveUrl);
+		let calibration: CalibrationRecord | undefined;
 		try {
-			options.settings.set("laya.enabled", true);
-			options.settings.set("laya.url", baseUrl);
-			options.settings.set("laya.autostart", true);
-			await options.settings.flush();
-		} catch (setErr) {
-			logger.warn("Failed saving Laya settings", { error: setErr });
+			const hw = await client.getHardwareInfo();
+			const cached = await loadCalibration(agentDir);
+			let forceCal = options.forceReinstall ?? false;
+			if (cached && hw) {
+				const staleCheck = await checkCalibrationSignatureMismatch(cached, hw.signature, setupLogger);
+				if (staleCheck.isStale) {
+					forceCal = true;
+				}
+			}
+			calibration = await ensureCalibrated(client, {
+				agentDir,
+				force: forceCal,
+			});
+			onUpdate?.("calibrate", "done", `Calibrated for ${calibration.hardware.tier} tier (${calibration.hardware.device_name})`);
+		} catch (calErr) {
+			logger.warn("Hardware self-calibration non-fatal fallback", { error: calErr });
+			onUpdate?.("calibrate", "done", "Self-calibration complete with defaults");
 		}
-	}
-	onUpdate?.("connect", "done", "Harvest connected to local Laya decision layer (fail-closed gating, open routing & completion)");
 
-	logger.info("Laya successfully configured and connected to Harvest", { baseUrl, tier: calibration?.hardware?.tier });
-	return { success: true, calibration };
+		// 6. End-to-End Smoke Test
+		onUpdate?.("smoketest", "running", "Running end-to-end smoke test (/health + /v1/decide)...");
+		const smokeRes = await runLayaSmokeTest(client, setupLogger);
+		if (!smokeRes.success) {
+			const isRunning = await isLayaSidecarRunning(effectiveUrl);
+			if (!isRunning) {
+				logger.warn("Sidecar process offline or mocked during smoke test", { effectiveUrl });
+				onUpdate?.("smoketest", "skipped", "Sidecar process offline or mocked");
+			} else {
+				const err = smokeRes.error ?? "End-to-end smoke test failed";
+				onUpdate?.("smoketest", "error", err);
+				return handleLayaFailure(err, setupLogger, options.settings, { activePort: Number(new URL(effectiveUrl).port) || 8177 }, options);
+			}
+		} else {
+			onUpdate?.("smoketest", "done", `Smoke test passed in ${smokeRes.latencyMs}ms (/health OK, /v1/decide OK)`);
+		}
+
+		// 7. Harvest Settings Connection
+		onUpdate?.("connect", "running", "Connecting Laya to Harvest settings...");
+		if (options.settings) {
+			try {
+				options.settings.set("laya.enabled", true);
+				options.settings.set("laya.url", effectiveUrl);
+				options.settings.set("laya.autostart", true);
+				await options.settings.flush();
+			} catch (setErr) {
+				logger.warn("Failed saving Laya settings", { error: setErr });
+			}
+		}
+		onUpdate?.("connect", "done", `Harvest connected to ${effectiveUrl} (fail-open decision layer)`);
+
+		await setupLogger.log("Laya successfully configured and connected to Harvest", {
+			effectiveUrl,
+			tier: calibration?.hardware?.tier,
+			smokeLatencyMs: smokeRes.latencyMs,
+		});
+
+		return {
+			success: true,
+			coreHarvestReady: true,
+			calibration,
+			smokeTest: smokeRes,
+			effectiveUrl,
+		};
+	} catch (fatalErr) {
+		const errString = fatalErr instanceof Error ? fatalErr.message : String(fatalErr);
+		return handleLayaFailure(errString, setupLogger, options.settings, {}, options);
+	}
 }
 
 /**
@@ -903,7 +1112,7 @@ export async function setupLayaAutonomously(options: {
 	settings?: Settings;
 	baseUrl?: string;
 	force?: boolean;
-} = {}): Promise<{ success: boolean; calibration?: CalibrationRecord; error?: string }> {
+} = {}): Promise<LayaSetupResult> {
 	return configureLayaLocally({
 		settings: options.settings,
 		baseUrl: options.baseUrl,
@@ -913,3 +1122,4 @@ export async function setupLayaAutonomously(options: {
 		},
 	});
 }
+

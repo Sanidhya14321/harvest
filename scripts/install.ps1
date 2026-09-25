@@ -3,7 +3,9 @@
 param(
     [switch]$Source,
     [switch]$Binary,
-    [string]$Ref
+    [string]$Ref,
+    [switch]$WithLaya,
+    [switch]$Laya
 )
 
 $ErrorActionPreference = "Stop"
@@ -303,3 +305,23 @@ if ($Source) {
         Install-Binary
     }
 }
+
+if ($WithLaya -or $Laya) {
+    Write-Host ""
+    Write-Host "Configuring local Laya decision sidecar..." -ForegroundColor Cyan
+    try {
+        if (Test-BunInstalled) {
+            bun x @harvest/pi-coding-agent setup laya
+        } else {
+            & (Join-Path $InstallDir "omp.exe") setup laya
+        }
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[OK] Harvest + Laya setup complete!" -ForegroundColor Green
+        } else {
+            Write-Warning "Laya decision sidecar setup failed, but core Harvest is fully installed and operational. Run 'omp setup laya' to retry."
+        }
+    } catch {
+        Write-Warning "Laya decision sidecar setup encountered an error: $_. Core Harvest is fully installed and operational. Run 'omp setup laya' to retry."
+    }
+}
+

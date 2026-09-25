@@ -9,7 +9,7 @@ import { runSetupCommand, type SetupCommandArgs, type SetupComponent } from "../
 import { runRootCommand } from "../main";
 import { initTheme } from "../modes/theme/theme";
 
-const COMPONENTS: SetupComponent[] = ["python", "speech"];
+const COMPONENTS: SetupComponent[] = ["python", "speech", "laya"];
 
 export interface OnboardingSetupDependencies {
 	runRoot?: typeof runRootCommand;
@@ -52,7 +52,7 @@ export default class Setup extends Command {
 				// A check/JSON request with no COMPONENT has nothing to probe. Emit a
 				// usage error on stderr (exit 1) rather than printing help to stdout at
 				// exit 0, which would mask failures in scripted `--json` health checks.
-				throw new CliUsageError("setup --check/--json requires a COMPONENT (python|speech)");
+				throw new CliUsageError("setup --check/--json requires a COMPONENT (python|speech|laya)");
 			}
 			await runOnboardingSetup();
 			return;

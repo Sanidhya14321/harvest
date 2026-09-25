@@ -26,6 +26,10 @@ while [ $# -gt 0 ]; do
             MODE="binary"
             shift
             ;;
+        --laya|--with-laya)
+            WITH_LAYA=1
+            shift
+            ;;
         --ref)
             shift
             if [ -z "$1" ]; then
@@ -330,3 +334,16 @@ case "$MODE" in
         fi
         ;;
 esac
+
+if [ "$WITH_LAYA" = "1" ]; then
+    echo ""
+    echo "Configuring local Laya decision sidecar..."
+    if command -v omp >/dev/null 2>&1; then
+        omp setup laya || echo "Warning: Laya decision sidecar setup failed, but core Harvest is operational. Run 'omp setup laya' to retry."
+    elif [ -f "${INSTALL_DIR}/omp" ]; then
+        "${INSTALL_DIR}/omp" setup laya || echo "Warning: Laya decision sidecar setup failed, but core Harvest is operational. Run 'omp setup laya' to retry."
+    elif command -v bun >/dev/null 2>&1; then
+        bun x @harvest/pi-coding-agent setup laya || echo "Warning: Laya decision sidecar setup failed, but core Harvest is operational. Run 'omp setup laya' to retry."
+    fi
+fi
+

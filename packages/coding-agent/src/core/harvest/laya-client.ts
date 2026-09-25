@@ -278,9 +278,15 @@ export class LayaClient {
 // Global default singleton
 let defaultClient: LayaClient | undefined;
 
-export function getLayaClient(): LayaClient {
+export function getLayaClient(baseUrl?: string): LayaClient {
+	if (baseUrl) {
+		if (!defaultClient || defaultClient.baseUrl !== baseUrl) {
+			return new LayaClient({ baseUrl });
+		}
+	}
 	if (!defaultClient) {
 		defaultClient = new LayaClient();
 	}
 	return defaultClient;
 }
+
