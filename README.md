@@ -237,7 +237,7 @@ _[Watch the capture ↗](https://omp.sh/clips/advisor.mp4)_
 
 /collab puts your live session on a relay and hands back a link — and a QR. A teammate joins from another terminal with `harvest join` (or `omp join`), or just opens it in a browser. Share read-write to pair on the same agent, or /collab view for a read-only link anyone can watch but no one can steer. Frames are sealed client-side; the relay never sees your keys.
 
-![Harvest TUI: /collab view prints 'Collab session started!' with an omp join command, a my.omp.sh browser link, the note 'Anyone with this link can watch the session but cannot prompt the agent', and a large scannable QR code.](https://omp.sh/clips/collab-poster.webp)
+![Harvest TUI: /collab view prints 'Collab session started!' with a harvest join command, a my.omp.sh browser link, the note 'Anyone with this link can watch the session but cannot prompt the agent', and a large scannable QR code.](https://omp.sh/clips/collab-poster.webp)
 
 _[Watch the capture ↗](https://omp.sh/clips/collab.mp4)_
 
