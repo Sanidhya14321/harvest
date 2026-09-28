@@ -56,7 +56,9 @@ import type { ForeignSessionInfo, ForeignSessionSource } from "../../session/for
 import type { SessionEntry, SessionMessageEntry, SessionTreeNode } from "../../session/session-entries";
 import type { SessionInfo } from "../../session/session-listing";
 import { SessionManager } from "../../session/session-manager";
+import { resolveResumableSession } from "../../session/session-listing";
 import { loadPinnedSessionIds } from "../../session/session-pins";
+import { SessionTabs } from "../../session/session-tabs";
 import { FileSessionStorage } from "../../session/session-storage";
 import { type LogoutAccount, toLogoutAccounts } from "../../slash-commands/helpers/logout";
 import {
@@ -118,7 +120,120 @@ import type { SessionObserverRegistry } from "../session-observer-registry";
 const MANUAL_LOGIN_PROMPT = "Paste the authorization code (or full redirect URL), then press Enter:";
 
 export class SelectorController {
-	constructor(private ctx: InteractiveModeContext) {}
+	readonly sessionTabs = new SessionTabs();
+	#historyNavigationTarget: string | undefined;
+	constructor(private ctx: InteractiveModeContext) {
+		const current = ctx.sessionManager.getSessionFile();
+		if (current) {
+			this.sessionTabs.open(current, ctx.sessionManager.getSessionName());
+			this.sessionTabs.visit(current);
+		}
+	}
+
+	recordSessionTransition(previousFile?: string, removePrevious = false): void {
+		const activeFile = this.ctx.sessionManager.getSessionFile();
+		if (!activeFile || (previousFile && normalizePathForComparison(activeFile) === normalizePathForComparison(previousFile))) return;
+		if (previousFile && !removePrevious) this.sessionTabs.open(previousFile);
+		if (previousFile && removePrevious) this.sessionTabs.close(previousFile, false);
+		this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
+		this.sessionTabs.visit(activeFile);
+		this.ctx.ui.requestRender();
+	}
+
+	async handleSessionTabsCommand(args: string): Promise<string> {
+		const [verb = "list", value] = args.trim().split(/\s+/, 2);
+		const current = this.ctx.sessionManager.getSessionFile();
+		if (verb === "list" && !value) {
+			const paths = this.sessionTabs.paths;
+			if (paths.length === 0) return "No session tabs are open. Use /tab open <session id>.";
+			return paths
+				.map((sessionPath, index) =>
+					`${current && normalizePathForComparison(current) === normalizePathForComparison(sessionPath) ? "*" : " "} ${index + 1}. ${this.sessionTabs.label(sessionPath) ?? shortenPath(sessionPath)}`,
+				)
+				.join("\n");
+		}
+		if (verb === "open" && value) {
+			const match = await resolveResumableSession(
+				value,
+				this.ctx.sessionManager.getCwd(),
+				this.ctx.sessionManager.getSessionDir(),
+				{ allowGlobalFallback: true },
+			);
+			if (!match) return `Session "${value}" not found`;
+			if (current) this.sessionTabs.open(current, this.ctx.sessionManager.getSessionName());
+			const target = match.session.path;
+			const wasOpen = this.sessionTabs.indexOf(target) >= 0;
+			this.sessionTabs.open(target, match.session.title ?? match.session.firstMessage);
+			if (!current || normalizePathForComparison(current) !== normalizePathForComparison(target)) {
+				await this.ctx.handleResumeSession(target);
+				const active = this.ctx.sessionManager.getSessionFile();
+				if (!active || normalizePathForComparison(active) !== normalizePathForComparison(target)) {
+					if (!wasOpen) this.sessionTabs.close(target, false);
+					return "Session switch did not complete; the current session was preserved.";
+				}
+			}
+			this.ctx.ui.requestRender();
+			return `Opened session tab ${this.sessionTabs.indexOf(target) + 1}.`;
+		}
+		if (verb === "close") {
+			const index = value ? Number(value) - 1 : current ? this.sessionTabs.indexOf(current) : -1;
+			const target = Number.isInteger(index) ? this.sessionTabs.paths[index] : undefined;
+			if (!target) return `No tab ${value ?? "is active"}.`;
+			if (current && normalizePathForComparison(current) === normalizePathForComparison(target)) {
+				const next = this.sessionTabs.neighbor(current, 1);
+				if (!next) return "The last tab cannot be closed while its session is active.";
+				await this.ctx.handleResumeSession(next);
+				const active = this.ctx.sessionManager.getSessionFile();
+				if (!active || normalizePathForComparison(active) !== normalizePathForComparison(next)) {
+					return "Session switch did not complete; the active tab was preserved.";
+				}
+			}
+			this.sessionTabs.close(target);
+			this.ctx.ui.requestRender();
+			return `Closed session tab ${index + 1}.`;
+		}
+		if (verb === "reopen" && !value) {
+			const target = this.sessionTabs.reopen();
+			if (!target) return "No recently closed session tab.";
+			if (!(await Bun.file(target).exists())) {
+				this.sessionTabs.close(target, false);
+				return "The closed session file is no longer available.";
+			}
+			await this.ctx.handleResumeSession(target);
+			const active = this.ctx.sessionManager.getSessionFile();
+			if (!active || normalizePathForComparison(active) !== normalizePathForComparison(target)) {
+				this.sessionTabs.close(target);
+				return "Session switch did not complete; the closed tab was preserved.";
+			}
+			this.ctx.ui.requestRender();
+			return `Reopened session tab ${this.sessionTabs.indexOf(target) + 1}.`;
+		}
+		const historyDirection = verb === "back" ? -1 : verb === "forward" ? 1 : undefined;
+		const target =
+			historyDirection
+				? this.sessionTabs.historyTarget(historyDirection)
+				: verb === "next" || verb === "prev"
+				? current && this.sessionTabs.neighbor(current, verb === "next" ? 1 : -1)
+				: verb === "switch" && value && Number.isInteger(Number(value))
+					? this.sessionTabs.paths[Number(value) - 1]
+					: undefined;
+		if (target) {
+			if (historyDirection) this.#historyNavigationTarget = target;
+			try {
+				await this.ctx.handleResumeSession(target);
+			} finally {
+				this.#historyNavigationTarget = undefined;
+			}
+			const active = this.ctx.sessionManager.getSessionFile();
+			if (historyDirection && active && normalizePathForComparison(active) === normalizePathForComparison(target)) {
+				this.sessionTabs.commitHistoryMove(historyDirection);
+			}
+			return active && normalizePathForComparison(active) === normalizePathForComparison(target)
+				? `Switched to session tab ${this.sessionTabs.indexOf(target) + 1}.`
+				: "Session switch did not complete; the current session was preserved.";
+		}
+		return "Usage: /tab [list|open <session id>|switch <number>|next|prev|back|forward|close [number]|reopen]";
+	}
 	/**
 	 * Mount a primary fullscreen menu through the one polished modal path shared
 	 * by Settings, Model Hub, and Agent Hub.
@@ -1794,6 +1909,7 @@ export class SelectorController {
 					const storage = new FileSessionStorage();
 					try {
 						await storage.deleteSessionWithArtifacts(session.path);
+					this.sessionTabs.close(session.path, false);
 						return true;
 					} catch (error) {
 						throw new Error(
@@ -1892,6 +2008,8 @@ export class SelectorController {
 
 	async handleResumeSession(sessionPath: string, options?: { settingsFlushed?: boolean }): Promise<boolean> {
 		const previousCwd = this.ctx.sessionManager.getCwd();
+		const previousFile = this.ctx.sessionManager.getSessionFile();
+		const previousName = this.ctx.sessionManager.getSessionName();
 		// Flush pending settings writes before switching sessions so a save
 		// failure leaves the session, process project dir, and Settings in the
 		// source scope.
@@ -1917,6 +2035,14 @@ export class SelectorController {
 		}
 		this.ctx.clearTransientSessionUi();
 		const newCwd = this.ctx.sessionManager.getCwd();
+		if (previousFile) this.sessionTabs.open(previousFile, previousName);
+		const activeFile = this.ctx.sessionManager.getSessionFile();
+		if (activeFile) {
+			this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
+			if (!this.#historyNavigationTarget || normalizePathForComparison(activeFile) !== normalizePathForComparison(this.#historyNavigationTarget)) {
+				this.sessionTabs.visit(activeFile);
+			}
+		}
 		const movedProject = normalizePathForComparison(newCwd) !== normalizePathForComparison(previousCwd);
 		this.#refreshSessionTerminalTitle();
 		this.ctx.updateEditorBorderColor();
@@ -1960,6 +2086,7 @@ export class SelectorController {
 
 		// Delete the session file and artifacts directory
 		await storage.deleteSessionWithArtifacts(sessionFile);
+		this.sessionTabs.close(sessionFile, false);
 
 		// Show session selector
 		this.ctx.showStatus("Session deleted");

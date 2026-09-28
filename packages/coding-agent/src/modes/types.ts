@@ -451,6 +451,7 @@ export interface InteractiveModeContext {
 	showTreeSelector(): void;
 	showSessionSelector(source?: ForeignSessionSource): void;
 	handleResumeSession(sessionPath: string): Promise<void>;
+	handleSessionTabsCommand(args: string): Promise<string>;
 	handleSessionDeleteCommand(): Promise<void>;
 	showOAuthSelector(mode: "login" | "logout", providerId?: string): Promise<void>;
 	showSessionPinSelector(): Promise<void>;

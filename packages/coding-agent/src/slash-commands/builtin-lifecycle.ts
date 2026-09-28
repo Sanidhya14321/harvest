@@ -384,6 +384,7 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 	},
 	{
 		name: "resume",
+		aliases: ["sessions"],
 		icon: "history",
 		description: "Resume a different session",
 		inlineHint: "[session id|@claude|@codex]",
@@ -411,6 +412,22 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 				return;
 			}
 			await runtime.ctx.handleResumeSession(match.session.path);
+		},
+	},
+	{
+		name: "tab",
+		aliases: ["tabs"],
+		icon: "session",
+		description: "List and switch open session tabs",
+		inlineHint: "[list|open <id>|switch <number>|next|prev|back|forward|close|reopen]",
+		allowArgs: true,
+		handleTui: async (command, runtime) => {
+			runtime.ctx.editor.setText("");
+			try {
+				runtime.ctx.showSessionInfo(await runtime.ctx.handleSessionTabsCommand(command.args));
+			} catch (error) {
+				runtime.ctx.showError(error instanceof Error ? error.message : String(error));
+			}
 		},
 	},
 	{

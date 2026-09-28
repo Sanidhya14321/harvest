@@ -2,6 +2,8 @@
 
 This document describes how coding-agent discovers recent sessions, resolves `--resume` targets, presents session pickers, and switches the active runtime session.
 
+In the interactive terminal, `/sessions` opens the same picker as `/resume`, and `/timeline` opens the existing session tree navigator. A tab strip appears near the composer and updates when sessions are selected from the picker. `/tab open <session id>` opens and switches to a session; `/tab list`, `/tab switch <number>`, `/tab next`, `/tab prev`, `/tab back`, `/tab forward`, `/tab close [number]`, and `/tab reopen` manage tabs and navigation. Ctrl+Tab and Ctrl+Shift+Tab cycle tabs, and Ctrl+Shift+T reopens the last closed tab. Tabs live for the current terminal process; inactive tabs retain their session files, not a running agent instance.
+
 It focuses on current implementation behavior, including fallback paths and caveats.
 
 ## Implementation files

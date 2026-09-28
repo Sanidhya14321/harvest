@@ -217,6 +217,7 @@ import {
 import { createSessionTeardown, type SessionTeardown } from "./session-teardown";
 import { runProviderSetupWizard } from "./setup-wizard/lazy";
 import { sanitizeStatusText } from "./shared";
+import { SessionTabStrip } from "./components/session-tab-strip";
 import { invokeSkillCommandFromText, isKnownSkillCommand } from "./skill-command";
 import { clearMermaidCache } from "./theme/mermaid-cache";
 import { type ShimmerPalette, shimmerEnabled, shimmerText } from "./theme/shimmer";
@@ -1215,6 +1216,17 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.errorBannerContainer,
 			this.modelCycleContainer,
 			this.deferredCommandContainer,
+			new SessionTabStrip(
+				this.#selectorController.sessionTabs,
+				() => this.sessionManager.getSessionFile(),
+				async sessionPath => {
+					try {
+						await this.handleResumeSession(sessionPath);
+					} catch (error) {
+						this.showError(error instanceof Error ? error.message : String(error));
+					}
+				},
+			),
 			// Working loader / transient status sits below the sticky todo + subagent
 			// HUDs, just above the editor's hook-widget top margin — so it reads next to
 			// the prompt while keeping the one-line gap above the editor (the band
@@ -5501,8 +5513,10 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	async handleClearCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleClearCommand();
+		this.#selectorController.recordSessionTransition(previousFile);
 	}
 
 	handleFreshCommand(): Promise<void> {
@@ -5515,21 +5529,27 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	async handleDropCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleDropCommand();
+		this.#selectorController.recordSessionTransition(previousFile, true);
 	}
 
 	async handleForkCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
 		this.#btwController.dispose();
 		this.#omfgController.dispose();
 		this.#cleanseController.dispose();
 		await this.#commandController.handleForkCommand();
+		this.#selectorController.recordSessionTransition(previousFile);
 	}
 
 	async handleMoveCommand(targetPath?: string): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
 		await this.#commandController.handleMoveCommand(targetPath);
+		this.#selectorController.recordSessionTransition(previousFile, true);
 	}
 
 	async handleWorktreeCommand(branch?: string): Promise<void> {
@@ -5769,6 +5789,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#cleanseController.dispose();
 		this.resetObserverRegistry();
 		await this.#selectorController.handleResumeSession(sessionPath, { settingsFlushed: true });
+	}
+
+	handleSessionTabsCommand(args: string): Promise<string> {
+		return this.#selectorController.handleSessionTabsCommand(args);
 	}
 
 	handleSessionDeleteCommand(): Promise<void> {

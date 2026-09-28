@@ -501,6 +501,7 @@ export const BUILTIN_SESSION_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 	},
 	{
 		name: "tree",
+		aliases: ["timeline"],
 		icon: "tree",
 		description: "Navigate session tree (switch branches)",
 		handleTui: (_command, runtime) => {

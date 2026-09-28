@@ -2,8 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub release installs now verify downloads and preserve an existing CLI when verification fails.
+- Outside-workspace edit deletes now return a path rejection before native parsing.
+- Extension-revised tool arguments are checked again by pre-read enforcement and Laya gating before execution.
+- Laya setup stops before downloading when free disk space cannot be measured.
+- Laya starts its installed sidecar automatically in interactive sessions when autostart is enabled.
+- Laya setup now connects to the sidecar's rotating local token and ships its Python service in npm and binary builds.
+- Laya setup stops with a diagnostic when an isolated Python environment cannot be created, without installing packages into system Python.
+- Terminal session breadcrumbs are created with private file permissions on Unix systems.
+
 ### Added
 
+- GitHub releases now include binaries for Windows, macOS, and Linux on x64 and ARM64, plus checksums and license notices.
+- `/sessions` opens the session picker, `/timeline` opens the session tree, and a visible tab strip supports switching, history, closing, and reopening sessions.
 - `/laya on` now provisions the sidecar from your configured `laya.url` and connects it to the agent when missing, instead of only flipping the flag; `/laya setup` and `/laya calibrate` work the same way in-session.
 
 ### Changed
