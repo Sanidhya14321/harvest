@@ -98,6 +98,8 @@ export interface SegmentContext {
 		enabled: boolean;
 	} | null;
 	collab: CollabStatus | null;
+	/** Active `tools.approvalMode` for the agent-mode badge fallback. */
+	approvalMode?: string;
 	laya?: {
 		enabled: boolean;
 		connected: boolean;

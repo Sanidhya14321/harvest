@@ -2,7 +2,7 @@ import type { ImageContent, TextContent } from "@harvest/pi-ai";
 import type { DesktopCapabilities } from "@harvest/pi-natives";
 
 /** Hidden CLI selector that re-enters the computer worker host. */
-export const COMPUTER_WORKER_ARG = "__omp_worker_computer";
+export const COMPUTER_WORKER_ARG = "__harvest_worker_computer";
 
 /** Frozen run settings transferred from the host session to the worker. */
 export interface ComputerSessionSnapshot {

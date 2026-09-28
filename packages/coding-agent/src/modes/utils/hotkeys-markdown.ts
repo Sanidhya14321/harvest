@@ -42,6 +42,7 @@ export function buildHotkeysMarkdown(bindings: HotkeysMarkdownBindings): string 
 		`| \`${appKey(bindings, "app.exit")}\` | Exit (saves current prompt as draft) |`,
 		`| \`${appKey(bindings, "app.suspend")}\` | Suspend to background |`,
 		`| \`${appKey(bindings, "app.display.reset")}\` | Reset terminal display |`,
+		`| \`${appKey(bindings, "app.mode.cycle")}\` | Cycle agent mode (Plan/Build/Accept Edits/Auto) |`,
 		`| \`${appKey(bindings, "app.thinking.cycle")}\` | Cycle thinking level |`,
 		`| \`${appKey(bindings, "app.model.cycleForward")}\` | Cycle role models (slow/default/smol) |`,
 		`| \`${appKey(bindings, "app.model.cycleBackward")}\` | Cycle role models (backward) |`,

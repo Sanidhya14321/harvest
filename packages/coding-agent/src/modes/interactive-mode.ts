@@ -123,6 +123,7 @@ import { discoverTitleSystemPromptFile, resolvePromptInput } from "../system-pro
 import { labelEchoesHandle } from "../task/label";
 import { agentTypeBadge, formatTaskId } from "../task/render";
 import type { ConfiguredThinkingLevel } from "../thinking";
+import { agentModeDef, getAgentMode, nextAgentMode } from "./agent-mode";
 import { tinyTitleClient } from "../tiny/title-client";
 import { isMCPToolName } from "../tools/builtin-names";
 import type { LspStartupServerInfo } from "../tools";
@@ -5929,6 +5930,53 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	cycleThinkingLevel(): void {
 		this.#inputController.cycleThinkingLevel();
+	}
+
+	async cycleAgentMode(): Promise<void> {
+		if (this.focusedAgentId) {
+			this.showStatus("Modes apply to the main session — press ←← to return first");
+			return;
+		}
+		if (this.goalModeEnabled || this.goalModePaused) {
+			this.showWarning("Exit goal mode first.");
+			return;
+		}
+		if (this.vibeModeEnabled) {
+			this.showWarning("Exit vibe mode first.");
+			return;
+		}
+		try {
+			const planActive = this.planModeEnabled || this.planModePaused;
+			const current = getAgentMode(planActive, this.session.settings.get("tools.approvalMode"));
+			const next = nextAgentMode(current);
+			const def = agentModeDef(next);
+			if (next === "plan") {
+				if (!this.session.settings.get("plan.enabled")) {
+					this.showWarning("Plan mode is disabled. Enable it in settings (plan.enabled).");
+					return;
+				}
+				if (!this.planModeEnabled && !this.planModePaused) {
+					await this.#enterPlanMode();
+				}
+			} else {
+				if (this.planModeEnabled) {
+					await this.#exitPlanMode({ silent: true, interruptActiveTurn: true });
+				} else if (this.planModePaused) {
+					this.planModePaused = false;
+					this.#planModeHasEntered = false;
+					this.#updatePlanModeStatus();
+					this.sessionManager.appendModeChange("none");
+				}
+				if (def.approvalMode) {
+					this.session.settings.set("tools.approvalMode", def.approvalMode);
+				}
+			}
+			this.statusLine.invalidate();
+			this.updateEditorBorderColor();
+			this.showStatus(`Mode: ${def.label} — ${def.description}`);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
 	}
 
 	cycleRoleModel(direction?: "forward" | "backward"): Promise<void> {

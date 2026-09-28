@@ -134,16 +134,34 @@ async function runSmokeTest(): Promise<void> {
 	process.stdout.write("smoke-test: ok\n");
 }
 
-const TINY_WORKER_ARG = "__omp_worker_tiny_inference";
-const STATS_SYNC_WORKER_ARG = "__omp_worker_stats_sync";
-const TAB_WORKER_ARG = "__omp_worker_tab";
-const JS_EVAL_WORKER_ARG = "__omp_worker_js_eval";
-const JS_EVAL_PROCESS_ARG = "__omp_worker_js_eval_process";
-const STT_WORKER_ARG = "__omp_worker_stt";
-const TTS_WORKER_ARG = "__omp_worker_tts";
-const MNEMOPI_EMBED_WORKER_ARG = "__omp_worker_mnemopi_embed";
+const TINY_WORKER_ARG = "__harvest_worker_tiny_inference";
+const STATS_SYNC_WORKER_ARG = "__harvest_worker_stats_sync";
+const TAB_WORKER_ARG = "__harvest_worker_tab";
+const JS_EVAL_WORKER_ARG = "__harvest_worker_js_eval";
+const JS_EVAL_PROCESS_ARG = "__harvest_worker_js_eval_process";
+const STT_WORKER_ARG = "__harvest_worker_stt";
+const TTS_WORKER_ARG = "__harvest_worker_tts";
+const MNEMOPI_EMBED_WORKER_ARG = "__harvest_worker_mnemopi_embed";
+
+// Legacy pre-rename selectors (accepted alongside the harvest names for one release).
+const LEGACY_ALIASES: Record<string, string> = {
+	__omp_worker_tiny_inference: TINY_WORKER_ARG,
+	__omp_worker_stats_sync: STATS_SYNC_WORKER_ARG,
+	__omp_worker_tab: TAB_WORKER_ARG,
+	__omp_worker_js_eval: JS_EVAL_WORKER_ARG,
+	__omp_worker_js_eval_process: JS_EVAL_PROCESS_ARG,
+	__omp_worker_stt: STT_WORKER_ARG,
+	__omp_worker_tts: TTS_WORKER_ARG,
+	__omp_worker_mnemopi_embed: MNEMOPI_EMBED_WORKER_ARG,
+};
+
+function canonicalWorkerArg(arg: string | undefined): string | undefined {
+	if (arg === undefined) return undefined;
+	return LEGACY_ALIASES[arg] ?? arg;
+}
 
 async function runWorkerEntrypoint(arg: string | undefined): Promise<boolean> {
+	arg = canonicalWorkerArg(arg);
 	if (arg === TINY_WORKER_ARG) {
 		await runTinyWorker();
 		return true;
@@ -476,7 +494,7 @@ export async function runCli(argv: string[]): Promise<void> {
 	// `@harvest/pi-utils/env` here would snapshot the wrong agent `.env`.
 	// Gated on `isProcessEntry`: only the real CLI process entry is a valid
 	// worker host. Worker-thread re-entry already returned above at the
-	// `__omp_worker_` dispatch, and importers (`runCli` in profile-CLI tests,
+	// `__harvest_worker_` dispatch, and importers (`runCli` in profile-CLI tests,
 	// SDK embedding) have `import.meta.main === false` — declaring there would
 	// poison `workerHostEntry()` for the whole test process, forcing eval/stats/
 	// browser workers onto the same-realm inline fallback.

@@ -11,7 +11,7 @@ import type { DailyActivityPoint } from "@harvest/omp-stats/shared-types";
 import type { WorkerLogMessage } from "../subprocess/worker-client";
 
 /** Hidden CLI selector that boots the worker in the spawned subprocess (dispatched in `cli.ts`). */
-export const STATS_ACTIVITY_WORKER_ARG = "__omp_worker_stats_activity";
+export const STATS_ACTIVITY_WORKER_ARG = "__harvest_worker_stats_activity";
 
 export type StatsActivityWorkerInbound =
 	| { type: "ping"; id: string }

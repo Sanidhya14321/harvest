@@ -493,6 +493,7 @@ export interface InteractiveModeContext {
 	hasActiveCleanse(): boolean;
 	handleCleanseEscape(): boolean;
 	cycleThinkingLevel(): void;
+	cycleAgentMode(): Promise<void>;
 	cycleRoleModel(direction?: "forward" | "backward"): Promise<void>;
 	toggleToolOutputExpansion(): void;
 	setToolsExpanded(expanded: boolean): void;

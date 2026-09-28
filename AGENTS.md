@@ -8,18 +8,30 @@ This repo contains multiple packages, but **`packages/coding-agent/`** is the pr
 
 ### Package Structure
 
-| Package                 | Description                                                                             |
-| ----------------------- | --------------------------------------------------------------------------------------- |
-| `packages/ai`           | Multi-provider LLM client with streaming support                                        |
-| `packages/catalog`      | Model catalog: bundled models.json, provider descriptors, model identity/classification |
-| `packages/agent`        | Agent runtime with tool calling and state management                                    |
-| `packages/coding-agent` | Main CLI application (primary focus)                                                    |
-| `packages/tui`          | Terminal UI library with differential rendering                                         |
-| `packages/natives`      | Bindings for native text/image/grep operations                                          |
-| `packages/stats`        | Local observability dashboard (`harvest stats`)                                         |
-| `packages/omptype`      | ArkType-compatible schema validation with a lazy JIT runtime                            |
-| `packages/utils`        | Shared utilities (logger, streams, temp files)                                          |
-| `crates/pi-natives`     | Rust crate for performance-critical text/grep ops                                       |
+| Package                         | Description                                                        |
+| ------------------------------- | ------------------------------------------------------------------ |
+| `packages/coding-agent/`        | Main CLI application (primary focus): `src/cli.ts` → `src/main.ts` → `src/sdk.ts` |
+| `packages/agent/`               | Agent runtime: state machine, execution loop, compaction           |
+| `packages/ai/`                  | Multi-provider LLM client with streaming support                   |
+| `packages/catalog/`             | Model catalog: bundled models.json, provider descriptors, KDL rules |
+| `packages/tui/`                 | Terminal UI library with differential rendering                    |
+| `packages/natives/`             | N-API bindings for native text/image/grep operations               |
+| `packages/stats/`               | Local observability dashboard (`harvest stats`)                    |
+| `packages/omptype/`             | ArkType-compatible schema validation with a lazy JIT runtime       |
+| `packages/utils/`               | Shared utilities (logger, streams, temp files)                     |
+| `packages/mnemopi/`             | Local SQLite memory engine                                         |
+| `packages/metaharness/`         | Benchmark orchestration harness                                    |
+| `packages/wire/`                | Shared collab live-session protocol types                          |
+| `packages/collab-web/`          | Browser guest client + local relay for collab sessions             |
+| `packages/snapcompact/`         | Bitmap-frame context compression                                   |
+| `packages/browser-relay/`       | Extension relay for Eval browser API                               |
+| `packages/harvest-memory/`, `packages/harvest-schema/` | Memory backend + shared schema                       |
+| `packages/typescript-edit-benchmark/` | Edit benchmark suite                                         |
+| `crates/pi-*` (`crates/harvest-*` mirrors) | Rust natives: shell, ast, iso, voice, walker, edit, vcs, diff |
+| `decision-sidecar/`             | Laya local decision microservice (Python/FastAPI, see below)       |
+| `python/robomp/`                | GitHub issue/PR lifecycle automation                               |
+
+Authoritative subsystem map: `packages/coding-agent/DEVELOPMENT.md` links each `src/` directory to its reference doc under `docs/`. Trust `docs/` over prose elsewhere; if docs conflict with scripts/config, trust the executable source.
 
 **Catalog import convention**: code in this repo imports catalog _values_ (bundled models, model-thinking helpers, identity, descriptors, model manager/cache) from `@harvest/pi-catalog/<module>` — never via `@harvest/pi-ai`. The pi-ai barrel re-exports only the model/effort _types_ its own signatures use (`Model`, `Api`, `ThinkingConfig`, `Effort`, …); type-only imports of those from `@harvest/pi-ai` are fine.
 
@@ -38,13 +50,13 @@ Unless user tells you exactly what to write:
 - Check `node_modules` for external API types instead of guessing.
 - **Barrel exports**: prefer `export * from "./module"` over named re-exports, including `export type { ... } from`. In pure `index.ts` barrels, use star re-exports even for single-specifier cases. If stars create ambiguity, remove the redundant export path; do not keep duplicates.
 - **Class privacy**: standard TypeScript `private`/`protected` or ES `#private` fields are permitted; keep member visibility clean and minimal.
-- **Prompts**: never build prompts in code (no inline strings, template literals, or concatenation). Prompts live in static `.md` files; use Handlebars for dynamic content. Import them via `import content from "./prompt.md" with { type: "text" }` — not `readFile`.
-- **Worker scripts**: workers re-enter the CLI entrypoint; never spawn separate worker entry modules. `cli.ts` declares itself as the worker host at startup (`declareWorkerHostEntry()` from `@harvest/pi-utils/env`) and dispatches hidden argv selectors (`__omp_worker_stats_sync`, `__omp_worker_tab`, `__omp_worker_js_eval`, `__omp_worker_tiny_inference`) before loading the command registry. Spawn sites use:
+- **Prompts**: never build prompts in code (no inline strings, template literals, or concatenation). Prompts live in static `.md` files; use Handlebars for dynamic content. Import them via `import content from "./prompt.md" with { type: "text" }` — not `readFile`. (`bunfig.toml` maps `.md`/`.py`/`.lark` to the text loader, which is why this works.)
+- **Worker scripts**: workers re-enter the CLI entrypoint; never spawn separate worker entry modules. `cli.ts` declares itself as the worker host at startup (`declareWorkerHostEntry()` from `@harvest/pi-utils/env`) and dispatches hidden argv selectors (`__harvest_worker_stats_sync`, `__harvest_worker_tab`, `__harvest_worker_js_eval`, `__harvest_worker_tiny_inference`) before loading the command registry. Spawn sites use:
   ```ts
   import { workerHostEntry } from "@harvest/pi-utils";
   const hostEntry = workerHostEntry();
   const worker = hostEntry
-  	? new Worker(hostEntry, { type: "module", argv: ["__omp_worker_<name>"] })
+  	? new Worker(hostEntry, { type: "module", argv: ["__harvest_worker_<name>"] })
   	: new Worker(new URL("./<worker>.ts", import.meta.url).href, { type: "module" });
   ```
   When the process was started from the harvest CLI — source `cli.ts`, npm-bundle `dist/cli.js`, or compiled binary — `workerHostEntry()` is `Bun.main` and the worker re-enters the single entry module, so no per-worker `--compile` entrypoints or bundle entries exist. Outside a CLI host (`bun test`, SDK embedding, standalone `omp-stats`) it returns `null` and the direct-module fallback loads the worker source. New worker kinds MUST add their selector to the dispatch table in `cli.ts` and keep the fallback branch.
@@ -202,6 +214,23 @@ To change an entry, fix the source:
 
 Regenerate with `bun run gen:compat` and/or `bun run gen:models` and commit the generated files alongside the source change. Add a regression test against the **rule/descriptor/mapper**, not the bundled JSON, so it survives upstream metadata shifts.
 
+## Laya Decision Sidecar (hard invariants)
+
+`decision-sidecar/` is a Python/FastAPI microservice on `127.0.0.1:8177` (fallbacks `8178-8185`) serving `POST /v1/decide` to the TS agent loop. Full contract: `decision-sidecar/README.md` + `ARCHITECTURE.md`.
+
+- **Single checkpoint only**: load via `laya.load("convaiinnovations/laya-typed-decisions")`. Never import `Router` — it triggers multi-GB secondary downloads.
+- **Fail-open, except gating**: sidecar offline/timeout/error → fall back to defaults (unpruned context, heuristic routing). Exception: tool-call gating fails **CLOSED** (require human approval).
+- **Bind loopback only**; never expose `/v1/decide` (unauthenticated) on `0.0.0.0`. Same rule applies to metaharness, auth-gateway/broker, and stats servers — keep `127.0.0.1` defaults, require a token for any non-loopback bind.
+- **Pruning must preserve protocol blocks**: never strip `toolCall` blocks while leaving `toolResult` messages orphaned — providers reject the replay with 400. Exclude mixed messages from candidacy or preserve non-text blocks.
+- Setup heals 8 enumerated failure modes only (torch wheel, symlink restriction, port conflict, corrupt checkpoint, router invocation, disk space, stale calibration, missing python) and logs to `~/.harvest/agent/logs/laya-setup.log`. Never invent new remediation classes; unrecognized failures emit a diagnostic bundle and fail open.
+
+## Security Invariants
+
+From prior code reviews (`CODE_REVIEW*.md`) — re-verified gaps agents reintroduce:
+
+- **Workspace jail**: every file-mutation entry point (write, edit incl `op === "delete"`, archive/SQLite subpaths, LSP `workspace/applyEdit` URIs, native `local://` sandbox) must pass `assertPathJailed` (or the Rust `PathPolicy` equivalent) *before* branching by operation. For nonexistent leaves, resolve + validate the deepest existing ancestor — `realpath` on the full target fails and falls back to a lexical check that symlinked parents defeat. Reuse `jailCheck.resolvedPath`; check-then-reopen on the lexical path is a TOCTOU.
+- **No `console.*` on TUI/RPC/worker paths** (see Logging below); no unbounded buffers on network/child-output paths — cap response bodies, log tails, CSI sequences, and checker output.
+
 ## Logging and CLI Output
 
 Code that may run while the TUI, RPC, SDK, workers, or background runtimes are active MUST NOT use `console.log`/`error`/`warn`; it corrupts rendering or protocols. Use the centralized logger:
@@ -248,26 +277,26 @@ For the bash tool specifically:
 ## Commands
 
 - NEVER commit unless asked.
-- Never use `tsc`/`npx tsc` — always `bun check`.
+- Never use `tsc`/`npx tsc` — the typecheck gate is `bun run check` (root: `check:ts` + `check:rs`; in `packages/coding-agent/`: oxlint + oxfmt + `tsgo -p tsconfig.json --noEmit` via `check:types`).
 - Never run `cargo test` directly for Rust tests — use `bun run test:rs`. It runs `cargo nextest run` (config: `.config/nextest.toml`) followed by a `cargo test --doc` pass, because nextest does not execute doctests. The doctest pass currently executes nothing (pi-natives is a `cdylib`, which rustdoc skips; pi-builtins' examples are `ignore`d vendored uutils docs) and exists so the first runnable doctest added to a lib crate is actually run.
+- Fresh clone: `bun setup` (installs workspaces + builds `@harvest/pi-natives`), then `bun dev`. Non-interactive smoke: `bun dev -- --version`. Re-run `bun run build:native` after changing Rust crates or `packages/natives`.
+- Focused verification: `bun --cwd=packages/coding-agent run check` (gate), `run check:types` (types only), `run lint`, `bun test <path>` (single file). Full TS suites go through `bun scripts/ci-test-ts.ts <suite>` — never bare root `bun test` (it walks the whole tree; `bunfig.toml` only prunes known scratch dirs). New worker kinds: validate with `harvest --smoke-test` (wired into `ci:test:smoke`).
+- Codegen after editing sources: `bun run gen:compat` (KDL → `rules.json`), `bun run gen:models` (catalog → `models.json`), `bun run gen:nix` only when `bun.lock` changes (never edit `nix/bun.nix` manually). Python: `bun run lint:py` / `fix:py` (ruff).
 - Merge commits follow standard conventional commit subjects: `Merge PR #<number>: <conventional PR subject>`.
+- PRs (per `CONTRIBUTING.md`): one logical change, no drive-by refactors; every PR body needs a human-written sentence explaining what/why (generated summary alone fails review); verify the changed path yourself and report the scenario + result (`bun run check` passing is not proof). If you intend to implement work yourself, do not file an issue for it first — robomp treats actionable issues as pickup work. Major features/architecture changes need prior discussion before implementation.
 ## Rust Build Profiles
 
-Profiles live in the root `Cargo.toml`; `.cargo/config.toml` carries the settings Cargo.toml cannot express. Both are committed, so no local `~/.cargo/config.toml` is required.
+Profiles live in the root `Cargo.toml`; `.cargo/config.toml` carries what Cargo.toml cannot express. Both are committed — no local `~/.cargo/config.toml` needed.
 
 | Profile | Use |
 | --- | --- |
 | `dev` | Default. Line tables for our crates, no debuginfo for deps, deps at `opt-level = 2`. |
-| `release` | Shipping build: fat LTO, 1 codegen unit, stripped. |
+| `release` | Shipping: fat LTO, 1 codegen unit, stripped. |
 | `local` | Fast local release iteration: thin LTO, 16 codegen units, incremental. |
 | `profiling` | `release` codegen with symbols kept, for `perf`/`samply`/Instruments. |
 | `ci` | Thin LTO, no debuginfo, stripped. |
 
-**Never set `split-debuginfo = "off"` on a profile that has debuginfo.** On Mach-O the linker never merges DWARF into the executable — it writes a debug map (`N_OSO`) pointing at the `.o` files, and `"unpacked"` is what keeps those files. With `"off"` every backtrace frame in our own crates silently loses `file:line`; the `panicked at foo.rs:3` header still prints (that is `#[track_caller]`, not debuginfo), which makes the loss easy to miss. `ci` may use `"off"` only because it sets `debug = false`.
-
-`embed-metadata = false` (in `.cargo/config.toml`) keeps crate metadata in `.rmeta` instead of duplicating it into every rlib — measured 196 MB → 130 MB on a reqwest-sized graph at identical build times. Its accepted spelling is toolchain-coupled; keep it in sync with `rust-toolchain.toml`.
-
-Rejected, with measurements, so nobody re-litigates them: **sccache** (cannot cache incremental, bin, or proc-macro crates — measured slower than not using it), **mold** (ELF-only; no Mach-O support), and **`panic = "abort"` on `dev`** (Cargo ignores `panic` for the test profile, so the whole dep graph builds twice — 131 MB → 214 MB).
+Gotchas: never `split-debuginfo = "off"` on a profile with debuginfo (Mach-O backtraces silently lose `file:line`); keep `embed-metadata = false` in sync with `rust-toolchain.toml`. Rejected with measurements — do not relitigate: sccache (slower, can't cache incremental/proc-macro), mold (ELF-only), `panic = "abort"` on `dev` (doubles dep graph, 131 → 214 MB).
 
 ## Testing Guidance
 

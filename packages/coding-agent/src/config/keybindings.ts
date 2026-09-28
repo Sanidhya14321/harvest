@@ -23,6 +23,7 @@ interface AppKeybindings {
 	"app.exit": true;
 	"app.suspend": true;
 	"app.display.reset": true;
+	"app.mode.cycle": true;
 	"app.thinking.cycle": true;
 	"app.thinking.toggle": true;
 	"app.model.cycleForward": true;
@@ -98,8 +99,12 @@ export const KEYBINDINGS = {
 		defaultKeys: "alt+l",
 		description: "Reset terminal display",
 	},
-	"app.thinking.cycle": {
+	"app.mode.cycle": {
 		defaultKeys: "shift+tab",
+		description: "Cycle agent mode (Plan/Build/Accept Edits/Auto)",
+	},
+	"app.thinking.cycle": {
+		defaultKeys: [],
 		description: "Cycle thinking level",
 	},
 	"app.thinking.toggle": {

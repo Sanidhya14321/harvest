@@ -17,7 +17,7 @@ import type { TinyLocalModelKey } from "./models";
  * Hidden subcommand on the main CLI that boots the ONNX tiny-model worker.
  * Kept in sync with the dispatch in `cli.ts`.
  */
-export const TINY_WORKER_ARG = "__omp_worker_tiny_inference";
+export const TINY_WORKER_ARG = "__harvest_worker_tiny_inference";
 /** Env var carrying the endpoint the ONNX worker must own. */
 export const TINY_WORKER_SOCKET_ENV = "OMP_TINY_WORKER_SOCKET";
 /** Env var naming the single local model the ONNX worker serves. */

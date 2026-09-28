@@ -384,7 +384,15 @@ const modeSegment: StatusLineSegment = {
 			return { content: theme.fg(color, parts.join(" ")), visible: true };
 		}
 
-		return { content: "", visible: false };
+		// Shift+Tab agent mode badge: always visible so the current
+		// Plan/Build/Accept Edits/Auto state is discoverable.
+		const approvalLabel =
+			ctx.approvalMode === "always-ask"
+				? "Build"
+				: ctx.approvalMode === "write"
+					? "Accept Edits"
+					: "Auto";
+		return { content: theme.fg("dim", withIcon(theme.icon.plan, approvalLabel)), visible: true };
 	},
 };
 

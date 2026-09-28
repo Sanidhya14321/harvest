@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/laya on` now provisions the sidecar from your configured `laya.url` and connects it to the agent when missing, instead of only flipping the flag; `/laya setup` and `/laya calibrate` work the same way in-session.
+
 ## [18.1.14] - 2026-09-07
 
 ### Fixed

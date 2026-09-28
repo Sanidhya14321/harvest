@@ -1,7 +1,7 @@
 /**
  * Stats activity worker. Loaded inside the subprocess spawned by
  * `activity-client.ts` (re-entered through the agent CLI's hidden
- * `__omp_worker_stats_activity` selector). Owns the stats DB handle for the
+ * `__harvest_worker_stats_activity` selector). Owns the stats DB handle for the
  * `/usage` heatmap load so the synchronous SQLite work never runs on the TUI
  * thread; the parent SIGKILLs the child once `done` arrives.
  */

@@ -34,6 +34,7 @@ type ConfigurableEditorAction = Extract<
 	| "app.exit"
 	| "app.suspend"
 	| "app.display.reset"
+	| "app.mode.cycle"
 	| "app.thinking.cycle"
 	| "app.model.cycleForward"
 	| "app.model.cycleBackward"
@@ -56,7 +57,8 @@ const DEFAULT_ACTION_KEYS: Record<ConfigurableEditorAction, KeyId[]> = {
 	"app.exit": ["ctrl+d"],
 	"app.suspend": ["ctrl+z"],
 	"app.display.reset": ["alt+l"],
-	"app.thinking.cycle": ["shift+tab"],
+	"app.mode.cycle": ["shift+tab"],
+	"app.thinking.cycle": [],
 	"app.model.cycleForward": ["ctrl+p"],
 	"app.model.cycleBackward": ["shift+ctrl+p"],
 	"app.model.select": ["alt+m"],
@@ -700,6 +702,7 @@ export class CustomEditor extends Editor {
 	onClear?: () => void;
 	onExit?: () => void;
 	onDisplayReset?: () => void;
+	onCycleAgentMode?: () => void;
 	onCycleThinkingLevel?: () => void;
 	onCycleModelForward?: () => void;
 	onCycleModelBackward?: () => void;
@@ -1085,6 +1088,12 @@ export class CustomEditor extends Editor {
 			// Intercept configured forward model cycling
 			if (this.#matchesAction(canonical, "app.model.cycleForward") && this.onCycleModelForward) {
 				this.onCycleModelForward();
+				return;
+			}
+
+			// Intercept configured agent mode cycling (Shift+Tab by default)
+			if (this.#matchesAction(canonical, "app.mode.cycle") && this.onCycleAgentMode) {
+				this.onCycleAgentMode();
 				return;
 			}
 

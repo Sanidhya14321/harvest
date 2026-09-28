@@ -1924,6 +1924,13 @@ export class StatusLineComponent implements Component {
 			goalMode: this.#goalModeStatus,
 			vibeMode: this.#vibeModeStatus,
 			collab: this.#collabStatus,
+			approvalMode: (() => {
+				try {
+					return this.session.settings.get("tools.approvalMode") as string;
+				} catch {
+					return undefined;
+				}
+			})(),
 			usageStats,
 			contextPercent,
 			contextTokens,

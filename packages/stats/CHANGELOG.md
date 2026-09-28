@@ -211,7 +211,7 @@
 
 ### Changed
 
-- Renamed `__omp_stats_sync_worker` to `__omp_worker_stats_sync`.
+- Renamed `__omp_stats_sync_worker` to `__harvest_worker_stats_sync`.
 
 ## [15.13.1] - 2026-06-15
 

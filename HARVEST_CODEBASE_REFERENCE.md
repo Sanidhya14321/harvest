@@ -76,13 +76,13 @@ The **Harvest Agent Harness** is an enterprise-grade, high-performance runtime a
 1. **Multi-Tier Execution Safety**: Changes are guarded by pre-read verification, atomic file snapshot stacks, AST-level validation, and verify-before-done execution grounding.
 2. **Deterministic Context Compaction**: Maintains conversation continuity over massive token trajectories without losing critical evidence, tests, or modified file paths.
 3. **High-Performance Hybrid Architecture**: TypeScript and Bun handle dynamic orchestration and CLI ergonomics, while native Rust crates (`pi-ast`, `pi-edit`, `pi-walker`, `pi-diff`, `pi-natives`) provide zero-cost abstractions for Levenshtein fuzzy matching, AST parsing, multithreaded directory traversal, and SGR terminal rendering.
-4. **Single-Binary Process Re-Entry**: Background workers (TTS, STT, JS evaluation, stats syncing, tiny models) spawn by re-entering the primary CLI entrypoint using hidden argv selector flags (`__omp_worker_*`), eliminating external bundle drift.
+4. **Single-Binary Process Re-Entry**: Background workers (TTS, STT, JS evaluation, stats syncing, tiny models) spawn by re-entering the primary CLI entrypoint using hidden argv selector flags (`__harvest_worker_*`), eliminating external bundle drift.
 
 ```mermaid
 graph TD
     CLI[Harvest CLI Entrypoint: cli.ts] --> ArgvRouter[Argv Router: cli-commands.ts]
     ArgvRouter --> LaunchMain[Interactive / Print / RPC Mode: main.ts]
-    ArgvRouter --> WorkerHost[Worker Dispatch: __omp_worker_*]
+    ArgvRouter --> WorkerHost[Worker Dispatch: __harvest_worker_*]
     ArgvRouter --> Subcommands[Subcommands: bench, usage, stats, models, etc.]
 
     LaunchMain --> AgentSession[AgentSession Engine: session/agent-session.ts]
@@ -136,12 +136,12 @@ When `harvest` executes:
 1. `setProcessName(APP_NAME)` immediately establishes the process identity (`harvest`).
 2. `declareWorkerHostEntry()` records `Bun.main` as the host script for all spawned worker threads.
 3. **Hidden Worker Dispatch Table**: Before loading the heavyweight command registry or TUI graph, `cli.ts` inspects `process.argv[2]` for worker triggers:
-   - `__omp_worker_tiny_inference`: Tiny model inference worker (session titling & memory distillation).
-   - `__omp_worker_stats_sync`: Background telemetry and stats activity writer.
-   - `__omp_worker_tab`: Autocomplete and tab-completion computation worker.
-   - `__omp_worker_js_eval`: Sandboxed JavaScript evaluation subprocess.
-   - `__omp_worker_stt` & `__omp_worker_tts`: Local speech-to-text and text-to-speech audio engines.
-   - `__omp_worker_mnemopi_embed`: FastEmbed vector embeddings worker.
+   - `__harvest_worker_tiny_inference`: Tiny model inference worker (session titling & memory distillation).
+   - `__harvest_worker_stats_sync`: Background telemetry and stats activity writer.
+   - `__harvest_worker_tab`: Autocomplete and tab-completion computation worker.
+   - `__harvest_worker_js_eval`: Sandboxed JavaScript evaluation subprocess.
+   - `__harvest_worker_stt` & `__harvest_worker_tts`: Local speech-to-text and text-to-speech audio engines.
+   - `__harvest_worker_mnemopi_embed`: FastEmbed vector embeddings worker.
 4. **Global Proxy Bootstrap**: `installGlobalProxyFetch()` wraps native `fetch` to ensure all provider traffic respects corporate or regional gateways (`PI_PROXY`, `HTTPS_PROXY`).
 5. **Startup Composer**: If interactive TTY is detected, `beginStartupComposer()` starts rendering the animated splash screen concurrently while the heavy command and profile graph loads.
 
@@ -661,6 +661,6 @@ When developing or extending the Harvest agent harness, maintain the following i
 1. **No Dogmatic Coding Barriers**: Standard TypeScript practices are embraced. Standard `private`/`protected` access modifiers and explicit types are preferred.
 2. **Never Hand-Craft Prompts in Code**: Prompts must be maintained in static `.md` files with Handlebars interpolation and imported via `with { type: "text" }`.
 3. **No Unsanitized Terminal Output**: All rendered text must pass through sanitization helpers (`replaceTabs()`, `truncateToWidth()`, `shortenPath()`) to prevent visual corruption and home directory leaks.
-4. **Always Single-Binary Re-Entry**: Background workers must re-enter the CLI entrypoint via hidden argv flags (`__omp_worker_*`) and never spawn independent worker script paths.
+4. **Always Single-Binary Re-Entry**: Background workers must re-enter the CLI entrypoint via hidden argv flags (`__harvest_worker_*`) and never spawn independent worker script paths.
 5. **KDL Governs Model Policy**: Never write model-specific conditional branches (`if (id.includes("claude"))`) in TypeScript. All model quirks, token caps, thinking levels, and pricing rules belong in the KDL rule tree under `packages/catalog/src/compat/rules/`.
 6. **Execution Grounding Precedes Completion**: The agent must always verify modified code with available test runners or diagnostics before concluding a coding task.

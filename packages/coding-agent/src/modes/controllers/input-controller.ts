@@ -493,6 +493,8 @@ export class InputController {
 		this.ctx.editor.onExit = () => this.handleCtrlD();
 		this.ctx.editor.setActionKeys("app.suspend", this.ctx.keybindings.getKeys("app.suspend"));
 		this.ctx.editor.onSuspend = () => this.handleCtrlZ();
+		this.ctx.editor.setActionKeys("app.mode.cycle", this.ctx.keybindings.getKeys("app.mode.cycle"));
+		this.ctx.editor.onCycleAgentMode = () => void this.cycleAgentMode();
 		this.ctx.editor.setActionKeys("app.thinking.cycle", this.ctx.keybindings.getKeys("app.thinking.cycle"));
 		this.ctx.editor.onCycleThinkingLevel = () => this.cycleThinkingLevel();
 		this.ctx.editor.setActionKeys("app.model.cycleForward", this.ctx.keybindings.getKeys("app.model.cycleForward"));
@@ -2109,6 +2111,14 @@ export class InputController {
 			this.ctx.statusLine.invalidate();
 			this.ctx.updateEditorBorderColor();
 		}
+	}
+
+	async cycleAgentMode(): Promise<void> {
+		if (this.ctx.focusedAgentId) {
+			this.ctx.showStatus("Modes apply to the main session — press ←← to return first");
+			return;
+		}
+		await this.ctx.cycleAgentMode();
 	}
 
 	async cycleRoleModel(direction: "forward" | "backward" = "forward"): Promise<void> {

@@ -21,7 +21,10 @@ import {
  */
 describe("worker-host selectors", () => {
 	it("recognizes the shared selector namespace without claiming ordinary CLI arguments", () => {
-		expect(WORKER_HOST_SELECTOR_PREFIX).toBe("__omp_worker_");
+		expect(WORKER_HOST_SELECTOR_PREFIX).toBe("__harvest_worker_");
+		expect(isWorkerHostSelector("__harvest_worker_stats_sync")).toBeTrue();
+		expect(isWorkerHostSelector("__harvest_worker_computer")).toBeTrue();
+		// Legacy pre-rename selectors remain accepted for one release.
 		expect(isWorkerHostSelector("__omp_worker_stats_sync")).toBeTrue();
 		expect(isWorkerHostSelector("__omp_worker_computer")).toBeTrue();
 		expect(isWorkerHostSelector("--version")).toBeFalse();
