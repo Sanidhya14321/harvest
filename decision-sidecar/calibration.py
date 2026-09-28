@@ -10,14 +10,15 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
+import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 LOG_FILE_PATH = Path(__file__).parent / "decisions.jsonl"
 CALIBRATION_PARAMS_PATH = Path(__file__).parent / "calibration_params.json"
+CALIBRATION_SYNTHETIC_PATH = Path(__file__).parent / "calibration_params.synthetic.json"
 
 
 def logit(p: float, eps: float = 1e-7) -> float:
@@ -184,13 +185,24 @@ class CalibrationManager:
                 pass
         return {}
 
-    def save(self) -> None:
+    def save(self, backup: bool = True) -> None:
         self.params_path.parent.mkdir(parents=True, exist_ok=True)
+        if backup and self.params_path.exists():
+            bak_path = self.params_path.with_name(self.params_path.name + ".bak")
+            try:
+                shutil.copy2(self.params_path, bak_path)
+            except Exception:
+                pass
         with open(self.params_path, "w", encoding="utf-8") as f:
             json.dump(self.params, f, indent=2)
 
-    def calibrate_from_records(self, records: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Fit temperatures for all call sites present in records."""
+    def calibrate_from_records(self, records: List[Dict[str, Any]], synthetic: bool = False) -> Dict[str, Any]:
+        """Fit temperatures for all call sites present in records.
+
+        Stamps a `_provenance` marker (synthetic flag + per-site sample
+        counts) into the saved params so synthetic bootstraps are never
+        mistaken for measured calibrations.
+        """
         by_site: Dict[str, Tuple[List[float], List[int]]] = {}
 
         for r in records:
@@ -214,6 +226,13 @@ class CalibrationManager:
             }
             results[site] = self.params[site]
 
+        self.params["_provenance"] = {
+            "synthetic": bool(synthetic),
+            "record_count": sum(len(confs) for confs, _ in by_site.values()),
+            "sites": sorted(by_site.keys()),
+            "sample_counts": {site: len(confs) for site, (confs, _) in by_site.items()},
+        }
+
         self.save()
         return results
 
@@ -228,20 +247,42 @@ class CalibrationManager:
         return sigmoid(z / T)
 
 
-def run_calibration_cli():
-    """CLI runner to fit calibration parameters on log or synthetic benchmark."""
+def run_calibration_cli() -> int:
+    """CLI runner to fit calibration parameters on log or synthetic benchmark.
+
+    Synthetic runs default to a separate output file so they can never
+    silently clobber real measured params. Overwriting any existing params
+    file requires --force (the previous file is kept as .bak).
+    Returns a process exit code.
+    """
     parser = argparse.ArgumentParser(description="Calibrate Laya Decision Confidence")
     parser.add_argument("--decisions", type=str, default=str(LOG_FILE_PATH), help="Path to decisions jsonl log file")
-    parser.add_argument("--out", type=str, default=str(CALIBRATION_PARAMS_PATH), help="Path to output calibration params json")
+    parser.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Path to output calibration params json (default: calibration_params.json, "
+        "or calibration_params.synthetic.json with --synthetic)",
+    )
     parser.add_argument("--synthetic", action="store_true", help="Run separate synthetic calibration mode without mixing into observed records")
+    parser.add_argument("--force", action="store_true", help="Allow overwriting an existing params file (previous file kept as .bak)")
     args = parser.parse_args()
 
     decisions_path = Path(args.decisions)
-    out_path = Path(args.out)
+    default_out = CALIBRATION_SYNTHETIC_PATH if args.synthetic else CALIBRATION_PARAMS_PATH
+    out_path = Path(args.out) if args.out else default_out
     records: List[Dict[str, Any]] = []
+
+    if out_path.exists() and not args.force:
+        print(
+            f"Refusing to overwrite existing params file {out_path} without --force "
+            f"(previous file is preserved; with --force a .bak copy is kept)."
+        )
+        return 1
 
     if args.synthetic:
         print("Running synthetic calibration mode (isolated from observed records)...")
+        print(f"Synthetic output target: {out_path}")
         records = generate_synthetic_calibration_dataset(count_per_site=150)
     else:
         if decisions_path.exists():
@@ -259,12 +300,16 @@ def run_calibration_cli():
         print(f"Loaded {len(records)} ground-truth records from {decisions_path}")
         if len(records) == 0:
             print("No ground-truth records found for calibration. To run synthetic benchmark calibration, use --synthetic.")
-            return
+            return 1
 
     manager = CalibrationManager(params_path=out_path)
-    results = manager.calibrate_from_records(records)
+    if args.force:
+        # Start from a clean slate; the previous file content is in .bak after save().
+        manager.params.clear()
+    results = manager.calibrate_from_records(records, synthetic=args.synthetic)
 
     print("\n=== Calibration Results (Step 4) ===")
+    print(f"Provenance: synthetic={args.synthetic}; output: {out_path}")
     for site, data in results.items():
         print(f"Site: {site}")
         print(f"  Samples:          {data['sample_count']}")
@@ -272,7 +317,8 @@ def run_calibration_cli():
         print(f"  Uncalibrated ECE: {data['uncalibrated_ece']:.4f}")
         print(f"  Calibrated ECE:   {data['calibrated_ece']:.4f} (Error reduced!)")
         print()
+    return 0
 
 
 if __name__ == "__main__":
-    run_calibration_cli()
+    raise SystemExit(run_calibration_cli())

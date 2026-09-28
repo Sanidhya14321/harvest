@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -65,9 +65,15 @@ export function looksLikeBase64Blob(content: string): boolean {
 export function storeBlob(rawBytes: Uint8Array): string {
 	const sha256 = computeSha256(rawBytes);
 	const blobDir = join(blobRoot(), sha256.slice(0, 2), sha256.slice(0, 4));
-	mkdirSync(blobDir, { recursive: true });
+	mkdirSync(blobDir, { recursive: true, mode: 0o700 });
+	enforcePrivateDir(blobDir);
 	const blobPath = join(blobDir, sha256);
-	if (!existsSync(blobPath)) writeFileSync(blobPath, rawBytes);
+	if (!existsSync(blobPath)) {
+		writeFileSync(blobPath, rawBytes, { mode: 0o600 });
+		enforcePrivateFile(blobPath);
+	} else {
+		enforcePrivateFile(blobPath);
+	}
 	return sha256;
 }
 
@@ -132,5 +138,23 @@ function isValidBase64(payload: string): boolean {
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+function enforcePrivateDir(dir: string): void {
+	if (process.platform === "win32") return;
+	try {
+		chmodSync(dir, 0o700);
+	} catch {
+		// Ignore if cannot chmod
+	}
+}
+
+function enforcePrivateFile(file: string): void {
+	if (process.platform === "win32") return;
+	try {
+		chmodSync(file, 0o600);
+	} catch {
+		// Ignore if cannot chmod
 	}
 }

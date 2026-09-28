@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { dataDir as configuredDataDir, dbPath as configuredDbPath } from "./config";
@@ -133,9 +133,11 @@ export const cmdExport: CommandHandler = (args, context) => {
 	if (args.length === 0) usage("Usage: mnemopi export <file.json>");
 	const outputPath = args[0] ?? "";
 	return withMemory(context, memory => {
-		mkdirSync(dirname(outputPath), { recursive: true });
+		mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
+		enforcePrivateDir(dirname(outputPath));
 		const data = memory.exportToDict();
-		writeFileSync(outputPath, JSON.stringify(data, null, 2));
+		writeFileSync(outputPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+		enforcePrivateFile(outputPath);
 		const working = Array.isArray(data.working_memory) ? data.working_memory.length : 0;
 		const episodic = Array.isArray(data.episodic_memory) ? data.episodic_memory.length : 0;
 		const scratchpad = Array.isArray(data.scratchpad) ? data.scratchpad.length : 0;

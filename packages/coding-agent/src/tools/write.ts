@@ -459,6 +459,19 @@ function isArchivePathNotFound(error: unknown): boolean {
 	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOTDIR";
 }
 
+/**
+ * Workspace-jail gate for a resolved write target. Returns the jailed resolved
+ * path for the filesystem mutation; display/bridge/snapshot keys keep the
+ * lexical path so in-workspace behavior is unchanged.
+ */
+function jailWriteTarget(sandbox: SecuritySandbox, targetPath: string): string {
+	const check = sandbox.assertPathJailed(targetPath);
+	if (!check.jailed) {
+		throw new ToolError(check.error ?? "Path traversal outside workspace root rejected");
+	}
+	return check.resolvedPath;
+}
+
 function normalizeArchiveWriteSubPath(rawPath: string): string {
 	const normalized = rawPath.replace(/\\/g, "/");
 	if (normalized.length === 0) {
@@ -611,6 +624,11 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			return null;
 		}
 
+		// Jail the outer archive path the same as the regular-file path: without
+		// this a workspace symlink pointing outside is followed by the tmp+rename
+		// swap in #writeArchiveEntry. Fail closed (throw) so an escaping archive
+		// path cannot fall through to a literal file write below.
+		const sandbox = new SecuritySandbox(this.session.cwd);
 		const fallbackCandidate = candidates[candidates.length - 1]!;
 		const fallback: ResolvedArchiveWritePath = {
 			absolutePath: resolvePlanPath(this.session, fallbackCandidate.archivePath),
@@ -618,9 +636,11 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			archiveSubPath: normalizeArchiveWriteSubPath(fallbackCandidate.subPath),
 			exists: false,
 		};
+		jailWriteTarget(sandbox, fallback.absolutePath);
 
 		for (const candidate of candidates) {
 			const absolutePath = resolvePlanPath(this.session, candidate.archivePath);
+			jailWriteTarget(sandbox, absolutePath);
 			try {
 				const stat = await Bun.file(absolutePath).stat();
 				if (stat.isDirectory()) {
@@ -647,12 +667,12 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 		content: string,
 		resolvedArchivePath: ResolvedArchiveWritePath,
 	): Promise<AgentToolResult<WriteToolDetails>> {
-		// Resolve symlinks before the tmp+rename swap: renaming over a symlink
-		// replaces the link itself with a regular file instead of writing
-		// through to its target.
-		const finalPath = resolvedArchivePath.exists
-			? await fs.realpath(resolvedArchivePath.absolutePath).catch(() => resolvedArchivePath.absolutePath)
-			: resolvedArchivePath.absolutePath;
+		// Re-jail on the resolved absolute path and operate on the jailed
+		// resolved path rather than following a symlink with an unchecked
+		// realpath: renaming over the resolved path keeps the tmp+rename swap
+		// inside the workspace (a link escaping the root is rejected above).
+		const sandbox = new SecuritySandbox(this.session.cwd);
+		const finalPath = jailWriteTarget(sandbox, resolvedArchivePath.absolutePath);
 		// A realpath swap can land on a name without an archive extension; a
 		// whole-archive rewrite then defaults to an uncompressed tar.
 		const inferredFormat = archiveFormatFromPath(finalPath);
@@ -664,7 +684,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 		// crash/disk-full mid-write can't destroy the original archive.
 		const tmpPath = `${finalPath}.tmp-${process.pid}`;
 
-		const parentDir = path.dirname(resolvedArchivePath.absolutePath);
+		const parentDir = path.dirname(finalPath);
 		if (parentDir && parentDir !== ".") {
 			await fs.mkdir(parentDir, { recursive: true });
 		}
@@ -694,8 +714,14 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			await fs.rm(tmpPath, { force: true }).catch(() => {});
 			throw new ToolError(error instanceof Error ? error.message : String(error));
 		}
+		// Re-validate after the swap: an ancestor switched between the jail
+		// check and the rename would otherwise land the bytes outside silently.
+		const recheck = sandbox.recheckJailed(finalPath);
+		if (!recheck.jailed) {
+			throw new ToolError(recheck.error ?? "Path traversal outside workspace root rejected");
+		}
 
-		invalidateFsScanAfterWrite(resolvedArchivePath.absolutePath);
+		invalidateFsScanAfterWrite(finalPath);
 		const outputPath = `${formatPathRelativeToCwd(resolvedArchivePath.absolutePath, this.session.cwd)}:${
 			resolvedArchivePath.archiveSubPath
 		}`;
@@ -721,10 +747,17 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			exists: false,
 		};
 
+		// Jail the database file the same as the regular-file path: without this
+		// a workspace symlink pointing outside opens and mutates an arbitrary
+		// SQLite database. Fail closed (throw) so there is no fallthrough.
+		const sandbox = new SecuritySandbox(this.session.cwd);
+		jailWriteTarget(sandbox, fallback.absolutePath);
+
 		let sawExistingNonSqlite = false;
 		for (const candidate of candidates) {
 			const target = parseSqliteWriteTarget(candidate.subPath, candidate.queryString);
 			const absolutePath = resolvePlanPath(this.session, candidate.sqlitePath);
+			jailWriteTarget(sandbox, absolutePath);
 			try {
 				const stat = await Bun.file(absolutePath).stat();
 				if (stat.isDirectory()) {
@@ -767,7 +800,10 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 				throw new ToolError(`SQLite database '${displayPath}' not found`);
 			}
 
-			db = new Database(resolvedSqlitePath.absolutePath, { create: false, strict: true });
+			// Operate on the jailed resolved path, not the lexical one, so a
+			// symlink swapped in after resolution cannot redirect the open.
+			const dbPath = jailWriteTarget(new SecuritySandbox(this.session.cwd), resolvedSqlitePath.absolutePath);
+			db = new Database(dbPath, { create: false, strict: true });
 			db.run("PRAGMA busy_timeout = 3000");
 
 			const trimmedContent = content.trim();

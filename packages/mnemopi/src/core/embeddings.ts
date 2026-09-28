@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as nodePath from "node:path";
 import { type ApiKey, getOpenRouterHeaders, withAuth } from "@harvest/pi-ai";
@@ -405,7 +405,14 @@ async function getLocalModel(): Promise<LocalEmbeddingModel | null> {
 		return null;
 	}
 	const cacheDir = getFastembedCacheDir();
-	mkdirSync(cacheDir, { recursive: true });
+	mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+	if (process.platform !== "win32") {
+		try {
+			chmodSync(cacheDir, 0o700);
+		} catch {
+			// Ignore if cannot chmod
+		}
+	}
 	const loading = localModelInitializer({
 		model: modelName,
 		cacheDir,

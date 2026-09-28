@@ -942,6 +942,7 @@ export function createSubagentSettings(
 	baseSettings: Settings,
 	overrides?: Partial<Record<SettingPath, unknown>>,
 	inheritedServiceTier?: ServiceTierByFamily | null,
+	agent?: AgentDefinition,
 ): Settings {
 	const snapshot: Partial<Record<SettingPath, unknown>> = {};
 	for (const key of Object.keys(SETTINGS_SCHEMA) as SettingPath[]) {
@@ -963,6 +964,8 @@ export function createSubagentSettings(
 	snapshot["tier.openai"] = subagentTiers.openai ?? "none";
 	snapshot["tier.anthropic"] = subagentTiers.anthropic ?? "none";
 	snapshot["tier.google"] = subagentTiers.google ?? "none";
+	// Explicit overrides win via the spread below; this is only the default.
+	const defaultApprovalMode = agent && isReadOnlyAgent(agent) ? "yolo" : baseSettings.get("tools.approvalMode");
 	return Settings.isolated(
 		{
 			...snapshot,
@@ -972,10 +975,19 @@ export function createSubagentSettings(
 			// owner job outlives the run, so worktree capture/cleanup stays
 			// race-free (previously both were force-disabled here).
 
-			// Subagents run headless — there is no UI to confirm prompts against, so
-			// the parent task approval is the authorization boundary. Use yolo mode
-			// to preserve unattended subagent execution. User `tools.approval` policies still apply.
-			"tools.approvalMode": "yolo",
+			// Inherit the parent approval mode so a child can never exceed its
+			// parent's privilege: an always-ask/write parent keeps prompting
+			// inside the subtree. Only read-only agents (no write/exec tools
+			// by definition) force yolo, since they cannot cause side effects
+			// either way. An explicit overrides entry still wins. User
+			// `tools.approval` policies apply in every mode.
+			// Threat-model note: subagents run headless with no UI to confirm
+			// against, so a yolo parent's task approval remains the
+			// authorization boundary for its entire unattended subtree (live
+			// MCP proxy tools + getApiKey passthrough share the parent's
+			// connections/creds). Run parents in always-ask/write when the
+			// subtree must stay gated.
+			"tools.approvalMode": defaultApprovalMode,
 			// Subagents run unadvised by default; runSubprocess opts a spawn back in
 			// per agent (frontmatter `advisor` / `task.agentAdvisor`) via overrides.
 			"advisor.enabled": false,
@@ -2983,6 +2995,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				: undefined),
 		},
 		options.parentServiceTier,
+		agent,
 	);
 	const maxRecursionDepth = settings.get("task.maxRecursionDepth") ?? 2;
 	const maxRuntimeMs = Math.max(

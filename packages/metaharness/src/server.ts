@@ -3,7 +3,11 @@
  * metaharness server: REST + SSE API over the run store, static web
  * dashboard, and a launcher that spawns the CLI runner as a managed child.
  *
- *   bun src/server.ts [--port 4700] [--jobs-dir <path>]
+ *   bun src/server.ts [--port 4700] [--host 127.0.0.1] [--jobs-dir <path>] [--token <bearer>]
+ *
+ * Non-loopback --host binds are refused unless --token (or METAHARNESS_TOKEN)
+ * is set; with a token configured, POST/PUT/DELETE routes require
+ * `Authorization: Bearer <token>` while GET routes stay open.
  *
  * API:
  *   GET    /api/experiments[?q=]          → experiment summaries across all benchmarks
@@ -20,6 +24,17 @@
  *   DELETE /api/runs/:name                → delete a finished run (row + job dir)
  *   GET    /api/runs/:name/traces/:trace  → normalized trace
  *   GET    /api/events                    → SSE: run-list snapshots on change
+ *   GET    /api/sessions[?run=&status=]   → harness sessions (needs META_SESSIONS=mirror|live)
+ *   GET    /api/sessions/:id              → one harness session
+ *   POST   /api/sessions/:id/ensure-live  → create live sidecar journal (needs META_SESSIONS=live)
+ *   POST   /api/sessions/:id/fork         → fork live journal (needs META_SESSIONS=live)
+ *   POST   /api/sessions/:id/resume       → reopen live journal (needs META_SESSIONS=live)
+ *   GET    /api/agents[?run=&status=]     → harness agents (needs META_AGENTS=on)
+ *   GET    /api/agents/:id                → one harness agent
+ *   POST   /api/agents                    → register a worker
+ *   POST   /api/agents/:id/cancel         → cancel a worker (SIGTERM→SIGKILL)
+ *   POST   /api/agents/:id/park           → park a worker for later revival
+ *   POST   /api/agents/:id/revive         → revive a parked worker
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -79,17 +94,19 @@ interface SseClient {
 	state: SseState;
 }
 
-function parseServerArgs(argv: string[]): { port: number; host: string; jobsDir: string } {
+function parseServerArgs(argv: string[]): { port: number; host: string; jobsDir: string; token: string | null } {
 	let port = 4700;
 	let host = "127.0.0.1";
 	let jobsDir = DEFAULT_JOBS_DIR;
+	let token: string | null = process.env.METAHARNESS_TOKEN ?? null;
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--port" && argv[i + 1]) port = Number(argv[++i]);
 		else if (argv[i] === "--host" && argv[i + 1]) host = argv[++i];
 		else if (argv[i] === "--jobs-dir" && argv[i + 1]) jobsDir = path.resolve(argv[++i]);
+		else if (argv[i] === "--token" && argv[i + 1]) token = argv[++i];
 	}
 	if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error("--port must be 1..65535");
-	return { port, host, jobsDir };
+	return { port, host, jobsDir, token };
 }
 
 /** Job names are single path segments; anything else could escape the jobs dir. */
@@ -97,6 +114,26 @@ function assertSafeJobName(jobName: string): void {
 	if (!jobName || jobName === "." || jobName === ".." || /[/\\]/.test(jobName)) {
 		throw new Error(`invalid job name: ${jobName}`);
 	}
+}
+
+/** Loopback-only bind hosts that may serve without a token. */
+function isLoopbackHost(hostname: string): boolean {
+	const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+	return h === "127.0.0.1" || h === "::1" || h === "localhost";
+}
+
+const TOKEN_ENCODER = new TextEncoder();
+
+/** Constant-time token comparison so the bearer check doesn't leak length/prefix via timing. */
+function timingSafeEqualToken(presented: string, expected: string): boolean {
+	const a = TOKEN_ENCODER.encode(presented);
+	const b = TOKEN_ENCODER.encode(expected);
+	const len = Math.max(a.length, b.length);
+	let diff = a.length ^ b.length;
+	for (let i = 0; i < len; i++) {
+		diff |= ((i < a.length ? a[i] : 0) | 0) ^ ((i < b.length ? b[i] : 0) | 0);
+	}
+	return diff === 0;
 }
 
 /** True when `pid` names a live process (signal-0 probe). */
@@ -195,10 +232,12 @@ export class ManagerServer {
 	#syncTimer: Timer | undefined;
 	#server: Server<undefined> | null = null;
 	#stopped = false;
+	#token: string | null;
 	readonly jobsDir: string;
 
-	constructor(jobsDir: string, dbPath?: string) {
+	constructor(jobsDir: string, dbPath?: string, token?: string | null) {
 		this.jobsDir = jobsDir;
+		this.#token = token ?? process.env.METAHARNESS_TOKEN ?? null;
 		this.#store = new RunStore(jobsDir, dbPath);
 	}
 
@@ -207,6 +246,11 @@ export class ManagerServer {
 	}
 
 	start(port: number, hostname: string = "127.0.0.1"): Server<undefined> {
+		if (!isLoopbackHost(hostname) && !this.#token) {
+			throw new Error(
+				`refusing non-loopback bind '${hostname}' without a token: pass --token or set METAHARNESS_TOKEN`,
+			);
+		}
 		this.#store.discover();
 		this.#store.syncAll();
 		this.#syncTimer = setInterval(() => this.#tick(), 2000);
@@ -266,6 +310,12 @@ export class ManagerServer {
 		const url = new URL(request.url);
 		const p = url.pathname;
 		try {
+			// Mutating routes require the bearer token when one is configured
+			// (--token / METAHARNESS_TOKEN). Read routes (GET list/detail/SSE)
+			// stay open so dashboards keep working unauthenticated on loopback.
+			if (request.method !== "GET" && !this.#isAuthorized(request)) {
+				return Response.json({ error: "unauthorized" }, { status: 401 });
+			}
 			if (p === "/api/events") return this.#sseResponse();
 			if (p === "/api/benchmarks" && request.method === "GET") {
 				return Response.json(BENCHMARK_DEFINITIONS);
@@ -355,6 +405,13 @@ export class ManagerServer {
 		}
 	}
 
+	/** Bearer check for mutating routes. Unset token = loopback-only default, stays open (back-compat). */
+	#isAuthorized(request: Request): boolean {
+		if (!this.#token) return true;
+		const match = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
+		return match !== null && timingSafeEqualToken(match[1].trim(), this.#token);
+	}
+
 	#sseResponse(): Response {
 		let client: SseClient;
 		const sse = this.#sse;
@@ -392,6 +449,7 @@ export class ManagerServer {
 		const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 		const modelSlug = request.model.replace(/[^a-zA-Z0-9]+/g, "-");
 		const jobName = request.jobName ?? `${modelSlug}-${stamp}`;
+		assertSafeJobName(jobName);
 		if (this.#children.has(jobName) || this.#store.getRun(jobName)?.status === "running") {
 			throw new Error(`run ${jobName} is already running`);
 		}
@@ -443,6 +501,7 @@ export class ManagerServer {
 	 * (every exception type recorded in the job's result.json).
 	 */
 	resume(jobName: string, opts: { filterErrorTypes?: string[] } = {}): { jobName: string; pid: number } {
+		assertSafeJobName(jobName);
 		const run = this.#store.getRun(jobName);
 		if (!run) throw new Error(`run ${jobName} not found`);
 		if (run.benchmark !== "harbor")
@@ -574,6 +633,7 @@ export class ManagerServer {
 	 * live; returns false when the run is unknown.
 	 */
 	deleteRun(jobName: string): boolean {
+		assertSafeJobName(jobName);
 		const run = this.#store.getRun(jobName);
 		if (!run) return false;
 		if (this.#runLive(run)) throw new Error(`run ${jobName} is running; cancel it first`);
@@ -600,6 +660,7 @@ export class ManagerServer {
 	 *  process, which kept running trials into the job dir); escalates to
 	 *  SIGKILL after a grace window. */
 	cancel(jobName: string): { jobName: string; cancelled: boolean } {
+		assertSafeJobName(jobName);
 		const child = this.#children.get(jobName);
 		if (child) {
 			child.cancelled = true;
@@ -763,8 +824,8 @@ if (import.meta.main) {
 		__metaharnessHooks?: boolean;
 	};
 	await host.__metaharnessServer?.stop();
-	const { port, host: bindHost, jobsDir } = parseServerArgs(process.argv.slice(2));
-	const manager = new ManagerServer(jobsDir);
+	const { port, host: bindHost, jobsDir, token } = parseServerArgs(process.argv.slice(2));
+	const manager = new ManagerServer(jobsDir, undefined, token);
 	host.__metaharnessServer = manager;
 	const server = manager.start(port, bindHost);
 	process.stdout.write(`metaharness listening on http://${bindHost}:${server.port} (jobs: ${jobsDir})\n`);

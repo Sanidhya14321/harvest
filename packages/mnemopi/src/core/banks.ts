@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { dataDir as configuredDataDir } from "../config";
@@ -27,14 +27,16 @@ export class BankManager {
 	constructor(dataDir?: string) {
 		this.dataDir = dataDir ?? configuredDataDir();
 		this.banksDir = join(this.dataDir, "banks");
-		mkdirSync(this.banksDir, { recursive: true });
+		mkdirSync(this.banksDir, { recursive: true, mode: 0o700 });
+		enforcePrivateDir(this.banksDir);
 	}
 
 	createBank(name: string): string {
 		this.validateName(name);
 		const bankDir = join(this.banksDir, name);
 		if (existsSync(bankDir)) throw new ValueError(`Bank '${name}' already exists`);
-		mkdirSync(bankDir, { recursive: true });
+		mkdirSync(bankDir, { recursive: true, mode: 0o700 });
+		enforcePrivateDir(bankDir);
 		const dbPath = join(bankDir, DB_FILENAME);
 		const db = openDatabase(dbPath);
 		closeQuietly(db);
@@ -130,4 +132,13 @@ export function getBank(): string {
 }
 export function resetBankForTests(): void {
 	defaultBank = "default";
+}
+
+function enforcePrivateDir(dir: string): void {
+	if (process.platform === "win32") return;
+	try {
+		chmodSync(dir, 0o700);
+	} catch {
+		// Ignore if cannot chmod
+	}
 }

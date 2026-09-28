@@ -883,18 +883,26 @@ export class AsyncJobManager {
 	}
 
 	#evictJob(jobId: string): boolean {
+		const job = this.#jobs.get(jobId);
+		// Keep unsettled (still-running) jobs in capacity until their run()
+		// promise settles: evicting early frees the slot while the process
+		// still runs and detaches the late settle from the visible row.
+		if (job && !job.settled) return false;
 		clearTimeout(this.#evictionTimers.get(jobId));
 		this.#evictionTimers.delete(jobId);
 		this.#suppressedDeliveries.delete(jobId);
 		this.#watchedJobs.delete(jobId);
 		this.#consumedJobResults.delete(jobId);
-		const job = this.#jobs.get(jobId);
 		if (job) this.#runRetainedArtifactsCleanup(job);
 		return this.#jobs.delete(jobId);
 	}
 
 	#scheduleEviction(jobId: string): void {
 		if (this.#disposed) return;
+		// A cancelled-but-unsettled job keeps its slot until run() settles;
+		// the settlement path re-arms eviction once settled = true.
+		const pending = this.#jobs.get(jobId);
+		if (pending && !pending.settled) return;
 		if (this.#retentionMs <= 0) {
 			this.#evictJob(jobId);
 			return;
@@ -904,6 +912,13 @@ export class AsyncJobManager {
 			clearTimeout(existing);
 		}
 		const timer = setTimeout(() => {
+			// Re-check at fire time: a retention timer armed before settle
+			// must not evict a still-running job; settlement re-arms.
+			const current = this.#jobs.get(jobId);
+			if (current && !current.settled) {
+				this.#evictionTimers.delete(jobId);
+				return;
+			}
 			this.#evictJob(jobId);
 		}, this.#retentionMs);
 		timer.unref();
@@ -935,6 +950,20 @@ export class AsyncJobManager {
 
 	async #deliverNextFiltered(filter: AsyncJobFilter, deadline: number): Promise<boolean> {
 		while (true) {
+			// Same global cap as the unfiltered loop: filtered delivery must
+			// not bypass MAX_CONCURRENT_DELIVERIES via direct #deliverDelivery.
+			if (this.#inFlightDeliveries.length >= MAX_CONCURRENT_DELIVERIES) {
+				const inFlight = this.#filterInFlightDeliveries(filter);
+				const waited =
+					inFlight.length > 0
+						? await this.#waitForDeliveryPromise(inFlight[0]?.promise, deadline)
+						: await this.#waitForDeliveryPromise(
+								this.#inFlightDeliveries[0]?.promise,
+								deadline,
+							);
+				if (!waited) return false;
+				continue;
+			}
 			let selected: AsyncJobDelivery | undefined;
 			for (const delivery of this.#deliveries) {
 				if (delivery.ownerId !== filter.ownerId) continue;
@@ -1079,6 +1108,11 @@ export class AsyncJobManager {
 					timer = setTimeout(() => reject(new Error("Async job delivery sink timed out")), DELIVERY_TIMEOUT_MS);
 				});
 				try {
+					// The timeout only rejects this race; the sink promise keeps
+					// running detached. Its late outcome is ignored below (no
+					// consume/requeue on the timeout path), so it cannot corrupt
+					// job state — and attempts are capped so a hung sink cannot
+					// retry forever.
 					await Promise.race([
 						sink(
 							delivery.jobId,
@@ -1094,6 +1128,14 @@ export class AsyncJobManager {
 			} catch (error) {
 				delivery.attempt += 1;
 				delivery.lastError = error instanceof Error ? error.message : String(error);
+				if (delivery.attempt >= MAX_DELIVERY_ATTEMPTS) {
+					logger.warn("Async job delivery gave up after max attempts", {
+						jobId: delivery.jobId,
+						attempt: delivery.attempt,
+						error: delivery.lastError,
+					});
+					return;
+				}
 				delivery.nextAttemptAt = Date.now() + this.#getRetryDelay(delivery.attempt);
 				if (!this.isDeliverySuppressed(delivery.jobId) && this.#jobs.has(delivery.jobId)) {
 					this.#queueDelivery(delivery);

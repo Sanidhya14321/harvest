@@ -255,6 +255,7 @@ export class FileSessionStorage implements SessionStorage {
 			}
 			if (hasFsCode(err, "EPERM")) {
 				fs.writeFileSync(fpath, content);
+				enforcePrivateFile(fpath);
 				return;
 			}
 			throw toError(err);
@@ -317,7 +318,10 @@ export class FileSessionStorage implements SessionStorage {
 	async writeText(pathStr: string, content: string): Promise<void> {
 		const dir = path.dirname(pathStr);
 		this.ensureDirSync(dir);
-		await Bun.write(pathStr, content, { createPath: true });
+		// 0600 at create: Bun.write applies no mode, leaving a transient
+		// world-readable window before the re-chmod. writeFile's mode covers
+		// creation; enforcePrivateFile covers pre-existing files.
+		await fsp.writeFile(pathStr, content, { mode: 0o600 });
 		enforcePrivateFile(pathStr);
 	}
 

@@ -221,6 +221,34 @@ export class SecuritySandbox {
 	}
 
 	/**
+	 * Re-validate a path immediately after it was opened/created, closing the
+	 * check→use window between {@link assertPathJailed} and the filesystem
+	 * mutation. The target must exist now (it was just written), so a plain
+	 * realpath is authoritative: an ancestor swapped out from under the check
+	 * resolves outside and is reported instead of silently kept.
+	 */
+	recheckJailed(resolvedPath: string): { jailed: boolean; resolvedPath: string; error?: string } {
+		const realTarget = tryRealpathSync(resolvedPath);
+		if (realTarget === null) {
+			return {
+				jailed: false,
+				resolvedPath,
+				error: `Path traversal rejected: '${resolvedPath}' became unresolvable after write.`,
+			};
+		}
+		const realRoot = tryRealpathSync(this.#workspaceRoot) ?? path.resolve(this.#workspaceRoot);
+		const rel = path.relative(stripVerbatim(realRoot), stripVerbatim(realTarget));
+		if (rel.startsWith("..") || path.isAbsolute(rel)) {
+			return {
+				jailed: false,
+				resolvedPath: realTarget,
+				error: `Path traversal rejected: '${resolvedPath}' resolves outside workspace root '${this.#workspaceRoot}' (to '${realTarget}').`,
+			};
+		}
+		return { jailed: true, resolvedPath: realTarget };
+	}
+
+	/**
 	 * Continuous AST regex scanning on code content for secrets and vulnerabilities.
 	 */
 	auditCode(content: string, _filePath?: string): SecurityAuditResult {

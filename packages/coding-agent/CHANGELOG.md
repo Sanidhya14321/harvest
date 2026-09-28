@@ -6,6 +6,10 @@
 
 - `/laya on` now provisions the sidecar from your configured `laya.url` and connects it to the agent when missing, instead of only flipping the flag; `/laya setup` and `/laya calibrate` work the same way in-session.
 
+### Changed
+
+- Shift+Tab now cycles the agent mode (Plan → Build → Accept Edits → Auto) instead of the thinking level. Thinking levels remain available via `/model` and the model selector; rebind `app.thinking.cycle` to restore the old chord.
+
 ## [18.1.14] - 2026-09-07
 
 ### Fixed

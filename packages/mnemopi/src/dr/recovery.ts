@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import {
+	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
@@ -108,12 +109,31 @@ function hasErrorCode(error: unknown, code: string): boolean {
 	);
 }
 
+function enforcePrivateDir(dir: string): void {
+	if (process.platform === "win32") return;
+	try {
+		chmodSync(dir, 0o700);
+	} catch {
+		// Ignore if cannot chmod
+	}
+}
+
+function enforcePrivateFile(file: string): void {
+	if (process.platform === "win32") return;
+	try {
+		chmodSync(file, 0o600);
+	} catch {
+		// Ignore if cannot chmod
+	}
+}
+
 function writeBackupFile(destinationDir: string, timestamp: string, bytes: Uint8Array): string {
 	for (let attempt = 0; attempt < 64; attempt += 1) {
 		const suffix = attempt === 0 ? "" : `_${nextUniqueToken()}`;
 		const backupPath = join(destinationDir, `mnemopi_backup_${timestamp}${suffix}.db.gz`);
 		try {
-			writeFileSync(backupPath, bytes, { flag: "wx" });
+			writeFileSync(backupPath, bytes, { flag: "wx", mode: 0o600 });
+			enforcePrivateFile(backupPath);
 			return backupPath;
 		} catch (error) {
 			if (hasErrorCode(error, "EEXIST")) continue;
@@ -148,7 +168,8 @@ export function createBackup(dbPath?: string | null, backupDir?: string | null):
 
 	if (!existsSync(sourcePath)) throw new FileNotFoundError(`Database not found: ${sourcePath}`);
 
-	mkdirSync(destinationDir, { recursive: true });
+	mkdirSync(destinationDir, { recursive: true, mode: 0o700 });
+	enforcePrivateDir(destinationDir);
 	const timestamp = timestampForBackup();
 
 	let snapshot: Uint8Array | null = null;
@@ -173,7 +194,8 @@ export function createBackup(dbPath?: string | null, backupDir?: string | null):
 		compressed: true,
 	};
 	const metadataPath = `${backupPath.slice(0, -3)}.gz.json`;
-	writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+	writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o600 });
+	enforcePrivateFile(metadataPath);
 
 	return { backup_path: backupPath, metadata_path: metadataPath, ...metadata };
 }
@@ -218,7 +240,10 @@ function snapshotCurrentDatabase(targetPath: string): void {
 	rmSync(mainBackup, { force: true });
 	for (const suffix of SQLITE_SIDECAR_SUFFIXES)
 		rmSync(emergencyBackupSidecarPath(targetPath, suffix), { force: true });
-	if (existsSync(targetPath)) copyFileSync(targetPath, mainBackup);
+	if (existsSync(targetPath)) {
+		copyFileSync(targetPath, mainBackup);
+		enforcePrivateFile(mainBackup);
+	}
 	for (const suffix of SQLITE_SIDECAR_SUFFIXES) {
 		const sidecar = sqliteSidecarPath(targetPath, suffix);
 		if (existsSync(sidecar)) copyFileSync(sidecar, emergencyBackupSidecarPath(targetPath, suffix));
@@ -239,7 +264,8 @@ function restoreCurrentDatabaseSnapshot(targetPath: string): void {
 
 function writeRestoreCandidate(uncompressed: Buffer, tempPath: string): void {
 	if (isSqliteFile(uncompressed)) {
-		writeFileSync(tempPath, uncompressed, { flag: "wx" });
+		writeFileSync(tempPath, uncompressed, { flag: "wx", mode: 0o600 });
+		enforcePrivateFile(tempPath);
 		return;
 	}
 	writeGzippedSqlDump(uncompressed.toString("utf8"), tempPath);
@@ -249,7 +275,8 @@ export function restoreBackup(backupPath: string, dbPath?: string | null): Resto
 	const targetPath = dbPath ?? getDefaultPaths().dbPath;
 	if (!existsSync(backupPath)) throw new FileNotFoundError(`Backup not found: ${backupPath}`);
 
-	mkdirSync(dirname(targetPath), { recursive: true });
+	mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
+	enforcePrivateDir(dirname(targetPath));
 
 	const uncompressed = gunzipSync(readFileSync(backupPath));
 	const tempPath = restoreTempPath(targetPath);
