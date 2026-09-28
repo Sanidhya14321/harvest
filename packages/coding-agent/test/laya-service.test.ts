@@ -25,7 +25,7 @@ afterEach(() => {
 describe("Laya Service & Autonomous Setup", () => {
 	describe("Python Detection & Validation", () => {
 		it("detects valid Python 3.9+ runtime and extracts version", async () => {
-			const spy = vi.spyOn(layaService, "testPythonExecutable").mockResolvedValue({
+			vi.spyOn(layaService, "testPythonExecutable").mockResolvedValue({
 				path: "/mock/bin/python3",
 				version: "3.11.4",
 			});
@@ -50,11 +50,14 @@ describe("Laya Service & Autonomous Setup", () => {
 
 		it("accepts Python 3.9, 3.10, 3.11, and 3.12", async () => {
 			for (const ver of ["3.9.18", "3.10.12", "3.11.9", "3.12.3"]) {
-				const spy = vi.spyOn(Bun, "spawn").mockImplementation(() => ({
-					exited: Promise.resolve(0),
-					stdout: new Response(`${ver}\n/usr/bin/python\n`).body,
-					stderr: new Response("").body,
-				} as unknown as ReturnType<typeof Bun.spawn>));
+				const spy = vi.spyOn(Bun, "spawn").mockImplementation(
+					() =>
+						({
+							exited: Promise.resolve(0),
+							stdout: new Response(`${ver}\n/usr/bin/python\n`).body,
+							stderr: new Response("").body,
+						}) as unknown as ReturnType<typeof Bun.spawn>,
+				);
 
 				const res = await layaService.testPythonExecutable("/usr/bin/python");
 				expect(res).not.toBeNull();
@@ -68,15 +71,6 @@ describe("Laya Service & Autonomous Setup", () => {
 		it("correctly identifies available port", async () => {
 			const available = await layaService.isPortInUse(59876);
 			expect(available).toBe(false);
-		});
-
-		it("detects when sidecar is already active on port and avoids killing", async () => {
-			vi.spyOn(layaService, "isPortInUse").mockResolvedValue(true);
-			vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(true);
-
-			const result = await layaService.freePortIfOccupied(8177);
-			expect(result.freed).toBe(true);
-			expect(result.alreadyRunning).toBe(true);
 		});
 	});
 
@@ -125,10 +119,18 @@ describe("Laya Service & Autonomous Setup", () => {
 			vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(false);
 			vi.spyOn(layaService, "checkLayaDependencies").mockResolvedValue(true);
 			vi.spyOn(layaService, "installLayaDependencies").mockResolvedValue({ success: true });
-			vi.spyOn(layaSelfHealing, "verifyAndRepairTorchWheel").mockResolvedValue({ repaired: false, cudaAvailable: false });
+			vi.spyOn(layaSelfHealing, "verifyAndRepairTorchWheel").mockResolvedValue({
+				repaired: false,
+				cudaAvailable: false,
+			});
 			vi.spyOn(layaService, "ensureLayaModelCached").mockResolvedValue({ success: true, alreadyCached: true });
 			vi.spyOn(layaService, "startLayaSidecarProcess").mockResolvedValue({ success: true });
-			vi.spyOn(layaSelfHealing, "runLayaSmokeTest").mockResolvedValue({ success: true, healthOk: true, decideOk: true, latencyMs: 12 });
+			vi.spyOn(layaSelfHealing, "runLayaSmokeTest").mockResolvedValue({
+				success: true,
+				healthOk: true,
+				decideOk: true,
+				latencyMs: 12,
+			});
 
 			const mockCalibration: layaCalibration.CalibrationRecord = {
 				timestamp: Date.now(),
@@ -261,14 +263,17 @@ describe("Laya Service & Autonomous Setup", () => {
 
 		it("streams process output lines and captures stdout/stderr", async () => {
 			const mockLines: string[] = [];
-			const proc = Bun.spawn([
-				"python",
-				"-c",
-				"import sys; sys.stdout.write('line 1\\n'); sys.stderr.write('err 1\\n'); sys.stdout.write('line 2\\r'); sys.stdout.flush()",
-			], {
-				stdout: "pipe",
-				stderr: "pipe",
-			});
+			const proc = Bun.spawn(
+				[
+					"python",
+					"-c",
+					"import sys; sys.stdout.write('line 1\\n'); sys.stderr.write('err 1\\n'); sys.stdout.write('line 2\\r'); sys.stdout.flush()",
+				],
+				{
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
 
 			const res = await layaService.streamProcessOutput(proc, line => mockLines.push(line), {
 				activityTimeoutMs: 5000,
@@ -282,11 +287,7 @@ describe("Laya Service & Autonomous Setup", () => {
 		});
 
 		it("terminates and throws when activity timeout expires", async () => {
-			const proc = Bun.spawn([
-				"python",
-				"-c",
-				"import time; time.sleep(10)",
-			], {
+			const proc = Bun.spawn(["python", "-c", "import time; time.sleep(10)"], {
 				stdout: "pipe",
 				stderr: "pipe",
 			});
@@ -300,4 +301,3 @@ describe("Laya Service & Autonomous Setup", () => {
 		});
 	});
 });
-

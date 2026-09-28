@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEnoent } from "@harvest/pi-utils";
 import { buildDocsIndexPayload } from "./generate-docs-index";
+import { buildLayaSidecarPayload } from "./laya-sidecar-payload";
 
 const packageDir = path.join(import.meta.dir, "..");
 const outDir = path.join(packageDir, "dist");
@@ -91,6 +92,7 @@ async function main(): Promise<void> {
 	// build-time embed) can still resolve omp:// docs (see src/internal-urls/docs-index.ts).
 	try {
 		const docsPayload = await buildDocsIndexPayload();
+		const layaSidecarPayload = await buildLayaSidecarPayload();
 		// Build in-process: the docs embed payload is far larger than Linux's
 		// 128KiB per-argv-string cap, so it can never be passed as a CLI
 		// `--define` (posix_spawn fails with E2BIG).
@@ -102,6 +104,7 @@ async function main(): Promise<void> {
 			define: {
 				"process.env.PI_BUNDLED": JSON.stringify("true"),
 				"process.env.PI_DOCS_EMBED": JSON.stringify(docsPayload.payload),
+				"process.env.PI_LAYA_SIDECAR_EMBED": JSON.stringify(layaSidecarPayload),
 			},
 			minify: {
 				whitespace: true,

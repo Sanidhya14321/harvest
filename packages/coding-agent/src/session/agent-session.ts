@@ -3937,6 +3937,7 @@ export class AgentSession {
 						ctx.toolCall.providerMetadata.layaGatingReason = gating.reason;
 					} else {
 						ctx.toolCall.providerMetadata = {
+							...ctx.toolCall.providerMetadata,
 							type: "laya",
 							layaGatingRequired: true,
 							layaGatingReason: gating.reason,
@@ -3950,6 +3951,7 @@ export class AgentSession {
 					ctx.toolCall.providerMetadata.layaGatingReason = `Laya gating error: ${String(err)}`;
 				} else {
 					ctx.toolCall.providerMetadata = {
+						...ctx.toolCall.providerMetadata,
 						type: "laya",
 						layaGatingRequired: true,
 						layaGatingReason: `Laya gating error: ${String(err)}`,
@@ -3990,6 +3992,43 @@ export class AgentSession {
 		// A computer call's event input is a synthetic {actions, pendingSafetyChecks}
 		// view, not the execution params — a revision cannot map back onto them.
 		if (callResult?.input !== undefined && !computer) {
+			if (!callResult.input || typeof callResult.input !== "object" || Array.isArray(callResult.input)) {
+				return { block: true, reason: "Extension provided invalid tool arguments" };
+			}
+			const revisedArgs = callResult.input as Record<string, unknown>;
+			const revisedHarvestCheck = interceptSessionToolCall(this.#harvestHooks, {
+				name: ctx.tool.name,
+				args: revisedArgs,
+			});
+			if (!revisedHarvestCheck.allowed) {
+				return {
+					block: true,
+					reason: revisedHarvestCheck.error ?? `Pre-read enforcement blocked tool '${ctx.tool.name}'`,
+				};
+			}
+			if (process.env.LAYA_GATING !== "false") {
+				try {
+					const gating = await interceptSessionToolCallLaya(
+						{ name: ctx.tool.name, args: revisedArgs },
+						this.sessionManager?.getSessionId(),
+					);
+					if (gating.isHighRiskTool && gating.requireApproval) {
+						ctx.toolCall.providerMetadata = {
+							...ctx.toolCall.providerMetadata,
+							type: "laya",
+							layaGatingRequired: true,
+							layaGatingReason: gating.reason,
+						};
+						}
+				} catch (error) {
+					ctx.toolCall.providerMetadata = {
+						...ctx.toolCall.providerMetadata,
+						type: "laya",
+						layaGatingRequired: true,
+						layaGatingReason: `Laya gating error: ${String(error)}`,
+					};
+				}
+			}
 			return { args: callResult.input };
 		}
 		return undefined;

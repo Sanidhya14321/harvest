@@ -182,8 +182,8 @@ export async function getAvailableDiskSpaceMb(targetDir: string): Promise<number
 		const bytesFree = Number(stat.bavail) * Number(stat.bsize);
 		return Math.round(bytesFree / (1024 * 1024));
 	} catch {
-		// If statfs is unsupported or fails, return a safe default that passes
-		return 10_000;
+		// Unknown free space must not be treated as evidence that a download fits.
+		return -1;
 	}
 }
 
@@ -197,6 +197,14 @@ export async function checkAvailableDiskSpace(
 	setupLogger?: LayaSetupLogger,
 ): Promise<{ ok: boolean; availableMb: number; requiredMb: number; error?: string }> {
 	const availableMb = await getAvailableDiskSpaceMb(targetDir);
+	if (availableMb < 0) {
+		return {
+			ok: false,
+			availableMb,
+			requiredMb,
+			error: `Could not determine free disk space in ${targetDir}; model download was not started.`,
+		};
+	}
 	if (availableMb < requiredMb) {
 		const error = `Insufficient disk space: ${availableMb}MB available in ${targetDir}, but at least ${requiredMb}MB is required for model weights.`;
 		await setupLogger?.recordHealing({
@@ -415,7 +423,8 @@ export async function createDiagnosticBundle(
 	const errString = error instanceof Error ? error.message : String(error);
 	let diskMb: number | undefined;
 	if (context.targetDir) {
-		diskMb = await getAvailableDiskSpaceMb(context.targetDir);
+		const available = await getAvailableDiskSpaceMb(context.targetDir);
+		if (available >= 0) diskMb = available;
 	}
 
 	const bundle: DiagnosticBundle = {

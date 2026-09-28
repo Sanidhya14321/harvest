@@ -48,7 +48,7 @@ describe("selectSubagentWithLaya abort propagation", () => {
 	});
 
 	it("threads a live parent signal through to client.decide", async () => {
-		const decide = vi.fn(async () => ({
+		const decide = vi.fn(async (_state: unknown, _questions: unknown, _metadata: { signal?: AbortSignal }) => ({
 			success: true,
 			data: { subagent_choice: { answer: "scout", confidence: 0.95 } },
 			fallback: false,
@@ -67,7 +67,7 @@ describe("selectSubagentWithLaya abort propagation", () => {
 		});
 
 		expect(decide).toHaveBeenCalledTimes(1);
-		const metadata = decide.mock.calls[0][2] as { signal?: AbortSignal };
+		const metadata = decide.mock.calls[0]?.[2];
 		expect(metadata.signal).toBe(controller.signal);
 		expect(decision.decisionType).toBe("auto_pick");
 		expect(decision.selectedAgent).toBe("scout");

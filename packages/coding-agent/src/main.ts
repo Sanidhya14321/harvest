@@ -1866,6 +1866,13 @@ export async function runRootCommand(
 		}
 
 		const createAgentSessionImpl = deps.createAgentSession ?? createAgentSession;
+		if (isInteractive && settingsInstance.get("laya.enabled") && settingsInstance.get("laya.autostart")) {
+			void import("./core/harvest/laya-service").then(({ autostartInstalledLayaSidecar }) =>
+				autostartInstalledLayaSidecar(settingsInstance),
+			).catch(error => {
+				logger.warn("Laya autostart encountered an unexpected error", { error: String(error) });
+			});
+		}
 		const createSession = async (options: CreateAgentSessionOptions): Promise<CreateAgentSessionResult> => {
 			const result = await logger.time("createAgentSession", createAgentSessionImpl, options);
 			// Kick off background model discovery only after createAgentSession finishes its parallel
