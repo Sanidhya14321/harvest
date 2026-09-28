@@ -58,3 +58,10 @@ Harvest already has persisted JSONL sessions, `/resume` with a picker, `/new`, `
 1. Define supported installation targets and exercise a clean Laya install and autostart on each target.
 2. Build a coding-specific labeled Laya harness and retain fail-closed tool gating on sidecar error until measured evidence supports policy changes.
 3. Validate the session tab strip in a live TUI on narrow terminals and decide whether tabs should restore after process restart.
+
+## Follow-up from the Windows Terminal screenshot
+
+- The extra window was traced to the Laya sidecar launch using `detached: true` on Windows. It now uses the existing console-aware daemon spawn policy, so a terminal launch shares its console and a console-less launch hides the child. This path is covered by the spawn policy tests; a packaged Windows launch with a real Laya checkpoint still needs a live check.
+- A single open session no longer adds a tab row above the prompt. Unnamed tabs display `New session` instead of a timestamped JSONL filename, and the active tab reads the current session title while rendering.
+- Switching away from an unsaved startup session now removes its nonexistent file from the open tabs and navigation history. Persisted prior sessions remain available.
+- Focused session strip and controller tests passed (8 tests), the daemon spawn policy tests passed, and the coding-agent TypeScript check passed.

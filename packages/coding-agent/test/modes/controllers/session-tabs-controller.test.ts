@@ -67,8 +67,15 @@ it("moves through tab history only after the session switch succeeds", async () 
 	expect(controller.sessionTabs.historyTarget(1)).toBe("/work/two.jsonl");
 });
 
-it("tracks new and forked sessions while removing a moved or dropped path", () => {
-	let active = "/work/first.jsonl";
+it("tracks persisted sessions while removing a moved path", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
+	roots.push(root);
+	const first = path.join(root, "first.jsonl");
+	const fork = path.join(root, "fork.jsonl");
+	const moved = path.join(root, "moved.jsonl");
+	await Bun.write(first, "first");
+	await Bun.write(fork, "fork");
+	let active = first;
 	const ctx = {
 		sessionManager: {
 			getSessionFile: () => active,
@@ -77,12 +84,30 @@ it("tracks new and forked sessions while removing a moved or dropped path", () =
 		ui: { requestRender: vi.fn() },
 	} as unknown as InteractiveModeContext;
 	const controller = new SelectorController(ctx);
-	active = "/work/fork.jsonl";
-	controller.recordSessionTransition("/work/first.jsonl");
-	expect(controller.sessionTabs.paths).toEqual(["/work/first.jsonl", "/work/fork.jsonl"]);
-	active = "/moved/fork.jsonl";
-	controller.recordSessionTransition("/work/fork.jsonl", true);
-	expect(controller.sessionTabs.paths).toEqual(["/work/first.jsonl", "/moved/fork.jsonl"]);
+	active = fork;
+	await controller.recordSessionTransition(first);
+	expect(controller.sessionTabs.paths).toEqual([first, fork]);
+	active = moved;
+	await controller.recordSessionTransition(fork, true);
+	expect(controller.sessionTabs.paths).toEqual([first, moved]);
+});
+
+it("does not leave an unsaved startup session as a ghost tab after creating a new session", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
+	roots.push(root);
+	const startup = path.join(root, "startup.jsonl");
+	const next = path.join(root, "next.jsonl");
+	await Bun.write(next, "next");
+	let active = startup;
+	const ctx = {
+		sessionManager: { getSessionFile: () => active, getSessionName: () => undefined },
+		ui: { requestRender: vi.fn() },
+	} as unknown as InteractiveModeContext;
+	const controller = new SelectorController(ctx);
+	active = next;
+	await controller.recordSessionTransition(startup);
+	expect(controller.sessionTabs.paths).toEqual([next]);
+	expect(controller.sessionTabs.historyTarget(-1)).toBeUndefined();
 });
 
 it("forgets a closed tab whose session file was deleted", async () => {

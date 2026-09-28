@@ -130,11 +130,16 @@ export class SelectorController {
 		}
 	}
 
-	recordSessionTransition(previousFile?: string, removePrevious = false): void {
+	async recordSessionTransition(previousFile?: string, removePrevious = false): Promise<void> {
 		const activeFile = this.ctx.sessionManager.getSessionFile();
-		if (!activeFile || (previousFile && normalizePathForComparison(activeFile) === normalizePathForComparison(previousFile))) return;
-		if (previousFile && !removePrevious) this.sessionTabs.open(previousFile);
-		if (previousFile && removePrevious) this.sessionTabs.close(previousFile, false);
+		if (
+			!activeFile ||
+			(previousFile && normalizePathForComparison(activeFile) === normalizePathForComparison(previousFile))
+		)
+			return;
+		if (previousFile && !removePrevious && (await Bun.file(previousFile).exists()))
+			this.sessionTabs.open(previousFile);
+		else if (previousFile) this.sessionTabs.close(previousFile, false);
 		this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
 		this.sessionTabs.visit(activeFile);
 		this.ctx.ui.requestRender();
@@ -147,8 +152,14 @@ export class SelectorController {
 			const paths = this.sessionTabs.paths;
 			if (paths.length === 0) return "No session tabs are open. Use /tab open <session id>.";
 			return paths
-				.map((sessionPath, index) =>
-					`${current && normalizePathForComparison(current) === normalizePathForComparison(sessionPath) ? "*" : " "} ${index + 1}. ${this.sessionTabs.label(sessionPath) ?? shortenPath(sessionPath)}`,
+				.map(
+					(sessionPath, index) => {
+						const active = current && normalizePathForComparison(current) === normalizePathForComparison(sessionPath);
+						const title = active
+							? this.ctx.sessionManager.getSessionName() ?? this.sessionTabs.label(sessionPath) ?? "New session"
+							: this.sessionTabs.label(sessionPath) ?? shortenPath(sessionPath);
+						return `${active ? "*" : " "} ${index + 1}. ${title}`;
+					},
 				)
 				.join("\n");
 		}
@@ -160,7 +171,9 @@ export class SelectorController {
 				{ allowGlobalFallback: true },
 			);
 			if (!match) return `Session "${value}" not found`;
-			if (current) this.sessionTabs.open(current, this.ctx.sessionManager.getSessionName());
+			if (current && (await Bun.file(current).exists()))
+				this.sessionTabs.open(current, this.ctx.sessionManager.getSessionName());
+			else if (current) this.sessionTabs.close(current, false);
 			const target = match.session.path;
 			const wasOpen = this.sessionTabs.indexOf(target) >= 0;
 			this.sessionTabs.open(target, match.session.title ?? match.session.firstMessage);
@@ -209,10 +222,9 @@ export class SelectorController {
 			return `Reopened session tab ${this.sessionTabs.indexOf(target) + 1}.`;
 		}
 		const historyDirection = verb === "back" ? -1 : verb === "forward" ? 1 : undefined;
-		const target =
-			historyDirection
-				? this.sessionTabs.historyTarget(historyDirection)
-				: verb === "next" || verb === "prev"
+		const target = historyDirection
+			? this.sessionTabs.historyTarget(historyDirection)
+			: verb === "next" || verb === "prev"
 				? current && this.sessionTabs.neighbor(current, verb === "next" ? 1 : -1)
 				: verb === "switch" && value && Number.isInteger(Number(value))
 					? this.sessionTabs.paths[Number(value) - 1]
@@ -1909,7 +1921,7 @@ export class SelectorController {
 					const storage = new FileSessionStorage();
 					try {
 						await storage.deleteSessionWithArtifacts(session.path);
-					this.sessionTabs.close(session.path, false);
+						this.sessionTabs.close(session.path, false);
 						return true;
 					} catch (error) {
 						throw new Error(
@@ -2035,11 +2047,15 @@ export class SelectorController {
 		}
 		this.ctx.clearTransientSessionUi();
 		const newCwd = this.ctx.sessionManager.getCwd();
-		if (previousFile) this.sessionTabs.open(previousFile, previousName);
+		if (previousFile && (await Bun.file(previousFile).exists())) this.sessionTabs.open(previousFile, previousName);
+		else if (previousFile) this.sessionTabs.close(previousFile, false);
 		const activeFile = this.ctx.sessionManager.getSessionFile();
 		if (activeFile) {
 			this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
-			if (!this.#historyNavigationTarget || normalizePathForComparison(activeFile) !== normalizePathForComparison(this.#historyNavigationTarget)) {
+			if (
+				!this.#historyNavigationTarget ||
+				normalizePathForComparison(activeFile) !== normalizePathForComparison(this.#historyNavigationTarget)
+			) {
 				this.sessionTabs.visit(activeFile);
 			}
 		}
@@ -2134,12 +2150,7 @@ export class SelectorController {
 					"API Key (optional for local)",
 				);
 				const cleanApiKey = apiKey.trim();
-				await configureCustomProvider(
-					cleanBaseUrl,
-					cleanApiKey,
-					this.ctx.session.modelRegistry,
-					this.ctx.settings,
-				);
+				await configureCustomProvider(cleanBaseUrl, cleanApiKey, this.ctx.session.modelRegistry, this.ctx.settings);
 				this.ctx.showStatus(`Custom provider configured: ${cleanBaseUrl}`);
 				restoreEditor();
 				return true;

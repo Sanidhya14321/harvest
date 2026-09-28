@@ -8,7 +8,7 @@ set -e
 #   --ref <ref>    Install specific tag/commit/branch
 #   -r <ref>       Shorthand for --ref
 
-REPO="${HARVEST_REPO:-harvest/harvest}"
+REPO="${HARVEST_REPO:-Sanidhya14321/Harvest-Agent}"
 PACKAGE="@harvest/pi-coding-agent"
 INSTALL_DIR="${PI_INSTALL_DIR:-$HOME/.local/bin}"
 MIN_BUN_VERSION="1.3.14"
@@ -63,9 +63,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# If a ref is provided, default to source install
+# Released version tags use the prebuilt binary; branches and commits use source.
 if [ -n "$REF" ] && [ -z "$MODE" ]; then
-    MODE="source"
+    if printf '%s' "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+        MODE="binary"
+    else
+        MODE="source"
+    fi
 fi
 
 # Check if bun is available
@@ -264,20 +268,40 @@ install_binary() {
     echo "Using version: $LATEST"
 
     mkdir -p "$INSTALL_DIR"
-    # Download binary
+    TMP_DOWNLOAD="$(mktemp -d "${INSTALL_DIR}/.omp-download.XXXXXX")"
+    trap 'rm -rf "$TMP_DOWNLOAD"' EXIT
+    # Download and verify before replacing an existing installation.
     BINARY_URL="https://github.com/${REPO}/releases/download/${LATEST}/${BINARY}"
     echo "Downloading ${BINARY}..."
-    curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 30 "$BINARY_URL" -o "${INSTALL_DIR}/omp"
-    chmod +x "${INSTALL_DIR}/omp"
+    curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 30 "$BINARY_URL" -o "${TMP_DOWNLOAD}/${BINARY}"
+    curl -fsSL --connect-timeout 10 --max-time 60 "https://github.com/${REPO}/releases/download/${LATEST}/SHA256SUMS.txt" -o "${TMP_DOWNLOAD}/SHA256SUMS.txt"
+    EXPECTED="$(awk -v name="$BINARY" '$2 == name && $1 ~ /^[0-9a-fA-F]+$/ { print $1 }' "${TMP_DOWNLOAD}/SHA256SUMS.txt")"
+    if [ "${#EXPECTED}" -ne 64 ]; then
+        echo "Missing or invalid checksum for ${BINARY}" >&2
+        exit 1
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL="$(sha256sum "${TMP_DOWNLOAD}/${BINARY}" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL="$(shasum -a 256 "${TMP_DOWNLOAD}/${BINARY}" | awk '{print $1}')"
+    else
+        echo "A SHA-256 checksum tool (sha256sum or shasum) is required" >&2
+        exit 1
+    fi
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+        echo "Checksum mismatch for ${BINARY}; existing installation was not changed" >&2
+        exit 1
+    fi
+    chmod +x "${TMP_DOWNLOAD}/${BINARY}"
 
     # Verify the freshly installed binary can actually start before reporting
     # success. Bun's musl-target binaries link libstdc++/libgcc dynamically,
     # which stock Alpine/musl systems do not ship, so the download succeeds while
     # the binary exits 127 with relocation errors. Never claim success for a
     # binary that cannot run.
-    if ! SMOKE_OUTPUT="$("${INSTALL_DIR}/omp" --version 2>&1)"; then
+    if ! SMOKE_OUTPUT="$("${TMP_DOWNLOAD}/${BINARY}" --version 2>&1)"; then
         echo ""
-        echo "✗ omp was downloaded to ${INSTALL_DIR}/omp but cannot start:"
+        echo "✗ downloaded omp cannot start; existing installation was not changed:"
         echo "$SMOKE_OUTPUT" | sed 's/^/    /'
         if [ "$PLATFORM" = "linux-musl" ]; then
             echo ""
@@ -290,6 +314,7 @@ install_binary() {
         fi
         exit 1
     fi
+    mv -f "${TMP_DOWNLOAD}/${BINARY}" "${INSTALL_DIR}/omp"
 
     echo ""
     echo "✓ Installed omp to ${INSTALL_DIR}/omp"
@@ -321,27 +346,17 @@ case "$MODE" in
         install_binary
         ;;
     *)
-        # Default: use bun only when it matches the host architecture, otherwise
-        # fall back to the prebuilt binary so Rosetta bun can't force an x86_64 build.
-        if has_bun && bun_arch_matches_host; then
-            require_bun_version
-            install_via_bun
-        else
-            if has_bun; then
-                echo "Detected bun with architecture '$(bun_arch)' on a '$(host_arch)' host; using the prebuilt binary instead."
-            fi
-            install_binary
-        fi
+        install_binary
         ;;
 esac
 
 if [ "$WITH_LAYA" = "1" ]; then
     echo ""
     echo "Configuring local Laya decision sidecar..."
-    if command -v omp >/dev/null 2>&1; then
-        omp setup laya || echo "Warning: Laya decision sidecar setup failed, but core Harvest is operational. Run 'omp setup laya' to retry."
-    elif [ -f "${INSTALL_DIR}/omp" ]; then
+    if [ -f "${INSTALL_DIR}/omp" ]; then
         "${INSTALL_DIR}/omp" setup laya || echo "Warning: Laya decision sidecar setup failed, but core Harvest is operational. Run 'omp setup laya' to retry."
+    elif command -v omp >/dev/null 2>&1; then
+        omp setup laya || echo "Warning: Laya decision sidecar setup failed, but core Harvest is operational. Run 'omp setup laya' to retry."
     elif command -v bun >/dev/null 2>&1; then
         bun x @harvest/pi-coding-agent setup laya || echo "Warning: Laya decision sidecar setup failed, but core Harvest is operational. Run 'omp setup laya' to retry."
     fi

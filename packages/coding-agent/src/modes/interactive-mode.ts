@@ -1219,6 +1219,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			new SessionTabStrip(
 				this.#selectorController.sessionTabs,
 				() => this.sessionManager.getSessionFile(),
+				() => this.sessionManager.getSessionName(),
 				async sessionPath => {
 					try {
 						await this.handleResumeSession(sessionPath);
@@ -5516,7 +5517,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		const previousFile = this.sessionManager.getSessionFile();
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleClearCommand();
-		this.#selectorController.recordSessionTransition(previousFile);
+		await this.#selectorController.recordSessionTransition(previousFile);
 	}
 
 	handleFreshCommand(): Promise<void> {
@@ -5532,7 +5533,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		const previousFile = this.sessionManager.getSessionFile();
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleDropCommand();
-		this.#selectorController.recordSessionTransition(previousFile, true);
+		await this.#selectorController.recordSessionTransition(previousFile, true);
 	}
 
 	async handleForkCommand(): Promise<void> {
@@ -5542,14 +5543,14 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#omfgController.dispose();
 		this.#cleanseController.dispose();
 		await this.#commandController.handleForkCommand();
-		this.#selectorController.recordSessionTransition(previousFile);
+		await this.#selectorController.recordSessionTransition(previousFile);
 	}
 
 	async handleMoveCommand(targetPath?: string): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
 		const previousFile = this.sessionManager.getSessionFile();
 		await this.#commandController.handleMoveCommand(targetPath);
-		this.#selectorController.recordSessionTransition(previousFile, true);
+		await this.#selectorController.recordSessionTransition(previousFile, true);
 	}
 
 	async handleWorktreeCommand(branch?: string): Promise<void> {

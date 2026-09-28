@@ -16,6 +16,8 @@ import { getAgentDir, logger } from "@harvest/pi-utils";
 import type { completeSimple } from "@harvest/pi-ai";
 import type { ModelRegistry } from "../../config/model-registry";
 import type { Settings } from "../../config/settings";
+import { hostHasInheritableConsole } from "../../eval/py/spawn-options";
+import { resolveDaemonSpawnOptions } from "../../launch/spawn-options";
 import { ensureCalibrated, loadCalibration, type CalibrationRecord } from "./laya-calibration";
 import { getLayaClient } from "./laya-client";
 import {
@@ -877,7 +879,10 @@ export async function startLayaSidecarProcess(
 			serverPath,
 		], {
 			cwd: sidecarDir,
-			detached: true,
+			...resolveDaemonSpawnOptions({
+				platform: process.platform,
+				hostHasInheritableConsole: hostHasInheritableConsole(),
+			}),
 			stdout: logFd,
 			stderr: logFd,
 			env: {

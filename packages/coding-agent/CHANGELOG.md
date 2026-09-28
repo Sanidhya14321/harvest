@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Starting Harvest on Windows no longer opens a separate console for the Laya sidecar.
+- Unsaved startup sessions no longer remain as unusable tabs after switching sessions.
+- The session strip stays hidden with one tab and shows a readable name for unnamed sessions.
 - GitHub release installs now verify downloads and preserve an existing CLI when verification fails.
 - Outside-workspace edit deletes now return a path rejection before native parsing.
 - Extension-revised tool arguments are checked again by pre-read enforcement and Laya gating before execution.

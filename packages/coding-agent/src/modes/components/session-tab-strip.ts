@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import { type Component, type Tab, TabBar, truncateToWidth } from "@harvest/pi-tui";
 import { normalizePathForComparison } from "@harvest/pi-utils";
 import type { SessionTabs } from "../../session/session-tabs";
@@ -11,6 +10,7 @@ export class SessionTabStrip implements Component {
 	constructor(
 		private readonly tabs: SessionTabs,
 		private readonly currentPath: () => string | undefined,
+		private readonly currentTitle: () => string | undefined,
 		private readonly onSelect: (path: string) => Promise<void>,
 	) {
 		this.#bar.showHint = false;
@@ -19,7 +19,7 @@ export class SessionTabStrip implements Component {
 
 	render(width: number): readonly string[] {
 		const paths = this.tabs.paths;
-		if (paths.length === 0 || width < 12) return [];
+		if (paths.length < 2 || width < 12) return [];
 		const current = this.currentPath();
 		const activeIndex = current
 			? paths.findIndex(item => normalizePathForComparison(item) === normalizePathForComparison(current))
@@ -28,7 +28,14 @@ export class SessionTabStrip implements Component {
 		const visible = paths.slice(start, start + 7);
 		const displayed: Tab[] = visible.map((sessionPath, index) => ({
 			id: sessionPath,
-			label: `${start + index + 1} ${truncateToWidth(sanitizeStatusText(this.tabs.label(sessionPath) ?? path.basename(sessionPath, ".jsonl")), 20)}`,
+			label: `${start + index + 1} ${truncateToWidth(
+				sanitizeStatusText(
+					current && normalizePathForComparison(sessionPath) === normalizePathForComparison(current)
+						? (this.currentTitle() ?? this.tabs.label(sessionPath) ?? "New session")
+						: (this.tabs.label(sessionPath) ?? "New session"),
+				),
+				20,
+			)}`,
 			short: `${start + index + 1}`,
 		}));
 		if (start > 0) displayed.unshift({ id: "hidden-before", label: `‹ ${start} more`, short: "‹", muted: true });

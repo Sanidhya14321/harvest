@@ -15,6 +15,7 @@ it("shows open session titles and keeps control characters out of the tab strip"
 	const strip = new SessionTabStrip(
 		tabs,
 		() => "/work/second.jsonl",
+		() => "Second task",
 		async () => {},
 	);
 	const text = stripVTControlCharacters(strip.render(80).join("\n"));
@@ -29,9 +30,26 @@ it("keeps the active tab visible when many sessions are open", () => {
 	const strip = new SessionTabStrip(
 		tabs,
 		() => "/work/12.jsonl",
+		() => "Task 12",
 		async () => {},
 	);
 	const text = stripVTControlCharacters(strip.render(60).join("\n"));
 	expect(text).toContain("Task 12");
 	expect(text).not.toContain("Task 1 ");
+});
+
+it("hides a lone tab and uses a session title instead of a filename", () => {
+	const tabs = new SessionTabs();
+	tabs.open("/work/2026-09-28T18-11-33.jsonl");
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/2026-09-28T18-11-33.jsonl",
+		() => undefined,
+		async () => {},
+	);
+	expect(strip.render(80)).toEqual([]);
+	tabs.open("/work/other.jsonl", "Other task");
+	const text = stripVTControlCharacters(strip.render(80).join("\n"));
+	expect(text).toContain("New session");
+	expect(text).not.toContain("2026-09-28");
 });
