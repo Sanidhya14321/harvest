@@ -8,6 +8,7 @@
  * self-calibration, and connecting it seamlessly to Harvest.
  */
 
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as net from "node:net";
@@ -757,6 +758,36 @@ except Exception as e:
 }
 
 /**
+ * PID file recording the sidecar child spawned by {@link startLayaSidecarProcess}.
+ */
+export function getLayaSidecarPidFile(agentDir: string = getAgentDir()): string {
+	return path.join(agentDir, "laya-sidecar.pid");
+}
+
+/** Append-only log capturing the sidecar child's stdout/stderr. */
+export function getLayaSidecarLogFile(agentDir: string = getAgentDir()): string {
+	return path.join(agentDir, "logs", "laya-sidecar.log");
+}
+
+/** Last `maxBytes` of a file as text; empty string when unreadable. */
+function tailFileBytes(file: string, maxBytes: number): string {
+	try {
+		const size = fs.statSync(file).size;
+		const start = Math.max(0, size - maxBytes);
+		const fd = fs.openSync(file, "r");
+		try {
+			const buf = Buffer.allocUnsafe(Math.min(maxBytes, size));
+			const read = fs.readSync(fd, buf, 0, buf.length, start);
+			return buf.subarray(0, read).toString("utf8");
+		} finally {
+			fs.closeSync(fd);
+		}
+	} catch {
+		return "";
+	}
+}
+
+/**
  * Launch the local decision sidecar daemon as a background subprocess.
  * Uses non-destructive port resolution: reuses healthy Laya or redirects to alternate port without killing foreign processes.
  */
@@ -808,14 +839,20 @@ export async function startLayaSidecarProcess(
 	onProgress?.(`Starting Laya sidecar daemon on 127.0.0.1:${effectivePort}...`);
 
 	try {
-		Bun.spawn([
+		const agentDir = getAgentDir();
+		const logPath = getLayaSidecarLogFile(agentDir);
+		const pidPath = getLayaSidecarPidFile(agentDir);
+		fs.mkdirSync(path.dirname(logPath), { recursive: true });
+		const logFd = fs.openSync(logPath, "a");
+		const child = Bun.spawn([
 			pythonPath,
 			"-u",
 			serverPath,
 		], {
 			cwd: sidecarDir,
 			detached: true,
-			stdio: ["ignore", "ignore", "ignore"],
+			stdout: logFd,
+			stderr: logFd,
 			env: {
 				...process.env,
 				PYTHONUNBUFFERED: "1",
@@ -825,11 +862,36 @@ export async function startLayaSidecarProcess(
 				LAYA_PORT: String(effectivePort),
 			},
 		});
+		// Persist the child PID so later runs/operators can attribute or reap
+		// the daemon instead of spawning duplicates behind a port drift.
+		try {
+			fs.writeFileSync(pidPath, `${child.pid}\n`);
+		} catch (err) {
+			logger.warn("Failed to persist Laya sidecar PID file", { pidPath, error: String(err) });
+		}
+
+		// Watch for early child death so the probe below fast-fails instead of
+		// polling the full window against a process that is already gone.
+		let childExited = false;
+		let childExitCode: number | null = null;
+		const closeLog = (): void => {
+			try { fs.closeSync(logFd); } catch {}
+		};
+		void child.exited.then(code => {
+			childExited = true;
+			childExitCode = code;
+			closeLog();
+		});
 
 		const startTime = Date.now();
 		const maxTimeoutMs = 180_000;
 
 		while (Date.now() - startTime < maxTimeoutMs) {
+			if (childExited) {
+				try { fs.rmSync(pidPath, { force: true }); } catch {}
+				const tail = tailFileBytes(logPath, 4096).trim().split("\n").slice(-10).join("\n");
+				return { success: false, error: `Laya sidecar exited during startup (code ${childExitCode}) — see ${logPath}${tail ? `: ${tail}` : ""}` };
+			}
 			if (await isLayaSidecarRunning(effectiveBaseUrl)) {
 				return { success: true, actualBaseUrl: effectiveBaseUrl };
 			}
@@ -837,9 +899,15 @@ export async function startLayaSidecarProcess(
 			if (elapsedSec % 5 === 0 && elapsedSec > 0) {
 				onProgress?.(`Waiting for Laya sidecar initialization and model warmup (${elapsedSec}s / 180s)...`);
 			}
-			await Bun.sleep(1000);
+			await Bun.sleep(500);
 		}
 
+		// Probe window exhausted with a live-but-unready child: kill it so a
+		// wedged daemon doesn't linger behind the caller's port.
+		try { child.kill(); } catch {}
+		closeLog();
+		try { fs.rmSync(pidPath, { force: true }); } catch {}
+		await setupLogger?.log(`[SIDECAR] Killed unready sidecar child after 180s probe at ${effectiveBaseUrl}`);
 		return { success: false, error: `Timed out waiting 180s for Laya sidecar /health at ${effectiveBaseUrl}` };
 	} catch (err) {
 		return { success: false, error: String(err) };
@@ -912,12 +980,33 @@ async function handleLayaFailure(
 	};
 }
 
+/** In-flight configure runs keyed by base URL — concurrent callers share one pipeline run. */
+const layaConfigureInflight = new Map<string, Promise<LayaSetupResult>>();
+
 /**
  * End-to-end configuration and connection of Laya for Harvest.
  * Includes bounded self-healing, idempotency fast-path (<100ms),
  * end-to-end smoke test, and fail-open graceful degradation.
+ *
+ * Concurrent calls with the same base URL share a single in-flight pipeline
+ * run instead of spawning duplicate sidecar children behind a port drift.
  */
 export async function configureLayaLocally(options: ConfigureLayaOptions = {}): Promise<LayaSetupResult> {
+	const key = options.baseUrl || DEFAULT_LAYA_URL;
+	const existing = layaConfigureInflight.get(key);
+	if (existing) return existing;
+	const run = runLayaConfiguration(options).finally(() => {
+		if (layaConfigureInflight.get(key) === run) layaConfigureInflight.delete(key);
+	});
+	layaConfigureInflight.set(key, run);
+	return run;
+}
+
+/**
+ * The configure pipeline itself (single run). Prefer {@link configureLayaLocally},
+ * which singleflights concurrent calls onto one shared run.
+ */
+export async function runLayaConfiguration(options: ConfigureLayaOptions = {}): Promise<LayaSetupResult> {
 	const baseUrl = options.baseUrl || DEFAULT_LAYA_URL;
 	const onUpdate = options.onStepUpdate;
 	const agentDir = getAgentDir();

@@ -44,6 +44,8 @@ const POLL_WAIT_LADDER_MS = [5_000, 10_000, 30_000, 60_000, 300_000] as const;
 const POLL_ESCALATION_RESET_MS = 60_000;
 const MAX_CONCURRENT_DELIVERIES = 16;
 const DELIVERY_TIMEOUT_MS = 30_000;
+/** Upper bound on delivery attempts per job before dead-lettering (bounds retry storm). */
+const MAX_DELIVERY_ATTEMPTS = 10;
 
 interface PollEscalationState {
 	/** Index into POLL_WAIT_LADDER_MS used for the most recent poll wait. */
@@ -361,23 +363,27 @@ export class AsyncJobManager {
 				if (structured) job.structured = structured;
 				if (job.status === "cancelled") {
 					job.resultText = text;
+					job.settled = true;
 					this.#scheduleEviction(id);
 					return;
 				}
 				job.status = "completed";
 				job.resultText = text;
+				job.settled = true;
 				this.#enqueueDelivery(id, text);
 				this.#scheduleEviction(id);
 			} catch (error) {
 				if (error instanceof AsyncJobError && error.structured) job.structured = error.structured;
 				if (job.status === "cancelled") {
 					job.errorText = error instanceof Error ? error.message : String(error);
+					job.settled = true;
 					this.#scheduleEviction(id);
 					return;
 				}
 				const errorText = error instanceof Error ? error.message : String(error);
 				job.status = "failed";
 				job.errorText = errorText;
+				job.settled = true;
 				this.#enqueueDelivery(id, errorText);
 				this.#scheduleEviction(id);
 			} finally {

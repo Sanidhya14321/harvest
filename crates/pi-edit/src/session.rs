@@ -10,7 +10,7 @@ use async_trait::async_trait;
 
 use crate::{
 	diff_string::{CompactDiffOptions, build_compact_diff_preview},
-	engine::{EditMode, FileOp, HeaderKind, ModeEngine, PreviewFile, StagedFile},
+	engine::{EditMode, FileOp, HeaderKind, ModeEngine, PreviewFile, Resolved, StagedFile},
 	error::{EditError, EditResult},
 	files::{FileCache, FileSource},
 	notebook,
@@ -232,6 +232,21 @@ impl Session {
 			return Err(EditError::parse("Edit arguments were incomplete"));
 		}
 		let staged = self.engine.stage(&snapshot, &mut self.files, &self.store)?;
+		// Jail re-check before the first write: staging read every existing
+		// source through the read jail, but missing, created, deleted, and
+		// renamed targets never passed it. A host writer without its own
+		// containment must not be drivable outside the readable roots, so
+		// every staged path (and rename destination) is re-checked here,
+		// before plan-mode enforcement and before any write.
+		for file in &staged {
+			self.config.policy.check_read(&Resolved {
+				absolute: file.absolute.clone(),
+				display:  file.display.clone(),
+			})?;
+			if let Some(dest) = &file.move_to {
+				self.config.policy.check_read(dest)?;
+			}
+		}
 		for file in &staged {
 			self.config.policy.enforce_write(
 				&file.display,

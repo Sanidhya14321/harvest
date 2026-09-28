@@ -94,13 +94,12 @@ def _equivalence_fixture():
 def _score_answers(agent, b_logits, b_act, bucket):
     """Shared answer math used by both bucketed and unbucketed inference paths."""
     import numpy as np
-    from laya.agent import temp_bucket, confidence_from_probs
+    from laya.agent import confidence_from_probs, temp_bucket
 
     answers = {}
     raw_logits = {}
     for r, it in enumerate(bucket):
         qid = it["qid"]
-        q = it["q"]
         k = len(it["markers"])
         qt = it["qtype"]
         t_scale = agent.temperature_by_options.get(temp_bucket(qt, k), agent.temperature[qt])
@@ -224,8 +223,8 @@ class TestBucketedEquivalence(unittest.TestCase):
 
 def run_benchmark():
     """Optional benchmark for numerical equivalence and latency."""
-    import numpy as np
     import laya
+    import numpy as np
 
     print("\nLoading model for numerical and benchmark validation...")
     agent = laya.load(MODEL_ID, device="cpu")

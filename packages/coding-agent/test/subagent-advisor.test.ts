@@ -11,6 +11,7 @@ import { AgentRegistry, MAIN_AGENT_ID } from "@harvest/pi-coding-agent/registry/
 import { registerPersistedSubagents } from "@harvest/pi-coding-agent/registry/persisted-agents";
 import { CURRENT_SESSION_VERSION } from "@harvest/pi-coding-agent/session/session-entries";
 import { createSubagentSettings } from "@harvest/pi-coding-agent/task/executor";
+import type { AgentDefinition } from "@harvest/pi-coding-agent/task/types";
 
 describe("per-agent settings migrations", () => {
 	let agentDir = "";
@@ -71,6 +72,37 @@ describe("createSubagentSettings advisor default", () => {
 		expect(child.getModelRole("advisor")).toBe("moonshot/k3");
 		// Other roles from the parent snapshot survive the advisor override.
 		expect(child.getModelRole("smol")).toBe("openai/gpt-5-mini");
+	});
+});
+
+describe("createSubagentSettings approval mode inheritance", () => {
+	const standardAgent: AgentDefinition = {
+		name: "task",
+		description: "General agent",
+		systemPrompt: "Do work.",
+		source: "bundled",
+		tools: ["read", "write", "bash"],
+	};
+	const readOnlyAgent: AgentDefinition = {
+		name: "scout",
+		description: "Read-only scout",
+		systemPrompt: "Look only.",
+		source: "bundled",
+		tools: ["read", "grep"],
+	};
+
+	it("inherits the parent approval mode for standard agents", () => {
+		const parent = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		expect(createSubagentSettings(parent, undefined, undefined, standardAgent).get("tools.approvalMode")).toBe(
+			"always-ask",
+		);
+	});
+
+	it("forces yolo for read-only agents even under an always-ask parent", () => {
+		const parent = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		expect(createSubagentSettings(parent, undefined, undefined, readOnlyAgent).get("tools.approvalMode")).toBe(
+			"yolo",
+		);
 	});
 });
 

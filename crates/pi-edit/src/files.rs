@@ -113,6 +113,10 @@ impl FileCache {
 	}
 
 	fn read_resolved(&mut self, resolved: &Resolved) -> EditResult<Option<Arc<FileRead>>> {
+		// Read jail: only open a target whose canonical location stays inside
+		// the readable root for its scheme. Writes are jailed separately by
+		// the host; preview and staging reads must not rely on that.
+		self.policy.check_read(resolved)?;
 		let Some(current) = stamp(&resolved.absolute) else {
 			return Ok(None);
 		};

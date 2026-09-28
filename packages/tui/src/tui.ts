@@ -506,7 +506,6 @@ interface HardwareCursorState {
 
 interface PreparedLine {
 	raw: string;
-	width: number;
 	line: string;
 }
 
@@ -2682,16 +2681,16 @@ export class TUI extends Container {
 
 	#prepareLine(raw: string, width: number): PreparedLine {
 		if (TERMINAL.isImageLine(raw)) {
-			return { raw, width, line: raw };
+			return { raw, line: raw };
 		}
 		const source = this.#lineFitSource(raw, width);
 		const normalized = normalizeTerminalOutput(source);
 		const asciiWidth = this.#ansiAsciiLineWidth(normalized, width);
 		if ((asciiWidth ?? visibleWidth(normalized)) <= width) {
-			return { raw, width, line: normalized };
+			return { raw, line: normalized };
 		}
 		const line = truncateToWidth(normalized, width, Ellipsis.Omit);
-		return { raw, width, line };
+		return { raw, line };
 	}
 
 	#lineFitSource(raw: string, width: number): string {

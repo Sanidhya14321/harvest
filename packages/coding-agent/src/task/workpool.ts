@@ -335,7 +335,13 @@ export class WorkPool {
 		this.batches.push(batch);
 		const message = this.#batchMessage(batch);
 		if (agent.turns > 0) this.#card("batch", agent.id, message);
-		this.#startTurn(agent, batch, message);
+		try {
+			this.#startTurn(agent, batch, message);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			logger.warn("workpool: batch register failed", { pool: this.name, batch: batch.id, error: reason });
+			this.#finishTurn(agent, batch, { exitCode: 1, output: reason, error: reason });
+		}
 	}
 
 	#batchMessage(batch: WorkPoolBatch): string {

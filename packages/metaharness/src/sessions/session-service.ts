@@ -25,7 +25,7 @@ export function sessionsModeFromEnv(env: NodeJS.ProcessEnv = process.env): Sessi
 }
 
 export function assertSafeSessionId(id: string): void {
-	if (!id || id === "." || id === ".." || /[/\\]/.test(id) && id.includes("..")) {
+	if (!id || id === "." || id === ".." || (/[/\\]/.test(id) && id.includes(".."))) {
 		throw new Error(`invalid session id: ${id}`);
 	}
 	if (id.length > 512) throw new Error(`invalid session id: too long`);
@@ -40,6 +40,7 @@ export class SessionService {
 	readonly jobsDir: string;
 	readonly store: SessionStore;
 	#liveFiles = new Map<string, string>();
+	#closed = false;
 
 	constructor(jobsDir: string, mode: SessionsMode = sessionsModeFromEnv(), dbPath?: string) {
 		this.jobsDir = jobsDir;
@@ -56,12 +57,15 @@ export class SessionService {
 	}
 
 	close(): void {
-		this.store.close();
+		this.#closed = true;
+		try {
+			this.store.close();
+		} catch {}
 	}
 
 	/** Mirror one run's latest snapshot into the session store. No-op when off. */
 	syncRun(runStore: RunStore, jobName: string): void {
-		if (!this.enabled) return;
+		if (!this.enabled || this.#closed) return;
 		const run = runStore.getRun(jobName);
 		if (!run) {
 			this.store.deleteRun(jobName);
@@ -77,7 +81,7 @@ export class SessionService {
 	}
 
 	syncAll(runStore: RunStore): void {
-		if (!this.enabled) return;
+		if (!this.enabled || this.#closed) return;
 		for (const run of runStore.listRuns()) this.syncRun(runStore, run.jobName);
 	}
 

@@ -272,7 +272,16 @@ export class Terminal {
 			.split(";")
 			.map(value => (value === "" ? 0 : Number(value)));
 		const first = params[0] ?? 0;
-		const amount = Math.max(1, first);
+		const rawAmount = Math.max(1, first);
+		// CSI repeat counts are attacker-controlled (untrusted program output).
+		// Insert/delete lines already clamp via Math.min(count, region size);
+		// scroll and cell ops clamp the same way so ESC[99999999S / ESC[10000000@
+		// cannot hang or OOM the TUI. Bounds saturate the visible effect:
+		// scrolling more than rows*4 or shifting more than cols*4 is a no-op.
+		const boundedAmount = Number.isFinite(rawAmount) ? rawAmount : 1;
+		const scrollAmount = Math.min(boundedAmount, this.rows * 4);
+		const cellAmount = Math.min(boundedAmount, this.cols * 4);
+		const amount = boundedAmount;
 		switch (final) {
 			case "A":
 				this.#moveVertical(-amount);
@@ -323,19 +332,19 @@ export class Terminal {
 				this.#deleteLines(amount);
 				break;
 			case "@":
-				this.#insertCells(amount);
+				this.#insertCells(cellAmount);
 				break;
 			case "P":
-				this.#deleteCells(amount);
+				this.#deleteCells(cellAmount);
 				break;
 			case "X":
-				this.#eraseCells(amount);
+				this.#eraseCells(cellAmount);
 				break;
 			case "S":
-				for (let index = 0; index < amount; index++) this.#scrollUp();
+				for (let index = 0; index < scrollAmount; index++) this.#scrollUp();
 				break;
 			case "T":
-				for (let index = 0; index < amount; index++) this.#scrollDown();
+				for (let index = 0; index < scrollAmount; index++) this.#scrollDown();
 				break;
 			case "m":
 				this.#setRendition(params);
@@ -526,7 +535,8 @@ export class Terminal {
 	}
 
 	#shiftCells(line: BufferLine, column: number, count: number): void {
-		line.cells.splice(column, 0, ...Array.from({ length: count }, () => blankCell(this.#attrs)));
+		const bounded = Math.min(Math.max(0, Math.floor(Number.isFinite(count) ? count : 0)), this.cols);
+		line.cells.splice(column, 0, ...Array.from({ length: bounded }, () => blankCell(this.#attrs)));
 		line.cells.length = this.cols;
 	}
 

@@ -43,6 +43,13 @@ export interface LayaClientOptions {
 	readonly baseUrl?: string;
 	readonly timeoutMs?: number;
 	readonly autostart?: boolean;
+	/**
+	 * Opt-in bearer token for the sidecar. Only sent when set — the sidecar
+	 * currently accepts unauthenticated loopback requests, so this is
+	 * plumbing for the server-side LAYA_TOKEN workstream. Falls back to the
+	 * LAYA_TOKEN env var when unset.
+	 */
+	readonly authToken?: string;
 }
 
 export interface DecisionResult<T = LayaAnswerResult> {
@@ -60,6 +67,7 @@ const DEFAULT_TIMEOUT_MS = 300;
 export class LayaClient {
 	readonly #baseUrl: string;
 	readonly #timeoutMs: number;
+	readonly #authToken?: string;
 
 	constructor(options: LayaClientOptions = {}) {
 		let configuredUrl: string | undefined;
@@ -71,6 +79,8 @@ export class LayaClient {
 		this.#baseUrl = options.baseUrl || process.env.LAYA_SIDECAR_URL || configuredUrl || DEFAULT_SIDECAR_URL;
 		const envTimeout = process.env.LAYA_TIMEOUT_MS ? Number.parseInt(process.env.LAYA_TIMEOUT_MS, 10) : undefined;
 		this.#timeoutMs = options.timeoutMs ?? (envTimeout && !Number.isNaN(envTimeout) ? envTimeout : DEFAULT_TIMEOUT_MS);
+		const envToken = process.env.LAYA_TOKEN?.trim();
+		this.#authToken = options.authToken ?? (envToken ? envToken : undefined);
 	}
 
 	get baseUrl(): string {
@@ -150,7 +160,7 @@ export class LayaClient {
 	async decide(
 		state: string | Record<string, unknown> | unknown[],
 		questions: Record<string, LayaQuestionDefinition>,
-		metadata: { callSite: string; sessionId?: string; timeoutMs?: number; signal?: AbortSignal } = { callSite: "unknown" },
+		metadata: { callSite: string; sessionId?: string; timeoutMs?: number; signal?: AbortSignal; authToken?: string } = { callSite: "unknown" },
 	): Promise<DecisionResult<Record<string, LayaAnswerResult>>> {
 		const startTime = performance.now();
 
@@ -192,11 +202,12 @@ export class LayaClient {
 		}
 
 		try {
+			const headers: Record<string, string> = { "Content-Type": "application/json" };
+			const authToken = metadata.authToken ?? this.#authToken;
+			if (authToken) headers.Authorization = `Bearer ${authToken}`;
 			const response = await fetch(`${this.#baseUrl}/v1/decide`, {
 				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
+				headers,
 				body: JSON.stringify({
 					state,
 					questions,

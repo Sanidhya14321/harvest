@@ -4,6 +4,7 @@ import { extractPrintableText } from "../keys";
 import { KillRing } from "../kill-ring";
 import { type Component, CURSOR_MARKER, type Focusable } from "../tui";
 import {
+	Ellipsis,
 	getSegmenter,
 	getWordNavKind,
 	moveWordLeft,
@@ -11,6 +12,7 @@ import {
 	padding,
 	replaceTabs,
 	sliceWithWidth,
+	truncateToWidth,
 	visibleWidth,
 } from "../utils";
 
@@ -66,9 +68,9 @@ export class Input implements Component, Focusable {
 	}
 
 	setValue(value: string): void {
-		this.#value = value;
+		this.#value = replaceTabs(value);
 		// Callers seed or replace the value wholesale; typing continues at the end.
-		this.#cursor = value.length;
+		this.#cursor = this.#value.length;
 	}
 
 	setUseTerminalCursor(useTerminalCursor: boolean): void {
@@ -219,8 +221,9 @@ export class Input implements Component, Focusable {
 		}
 		this.#lastAction = "type-word";
 
-		this.#value = this.#value.slice(0, this.#cursor) + text + this.#value.slice(this.#cursor);
-		this.#cursor += text.length;
+		const expanded = replaceTabs(text);
+		this.#value = this.#value.slice(0, this.#cursor) + expanded + this.#value.slice(this.#cursor);
+		this.#cursor += expanded.length;
 	}
 
 	#handleBackspace(): void {
@@ -427,7 +430,7 @@ export class Input implements Component, Focusable {
 		const availableWidth = width - visibleWidth(prompt);
 
 		if (availableWidth <= 0) {
-			return [prompt];
+			return [truncateToWidth(prompt, width, Ellipsis.Omit)];
 		}
 
 		let cursorIndex = this.#cursor;

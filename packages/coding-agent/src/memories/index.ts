@@ -1280,18 +1280,42 @@ function loadMemoryConfig(settings: Settings): MemoryRuntimeConfig {
 export function getMemoryRoot(agentDir: string, cwd: string): string {
 	const base = getMemoriesDir(agentDir);
 	const newName = encodeProjectPath(cwd);
+	const previousName = encodeHashedProjectPath(cwd);
 	const legacyName = encodeLegacyProjectPath(cwd);
 	const newPath = path.join(base, newName);
+	const previousPath = path.join(base, previousName);
 	const legacyPath = path.join(base, legacyName);
 
-	if (!fsSync.existsSync(newPath) && fsSync.existsSync(legacyPath)) {
-		try {
-			fsSync.renameSync(legacyPath, newPath);
-		} catch {
-			return legacyPath;
+	// Prefer the current encoding, but migrate (not duplicate) a directory
+	// written by an older encoding so upgrades never lose memory. When both
+	// exist, the current encoding wins; stale predecessors are left in place
+	// rather than merged, so no write path ever spans two roots.
+	if (!fsSync.existsSync(newPath)) {
+		if (fsSync.existsSync(previousPath)) {
+			try {
+				fsSync.renameSync(previousPath, newPath);
+			} catch {
+				return previousPath;
+			}
+		} else if (fsSync.existsSync(legacyPath)) {
+			try {
+				fsSync.renameSync(legacyPath, newPath);
+			} catch {
+				return legacyPath;
+			}
 		}
 	}
 	return newPath;
+}
+
+/** Resolve a memory root written by any known encoding without migrating. */
+export function resolveExistingMemoryRoot(agentDir: string, cwd: string): string | undefined {
+	const base = getMemoriesDir(agentDir);
+	for (const name of [encodeProjectPath(cwd), encodeHashedProjectPath(cwd), encodeLegacyProjectPath(cwd)]) {
+		const candidate = path.join(base, name);
+		if (fsSync.existsSync(candidate)) return candidate;
+	}
+	return undefined;
 }
 
 /**
@@ -1436,10 +1460,37 @@ function encodeLegacyProjectPath(cwd: string): string {
 	return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 }
 
-function encodeProjectPath(cwd: string): string {
+/**
+ * Previous hashed encoding (17.x): lossy `[/\\:] -> -` folding plus a 64-bit
+ * non-crypto `Bun.hash` digest. Kept only so {@link getMemoryRoot} can
+ * migrate directories written before the collision-resistant encoding below.
+ */
+function encodeHashedProjectPath(cwd: string): string {
 	const canonical = path.resolve(cwd).replaceAll("\\", "/");
 	const digest = Bun.hash(canonical).toString(16);
 	return `--${canonical.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}-${digest}--`;
+}
+
+/**
+ * Collision-resistant project encoding: the readable prefix escapes `%`
+ * first, then folds each separator class distinctly (`/` and `\` to `-`,
+ * `:` to `%3A`, pre-existing `-` to `%2D`), so `/a/b:c` and `/a/b/c` map
+ * differently; a stable SHA-256 prefix of the canonical path disambiguates
+ * the remainder (long names, case-only or normalization differences). The
+ * readable portion is capped so the directory name stays well under
+ * filesystem limits on every platform.
+ */
+export function encodeProjectPath(cwd: string): string {
+	const canonical = path.resolve(cwd).replaceAll("\\", "/");
+	const stripped = canonical.replace(/^[/\\]+/, "");
+	const escaped = stripped
+		.replace(/%/g, "%25")
+		.replace(/-/g, "%2D")
+		.replace(/[/\\]/g, "-")
+		.replace(/:/g, "%3A");
+	const readable = escaped.slice(0, 100) || "project";
+	const digest = Bun.SHA256.hash(canonical, "hex").slice(0, 16);
+	return `--${readable}-${digest}--`;
 }
 
 function unixNow(): number {

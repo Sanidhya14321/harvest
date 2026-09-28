@@ -10,7 +10,7 @@
  */
 import { matchesKey } from "../keys";
 import type { Component } from "../tui";
-import { truncateToWidth, visibleWidth } from "../utils";
+import { replaceTabs, truncateToWidth, visibleWidth } from "../utils";
 
 /** Tab definition */
 export interface Tab {
@@ -50,7 +50,7 @@ export interface TabBarTheme {
  *   { id: "tools", label: "Tools" },
  * ];
  * const tabBar = new TabBar("Settings", tabs, theme);
- * tabBar.onTabChange = (tab) => console.log(`Switched to ${tab.id}`);
+ * tabBar.onTabChange = (tab) => void tab.id;
  * ```
  */
 export class TabBar implements Component {
@@ -226,7 +226,7 @@ export class TabBar implements Component {
 		const totalWidth = (chunks: TabChunk[]): number =>
 			chunks.reduce((sum, chunk) => sum + visibleWidth(chunk.text), 0);
 
-		const labels = this.#tabs.map(tab => tab.label);
+		const labels = this.#tabs.map(tab => replaceTabs(tab.label).replace(/[\r\n]+/g, " "));
 		let chunks = buildChunks(labels);
 
 		if (totalWidth(chunks) > maxWidth) {

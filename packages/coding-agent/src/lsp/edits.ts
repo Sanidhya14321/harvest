@@ -328,26 +328,27 @@ export async function applyWorkspaceEdit(
 
 	const sandbox = new SecuritySandbox(cwd);
 
+	// Jail a workspace-edit URI and return the jailed resolved path for the
+	// filesystem mutation. Callers resolve adjacent to each mutation (validated
+	// up front AND re-resolved at use) so a symlink swapped in between cannot
+	// redirect the operation outside the workspace. Display strings keep the
+	// lexical path so in-workspace output is unchanged.
+	const jailUri = (uri: string, fallback: string): string => {
+		const check = sandbox.assertPathJailed(uriToFile(uri));
+		if (!check.jailed) {
+			throw new ToolError(check.error ?? fallback);
+		}
+		return check.resolvedPath;
+	};
+
 	if (edit.documentChanges) {
 		const ops = planDocumentChanges(edit.documentChanges);
 		for (const op of ops) {
 			if (op.kind === "text" || op.kind === "create" || op.kind === "delete") {
-				const filePath = uriToFile(op.uri);
-				const check = sandbox.assertPathJailed(filePath);
-				if (!check.jailed) {
-					throw new ToolError(check.error ?? `LSP mutation rejected: ${filePath} is outside workspace root`);
-				}
+				jailUri(op.uri, `LSP mutation rejected: ${uriToFile(op.uri)} is outside workspace root`);
 			} else if (op.kind === "rename") {
-				const oldPath = uriToFile(op.oldUri);
-				const newPath = uriToFile(op.newUri);
-				const oldCheck = sandbox.assertPathJailed(oldPath);
-				if (!oldCheck.jailed) {
-					throw new ToolError(oldCheck.error ?? `LSP rename source rejected: ${oldPath} is outside workspace root`);
-				}
-				const newCheck = sandbox.assertPathJailed(newPath);
-				if (!newCheck.jailed) {
-					throw new ToolError(newCheck.error ?? `LSP rename target rejected: ${newPath} is outside workspace root`);
-				}
+				jailUri(op.oldUri, `LSP rename source rejected: ${uriToFile(op.oldUri)} is outside workspace root`);
+				jailUri(op.newUri, `LSP rename target rejected: ${uriToFile(op.newUri)} is outside workspace root`);
 			}
 		}
 
@@ -357,17 +358,19 @@ export async function applyWorkspaceEdit(
 		for (const op of ops) {
 			if (op.kind === "text") {
 				const filePath = uriToFile(op.uri);
-				await applyTextEdits(filePath, op.edits);
+				const resolved = jailUri(op.uri, `LSP mutation rejected: ${filePath} is outside workspace root`);
+				await applyTextEdits(resolved, op.edits);
 				applied.push(`Applied ${op.edits.length} edit(s) to ${formatPathRelativeToCwd(filePath, cwd)}`);
 				record({ kind: "edit", uri: op.uri });
 			} else if (op.kind === "create") {
 				const filePath = uriToFile(op.uri);
-				await fs.mkdir(path.dirname(filePath), { recursive: true });
+				const resolved = jailUri(op.uri, `LSP mutation rejected: ${filePath} is outside workspace root`);
+				await fs.mkdir(path.dirname(resolved), { recursive: true });
 				try {
 					if (op.options?.overwrite) {
-						await Bun.write(filePath, "");
+						await Bun.write(resolved, "");
 					} else {
-						const handle = await fs.open(filePath, "wx");
+						const handle = await fs.open(resolved, "wx");
 						await handle.close();
 					}
 				} catch (error) {
@@ -381,15 +384,23 @@ export async function applyWorkspaceEdit(
 			} else if (op.kind === "rename") {
 				const oldPath = uriToFile(op.oldUri);
 				const newPath = uriToFile(op.newUri);
-				await fs.mkdir(path.dirname(newPath), { recursive: true });
-				if (oldPath !== newPath) {
+				const oldResolved = jailUri(
+					op.oldUri,
+					`LSP rename source rejected: ${oldPath} is outside workspace root`,
+				);
+				const newResolved = jailUri(
+					op.newUri,
+					`LSP rename target rejected: ${newPath} is outside workspace root`,
+				);
+				await fs.mkdir(path.dirname(newResolved), { recursive: true });
+				if (oldResolved !== newResolved) {
 					// Displace an overwritten destination into a kernel-reserved sibling
 					// temp dir (same filesystem, so the moves stay atomic) instead of
 					// deleting it, so a failed rename (EXDEV, permissions) can restore
 					// it and leave the workspace exactly as it was.
 					let displaced: { dir: string; file: string } | undefined;
 					try {
-						const targetStat = await fs.lstat(newPath);
+						const targetStat = await fs.lstat(newResolved);
 						if (!op.options?.overwrite) {
 							if (op.options?.ignoreIfExists) continue;
 							throw new ToolError(`rename target already exists: ${formatPathRelativeToCwd(newPath, cwd)}`);
@@ -398,12 +409,12 @@ export async function applyWorkspaceEdit(
 						// case-insensitive filesystem a case-only rename resolves both
 						// paths to the same inode; moving newPath aside would move the
 						// source, so let fs.rename change the case in place instead.
-						const sourceStat = await fs.lstat(oldPath);
+						const sourceStat = await fs.lstat(oldResolved);
 						if (sourceStat.dev !== targetStat.dev || sourceStat.ino !== targetStat.ino) {
-							const holdDir = await fs.mkdtemp(path.join(path.dirname(newPath), ".omp-displaced-"));
-							const holdFile = path.join(holdDir, path.basename(newPath));
+							const holdDir = await fs.mkdtemp(path.join(path.dirname(newResolved), ".omp-displaced-"));
+							const holdFile = path.join(holdDir, path.basename(newResolved));
 							try {
-								await fs.rename(newPath, holdFile);
+								await fs.rename(newResolved, holdFile);
 							} catch (error) {
 								await fs.rm(holdDir, { recursive: true, force: true }).catch(() => {});
 								throw error;
@@ -414,11 +425,11 @@ export async function applyWorkspaceEdit(
 						if (!isEnoent(error)) throw error;
 					}
 					try {
-						await fs.rename(oldPath, newPath);
+						await fs.rename(oldResolved, newResolved);
 					} catch (error) {
 						if (displaced) {
 							try {
-								await fs.rename(displaced.file, newPath);
+								await fs.rename(displaced.file, newResolved);
 							} catch {
 								// Restoration failed: the destination really is gone, so
 								// report it to reconciliation as an executed delete.
@@ -441,12 +452,24 @@ export async function applyWorkspaceEdit(
 				record({ kind: "rename", oldUri: op.oldUri, newUri: op.newUri });
 			} else {
 				const filePath = uriToFile(op.uri);
+				const fallback = `LSP mutation rejected: ${filePath} is outside workspace root`;
+				// Validate the full target, then remove through the jailed
+				// parent joined with the lexical basename: rm/rmdir act on the
+				// final component itself (never follow it), so this preserves
+				// link-removal semantics while the ancestor chain is still
+				// validated adjacent to the mutation.
+				jailUri(op.uri, fallback);
+				const parentCheck = sandbox.assertPathJailed(path.dirname(filePath));
+				if (!parentCheck.jailed) {
+					throw new ToolError(parentCheck.error ?? fallback);
+				}
+				const resolved = path.join(parentCheck.resolvedPath, path.basename(filePath));
 				try {
-					const stat = await fs.lstat(filePath);
+					const stat = await fs.lstat(resolved);
 					if (stat.isDirectory() && !stat.isSymbolicLink() && !op.options?.recursive) {
-						await fs.rmdir(filePath);
+						await fs.rmdir(resolved);
 					} else {
-						await fs.rm(filePath, { recursive: op.options?.recursive ?? false });
+						await fs.rm(resolved, { recursive: op.options?.recursive ?? false });
 					}
 				} catch (error) {
 					if (!(op.options?.ignoreIfNotExists && isEnoent(error))) throw error;
@@ -459,11 +482,7 @@ export async function applyWorkspaceEdit(
 	} else if (edit.changes) {
 		const changes = edit.changes;
 		for (const uri in changes) {
-			const filePath = uriToFile(uri);
-			const check = sandbox.assertPathJailed(filePath);
-			if (!check.jailed) {
-				throw new ToolError(check.error ?? `LSP edit target rejected: ${filePath} is outside workspace root`);
-			}
+			jailUri(uri, `LSP edit target rejected: ${uriToFile(uri)} is outside workspace root`);
 		}
 		// Legacy changes-map path: validate every file's edits before writing any.
 		for (const uri in changes) {
@@ -473,7 +492,8 @@ export async function applyWorkspaceEdit(
 			const textEdits = changes[uri];
 			if (textEdits.length === 0) continue;
 			const filePath = uriToFile(uri);
-			await applyTextEdits(filePath, textEdits);
+			const resolved = jailUri(uri, `LSP edit target rejected: ${filePath} is outside workspace root`);
+			await applyTextEdits(resolved, textEdits);
 			applied.push(`Applied ${textEdits.length} edit(s) to ${formatPathRelativeToCwd(filePath, cwd)}`);
 			record({ kind: "edit", uri });
 		}

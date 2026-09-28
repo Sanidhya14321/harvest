@@ -1072,7 +1072,7 @@ const OPENAI_REMOTE_COMPACTION_PRESERVE_KEY = "openaiRemoteCompaction";
 function stripOpenAiRemoteCompactionPreserveData(
 	preserveData: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
-	if (!preserveData || !(OPENAI_REMOTE_COMPACTION_PRESERVE_KEY in preserveData)) {
+	if (!preserveData || !Object.hasOwn(preserveData, OPENAI_REMOTE_COMPACTION_PRESERVE_KEY)) {
 		return preserveData;
 	}
 	const { [OPENAI_REMOTE_COMPACTION_PRESERVE_KEY]: _removed, ...rest } = preserveData;
@@ -1701,7 +1701,10 @@ export function frames(text: string, options?: Pick<RenderManyOptions, "shape" |
 
 /** Validate and extract a persisted frame archive from `preserveData`. */
 export function getPreservedArchive(preserveData: Record<string, unknown> | undefined): Archive | undefined {
-	const candidate = preserveData?.[PRESERVE_KEY];
+	const candidate =
+		preserveData !== undefined && Object.hasOwn(preserveData, PRESERVE_KEY)
+			? preserveData[PRESERVE_KEY]
+			: undefined;
 	if (!candidate || typeof candidate !== "object") return undefined;
 	const archive = candidate as Archive;
 	const frames = Array.isArray(archive.frames)
@@ -1740,7 +1743,7 @@ export function getPreservedArchive(preserveData: Record<string, unknown> | unde
 export function stripPreservedArchive(
 	preserveData: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
-	if (!preserveData || !(PRESERVE_KEY in preserveData)) return preserveData;
+	if (!preserveData || !Object.hasOwn(preserveData, PRESERVE_KEY)) return preserveData;
 	const { [PRESERVE_KEY]: _removed, ...rest } = preserveData;
 	return Object.keys(rest).length > 0 ? rest : undefined;
 }

@@ -63,6 +63,7 @@ export class AgentService {
 	#registry: RegistryLike | null = null;
 	#lifecycle: LifecycleLike | null = null;
 	#children = new Map<string, number>();
+	#closed = false;
 
 	constructor(jobsDir: string, mode: AgentsMode = agentsModeFromEnv(), dbPath?: string) {
 		this.jobsDir = jobsDir;
@@ -75,7 +76,16 @@ export class AgentService {
 	}
 
 	close(): void {
-		this.store.close();
+		this.#closed = true;
+		for (const pid of this.#children.values()) {
+			try {
+				if (processAlive(pid)) process.kill(pid, "SIGKILL");
+			} catch {}
+		}
+		this.#children.clear();
+		try {
+			this.store.close();
+		} catch {}
 	}
 
 	async #ensureRegistry(): Promise<{ registry: RegistryLike; lifecycle: LifecycleLike }> {
@@ -85,9 +95,7 @@ export class AgentService {
 			import("@harvest/pi-coding-agent/registry/agent-lifecycle"),
 		]);
 		const registry = new RegistryCtor() as RegistryLike;
-		const lifecycle = new LifecycleCtor(
-			registry as unknown as AgentRegistry,
-		) as unknown as LifecycleLike;
+		const lifecycle = new LifecycleCtor(registry as unknown as AgentRegistry) as unknown as LifecycleLike;
 		this.#registry = registry;
 		this.#lifecycle = lifecycle;
 		return { registry, lifecycle };
@@ -95,7 +103,7 @@ export class AgentService {
 
 	/** Mirror running runs + running trials into agent rows. No-op when off. */
 	syncFromRuns(runStore: RunStore): void {
-		if (!this.enabled) return;
+		if (!this.enabled || this.#closed) return;
 		const now = Date.now();
 		const seen = new Set<string>();
 		for (const run of runStore.listRuns()) {
@@ -183,13 +191,26 @@ export class AgentService {
 			pid = proc.pid;
 			this.#children.set(id, pid);
 			proc.exited.then(() => {
+				if (this.#closed) {
+					try {
+						fs.closeSync(logFile);
+					} catch {}
+					return;
+				}
 				try {
 					fs.closeSync(logFile);
 				} catch {}
 				this.#children.delete(id);
-				const current = this.store.get(id);
+				let current: HarnessAgent | null = null;
+				try {
+					current = this.store.get(id);
+				} catch {
+					return;
+				}
 				if (current && current.status === "running") {
-					this.store.upsert({ ...current, status: "idle", pid: null, lastActivity: Date.now() });
+					try {
+						this.store.upsert({ ...current, status: "idle", pid: null, lastActivity: Date.now() });
+					} catch {}
 				}
 			});
 		}

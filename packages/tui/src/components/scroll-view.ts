@@ -196,6 +196,7 @@ export class ScrollView implements Component {
 		if (this.#height === 0) return [];
 		const showScrollbar = safeWidth > 0 && this.#shouldRenderScrollbar();
 		const contentWidth = Math.max(0, safeWidth - (showScrollbar ? 1 : 0));
+		if (contentWidth <= 0) return [""];
 		const thumb = showScrollbar ? this.#thumbRange() : undefined;
 		const lines: string[] = [];
 		for (let row = 0; row < this.#height; row++) {

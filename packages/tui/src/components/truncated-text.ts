@@ -1,5 +1,5 @@
 import type { Component } from "../tui";
-import { padding, truncateToWidth, visibleWidth } from "../utils";
+import { getWidthConfigEpoch, padding, replaceTabs, truncateToWidth, visibleWidth } from "../utils";
 
 /**
  * Text component that truncates to fit viewport width
@@ -9,6 +9,7 @@ export class TruncatedText implements Component {
 	#paddingX: number;
 	#paddingY: number;
 	#cachedWidth = -1;
+	#cachedWidthEpoch = -1;
 	#cachedLines: string[] | undefined;
 
 	constructor(text: string, paddingX: number = 0, paddingY: number = 0) {
@@ -25,7 +26,7 @@ export class TruncatedText implements Component {
 			textPreview: this.#text.slice(0, 120),
 			textLength: this.#text.length,
 			previewTruncated: this.#text.length > 120,
-			truncated: newlineIndex !== -1 || (this.#cachedWidth >= 0 && visibleWidth(firstLine) > availableWidth),
+			truncated: newlineIndex !== -1 || (this.#cachedWidth >= 0 && visibleWidth(replaceTabs(firstLine)) > availableWidth),
 			paddingX: this.#paddingX,
 			paddingY: this.#paddingY,
 		};
@@ -37,7 +38,7 @@ export class TruncatedText implements Component {
 	}
 
 	render(width: number): readonly string[] {
-		if (this.#cachedLines && this.#cachedWidth === width) {
+		if (this.#cachedLines && this.#cachedWidth === width && this.#cachedWidthEpoch === getWidthConfigEpoch()) {
 			return this.#cachedLines;
 		}
 		const result: string[] = [];
@@ -61,7 +62,7 @@ export class TruncatedText implements Component {
 		}
 
 		// Truncate text if needed (accounting for ANSI codes)
-		const displayText = truncateToWidth(singleLineText, availableWidth);
+		const displayText = truncateToWidth(replaceTabs(singleLineText), availableWidth);
 
 		// Add horizontal padding
 		const leftPadding = padding(this.#paddingX);
@@ -77,6 +78,7 @@ export class TruncatedText implements Component {
 		}
 
 		this.#cachedWidth = width;
+		this.#cachedWidthEpoch = getWidthConfigEpoch();
 		this.#cachedLines = result;
 		return result;
 	}

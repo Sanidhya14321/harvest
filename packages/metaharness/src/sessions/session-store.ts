@@ -156,7 +156,7 @@ export class SessionStore {
 	list(filter: HarnessSessionListFilter = {}): HarnessSession[] {
 		let sql = `SELECT * FROM harness_sessions`;
 		const clauses: string[] = [];
-		const args: unknown[] = [];
+		const args: string[] = [];
 		if (filter.run) {
 			clauses.push(`run = ?`);
 			args.push(filter.run);

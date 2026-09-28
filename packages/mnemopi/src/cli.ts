@@ -398,3 +398,21 @@ if (import.meta.main) {
 	const code = await runCli();
 	process.exit(code);
 }
+
+function enforcePrivateDir(dir: string): void {
+	if (process.platform === "win32") return;
+	try {
+		chmodSync(dir, 0o700);
+	} catch {
+		// Ignore if cannot chmod
+	}
+}
+
+function enforcePrivateFile(file: string): void {
+	if (process.platform === "win32") return;
+	try {
+		chmodSync(file, 0o600);
+	} catch {
+		// Ignore if cannot chmod
+	}
+}

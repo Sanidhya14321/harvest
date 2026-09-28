@@ -53,6 +53,8 @@ export interface LayaSubagentSelectionOptions {
 	readonly forcedAuto?: boolean;
 	readonly shadow?: boolean;
 	readonly agentDir?: string;
+	/** Parent abort signal; an aborted signal settles immediately to a fallback. */
+	readonly signal?: AbortSignal;
 }
 
 export interface SubagentOutcome {
@@ -151,6 +153,12 @@ export async function selectSubagentWithLaya(
 		DEFAULT_SUBAGENT_SELECTION_CONFIDENCE_THRESHOLD;
 	const threshold = options.confidenceThreshold ?? configuredThreshold;
 
+	// An already-aborted parent settles immediately to a fallback without
+	// touching the sidecar — the caller is gone and the decision is moot.
+	if (options.signal?.aborted) {
+		return createFallbackResult(defaultAgent, threshold, "operation_cancelled", startTime, traceId);
+	}
+
 	// Check if Laya or subagent selection is disabled
 	if (process.env.LAYA_ENABLED === "false" || process.env.LAYA_SUBAGENT_SELECTION === "false") {
 		return createFallbackResult(defaultAgent, threshold, "laya_subagent_selection_disabled_by_env", startTime, traceId);
@@ -222,6 +230,7 @@ export async function selectSubagentWithLaya(
 		callSite: "subagent_selection",
 		sessionId: options.sessionId,
 		timeoutMs,
+		signal: options.signal,
 	});
 
 	const latencyMs = performance.now() - startTime;

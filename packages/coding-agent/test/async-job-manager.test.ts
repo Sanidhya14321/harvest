@@ -823,6 +823,63 @@ describe("AsyncJobManager", () => {
 		await expect(reap).resolves.toBe(true);
 		expect(manager.getJob("hung-1")?.status).toBe("cancelled");
 	});
+
+	test("a cancelled job keeps its slot until the run settles", async () => {
+		const manager = new AsyncJobManager({ retentionMs: 0, maxRunningJobs: 1 });
+		const gate = Promise.withResolvers<void>();
+		const jobId = manager.register(
+			"bash",
+			"slow",
+			async () => {
+				await gate.promise;
+				return "late";
+			},
+			{ id: "slow" },
+		);
+		expect(manager.cancel(jobId)).toBe(true);
+		// Still unsettled: the slot stays held even with retentionMs: 0, so no
+		// over-admission while the cancelled process runs.
+		expect(manager.atCapacity).toBe(true);
+		expect(() => manager.register("bash", "next", async () => "x")).toThrow(/Background job limit/);
+		gate.resolve();
+		await manager.getJob(jobId)?.promise;
+		// Settled: retention eviction frees the slot and registration works again.
+		await waitForJobEviction(manager, jobId);
+		expect(manager.atCapacity).toBe(false);
+		expect(manager.register("bash", "next", async () => "x")).toBe("bg_1");
+		await manager.dispose();
+	});
+
+	test("filtered delivery drain respects the concurrent delivery cap", async () => {
+		const manager = new AsyncJobManager({ retentionMs: 60_000 });
+		const gate = Promise.withResolvers<void>();
+		let blockerCalls = 0;
+		manager.registerDeliverySink("blocker", async () => {
+			blockerCalls++;
+			await gate.promise;
+		});
+		const otherCalls: string[] = [];
+		manager.registerDeliverySink("other", async jobId => {
+			otherCalls.push(jobId);
+		});
+		for (let i = 0; i < 16; i++) {
+			manager.register("bash", `blocker-${i}`, async () => `b${i}`, { ownerId: "blocker" });
+		}
+		await waitForCondition(() => blockerCalls === 16);
+		manager.register("bash", "other-job", async () => "other-done", { ownerId: "other" });
+		// All 16 delivery slots are held by blocked sinks: the filtered path
+		// must wait, not bypass the cap.
+		await expect(manager.drainDeliveries({ filter: { ownerId: "other" }, timeoutMs: 200 })).resolves.toBe(
+			false,
+		);
+		expect(otherCalls).toHaveLength(0);
+		gate.resolve();
+		await expect(manager.drainDeliveries({ filter: { ownerId: "other" }, timeoutMs: 5_000 })).resolves.toBe(
+			true,
+		);
+		expect(otherCalls).toEqual(["other-job"]);
+		await manager.dispose();
+	});
 });
 
 describe("AsyncJobManager smart poll-wait escalation", () => {

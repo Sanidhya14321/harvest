@@ -851,6 +851,10 @@ export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServe
 			`Unauthenticated auth-gateway cannot bind to non-loopback host '${bind.hostname}'. Either configure bearerTokens or bind to a loopback address (127.0.0.1 or localhost).`,
 		);
 	}
+	// Open (no-auth/bench) mode omits the wildcard CORS origin so browsers
+	// can't use the gateway as a public cross-origin API. /healthz stays
+	// reachable with or without auth (see below).
+	const corsOpts = { authenticated: tokens.size > 0 };
 	const version = opts.version;
 
 	const server = Bun.serve({
@@ -864,51 +868,51 @@ export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServe
 			// preflights pre-authentication and a 401 here breaks the actual
 			// request before the bearer is ever attached.
 			if (req.method === "OPTIONS") {
-				return new Response(null, { status: 204, headers: corsHeaders(req) });
+				return new Response(null, { status: 204, headers: corsHeaders(req, corsOpts) });
 			}
 			try {
 				if (req.method === "GET" && pathname === "/healthz") {
-					return withCors(json(200, { ok: true, version }), req);
+					return withCors(json(200, { ok: true, version }), req, corsOpts);
 				}
 				if (!isAuthorized(req, tokens)) {
 					logger.info("auth-gateway request unauthorized", { method: req.method, path: pathname, peer });
-					return withCors(json(401, { error: "unauthorized" }), req);
+					return withCors(json(401, { error: "unauthorized" }), req, corsOpts);
 				}
 
 				// Aggregated usage — backed by AuthStorage's 5-min per-credential cache.
 				// Same shape as the broker's `/v1/usage`, so widget/llm-git speak to either with the
 				// same client struct.
 				if (req.method === "GET" && pathname === "/v1/usage") {
-					return withCors(await handleUsage(opts.storage, req.signal), req);
+					return withCors(await handleUsage(opts.storage, req.signal), req, corsOpts);
 				}
 
 				// Per-credential auth probe — diagnoses which row in a multi-account
 				// pool is producing 401s. Aggregated `/v1/usage` silently drops failed
 				// credentials, so we need a separate endpoint that captures errors.
 				if (req.method === "GET" && pathname === "/v1/credentials/check") {
-					return withCors(await handleCredentialsCheck(opts.storage, req.signal), req);
+					return withCors(await handleCredentialsCheck(opts.storage, req.signal), req, corsOpts);
 				}
 
 				// Provider-format dispatch.
 				const formatRoute = FORMAT_ROUTES[pathname];
 				if (formatRoute && req.method === "POST") {
-					return withCors(await handleFormatEndpoint(formatRoute, opts, req, peer), req);
+					return withCors(await handleFormatEndpoint(formatRoute, opts, req, peer), req, corsOpts);
 				}
 
 				// Pi-native fast path. Same auth + provider plumbing as the
 				// foreign-wire routes, just without the wire-format translation.
 				if (req.method === "POST" && pathname === "/v1/pi/stream") {
-					return withCors(await handlePiNative(opts, req, peer), req);
+					return withCors(await handlePiNative(opts, req, peer), req, corsOpts);
 				}
 
 				// Model catalog.
 				if (req.method === "GET" && pathname === "/v1/models") {
-					return withCors(handleModelsList(opts), req);
+					return withCors(handleModelsList(opts), req, corsOpts);
 				}
 
 				// Route-table miss: no format module to defer to, so we emit a
 				// plain JSON 404 rather than guessing at a protocol-specific envelope.
-				return withCors(json(404, { error: `No route: ${req.method} ${pathname}` }), req);
+				return withCors(json(404, { error: `No route: ${req.method} ${pathname}` }), req, corsOpts);
 			} catch (error) {
 				logger.error("auth-gateway handler crashed", {
 					method: req.method,
@@ -916,7 +920,7 @@ export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServe
 					peer,
 					error: String(error),
 				});
-				return withCors(json(500, { error: "internal error" }), req);
+				return withCors(json(500, { error: "internal error" }), req, corsOpts);
 			}
 		},
 		// Max-out Bun's idle timeout. Long thinking-budget calls can sit idle

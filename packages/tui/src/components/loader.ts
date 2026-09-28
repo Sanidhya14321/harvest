@@ -74,10 +74,11 @@ export class Loader extends Text {
 			this.#layoutSource = source;
 			this.#layout = source.map(line => {
 				const clamped = visibleWidth(line) > width ? sliceByColumn(line, 0, width, true) : line;
-				const body = clamped.slice(paddingX);
+				const leading = sliceByColumn(clamped, 0, paddingX, true);
+				const body = sliceByColumn(clamped, paddingX, visibleWidth(clamped) - paddingX, true);
 				const content = body.trimEnd();
 				return {
-					leading: clamped.slice(0, paddingX),
+					leading,
 					content,
 					trailing: body.slice(content.length),
 				};

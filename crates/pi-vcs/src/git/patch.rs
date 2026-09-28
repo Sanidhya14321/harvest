@@ -1269,7 +1269,7 @@ fn augment_patch_sources(
 			continue;
 		}
 		let mode = source_mode.or(target_mode).unwrap_or(Mode::FILE);
-		if let Some((bytes, mode)) = read_worktree_entry(&repo.root().join(path), mode)? {
+		if let Some((bytes, mode)) = read_worktree_entry(repo.root(), &repo.root().join(path), mode)? {
 			let id = gix_repo
 				.write_blob(bytes)
 				.map_err(|err| Error::backend("git hash patch source", err))?
@@ -1288,7 +1288,7 @@ fn tracked_worktree_map(
 	let mut map = BTreeMap::new();
 	for (path, entry) in index {
 		let absolute = repo.root().join(path);
-		if let Some((bytes, mode)) = read_worktree_entry(&absolute, entry.mode)? {
+		if let Some((bytes, mode)) = read_worktree_entry(repo.root(), &absolute, entry.mode)? {
 			let id = gix_repo
 				.write_blob(bytes)
 				.map_err(|err| Error::backend("git hash worktree blob", err))?
@@ -1334,7 +1334,7 @@ fn untracked_worktree_map(
 			continue;
 		}
 		let absolute = repo.root().join(&path);
-		if let Some((bytes, mode)) = read_worktree_entry(&absolute, Mode::FILE)? {
+		if let Some((bytes, mode)) = read_worktree_entry(repo.root(), &absolute, Mode::FILE)? {
 			let id = gix_repo
 				.write_blob(bytes)
 				.map_err(|err| Error::backend("git hash untracked blob", err))?
@@ -1345,7 +1345,44 @@ fn untracked_worktree_map(
 	Ok(map)
 }
 
-fn read_worktree_entry(path: &Path, index_mode: Mode) -> Result<Option<(Vec<u8>, Mode)>> {
+/// Reject when any component of `path`'s parent chain at or below
+/// `repo_root` is a symlink. The final component itself is the caller's
+/// business (link entries are read as link text, never followed); every
+/// ancestor must be a real directory so the read cannot be redirected — by a
+/// crafted patch path or an untracked link farm — onto outside bytes.
+fn assert_no_symlink_ancestors(repo_root: &Path, path: &Path) -> Result<()> {
+	let Ok(rel) = path.strip_prefix(repo_root) else {
+		return Err(ApplyFailure::Invalid(format!(
+			"worktree path escapes repo root: {}",
+			path.display()
+		))
+		.into());
+	};
+	let Some(parent) = rel.parent() else {
+		return Ok(());
+	};
+	let mut current = repo_root.to_path_buf();
+	for comp in parent.components() {
+		current.push(comp);
+		if std::fs::symlink_metadata(&current)
+			.is_ok_and(|m| m.file_type().is_symlink())
+		{
+			return Err(ApplyFailure::Invalid(format!(
+				"worktree path parent is a symlink: {}",
+				current.display()
+			))
+			.into());
+		}
+	}
+	Ok(())
+}
+
+fn read_worktree_entry(
+	repo_root: &Path,
+	path: &Path,
+	index_mode: Mode,
+) -> Result<Option<(Vec<u8>, Mode)>> {
+	assert_no_symlink_ancestors(repo_root, path)?;
 	let metadata = match fs::symlink_metadata(path) {
 		Ok(metadata) => metadata,
 		Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -1365,8 +1402,15 @@ fn read_worktree_entry(path: &Path, index_mode: Mode) -> Result<Option<(Vec<u8>,
 	if !metadata.is_file() {
 		return Ok(None);
 	}
+	// Re-check before the following read so a link swapped in after the first
+	// check cannot redirect it; on unix the open itself refuses links too.
+	assert_no_symlink_ancestors(repo_root, path)?;
 	let mode = worktree_file_mode(&metadata, index_mode);
-	Ok(Some((fs::read(path)?, mode)))
+	#[cfg(unix)]
+	let bytes = read_file_no_follow(path)?;
+	#[cfg(not(unix))]
+	let bytes = fs::read(path)?;
+	Ok(Some((bytes, mode)))
 }
 
 #[cfg(unix)]
@@ -1497,7 +1541,11 @@ fn write_worktree_map(
 	Ok(())
 }
 
-fn validate_repo_worktree_path(repo_root: &Path, rel_path: &str) -> Result<PathBuf> {
+fn validate_repo_worktree_path(
+	repo_root: &Path,
+	rel_path: &str,
+	replace_link: bool,
+) -> Result<PathBuf> {
 	validate_repo_path(rel_path).map_err(ApplyFailure::into_error)?;
 	let real_root = repo_root.canonicalize().unwrap_or_else(|_| repo_root.to_path_buf());
 	let mut current = repo_root.to_path_buf();
@@ -1505,37 +1553,110 @@ fn validate_repo_worktree_path(repo_root: &Path, rel_path: &str) -> Result<PathB
 	if let Some(parent) = path_buf.parent() {
 		for comp in parent.components() {
 			current.push(comp);
-			let is_link = std::fs::symlink_metadata(&current)
-				.map(|m| m.file_type().is_symlink())
-				.unwrap_or(false);
-			if is_link {
-				let resolved = current.canonicalize()?;
-				if !resolved.starts_with(&real_root) {
-					return Err(ApplyFailure::Invalid(format!(
-						"patch path parent symlink resolves outside repo root: {}",
-						current.display()
-					))
-					.into());
-				}
-			}
-		}
-	}
-	let target = repo_root.join(rel_path);
-	let is_target_link = std::fs::symlink_metadata(&target)
-		.map(|m| m.file_type().is_symlink())
-		.unwrap_or(false);
-	if is_target_link {
-		if let Ok(resolved) = target.canonicalize() {
-			if !resolved.starts_with(&real_root) {
+			// Any symlink in the parent chain redirects the effective target
+			// — including in-repo ones such as `a -> .git/` — so every link
+			// fails here instead of only outside-root escapes.
+			if std::fs::symlink_metadata(&current)
+				.is_ok_and(|m| m.file_type().is_symlink())
+			{
 				return Err(ApplyFailure::Invalid(format!(
-					"patch target symlink resolves outside repo root: {}",
-					target.display()
+					"patch path parent is a symlink: {}",
+					current.display()
 				))
 				.into());
 			}
 		}
 	}
+	let target = repo_root.join(rel_path);
+	if std::fs::symlink_metadata(&target)
+		.is_ok_and(|m| m.file_type().is_symlink())
+	{
+		// Replacing the link itself (`remove` + recreate) never follows it,
+		// but writing file bytes through it would land on the link target.
+		if !replace_link {
+			return Err(ApplyFailure::Invalid(format!(
+				"patch target is a symlink: {}",
+				target.display()
+			))
+			.into());
+		}
+		if let Ok(resolved) = target.canonicalize()
+			&& !resolved.starts_with(&real_root)
+		{
+			return Err(ApplyFailure::Invalid(format!(
+				"patch target symlink resolves outside repo root: {}",
+				target.display()
+			))
+			.into());
+		}
+	}
 	Ok(target)
+}
+
+/// Create missing parent directories component by component without
+/// following symlinks: any symlink (or non-directory) met along the way fails
+/// the patch instead of redirecting the write. `rel_path` already passed
+/// [`validate_repo_path`], so only normal/curdir components occur below.
+fn create_parent_dirs_no_follow(repo_root: &Path, rel_path: &str) -> Result<()> {
+	let Some(parent) = Path::new(rel_path).parent() else {
+		return Ok(());
+	};
+	let mut current = repo_root.to_path_buf();
+	for comp in parent.components() {
+		current.push(comp);
+		match std::fs::symlink_metadata(&current) {
+			Ok(meta) if meta.file_type().is_symlink() => {
+				return Err(ApplyFailure::Invalid(format!(
+					"patch path parent is a symlink: {}",
+					current.display()
+				))
+				.into());
+			},
+			Ok(meta) if meta.is_dir() => {},
+			Ok(_) => {
+				return Err(ApplyFailure::Invalid(format!(
+					"patch path parent is not a directory: {}",
+					current.display()
+				))
+				.into());
+			},
+			Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+				std::fs::create_dir(&current)?;
+			},
+			Err(err) => return Err(err.into()),
+		}
+	}
+	Ok(())
+}
+
+/// Write bytes without following a final-component symlink (unix): the open
+/// fails instead of landing on the link target, closing the check-to-write
+/// race on the last component. Parent chains are validated separately.
+#[cfg(unix)]
+fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<()> {
+	use std::os::unix::fs::OpenOptionsExt;
+	let mut file = std::fs::OpenOptions::new()
+		.write(true)
+		.create(true)
+		.truncate(true)
+		.custom_flags(libc::O_NOFOLLOW)
+		.open(path)?;
+	std::io::Write::write_all(&mut file, bytes)?;
+	Ok(())
+}
+
+/// Read bytes without following a final-component symlink (unix): a link
+/// swapped in after validation fails the open instead of leaking its target.
+#[cfg(unix)]
+fn read_file_no_follow(path: &Path) -> std::io::Result<Vec<u8>> {
+	use std::os::unix::fs::OpenOptionsExt;
+	let mut file = std::fs::OpenOptions::new()
+		.read(true)
+		.custom_flags(libc::O_NOFOLLOW)
+		.open(path)?;
+	let mut bytes = Vec::new();
+	std::io::Read::read_to_end(&mut file, &mut bytes)?;
+	Ok(bytes)
 }
 
 fn write_worktree_entry(
@@ -1544,10 +1665,12 @@ fn write_worktree_entry(
 	entry: &FileEntry,
 	gix_repo: &gix::Repository,
 ) -> Result<()> {
-	let absolute = validate_repo_worktree_path(repo.root(), path)?;
-	if let Some(parent) = absolute.parent() {
-		fs::create_dir_all(parent)?;
-	}
+	let replace_link = entry.mode == Mode::SYMLINK;
+	let _ = validate_repo_worktree_path(repo.root(), path, replace_link)?;
+	create_parent_dirs_no_follow(repo.root(), path)?;
+	// Re-check after creating parents: a concurrent swap between validation
+	// and mkdir must not redirect the write below.
+	let absolute = validate_repo_worktree_path(repo.root(), path, replace_link)?;
 	let bytes = blob_bytes(gix_repo, entry.id)?;
 	if entry.mode == Mode::SYMLINK {
 		let _ = fs::remove_file(&absolute);
@@ -1556,10 +1679,18 @@ fn write_worktree_entry(
 			use std::os::unix::{ffi::OsStrExt, fs::symlink};
 			symlink(std::ffi::OsStr::from_bytes(&bytes), &absolute)?;
 		}
+		// Without symlink privileges there is no link to replace: the remove
+		// above already cleared any dangling link so the write below cannot
+		// follow it.
 		#[cfg(not(unix))]
-		fs::write(&absolute, bytes)?;
+		{
+			fs::write(&absolute, bytes)?;
+		}
 		return Ok(());
 	}
+	#[cfg(unix)]
+	write_file_no_follow(&absolute, &bytes)?;
+	#[cfg(not(unix))]
 	fs::write(&absolute, bytes)?;
 	#[cfg(unix)]
 	{
@@ -1575,7 +1706,10 @@ fn write_worktree_entry(
 }
 
 fn remove_worktree_path(repo: &GitRepo, path: &str) -> Result<()> {
-	let absolute = validate_repo_worktree_path(repo.root(), path)?;
+	// `remove_file` on a final-component symlink removes the link itself
+	// without following it, so link replacement is allowed; symlinked parents
+	// are still rejected by validation.
+	let absolute = validate_repo_worktree_path(repo.root(), path, true)?;
 	match fs::remove_file(&absolute) {
 		Ok(()) => {},
 		Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),

@@ -41,6 +41,20 @@ Returns readiness status, loaded model identity, device, and active port.
 ### `POST /v1/decide`
 Executes one or more structured questions against the provided `state`.
 
+Authentication: `/v1/decide` requires the per-process secret in the
+`x-laya-token` header (or `Authorization: Bearer <token>`). The server logs the
+token file location at startup (default `~/.harvest/laya-token`, mode `0600`);
+set `LAYA_TOKEN` to use a fixed secret (the TS client sends it from its own
+`LAYA_TOKEN` env). Read-only `GET /health` and `GET /v1/hardware` stay
+unauthenticated. Set `LAYA_DISABLE_AUTH=1` only for local tests.
+Unauthenticated or over-limit requests get `401`/`400`/`413`, all of which the
+TS client treats as fallback (tool gating fails CLOSED on fallback).
+
+Request limits (enforced before tokenization): 64 questions max, 500k state
+chars aggregate, 100k chars per question chunk, 16k chars per question
+definition, 4k chars instructions, ~70k estimated input tokens aggregate.
+Inference runs at most 2 concurrent (`LAYA_INFERENCE_TIMEOUT_S`, default 120s).
+
 **Request Body:**
 ```json
 {
@@ -70,6 +84,8 @@ Executes one or more structured questions against the provided `state`.
 
 **Audit Logging:**
 Every request and computed decision is appended to `decision-sidecar/decisions.jsonl` for continuous observability and offline calibration.
+Logged fields are length-capped (state kept to a 200-char snippet, instructions to 500 chars) and the log rotates size-based (`decisions.jsonl.1..N`).
+Requests may pass optional per-question `ground_truth` labels (`question_id -> 0/1`) which are stored in the log record (default `null`) for later calibration.
 
 ---
 
@@ -83,13 +99,21 @@ pip install -r requirements.txt
 ### Running the Server
 ```sh
 python -m uvicorn server:app --host 127.0.0.1 --port 8177
+# or
+python server.py --host 127.0.0.1 --port 8177
+# (positional `python server.py 127.0.0.1 8177` still works)
 ```
 
 ### Environment Variables
 - `LAYA_HOST` (default: `127.0.0.1`) — Host interface binding.
 - `LAYA_PORT` (default: `8177`) — Port binding.
-- `LAYA_DEVICE` — Optional PyTorch device override (`cpu`, `cuda`, `mps`).
+- `LAYA_DEVICE` — Optional PyTorch device override (`cpu`, `cuda`, `mps`); invalid values fall back to auto-detection with a warning.
 - `LAYA_LOG_DIR` — Custom directory for `decisions.jsonl`.
+- `LAYA_TOKEN` — Fixed sidecar secret (otherwise generated per-process). TS client sends it as `x-laya-token`.
+- `LAYA_TOKEN_FILE` (default: `~/.harvest/laya-token`) — Where the generated secret is persisted (0600).
+- `LAYA_DISABLE_AUTH=1` — Disable `/v1/decide` auth (tests only).
+- `LAYA_INFERENCE_TIMEOUT_S` (default: `120`) — Wall-clock inference guard.
+- `LAYA_LOG_MAX_BYTES` (default: `10485760`) / `LAYA_LOG_BACKUP_COUNT` (default: `3`) — Decision-log rotation.
 
 ---
 
@@ -99,6 +123,10 @@ Laya models can exhibit overconfidence out-of-the-box. The sidecar includes a de
 
 ```sh
 python calibration.py --decisions decisions.jsonl --out calibration_params.json
+# Synthetic bootstrap (never touches the real params file by default):
+python calibration.py --synthetic
+# Overwrite an existing params file (previous content kept as .bak):
+python calibration.py --decisions decisions.jsonl --out calibration_params.json --force
 ```
 
 **Calibration Pipeline:**
@@ -107,3 +135,11 @@ python calibration.py --decisions decisions.jsonl --out calibration_params.json
 3. Fits an optimal temperature parameter ($T$) per call site via negative log-likelihood minimization.
 4. Generates calibrated probabilities: $\hat{p} = \sigma(z / T)$.
 5. Saves learned parameters to `calibration_params.json`, which the server automatically loads at startup.
+
+**Provenance & safety:** saved params carry a top-level `_provenance` marker
+(`synthetic: true/false` plus per-site sample counts) so synthetic bootstraps
+are never mistaken for measured calibrations. `--synthetic` writes to
+`calibration_params.synthetic.json` by default; overwriting any existing params
+file requires `--force` (previous content kept as `<file>.bak`). Note: the
+shipped `calibration_params.json` is a synthetic bootstrap (150 samples/site,
+seed 42) until real `ground_truth`-labelled logs are collected.

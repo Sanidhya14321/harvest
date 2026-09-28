@@ -325,18 +325,26 @@ fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, Metadata>) -> IsoRe
 		let entry =
 			entry.map_err(|err| IsoError::other(format!("dir entry in {}: {err}", dir.display())))?;
 		let path = entry.path();
-		let meta = entry
-			.metadata()
-			.map_err(|err| IsoError::other(format!("metadata {}: {err}", path.display())))?;
-		if meta.is_symlink() {
+		// Never follow symlinks: `file_type` (like `symlink_metadata`)
+		// reports the link itself, while `metadata()` follows it — which made
+		// the `is_symlink` check below dead code and recursed into symlinked
+		// directories, escaping both roots.
+		let file_type = entry
+			.file_type()
+			.map_err(|err| IsoError::other(format!("file_type {}: {err}", path.display())))?;
+		if file_type.is_symlink() {
+			let meta = std::fs::symlink_metadata(&path)
+				.map_err(|err| IsoError::other(format!("metadata {}: {err}", path.display())))?;
 			let rel = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
 			out.insert(rel, meta);
 			continue;
 		}
-		if meta.is_dir() {
+		if file_type.is_dir() {
 			walk(root, &path, out)?;
 			continue;
 		}
+		let meta = std::fs::symlink_metadata(&path)
+			.map_err(|err| IsoError::other(format!("metadata {}: {err}", path.display())))?;
 		let rel = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
 		out.insert(rel, meta);
 	}
@@ -428,4 +436,107 @@ fn render_unified(rel: &Path, op: ChangeKind, old: &str, new: &str) -> String {
 
 fn looks_binary(bytes: &[u8]) -> bool {
 	bytes.iter().take(8192).any(|&b| b == 0)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Hermetic temp root removed on drop (no new dev-dependencies).
+	struct TempGuard {
+		path: PathBuf,
+	}
+
+	impl TempGuard {
+		fn new(tag: &str) -> Self {
+			static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+			let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+			let path =
+				std::env::temp_dir().join(format!("pi-iso-diff-{tag}-{}-{id}", std::process::id()));
+			if path.exists() {
+				std::fs::remove_dir_all(&path).expect("clear stale guard dir");
+			}
+			std::fs::create_dir_all(&path).expect("create guard dir");
+			Self { path }
+		}
+
+		fn lower(&self) -> PathBuf {
+			self.path.join("lower")
+		}
+
+		fn merged(&self) -> PathBuf {
+			self.path.join("merged")
+		}
+	}
+
+	impl Drop for TempGuard {
+		fn drop(&mut self) {
+			let _ = std::fs::remove_dir_all(&self.path);
+		}
+	}
+
+	fn symlink(target: &Path, link: &Path) {
+		#[cfg(unix)]
+		std::os::unix::fs::symlink(target, link).expect("create symlink");
+		#[cfg(windows)]
+		if target.is_dir() {
+			std::os::windows::fs::symlink_dir(target, link).expect("create dir symlink");
+		} else {
+			std::os::windows::fs::symlink_file(target, link).expect("create file symlink");
+		}
+	}
+
+	#[test]
+	fn walk_never_recurses_into_symlinked_dirs() {
+		let guard = TempGuard::new("noderecurse");
+		let lower = guard.lower();
+		let merged = guard.merged();
+		std::fs::create_dir_all(merged.join("real")).unwrap();
+		std::fs::write(merged.join("real/inner.txt"), "inner\n").unwrap();
+		std::fs::write(merged.join("keep.txt"), "keep\n").unwrap();
+		symlink(&merged.join("real"), &merged.join("linkdir"));
+		// A self-loop must terminate instead of recursing forever.
+		symlink(Path::new("."), &merged.join("selfloop"));
+
+		let diff = walk_diff_blocking(&lower, &merged).expect("walk diff");
+		let mut paths: Vec<PathBuf> = diff.files.iter().map(|f| f.path.clone()).collect();
+		paths.sort();
+		assert_eq!(
+			paths,
+			vec![
+				PathBuf::from("keep.txt"),
+				PathBuf::from("linkdir"),
+				PathBuf::from("real/inner.txt"),
+				PathBuf::from("selfloop"),
+			],
+			"symlinked dirs are listed as links, never recursed: {paths:?}"
+		);
+	}
+
+	#[test]
+	fn symlink_entries_carry_link_text_without_following() {
+		let guard = TempGuard::new("nofollow");
+		let lower = guard.lower();
+		let merged = guard.merged();
+		std::fs::create_dir_all(&lower).unwrap();
+		std::fs::create_dir_all(&merged).unwrap();
+		let outside = guard.path.join("outside");
+		std::fs::create_dir_all(&outside).unwrap();
+		std::fs::write(outside.join("secret.txt"), "S3CR3T-outside-bytes\n").unwrap();
+		symlink(&outside.join("secret.txt"), &merged.join("evil"));
+
+		let diff = walk_diff_blocking(&lower, &merged).expect("walk diff");
+		assert_eq!(diff.files.len(), 1, "only the link itself is reported");
+		let entry = &diff.files[0];
+		assert_eq!(entry.path, PathBuf::from("evil"));
+		let text = entry.diff.clone().expect("link diff is text");
+		assert!(
+			!text.contains("S3CR3T-outside-bytes"),
+			"outside file bytes must never surface: {text}"
+		);
+		assert!(
+			text.contains("secret.txt"),
+			"link-target text is the representation: {text}"
+		);
+	}
 }

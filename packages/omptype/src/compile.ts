@@ -219,7 +219,7 @@ class Builder {
 				const checks = [`typeof ${v}==="object"`, `${v}!==null`];
 				for (const p of node.props) {
 					const av = this.access(v, p.key);
-					const present = `${this.lit(p.key)} in ${v}`;
+					const present = `own.call(${v},${this.lit(p.key)})`;
 					const predicate = this.predicate(p.val, av);
 					checks.push(
 						p.opt || p.hasDefault
@@ -422,7 +422,7 @@ class Builder {
 					)}}else{`,
 				);
 				for (const prop of node.props) {
-					const present = `${this.lit(prop.key)} in ${v}`;
+					const present = `own.call(${v},${this.lit(prop.key)})`;
 					const propSegs: PathSeg[] = [...segs, { s: prop.key }];
 					if (prop.opt || prop.hasDefault) {
 						this.push(`if(${present}){`);
@@ -873,7 +873,7 @@ class Builder {
 				const fresh = node.extras === "delete" && node.index === undefined;
 				this.push(fresh ? `const ${object}={};` : `const ${object}={...${v}};`);
 				for (const prop of node.props) {
-					const present = `${this.lit(prop.key)} in ${v}`;
+					const present = `own.call(${v},${this.lit(prop.key)})`;
 					const propSegs: PathSeg[] = [...segs, { s: prop.key }];
 					const input = this.access(v, prop.key);
 					const output = this.access(object, prop.key);
@@ -1012,7 +1012,7 @@ class Builder {
 				this.push(`const ${object}=${v};if(typeof ${object}!=="object"||${object}===null)return false;`);
 				for (const prop of node.props) {
 					const value = this.next("p");
-					const present = `${this.lit(prop.key)} in ${object}`;
+					const present = `own.call(${object},${this.lit(prop.key)})`;
 					this.push(`const ${value}=${this.access(object, prop.key)};`);
 					if (prop.opt || prop.hasDefault) {
 						if (rejectsUndefined(prop.val)) {

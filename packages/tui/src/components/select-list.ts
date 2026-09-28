@@ -191,7 +191,7 @@ export class SelectList implements Component, MouseRoutable {
 			if (showSearchStatus) {
 				lines.push(this.#renderStatusLine(width));
 			}
-			lines.push(this.theme.noMatch("  No matching items"));
+			lines.push(truncateToWidth(this.theme.noMatch("  No matching items"), width, Ellipsis.Omit));
 			return lines;
 		}
 
@@ -374,7 +374,7 @@ export class SelectList implements Component, MouseRoutable {
 		const cap = this.layout.maxDescriptionRows;
 		if (cap === undefined || cap < 1 || wrapped.length <= cap) return wrapped;
 		const kept = wrapped.slice(0, cap);
-		kept[cap - 1] = truncateToWidth(`${kept[cap - 1]} …`, width, Ellipsis.Unicode);
+		kept[cap - 1] = truncateToWidth(kept[cap - 1], width, Ellipsis.Unicode);
 		return kept;
 	}
 
@@ -437,8 +437,9 @@ export class SelectList implements Component, MouseRoutable {
 		const prefix = isSelected ? `${cursor} ` : padding(visibleWidth(cursor) + 1);
 		// Icon column: every row reserves the same width so labels stay aligned
 		// whether or not an individual item carries an icon.
-		const iconWidth = item.icon ? visibleWidth(item.icon) : 0;
-		const iconCell = iconColumnWidth > 0 ? (item.icon ?? "") + padding(iconColumnWidth - iconWidth + 1) : "";
+		const sanitizedIcon = item.icon ? sanitizeSingleLine(item.icon) : undefined;
+		const iconWidth = sanitizedIcon ? visibleWidth(sanitizedIcon) : 0;
+		const iconCell = iconColumnWidth > 0 ? (sanitizedIcon ?? "") + padding(iconColumnWidth - iconWidth + 1) : "";
 		const prefixWidth = visibleWidth(prefix) + (iconColumnWidth > 0 ? iconColumnWidth + 1 : 0);
 		const descriptionSingleLine = item.description ? sanitizeSingleLine(item.description) : undefined;
 

@@ -35,6 +35,8 @@ const SOURCE_BIN_MOUNT = "/opt/omp/bin";
 
 /** Host address containers see on Apple Container's vmnet (bridge) network. */
 const VMNET_HOST_IP = "192.168.64.1";
+/** Placeholder gateway token meaning "the gateway itself runs --no-auth" (bench default). */
+export const BENCH_DEFAULT_GATEWAY_TOKEN = "no-auth";
 const DOCKER_GATEWAY_URL = "http://host.docker.internal:4000";
 const VMNET_GATEWAY_URL = `http://${VMNET_HOST_IP}:4000`;
 /**
@@ -109,7 +111,7 @@ function defaultConfig(): Config {
 		jobsDir: path.join(REPO_ROOT, "runs", "harbor"),
 		jobName: null,
 		gatewayUrl: DOCKER_GATEWAY_URL,
-		gatewayToken: "no-auth",
+		gatewayToken: BENCH_DEFAULT_GATEWAY_TOKEN,
 		providers: [],
 		gateway: true,
 		webSearch: false,
@@ -1263,6 +1265,21 @@ function gatewayHealthOk(url: string): boolean {
 }
 
 /**
+ * Bench trust boundary for the vmnet forward below. With the default
+ * "no-auth" token the gateway itself runs unauthenticated on loopback and
+ * bench containers must reach it via the vmnet bridge address, so the
+ * forward stays open and bench containers keep working. With an explicit
+ * token, Authorization-less requests are NOT forwarded to the non-loopback
+ * bridge address — otherwise any vmnet peer could spend the operator's
+ * credentials through the forward.
+ */
+export function isVmnetForwardAuthorized(req: Request, gatewayToken: string): boolean {
+	if (gatewayToken === BENCH_DEFAULT_GATEWAY_TOKEN) return true;
+	const match = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
+	return match !== null && match !== undefined && match[1].trim() === gatewayToken;
+}
+
+/**
  * HTTP forward from the vmnet host address to the loopback-bound auth gateway.
  * Apple Container has no host.docker.internal: containers reach the host at
  * 192.168.64.1, but the pm2 gateway binds 127.0.0.1 only. The bridge interface
@@ -1284,6 +1301,9 @@ function startVmnetGatewayForward(cfg: Config): { stop(): void } | null {
 				port,
 				idleTimeout: 0,
 				fetch(req) {
+					if (!isVmnetForwardAuthorized(req, cfg.gatewayToken)) {
+						return new Response("unauthorized", { status: 401 });
+					}
 					const target = new URL(req.url);
 					target.hostname = "127.0.0.1";
 					return fetch(target, { method: req.method, headers: req.headers, body: req.body, redirect: "manual" });

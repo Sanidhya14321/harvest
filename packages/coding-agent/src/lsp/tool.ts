@@ -11,6 +11,7 @@ import { isEnoent, isFsError, logger, prompt, untilAborted } from "@harvest/pi-u
 import { type Theme, theme } from "../modes/theme/theme";
 import lspDescription from "../prompts/tools/lsp.md" with { type: "text" };
 import type { ToolSession } from "../tools";
+import { SecuritySandbox } from "../core/harvest/security";
 import { truncateForPrompt } from "../tools/approval";
 import { formatPathRelativeToCwd, resolveToCwd } from "../tools/path-utils";
 import { replaceTabs, shortenPath } from "../tools/render-utils";
@@ -486,9 +487,42 @@ export class LspTool implements AgentTool<typeof lspSchema, LspToolDetails, Them
 				};
 			}
 
+			// Workspace-jail the rename endpoints before touching the
+			// filesystem: resolveToCwd honors absolute paths, and the move plus
+			// the servers' reference edits below must stay inside the session
+			// root. Mutations run on the jailed resolved paths; labels keep the
+			// lexical paths.
+			const renameSandbox = new SecuritySandbox(this.session.cwd);
+			const sourceJail = renameSandbox.assertPathJailed(source);
+			if (!sourceJail.jailed) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Error: ${sourceJail.error ?? `rename source is outside workspace root: ${source}`}`,
+						},
+					],
+					details: { action, success: false, request: params },
+				};
+			}
+			const destJail = renameSandbox.assertPathJailed(dest);
+			if (!destJail.jailed) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Error: ${destJail.error ?? `rename destination is outside workspace root: ${dest}`}`,
+						},
+					],
+					details: { action, success: false, request: params },
+				};
+			}
+			const jailedSource = sourceJail.resolvedPath;
+			const jailedDest = destJail.resolvedPath;
+
 			let sourceStat: fs.Stats;
 			try {
-				sourceStat = await fs.promises.stat(source);
+				sourceStat = await fs.promises.stat(jailedSource);
 			} catch (err) {
 				// Only ENOENT means "missing". Reporting EACCES/ELOOP/EIO as a
 				// missing path sends the caller hunting the wrong problem — and
@@ -508,7 +542,7 @@ export class LspTool implements AgentTool<typeof lspSchema, LspToolDetails, Them
 			}
 
 			try {
-				await fs.promises.lstat(dest);
+				await fs.promises.lstat(jailedDest);
 				return {
 					content: [
 						{
@@ -535,7 +569,7 @@ export class LspTool implements AgentTool<typeof lspSchema, LspToolDetails, Them
 				}
 			}
 
-			const enumerated = await enumerateRenamePairs(source, dest);
+			const enumerated = await enumerateRenamePairs(jailedSource, jailedDest);
 			if (enumerated.exceeded) {
 				return {
 					content: [
@@ -569,8 +603,8 @@ export class LspTool implements AgentTool<typeof lspSchema, LspToolDetails, Them
 					relevantNames.add(name);
 				}
 			};
-			collectRelevant(source);
-			collectRelevant(dest);
+			collectRelevant(jailedSource);
+			collectRelevant(jailedDest);
 			for (const pair of pairs) {
 				collectRelevant(uriToFile(pair.oldUri));
 				collectRelevant(uriToFile(pair.newUri));
@@ -777,7 +811,18 @@ export class LspTool implements AgentTool<typeof lspSchema, LspToolDetails, Them
 			// Apply the reference edits and move as one unit: a failed move rolls
 			// the reference edits back so the source, destination, and every
 			// reference file are left unchanged.
-			await applyEditsThenRename(referenceEdits, source, dest);
+			// Jail the server-returned reference paths too, and run everything
+			// on jailed resolved paths.
+			const jailedReferences: RenameReferenceEdit[] = referenceEdits.map(ref => {
+				const refJail = renameSandbox.assertPathJailed(ref.filePath);
+				if (!refJail.jailed) {
+					throw new ToolError(
+						refJail.error ?? `LSP rename reference rejected: ${ref.filePath} is outside workspace root`,
+					);
+				}
+				return { filePath: refJail.resolvedPath, edits: ref.edits };
+			});
+			await applyEditsThenRename(jailedReferences, jailedSource, jailedDest);
 			summary.push(`  Renamed ${sourceLabel} → ${destLabel}`);
 
 			for (const [serverName, serverConfig] of servers) {

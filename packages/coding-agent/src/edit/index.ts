@@ -575,21 +575,29 @@ export class EditTool implements AgentTool<TInput> {
 	}
 
 	async #write(request: EditWriteRequest, signal?: AbortSignal): Promise<EditWriteResponse> {
-		// Realpath Workspace Jailing (Harvest Feature 3.14)
+		// Realpath Workspace Jailing (Harvest Feature 3.14): jail the source
+		// and the move destination BEFORE branching by operation (delete
+		// included), and run every filesystem mutation below on the jailed
+		// resolved paths so a swapped symlink cannot redirect the open.
+		// Display, notifications, snapshots, and cache keys keep the lexical
+		// request paths so in-workspace behavior is unchanged.
 		const sandbox = new SecuritySandbox(this.session.cwd);
 		const jailCheck = sandbox.assertPathJailed(request.path);
 		if (!jailCheck.jailed) {
 			throw new ToolError(jailCheck.error ?? `Path traversal rejected: ${request.path}`);
 		}
+		const sourcePath = jailCheck.resolvedPath;
+		let destPath: string | undefined;
 		if (request.moveTo) {
 			const moveJailCheck = sandbox.assertPathJailed(request.moveTo);
 			if (!moveJailCheck.jailed) {
 				throw new ToolError(moveJailCheck.error ?? `Path traversal rejected: ${request.moveTo}`);
 			}
+			destPath = moveJailCheck.resolvedPath;
 		}
 
 		if (request.op === "delete") {
-			await deleteFileWithFallback(request.path, Bun.file(request.path));
+			await deleteFileWithFallback(sourcePath, Bun.file(sourcePath));
 			if (this.session.enableLsp ?? true) {
 				await notifyWorkspaceWatchedFiles(
 					this.session.cwd,
@@ -614,12 +622,12 @@ export class EditTool implements AgentTool<TInput> {
 		}
 
 		if (request.op === "move") {
-			if (!request.moveTo) {
+			if (!request.moveTo || !destPath) {
 				throw new ToolError("Native edit move request omitted destination", { path: request.path });
 			}
-			await mkdirAllowingFallback(path.dirname(request.moveTo));
-			await writeFileWithFallback(request.moveTo, request.content);
-			await deleteFileWithFallback(request.path, Bun.file(request.path));
+			await mkdirAllowingFallback(path.dirname(destPath));
+			await writeFileWithFallback(destPath, request.content);
+			await deleteFileWithFallback(sourcePath, Bun.file(sourcePath));
 			if (this.session.enableLsp ?? true) {
 				await notifyWorkspaceWatchedFiles(
 					this.session.cwd,
@@ -655,29 +663,36 @@ export class EditTool implements AgentTool<TInput> {
 		let preWriteBytes: Uint8Array | undefined;
 		if (request.op === "update") {
 			try {
-				preWriteBytes = await Bun.file(request.path).bytes();
+				preWriteBytes = await Bun.file(sourcePath).bytes();
 			} catch (error) {
 				if (!isEnoent(error)) throw error;
 			}
 		} else if (request.op === "create") {
-			await mkdirAllowingFallback(path.dirname(request.path));
+			await mkdirAllowingFallback(path.dirname(sourcePath));
 		}
 
 		const diagnostics = await this.#writethrough(
-			request.path,
+			sourcePath,
 			request.content,
 			signal,
-			Bun.file(request.path),
+			Bun.file(sourcePath),
 			request.lspBatchId ? { id: request.lspBatchId, flush: request.flushLsp } : undefined,
-			destination => (destination === request.path ? this.#deferredDiagnostics.begin(request.path) : undefined),
+			destination => (destination === sourcePath ? this.#deferredDiagnostics.begin(sourcePath) : undefined),
 		);
+
+		// Re-validate after the write: an ancestor switched between the jail
+		// check and the commit would otherwise succeed silently.
+		const recheck = sandbox.recheckJailed(sourcePath);
+		if (!recheck.jailed) {
+			throw new ToolError(recheck.error ?? `Path traversal rejected: ${request.path}`);
+		}
 
 		if (preWriteBytes !== undefined) {
 			const requestedBytes = new TextEncoder().encode(request.content);
 			if (!bytesEqual(requestedBytes, preWriteBytes)) {
 				let postWriteBytes: Uint8Array | undefined;
 				try {
-					postWriteBytes = await Bun.file(request.path).bytes();
+					postWriteBytes = await Bun.file(sourcePath).bytes();
 				} catch (error) {
 					if (!isEnoent(error)) throw error;
 				}

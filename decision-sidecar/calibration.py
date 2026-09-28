@@ -191,7 +191,7 @@ class CalibrationManager:
             bak_path = self.params_path.with_name(self.params_path.name + ".bak")
             try:
                 shutil.copy2(self.params_path, bak_path)
-            except Exception:
+            except OSError:
                 pass
         with open(self.params_path, "w", encoding="utf-8") as f:
             json.dump(self.params, f, indent=2)

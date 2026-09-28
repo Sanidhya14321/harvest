@@ -296,6 +296,7 @@ export async function resolveEffectiveSubagentPolicy(
 			context: request.context,
 			sessionId: (request.session as { sessionId?: string }).sessionId,
 			settings: request.session.settings,
+			signal: request.signal,
 		});
 		layaTraceId = layaDecision.traceId;
 		if (layaDecision.decisionType === "auto_pick") {

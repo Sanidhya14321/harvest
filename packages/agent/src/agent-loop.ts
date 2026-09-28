@@ -1590,6 +1590,34 @@ interface PreparedProviderCall {
 	ownedDialect: Dialect | undefined;
 }
 
+/**
+ * Race a signal-ignoring preparation phase (context transforms, LLM
+ * conversion) against the turn signal so a hung hook cannot block abort:
+ * `convertToLlm`/hook implementations are not required to observe the signal,
+ * and without this `^C` waits out the hung phase. The late hook outcome is
+ * discarded — the loop takes the abort path instead. No timeout is added on
+ * top: slow-but-healthy hooks must not be failed by an arbitrary bound; abort
+ * is the preemption path.
+ */
+function raceWithTurnSignal<T>(promise: Promise<T> | T, signal: AbortSignal | undefined): Promise<T> {
+	if (!signal) return Promise.resolve(promise);
+	if (signal.aborted) {
+		return Promise.reject(
+			signal.reason instanceof Error ? signal.reason : new Error("Request was aborted"),
+		);
+	}
+	let onAbort: (() => void) | undefined;
+	const aborted = new Promise<never>((_, reject) => {
+		onAbort = () => {
+			reject(signal.reason instanceof Error ? signal.reason : new Error("Request was aborted"));
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
+	return Promise.race([promise, aborted]).finally(() => {
+		if (onAbort) signal.removeEventListener("abort", onAbort);
+	});
+}
+
 async function prepareProviderCall(
 	context: AgentContext,
 	config: AgentLoopConfig,
@@ -1598,10 +1626,10 @@ async function prepareProviderCall(
 	const model = config.getModel?.() ?? config.model;
 	let messages = context.messages;
 	if (config.transformContext) {
-		messages = await config.transformContext(messages, signal);
+		messages = await raceWithTurnSignal(config.transformContext(messages, signal), signal);
 	}
 
-	const llmMessages = await config.convertToLlm(messages);
+	const llmMessages = await raceWithTurnSignal(config.convertToLlm(messages), signal);
 	const normalizedMessages = normalizeMessagesForProvider(llmMessages, model);
 	const ownedDialect: Dialect | undefined = config.dialect ?? resolveOwnedDialectFromEnv(Bun.env.PI_DIALECT);
 	const pruneToolDescriptions = !!config.pruneToolDescriptions && !ownedDialect;
@@ -1623,7 +1651,7 @@ async function prepareProviderCall(
 		};
 	}
 	if (config.transformProviderContext) {
-		llmContext = await config.transformProviderContext(llmContext, model);
+		llmContext = await raceWithTurnSignal(config.transformProviderContext(llmContext, model), signal);
 	}
 
 	let promptToolWireTools: Context["tools"];

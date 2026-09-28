@@ -109,6 +109,32 @@ async fn apply_rereads_files_changed_after_preview() {
 }
 
 #[tokio::test]
+async fn apply_rejects_workspace_symlink_escape_before_writing() {
+	let ws = Workspace::new(EditMode::Replace);
+	ws.write("a.txt", "one\n");
+	let outside = tempfile::tempdir().expect("tempdir");
+	std::fs::write(outside.path().join("secret.txt"), "S3CR3T\n").expect("write secret");
+	#[cfg(unix)]
+	std::os::unix::fs::symlink(outside.path().join("secret.txt"), ws.cwd().join("link.txt"))
+		.expect("create symlink");
+	#[cfg(windows)]
+	std::os::windows::fs::symlink_file(outside.path().join("secret.txt"), ws.cwd().join("link.txt"))
+		.expect("create symlink");
+	let writer = DiskWriter::default();
+	let err = ws
+		.apply_json(
+			&serde_json::json!({"path": "link.txt", "old_string": "S3CR3T", "new_string": "X"}),
+			&writer,
+		)
+		.await
+		.expect_err("symlink escape");
+	let message = err.to_string();
+	assert!(message.contains("resolves outside"), "{message}");
+	assert!(!message.contains("S3CR3T"), "{message}");
+	assert_eq!(writer.requests.lock().len(), 0);
+}
+
+#[tokio::test]
 async fn writer_failure_is_surfaced_verbatim() {
 	let ws = Workspace::new(EditMode::Replace);
 	ws.write("a.txt", "one\n");

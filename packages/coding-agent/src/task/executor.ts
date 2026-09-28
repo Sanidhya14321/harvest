@@ -9,7 +9,7 @@ import path from "node:path";
 import type { AgentEvent, AgentIdentity, AgentMessage, AgentTelemetryConfig } from "@harvest/pi-agent-core";
 import { EventLoopKeepalive, recordHandoff, resolveTelemetry } from "@harvest/pi-agent-core";
 import type { Api, Model, ServiceTierByFamily, Usage } from "@harvest/pi-ai";
-import { logger, popLoopPhase, prompt, pushLoopPhase, untilAborted } from "@harvest/pi-utils";
+import { $env, logger, popLoopPhase, prompt, pushLoopPhase, untilAborted } from "@harvest/pi-utils";
 import { ASYNC_JOB_MANAGER_SHUTDOWN_REASON, AsyncJobManager } from "../async";
 import type { Rule } from "../capability/rule";
 import type { EffectiveExtensionRoots } from "../capability/types";
@@ -72,11 +72,13 @@ import { generateTaskLabel } from "./label";
 import { resolveAgentPrewalkDefault } from "./prewalk";
 import { isReadOnlyAgent } from "./read-only-policy";
 import { formatTaskResultSummary } from "./result-summary";
+import { StructuredSubagentError } from "./structured-subagent";
 import { subprocessToolRegistry } from "./subprocess-tool-registry";
 import type { WorkPoolYieldItem } from "./workpool-yield";
 import {
 	type AgentDefinition,
 	type AgentProgress,
+	canSpawnAtDepth,
 	MAX_OUTPUT_BYTES,
 	MAX_OUTPUT_LINES,
 	type SingleResult,
@@ -2187,7 +2189,8 @@ async function driveSessionToYield(
 		} else {
 			exitCode = 1;
 			if (!abortSignal.aborted) {
-				error = err instanceof Error ? err.stack || err.message : String(err);
+				// User-facing: message only, never internal stack frames.
+				error = err instanceof Error ? err.message : String(err);
 			}
 		}
 	} finally {
@@ -2617,7 +2620,7 @@ export function attachIrcWakeTurnMonitor(session: AgentSession, options: IrcWake
 					? attributeSubagentError(lastAssistant.errorMessage, lastAssistant)
 					: turnError !== undefined && !yielded
 						? turnError instanceof Error
-							? turnError.stack || turnError.message
+							? turnError.message
 							: String(turnError)
 						: undefined;
 			turnMonitor.finish();
@@ -2824,6 +2827,42 @@ export interface FollowUpTurnOptions {
 }
 
 /**
+ * Re-check spawn preflight on a continued (keep-alive follow-up) turn with the
+ * same error type fresh spawns fail with. Fresh spawns strip the `task` tool
+ * at max depth, but a tool re-enabled post-spawn (or tightened settings)
+ * would otherwise let the continued turn drive unchecked grandchildren —
+ * grandchild spawns still hit task-tool preflight, so this is the fail-closed
+ * backstop for the turn itself.
+ */
+function assertFollowUpTurnAllowed(id: string, agent: AgentDefinition, session: AgentSession): void {
+	// Depth mirrors the persisted-revive walk: the agent itself sits one level
+	// below its parent, plus one per non-main ancestor.
+	let taskDepth = 1;
+	const registry = AgentRegistry.global();
+	let parentId = registry.get(id)?.parentId;
+	const seen = new Set<string>();
+	while (parentId && parentId !== MAIN_AGENT_ID && !seen.has(parentId)) {
+		seen.add(parentId);
+		taskDepth++;
+		parentId = registry.get(parentId)?.parentId;
+	}
+	const maxDepth = session.settings.get("task.maxRecursionDepth") ?? 2;
+	if (!canSpawnAtDepth(maxDepth, taskDepth) && session.getActiveToolNames().includes("task")) {
+		throw new StructuredSubagentError(
+			"preflight",
+			`Cannot spawn another agent at task depth ${taskDepth}; maximum depth is ${maxDepth}.`,
+		);
+	}
+	const blockedAgent = $env.PI_BLOCKED_AGENT;
+	if (blockedAgent && blockedAgent === agent.name) {
+		throw new StructuredSubagentError(
+			"preflight",
+			`Cannot spawn ${blockedAgent} agent from within itself (recursion prevention). Use a different agent type.`,
+		);
+	}
+}
+
+/**
  * Continue a previously spawned (keep-alive) subagent with one more monitored
  * turn: revive it if parked, send `message` as a real prompt, drive it to
  * `yield`, and finalize a {@link SingleResult} exactly like a first run.
@@ -2839,6 +2878,7 @@ export async function runSubagentFollowUpTurn(options: FollowUpTurnOptions): Pro
 	const index = options.index ?? 0;
 	const startTime = Date.now();
 	const session = await AgentLifecycleManager.global().ensureLive(id);
+	assertFollowUpTurnAllowed(id, agent, session);
 	session.setWorkPoolYieldItems(options.workPoolYieldItems ?? []);
 	const ref = AgentRegistry.global().get(id);
 	const sessionFile = ref?.sessionFile ?? undefined;
@@ -3650,7 +3690,8 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 		} catch (err) {
 			exitCode = 1;
 			if (!abortSignal.aborted) {
-				error = err instanceof Error ? err.stack || err.message : String(err);
+				// User-facing: message only, never internal stack frames.
+				error = err instanceof Error ? err.message : String(err);
 			}
 		} finally {
 			const cleanupDeadlineAt = Date.now() + cleanupGraceMs;

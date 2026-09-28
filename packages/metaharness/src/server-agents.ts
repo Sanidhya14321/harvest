@@ -9,11 +9,7 @@ function isStatus(value: string | null): value is HarnessAgentStatus {
 	return value === "running" || value === "idle" || value === "parked" || value === "aborted";
 }
 
-export async function handleAgentRoute(
-	service: AgentService,
-	request: Request,
-	url: URL,
-): Promise<Response | null> {
+export async function handleAgentRoute(service: AgentService, request: Request, url: URL): Promise<Response | null> {
 	const p = url.pathname;
 	if (p === "/api/agents" && request.method === "GET") {
 		const run = url.searchParams.get("run") ?? undefined;
@@ -32,7 +28,9 @@ export async function handleAgentRoute(
 				trial: typeof body.trial === "string" ? body.trial : undefined,
 				displayName: typeof body.displayName === "string" ? body.displayName : undefined,
 				kind: body.kind === "benchmark-runner" ? "benchmark-runner" : "trial-worker",
-				command: Array.isArray(body.command) ? body.command.filter((c): c is string => typeof c === "string") : undefined,
+				command: Array.isArray(body.command)
+					? body.command.filter((c): c is string => typeof c === "string")
+					: undefined,
 				cwd: typeof body.cwd === "string" ? body.cwd : undefined,
 			});
 			return Response.json(agent, { status: 201 });

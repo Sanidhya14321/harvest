@@ -133,7 +133,7 @@ export class AgentStore {
 	list(filter: HarnessAgentListFilter = {}): HarnessAgent[] {
 		let sql = `SELECT * FROM harness_agents`;
 		const clauses: string[] = [];
-		const args: unknown[] = [];
+		const args: string[] = [];
 		if (filter.run) {
 			clauses.push(`run = ?`);
 			args.push(filter.run);

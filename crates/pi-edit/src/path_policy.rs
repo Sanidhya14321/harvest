@@ -76,11 +76,22 @@ impl PathPolicy {
 				self.cwd.clone()
 			} else {
 				let path = PathBuf::from(strip_windows_verbatim(&expanded));
-				if path.is_absolute() {
+				let absolute = if path.is_absolute() {
 					path
 				} else {
 					lexical_normalize(&self.cwd.join(path))
-				}
+				};
+				// Fail fast when an existing on-disk entry at or below the
+				// workspace escapes it through a symlink. Missing paths (and
+				// paths above the workspace) stay lexical here; the read jail
+				// (`check_read`) and the host write jail own those.
+				let jail = lexical_normalize(&self.cwd);
+				check_existing_within_root(&absolute, &jail, &format!(
+					"Path traversal rejected: \"{display}\" resolves outside the workspace root \
+					 (to \"{}\").",
+					absolute.display()
+				))?;
+				absolute
 			}
 		};
 		Ok(Resolved { absolute, display })
@@ -176,45 +187,59 @@ impl PathPolicy {
 		};
 		let absolute = lexical_absolute(absolute, &self.cwd);
 		let root = lexical_absolute(root, &self.cwd);
-		let real_root = match std::fs::canonicalize(&root) {
-			Ok(r) => r,
-			Err(_) => root.clone(),
-		};
-		// Lexical pre-check: must be lexically under root or real_root
-		if !is_within(&absolute, &root) && !is_within(&absolute, &real_root) {
-			return false;
+		contain_under_root(&absolute, &root).is_some()
+	}
+
+	/// Enforce the read jail for an already-resolved target: its canonical
+	/// location must stay inside the readable root for its scheme (the
+	/// workspace for plain paths, the session sandbox for `local://`, the
+	/// named vault root for `vault://`). Call before opening the file —
+	/// writes are jailed separately by the host, reads must not rely on it.
+	pub fn check_read(&self, resolved: &Resolved) -> EditResult<()> {
+		let root = self.read_jail_root(&resolved.display)?;
+		if contain_under_root(&resolved.absolute, &root).is_none() {
+			return Err(EditError::apply(format!(
+				"Path traversal rejected: '{}' resolves outside '{}' (to '{}').",
+				resolved.display,
+				root.display(),
+				resolved.absolute.display()
+			)));
 		}
-		// If target exists, canonicalize directly and check containment
-		if let Ok(real_target) = std::fs::canonicalize(&absolute) {
-			return is_within(&real_target, &real_root);
+		Ok(())
+	}
+
+	/// Readable root governing `display`, mirroring [`resolve`](Self::resolve)'s
+	/// dispatch without touching the filesystem.
+	fn read_jail_root(&self, display: &str) -> EditResult<PathBuf> {
+		let normalized = normalize_local_scheme(display);
+		if normalized.starts_with("local://") {
+			return self
+				.local_sandbox_root
+				.clone()
+				.ok_or_else(|| EditError::apply("local:// is unavailable in this session"));
 		}
-		// If it is an unresolvable symlink, reject
-		if std::fs::symlink_metadata(&absolute).is_ok_and(|m| m.file_type().is_symlink()) {
-			return false;
+		if let Some(rest) = normalized.strip_prefix("vault://") {
+			let roots = self
+				.vault_roots
+				.as_ref()
+				.ok_or_else(|| EditError::apply(VAULT_DISABLED_MESSAGE))?;
+			let (host, _) = split_url_authority(rest)?;
+			let key = if host.is_empty() || host == "_" { "_" } else { host.as_str() };
+			return roots
+				.iter()
+				.find(|(name, _)| name == key)
+				.map(|(_, root)| root.clone())
+				.ok_or_else(|| EditError::apply(VAULT_ROOT_MISSING_MESSAGE));
 		}
-		// Walk up to find deepest existing ancestor
-		let mut ancestor = absolute.parent();
-		let mut tail = Vec::new();
-		if let Some(name) = absolute.file_name() {
-			tail.push(name);
-		}
-		while let Some(current) = ancestor {
-			if let Ok(real_parent) = std::fs::canonicalize(current) {
-				let mut reconstructed = real_parent;
-				for part in tail.into_iter().rev() {
-					reconstructed.push(part);
-				}
-				return is_within(&reconstructed, &real_root);
+		for prefix in INTERNAL_PREFIXES {
+			if normalized.starts_with(prefix) {
+				return Err(EditError::apply(format!(
+					"Path \"{display}\" uses internal scheme \"{prefix}\" and must be resolved \
+					 through the proper protocol handler, not as a filesystem path."
+				)));
 			}
-			if std::fs::symlink_metadata(current).is_ok_and(|m| m.file_type().is_symlink()) {
-				return false;
-			}
-			if let Some(name) = current.file_name() {
-				tail.push(name);
-			}
-			ancestor = current.parent();
 		}
-		false
+		Ok(lexical_normalize(&self.cwd))
 	}
 
 	/// Whether hashline tag recovery may rebind onto `recovered`.
@@ -403,7 +428,89 @@ fn resolve_relative_under_root(
 	if !is_within(&target, &root) {
 		return Err(EditError::apply(escape_message));
 	}
+	// An existing symlink at the target (or at any existing ancestor at or
+	// below the root) that redirects outside the root must fail closed here,
+	// not leak through a later following open.
+	check_existing_within_root(&target, &root, escape_message)?;
 	Ok(target)
+}
+
+/// Reject an existing on-disk entry at or below `root` whose canonical
+/// location escapes `root` (a planted symlink or symlinked ancestor).
+///
+/// Only entries at or below `root` are examined and the walk never climbs
+/// above it, so resolving a not-yet-created path never fails here; full
+/// containment (including above-root paths) is enforced at read time by
+/// [`PathPolicy::check_read`]. Dangling symlinks fail closed: they can never
+/// be read, and following them on write would escape.
+fn check_existing_within_root(target: &Path, root: &Path, escape_message: &str) -> EditResult<()> {
+	let real_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+	let mut current: &Path = target;
+	loop {
+		if current != root && !is_within(current, root) && !is_within(current, &real_root) {
+			return Ok(());
+		}
+		match std::fs::canonicalize(current) {
+			Ok(real) => {
+				if !is_within(&real, &real_root) {
+					return Err(EditError::apply(escape_message));
+				}
+			},
+			Err(_) => {
+				if std::fs::symlink_metadata(current).is_ok_and(|m| m.file_type().is_symlink()) {
+					return Err(EditError::apply(escape_message));
+				}
+			},
+		}
+		if current == root {
+			return Ok(());
+		}
+		match current.parent() {
+			Some(parent) if parent != current => current = parent,
+			_ => return Ok(()),
+		}
+	}
+}
+
+/// Resolve `target` through the filesystem and require containment in `root`
+/// (both already absolute): the canonical target when it exists — a dangling
+/// symlink never resolves — otherwise the deepest existing ancestor with the
+/// missing tail re-appended. Mirrors the TypeScript
+/// `SecuritySandbox.assertPathJailed` shape (lexical pre-check, realpath,
+/// ancestor walk). Returns the resolved path, or `None` on escape or failure.
+fn contain_under_root(target: &Path, root: &Path) -> Option<PathBuf> {
+	let real_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+	if !is_within(target, root) && !is_within(target, &real_root) {
+		return None;
+	}
+	if let Ok(real_target) = std::fs::canonicalize(target) {
+		return is_within(&real_target, &real_root).then_some(real_target);
+	}
+	if std::fs::symlink_metadata(target).is_ok_and(|m| m.file_type().is_symlink()) {
+		return None;
+	}
+	let mut ancestor = target.parent();
+	let mut tail = Vec::new();
+	if let Some(name) = target.file_name() {
+		tail.push(name);
+	}
+	while let Some(current) = ancestor {
+		if let Ok(real_parent) = std::fs::canonicalize(current) {
+			let mut reconstructed = real_parent;
+			for part in tail.into_iter().rev() {
+				reconstructed.push(part);
+			}
+			return is_within(&reconstructed, &real_root).then_some(reconstructed);
+		}
+		if std::fs::symlink_metadata(current).is_ok_and(|m| m.file_type().is_symlink()) {
+			return None;
+		}
+		if let Some(name) = current.file_name() {
+			tail.push(name);
+		}
+		ancestor = current.parent();
+	}
+	None
 }
 
 fn percent_decode(value: &str) -> Result<String, String> {
@@ -641,6 +748,71 @@ mod tests {
 		assert!(p.resolve("local://../x").is_err());
 		assert_eq!(p.resolve("vault://_/a.md").unwrap().absolute, tmp.path().join("vault/a.md"));
 		assert_eq!(p.resolve("vault://notes/a.md").unwrap().absolute, tmp.path().join("named/a.md"));
+	}
+
+	#[cfg(unix)]
+	fn symlink(target: &Path, link: &Path) {
+		std::os::unix::fs::symlink(target, link).expect("create symlink");
+	}
+
+	#[cfg(windows)]
+	fn symlink(target: &Path, link: &Path) {
+		if target.is_dir() {
+			std::os::windows::fs::symlink_dir(target, link).expect("create dir symlink");
+		} else {
+			std::os::windows::fs::symlink_file(target, link).expect("create file symlink");
+		}
+	}
+
+	#[test]
+	fn read_jail_rejects_outside_absolute_and_sandboxed_symlink() {
+		use crate::files::{FileCache, FileSource};
+
+		let tmp = tempfile::tempdir().unwrap();
+		let root = tmp.path();
+		std::fs::write(root.join("inside.txt"), "inside\n").unwrap();
+		let outside = tempfile::tempdir().unwrap();
+		std::fs::write(outside.path().join("secret.txt"), "S3CR3T-outside\n").unwrap();
+		symlink(&outside.path().join("secret.txt"), &root.join("link.txt"));
+
+		let mut files = FileCache::new(policy(root));
+		// An absolute path outside the workspace never opens…
+		let outside_display =
+			outside.path().join("secret.txt").to_string_lossy().into_owned();
+		let err = files.read(&outside_display).unwrap_err().to_string();
+		assert!(err.contains("resolves outside"), "{err}");
+		assert!(!err.contains("S3CR3T"), "{err}");
+		// …nor does a workspace symlink planted onto it (rejected at resolve,
+		// before any read, and without surfacing the target's bytes).
+		let err = files.read("link.txt").unwrap_err().to_string();
+		assert!(err.contains("resolves outside"), "{err}");
+		assert!(!err.contains("S3CR3T"), "{err}");
+		// In-workspace reads still work.
+		assert!(files.read("inside.txt").is_ok());
+	}
+
+	#[test]
+	fn local_resolve_rejects_symlink_escape_but_allows_missing() {
+		let tmp = tempfile::tempdir().unwrap();
+		let sandbox = tmp.path().join("local");
+		std::fs::create_dir(&sandbox).unwrap();
+		std::fs::write(sandbox.join("real.txt"), "real\n").unwrap();
+		let outside = tempfile::tempdir().unwrap();
+		std::fs::write(outside.path().join("secret.txt"), "S3CR3T\n").unwrap();
+		symlink(&outside.path().join("secret.txt"), &sandbox.join("link.txt"));
+		symlink(&outside.path(), &sandbox.join("evildir"));
+
+		let p = policy(tmp.path());
+		// Missing create targets keep resolving lexically…
+		assert!(p.resolve("local://missing-new-file.md").is_ok());
+		// …existing files stay readable…
+		assert!(p.resolve("local://real.txt").is_ok());
+		// …but a link (or a symlinked ancestor) redirecting outside the
+		// sandbox fails closed at resolve time.
+		let err = p.resolve("local://link.txt").unwrap_err().to_string();
+		assert!(err.contains("escapes local root"), "{err}");
+		let err = p.resolve("local://evildir/secret.txt").unwrap_err().to_string();
+		assert!(err.contains("escapes local root"), "{err}");
 	}
 
 	#[test]

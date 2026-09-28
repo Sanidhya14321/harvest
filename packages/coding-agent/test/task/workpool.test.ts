@@ -380,4 +380,36 @@ describe("WorkPool dispatch", () => {
 		await finishPool(session, workpool);
 		expect(workpool.peek().pending).toBe(0);
 	});
+
+	it("fails the batch closed when turn register throws so the pool still drains", async () => {
+		const session = makeSession([], 2);
+		const manager = session.asyncJobManager!;
+		const register = manager.register.bind(manager);
+		vi.spyOn(manager, "register").mockImplementation((type, label, run, options) => {
+			// The aggregate pool job registers under the pool name; every turn
+			// batch registers under its own id and hits the over-cap gate.
+			if (options?.id && options.id !== "register-fail") {
+				throw new Error("Background job limit reached (15). Wait for running jobs to finish or cancel one.");
+			}
+			return register(type, label, run, options);
+		});
+		const workpool = pool(session, "register-fail");
+		workpool.push(["one"]);
+		const job = manager.getJob("register-fail");
+		if (!job) throw new Error("Missing pool job register-fail");
+		// Without the register-try/catch this never resolves: the batch sits
+		// `running` forever and #waitForDrain hangs. Bound the wait so a
+		// regression fails instead of hanging the suite.
+		await Promise.race([
+			job.promise,
+			Bun.sleep(5_000).then(() => {
+				throw new Error("pool did not drain after batch register threw");
+			}),
+		]);
+		expect(workpool.batches).toHaveLength(1);
+		expect(workpool.batches[0]?.status).toBe("failed");
+		expect(workpool.batches[0]?.output).toContain("Background job limit reached");
+		expect(workpool.items[0]?.status).toBe("failed");
+		expect(workpool.peek().pending).toBe(0);
+	});
 });

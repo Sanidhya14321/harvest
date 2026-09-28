@@ -1,10 +1,12 @@
 import type { Component } from "../tui";
 import {
+	Ellipsis,
 	getPaddingX,
 	getPublishedLineWidths,
 	getWidthConfigEpoch,
 	padding,
 	publishLineWidths,
+	truncateToWidth,
 	visibleWidth,
 } from "../utils";
 
@@ -186,10 +188,12 @@ export class Box implements Component {
 			const leftPad = padding(paddingX);
 			const interior: string[] = [];
 			const pushRow = (row: string, visLen: number): void => {
-				const padNeeded = Math.max(0, innerWidth - visLen);
-				const padded = padNeeded > 0 ? row + padding(padNeeded) : row;
+				const truncated = visLen > innerWidth ? truncateToWidth(row, innerWidth, Ellipsis.Omit) : row;
+				const truncatedLen = visLen > innerWidth ? innerWidth : visLen;
+				const padNeeded = Math.max(0, innerWidth - truncatedLen);
+				const padded = padNeeded > 0 ? truncated + padding(padNeeded) : truncated;
 				interior.push(this.#bgFn ? this.#bgFn(padded) : padded);
-				resultWidths?.push(visLen + padNeeded);
+				resultWidths?.push(truncatedLen + padNeeded);
 			};
 			// Top padding
 			for (let i = 0; i < this.#paddingY; i++) {
@@ -203,7 +207,7 @@ export class Box implements Component {
 					const line = lines[j] ?? "";
 					const row = paddingX > 0 ? leftPad + line : line;
 					const carried = widths?.[j];
-					const visLen = carried !== undefined && paddingX === 0 ? carried : visibleWidth(row);
+					const visLen = carried !== undefined ? carried + paddingX : visibleWidth(row);
 					pushRow(row, visLen);
 				}
 			}
@@ -214,7 +218,8 @@ export class Box implements Component {
 
 			if (border) {
 				const paint = border.color ?? (s => s);
-				const rule = border.chars.horizontal.repeat(Math.max(0, innerWidth));
+				const hChar = visibleWidth(border.chars.horizontal) === 1 ? border.chars.horizontal : " ";
+				const rule = hChar.repeat(Math.max(0, innerWidth));
 				const side = paint(border.chars.vertical);
 				result.push(paint(border.chars.topLeft + rule + border.chars.topRight));
 				for (const row of interior) {

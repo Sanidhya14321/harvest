@@ -43,6 +43,10 @@ import { BENCHMARK_DEFINITIONS } from "./benchmarks";
 import { buildExperiments, experimentDetail, experimentOf } from "./experiments";
 import { harborRunnerArgs, type LaunchRequest } from "./launch-args";
 import { type LaunchRecord, type RunRole, type RunRow, RunStore } from "./store";
+import { AgentService, agentsModeFromEnv } from "./agents/agent-service";
+import { handleAgentRoute } from "./server-agents";
+import { handleSessionRoute } from "./server-sessions";
+import { SessionService, sessionsModeFromEnv } from "./sessions/session-service";
 
 /** PUT /api/experiments/:id body — goal and per-run role/note/label metadata. */
 export interface ExperimentMetaUpdate {
@@ -226,6 +230,8 @@ export function resolveArmLaunch(store: RunStore, experimentId: string, req: Add
 
 export class ManagerServer {
 	#store: RunStore;
+	#sessions: SessionService | null = null;
+	#agents: AgentService | null = null;
 	#children = new Map<string, ManagedChild>();
 	#sse = new Set<SseClient>();
 	#lastSnapshot = "";
@@ -239,10 +245,21 @@ export class ManagerServer {
 		this.jobsDir = jobsDir;
 		this.#token = token ?? process.env.METAHARNESS_TOKEN ?? null;
 		this.#store = new RunStore(jobsDir, dbPath);
+		const sessionsMode = sessionsModeFromEnv();
+		if (sessionsMode !== "off") this.#sessions = new SessionService(jobsDir, sessionsMode);
+		if (agentsModeFromEnv() === "on") this.#agents = new AgentService(jobsDir, "on");
 	}
 
 	get store(): RunStore {
 		return this.#store;
+	}
+
+	get sessions(): SessionService | null {
+		return this.#sessions;
+	}
+
+	get agents(): AgentService | null {
+		return this.#agents;
 	}
 
 	start(port: number, hostname: string = "127.0.0.1"): Server<undefined> {
@@ -253,6 +270,8 @@ export class ManagerServer {
 		}
 		this.#store.discover();
 		this.#store.syncAll();
+		this.#sessions?.syncAll(this.#store);
+		this.#agents?.syncFromRuns(this.#store);
 		this.#syncTimer = setInterval(() => this.#tick(), 2000);
 		this.#server = Bun.serve({
 			port,
@@ -282,10 +301,14 @@ export class ManagerServer {
 		this.#sse.clear();
 		this.#server?.stop(true);
 		this.#store.close();
+		this.#sessions?.close();
+		this.#agents?.close();
 	}
 
 	#tick(): void {
-		this.#store.syncActive();
+		const active = this.#store.syncActive();
+		for (const row of active) this.#sessions?.syncRun(this.#store, row.jobName);
+		this.#agents?.syncFromRuns(this.#store);
 		const snapshot = JSON.stringify(this.#store.listRuns());
 		if (snapshot !== this.#lastSnapshot) {
 			this.#lastSnapshot = snapshot;
@@ -317,6 +340,16 @@ export class ManagerServer {
 				return Response.json({ error: "unauthorized" }, { status: 401 });
 			}
 			if (p === "/api/events") return this.#sseResponse();
+			if (p.startsWith("/api/sessions")) {
+				if (!this.#sessions) return Response.json({ error: "sessions disabled" }, { status: 404 });
+				const res = await handleSessionRoute(this.#sessions, request, url);
+				if (res) return res;
+			}
+			if (p.startsWith("/api/agents")) {
+				if (!this.#agents) return Response.json({ error: "agents disabled" }, { status: 404 });
+				const res = await handleAgentRoute(this.#agents, request, url);
+				if (res) return res;
+			}
 			if (p === "/api/benchmarks" && request.method === "GET") {
 				return Response.json(BENCHMARK_DEFINITIONS);
 			}
@@ -388,6 +421,8 @@ export class ManagerServer {
 				}
 				const run = this.#store.syncRun(jobName);
 				if (!run) return Response.json({ error: "run not found" }, { status: 404 });
+				if (this.#sessions) this.#sessions.syncRun(this.#store, jobName);
+				if (this.#agents) this.#agents.syncFromRuns(this.#store);
 				return Response.json({ run, traces: this.#store.listTraces(jobName) });
 			}
 			const traceMatch = p.match(/^\/api\/runs\/([^/]+)\/traces\/([^/]+)$/);
@@ -409,7 +444,7 @@ export class ManagerServer {
 	#isAuthorized(request: Request): boolean {
 		if (!this.#token) return true;
 		const match = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
-		return match !== null && timingSafeEqualToken(match[1].trim(), this.#token);
+		return match !== null && match !== undefined && timingSafeEqualToken(match[1].trim(), this.#token);
 	}
 
 	#sseResponse(): Response {
@@ -646,6 +681,8 @@ export class ManagerServer {
 	#destroyRun(jobName: string): void {
 		assertSafeJobName(jobName);
 		this.#store.deleteRun(jobName);
+		this.#sessions?.store.deleteRun(jobName);
+		this.#agents?.deleteRun(jobName);
 		fs.rmSync(path.join(this.jobsDir, jobName), { recursive: true, force: true });
 		fs.rmSync(path.join(this.jobsDir, "_manager", "logs", `${jobName}.log`), { force: true });
 	}

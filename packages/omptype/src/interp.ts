@@ -150,7 +150,7 @@ function checkNode(ir: IR, v: unknown): boolean {
 			if (typeof v !== "object" || v === null) return false;
 			const rec = v as Record<PropertyKey, unknown>;
 			for (const p of ir.props) {
-				const present = p.key in rec;
+				const present = own.call(rec, p.key);
 				if (!present) {
 					if (!p.opt && !p.hasDefault) return false;
 					continue;
@@ -413,7 +413,7 @@ function visitNode(ir: IR, v: unknown, path: PropertyKey[]): unknown {
 				}
 			}
 			for (const p of ir.props) {
-				if (!(p.key in rec)) {
+				if (!own.call(rec, p.key)) {
 					if (p.hasDefault && out) {
 						const payload = p.def;
 						if (p.defFactory && typeof payload === "function") {
@@ -695,7 +695,11 @@ function pathsEqual(left: readonly PropertyKey[], right: readonly PropertyKey[])
 function valueAtPath(value: unknown, path: readonly PropertyKey[]): { present: boolean; value?: unknown } {
 	let cursor = value;
 	for (const key of path) {
-		if ((typeof cursor !== "object" && typeof cursor !== "function") || cursor === null || !(key in cursor)) {
+		if (
+			(typeof cursor !== "object" && typeof cursor !== "function") ||
+			cursor === null ||
+			!own.call(cursor, key)
+		) {
 			return { present: false };
 		}
 		cursor = (cursor as Record<PropertyKey, unknown>)[key];

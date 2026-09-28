@@ -529,11 +529,11 @@ export class SettingsList implements Component {
 		const prefix = isSelected ? this.#theme.cursor : "  ";
 		const prefixWidth = visibleWidth(prefix);
 		const mark = this.#warningMark(item);
-		const labelPlain = item.label + mark;
+		const labelPlain = sanitizeSingleLine(item.label) + mark;
 		const labelPad = padding(Math.max(0, maxLabelWidth - visibleWidth(labelPlain)));
 		const separator = "  ";
 		const valueMaxWidth = rowWidth - prefixWidth - maxLabelWidth - visibleWidth(separator) - 2;
-		const valuePlain = truncateToWidth(String(item.currentValue ?? ""), valueMaxWidth, Ellipsis.Omit);
+		const valuePlain = truncateToWidth(sanitizeSingleLine(String(item.currentValue ?? "")), valueMaxWidth, Ellipsis.Omit);
 		const hovered = !isSelected && this.#theme.hovered !== undefined && item.id === this.#hoveredItemId;
 		// De-emphasized rows (outside the active section) render as plain text
 		// under one dim wash so inner label/value colors don't fight it.
@@ -545,7 +545,7 @@ export class SettingsList implements Component {
 		}
 		const warningStyle = this.#theme.warning ?? this.#theme.description;
 		const labelText =
-			this.#theme.label(item.label, isSelected, item.changed === true) + (mark ? warningStyle(mark) : "") + labelPad;
+			this.#theme.label(sanitizeSingleLine(item.label), isSelected, item.changed === true) + (mark ? warningStyle(mark) : "") + labelPad;
 		const valueText = this.#theme.value(valuePlain, isSelected, item.changed === true);
 		const text = truncateToWidth(prefix + labelText + separator + valueText, Math.max(0, rowWidth));
 		// Pointer hover paints a band behind the whole row, distinct from the
@@ -560,7 +560,7 @@ export class SettingsList implements Component {
 		const lines: string[] = [];
 
 		if (this.#items.length === 0) {
-			lines.push(this.#theme.hint(`  ${this.#options.emptyText ?? "No settings available"}`));
+			lines.push(truncateToWidth(this.#theme.hint(`  ${this.#options.emptyText ?? "No settings available"}`), width, Ellipsis.Omit));
 			return lines;
 		}
 
@@ -636,18 +636,18 @@ export class SettingsList implements Component {
 			if (selectedItem.warning) {
 				const warningStyle = this.#theme.warning ?? this.#theme.description;
 				const mark = this.#theme.warningMark ? `${this.#theme.warningMark} ` : "";
-				for (const line of wrapTextWithAnsi(`${mark}${selectedItem.warning}`, width - 4)) {
+				for (const line of wrapTextWithAnsi(`${mark}${sanitizeSingleLine(selectedItem.warning)}`, width - 4)) {
 					descLines.push(warningStyle(`  ${line}`));
 				}
 			}
 			if (selectedItem.description) {
-				for (const line of wrapTextWithAnsi(selectedItem.description, width - 4)) {
+				for (const line of wrapTextWithAnsi(sanitizeSingleLine(selectedItem.description), width - 4)) {
 					descLines.push(this.#theme.description(`  ${line}`));
 				}
 			}
 			if (descLines.length > 3) {
 				descLines.splice(3);
-				descLines[2] = truncateToWidth(`${descLines[2]}…`, width);
+				descLines[2] = truncateToWidth(descLines[2], width);
 			}
 		}
 		while (descLines.length < 3) descLines.push("");

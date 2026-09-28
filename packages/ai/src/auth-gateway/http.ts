@@ -230,12 +230,27 @@ const CORS_HEADERS: Record<string, string> = {
 	"Access-Control-Max-Age": "86400",
 };
 
+export interface CorsOptions {
+	/**
+	 * True when the gateway requires bearer auth. In open (no-auth/bench) mode
+	 * the wildcard origin is omitted so browsers can't treat the gateway as a
+	 * public cross-origin API; authenticated mode is unchanged.
+	 */
+	authenticated?: boolean;
+}
+
 /**
- * CORS headers for the auth-gateway. Currently echoes a wildcard origin; the
- * request is accepted so future tightening can mirror `Origin` without
- * threading the request through every caller.
+ * CORS headers for the auth-gateway. Authenticated mode echoes a wildcard
+ * origin; open mode omits `Access-Control-Allow-Origin` (preflights and
+ * responses still carry the method/header allow-lists, which are inert
+ * without an allowed origin).
  */
-export function corsHeaders(_req: Request): Record<string, string> {
+export function corsHeaders(_req: Request, opts: CorsOptions = {}): Record<string, string> {
+	const { authenticated = true } = opts;
+	if (!authenticated) {
+		const { "Access-Control-Allow-Origin": _omitted, ...rest } = CORS_HEADERS;
+		return { ...rest };
+	}
 	return { ...CORS_HEADERS };
 }
 
@@ -244,9 +259,9 @@ export function corsHeaders(_req: Request): Record<string, string> {
  * passed through unchanged. Used by the gateway wrapper so every outbound
  * format-endpoint response carries the same CORS surface as the preflight.
  */
-export function withCors(response: Response, req: Request): Response {
+export function withCors(response: Response, req: Request, opts: CorsOptions = {}): Response {
 	const headers = new Headers(response.headers);
-	const cors = corsHeaders(req);
+	const cors = corsHeaders(req, opts);
 	for (const k in cors) headers.set(k, cors[k]);
 	return new Response(response.body, {
 		status: response.status,

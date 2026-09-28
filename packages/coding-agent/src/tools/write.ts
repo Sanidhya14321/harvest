@@ -1323,17 +1323,18 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			enforcePlanModeWrite(this.session, path, { op: "create" });
 			const absolutePath = resolvePlanPath(this.session, path);
 
-			// Realpath Workspace Jailing (Harvest Feature 3.14)
-			const jailCheck = new SecuritySandbox(this.session.cwd).assertPathJailed(absolutePath);
-			if (!jailCheck.jailed) {
-				throw new ToolError(jailCheck.error ?? "Path traversal outside workspace root rejected");
-			}
+			// Realpath Workspace Jailing (Harvest Feature 3.14): filesystem
+			// mutations below operate on the jailed resolved path so a symlink
+			// swapped in after the check cannot redirect the write. Display,
+			// bridge, snapshot, and cache keys keep the lexical path.
+			const sandbox = new SecuritySandbox(this.session.cwd);
+			const jailedPath = jailWriteTarget(sandbox, absolutePath);
 
 			const batchRequest = getLspBatchRequest(context?.toolCall);
 
 			// Check if file exists and is auto-generated before overwriting
-			if (await fs.exists(absolutePath)) {
-				await assertEditableFile(absolutePath, path, this.session.settings);
+			if (await fs.exists(jailedPath)) {
+				await assertEditableFile(jailedPath, path, this.session.settings);
 			}
 
 			const displayPath = formatPathRelativeToCwd(absolutePath, this.session.cwd);
@@ -1365,19 +1366,25 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			}
 
 			const diagnostics = await this.#writethrough(
-				absolutePath,
+				jailedPath,
 				cleanContent,
 				signal,
 				undefined,
 				batchRequest,
 				dst => this.#deferredDiagnostics?.begin(dst),
 			);
+			// Re-validate after the write: an ancestor switched between the
+			// jail check and the commit would otherwise succeed silently.
+			const recheck = sandbox.recheckJailed(jailedPath);
+			if (!recheck.jailed) {
+				throw new ToolError(recheck.error ?? "Path traversal outside workspace root rejected");
+			}
 			invalidateFsScanAfterWrite(absolutePath);
 			if (!this.#deferredDiagnostics || batchRequest?.flush === false) {
 				this.session.bumpFileMutationVersion?.(absolutePath);
 			}
 			const finalContent = diagnostics.finalContent;
-			const madeExecutable = await maybeMarkExecutableForShebang(absolutePath, finalContent);
+			const madeExecutable = await maybeMarkExecutableForShebang(jailedPath, finalContent);
 
 			const header = maybeWriteSnapshotHeader(this.session, absolutePath, finalContent);
 			const writeLine = `Successfully wrote ${finalContent.length} bytes to ${displayPath}`;
