@@ -851,7 +851,7 @@ describe("AsyncJobManager", () => {
 	});
 
 	test("filtered delivery drain respects the concurrent delivery cap", async () => {
-		const manager = new AsyncJobManager({ retentionMs: 60_000 });
+		const manager = new AsyncJobManager({ retentionMs: 60_000, maxRunningJobs: 17 });
 		const gate = Promise.withResolvers<void>();
 		let blockerCalls = 0;
 		manager.registerDeliverySink("blocker", async () => {
@@ -866,18 +866,15 @@ describe("AsyncJobManager", () => {
 			manager.register("bash", `blocker-${i}`, async () => `b${i}`, { ownerId: "blocker" });
 		}
 		await waitForCondition(() => blockerCalls === 16);
-		manager.register("bash", "other-job", async () => "other-done", { ownerId: "other" });
+		const otherJobId = manager.register("bash", "other-job", async () => "other-done", { ownerId: "other" });
+		await manager.getJob(otherJobId)?.promise;
 		// All 16 delivery slots are held by blocked sinks: the filtered path
 		// must wait, not bypass the cap.
-		await expect(manager.drainDeliveries({ filter: { ownerId: "other" }, timeoutMs: 200 })).resolves.toBe(
-			false,
-		);
+		await expect(manager.drainDeliveries({ filter: { ownerId: "other" }, timeoutMs: 200 })).resolves.toBe(false);
 		expect(otherCalls).toHaveLength(0);
 		gate.resolve();
-		await expect(manager.drainDeliveries({ filter: { ownerId: "other" }, timeoutMs: 5_000 })).resolves.toBe(
-			true,
-		);
-		expect(otherCalls).toEqual(["other-job"]);
+		await expect(manager.drainDeliveries({ filter: { ownerId: "other" }, timeoutMs: 5_000 })).resolves.toBe(true);
+		expect(otherCalls).toEqual([otherJobId]);
 		await manager.dispose();
 	});
 });

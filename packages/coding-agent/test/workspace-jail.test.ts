@@ -87,6 +87,7 @@ describe("workspace jail", () => {
 			jailRejection(JSON.stringify(editResult.content));
 		}
 		await expect(Bun.file(victim).exists()).resolves.toBe(true);
+		await expect(Bun.file(victim).text()).resolves.toBe("precious\n");
 
 		// LSP workspace-edit delete op against the same outside file.
 		const lspFailure = await applyWorkspaceEdit(

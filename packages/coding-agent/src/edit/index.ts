@@ -469,6 +469,15 @@ export class EditTool implements AgentTool<TInput> {
 		_onUpdate?: AgentToolUpdateCallback<EditToolDetails, TInput>,
 		context?: AgentToolContext,
 	): Promise<AgentToolResult<EditToolDetails, TInput>> {
+		// The patch and replace schemas expose a concrete target before native
+		// parsing. Reject it here as well as in #write, since a native apply that
+		// fails before invoking the writer cannot surface the writer's jail error.
+		if ("path" in params && typeof params.path === "string") {
+			const jailCheck = new SecuritySandbox(this.session.cwd).assertPathJailed(params.path);
+			if (!jailCheck.jailed) {
+				throw new ToolError(jailCheck.error ?? `Path traversal rejected: ${params.path}`);
+			}
+		}
 		let editSession = this.#sessions.get(toolCallId);
 		if (!editSession) {
 			// No deltas were streamed (non-streaming provider, inline recovery,
