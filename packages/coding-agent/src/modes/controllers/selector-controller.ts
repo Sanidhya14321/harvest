@@ -1915,6 +1915,20 @@ export class SelectorController {
 				: undefined;
 			onSelectSession = session => this.handleResumeSession(session.path);
 			selectorOptions = {
+				onNewSession: () => {
+					selector.lockInput();
+					const previousId = this.ctx.sessionManager.getSessionId();
+					void this.ctx.handleClearCommand().then(
+						() => {
+							if (this.ctx.sessionManager.getSessionId() !== previousId) done();
+							else selector.unlockInput();
+						},
+						(error: unknown) => {
+							this.ctx.showError(error instanceof Error ? error.message : String(error));
+							selector.unlockInput();
+						},
+					);
+				},
 				onDelete: async (session: SessionInfo) => {
 					if (!(await this.#detachActiveSessionBeforeDeletion(session.path))) {
 						return false;

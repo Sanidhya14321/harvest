@@ -50,6 +50,33 @@ function makeSelector(
 }
 
 describe("SessionSelectorComponent mouse", () => {
+	it("creates a new session from the visible mouse target without selecting a listed session", () => {
+		let created = 0;
+		let selected = 0;
+		const selector = new SessionSelectorComponent(
+			[makeSession("aaaa", "Alpha session")],
+			() => {
+				selected += 1;
+			},
+			() => {},
+			() => {},
+			{
+				onNewSession: () => {
+					created += 1;
+				},
+				getTerminalRows: () => 24,
+				fillHeight: true,
+			},
+		);
+		const lines = selector.render(80);
+		const newRow = lines.findIndex(line => line.includes("+ New session"));
+		expect(newRow).toBeGreaterThanOrEqual(0);
+		expect(lines).toHaveLength(24);
+		selector.handleInput(leftClick(newRow + 1));
+		expect(created).toBe(1);
+		expect(selected).toBe(0);
+	});
+
 	it("resumes the session under a left click", () => {
 		const sessions = [
 			makeSession("aaaa", "Alpha session"),

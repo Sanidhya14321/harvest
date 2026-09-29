@@ -65,3 +65,9 @@ Harvest already has persisted JSONL sessions, `/resume` with a picker, `/new`, `
 - A single open session no longer adds a tab row above the prompt. Unnamed tabs display `New session` instead of a timestamped JSONL filename, and the active tab reads the current session title while rendering.
 - Switching away from an unsaved startup session now removes its nonexistent file from the open tabs and navigation history. A tab whose file was deleted outside Harvest is removed on navigation while the active session stays in place. Persisted prior sessions remain available.
 - Focused session strip and controller tests passed, the daemon spawn policy tests passed, and the coding-agent TypeScript check passed.
+
+## OpenCode-style full-screen session UI reference
+
+The supplied screenshots show a centered empty-state composer, a session strip pinned to the top after a session starts, a visible `+ New session` tab, and a composer pinned to the bottom of an alternate-screen workspace. Harvest's current main transcript uses the terminal's normal buffer and native scrollback; its session picker already uses a full-screen alternate buffer with mouse-enabled session rows. The picker now adds a clickable `+ New session` action, and keeps its overlay until session creation completes.
+
+Replicating the main screen needs a distinct full-screen transcript renderer rather than moving the existing tab strip: it must retain the full transcript, support wheel/keyboard history navigation, keep the prompt anchored while messages stream, preserve editor focus and terminal cursor behavior, and restore the original buffer on exit. Native terminal text selection may require Shift-drag while mouse tracking is enabled. This main-screen renderer has not been implemented by the picker change.

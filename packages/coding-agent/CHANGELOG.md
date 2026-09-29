@@ -18,6 +18,7 @@
 
 ### Added
 
+- The session picker now has a clickable “+ New session” action.
 - GitHub releases now include binaries for Windows, macOS, and Linux on x64 and ARM64, plus checksums and license notices.
 - `/sessions` opens the session picker, `/timeline` opens the session tree, and a visible tab strip supports switching, history, closing, and reopening sessions.
 - `/laya on` now provisions the sidecar from your configured `laya.url` and connects it to the agent when missing, instead of only flipping the flag; `/laya setup` and `/laya calibrate` work the same way in-session.

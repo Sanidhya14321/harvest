@@ -37,6 +37,7 @@ function createCtx(slot: EditorSlot, editor: unknown) {
 	const ctx = {
 		editor,
 		editorContainer: slot,
+		sessionManager: { getSessionFile: () => undefined },
 		ui: {
 			setFocus,
 			requestRender: vi.fn(),
@@ -92,6 +93,46 @@ describe("SelectorController.focusActiveEditorArea", () => {
 });
 
 describe("SelectorController session replacement overlay", () => {
+	it("keeps the picker open until a new session has actually been created", async () => {
+		vi.spyOn(SessionManager, "list").mockResolvedValue([]);
+		let sessionId = "current";
+		const create = Promise.withResolvers<void>();
+		const hide = vi.fn();
+		let selector: SessionSelectorComponent | undefined;
+		const ctx = {
+			sessionManager: {
+				getSessionFile: () => undefined,
+				getSessionId: () => sessionId,
+				getCwd: () => "/tmp",
+				getSessionDir: () => "/tmp",
+			},
+			handleClearCommand: vi.fn(() => create.promise),
+			editor: {},
+			editorContainer: createEditorSlot(),
+			ui: {
+				showOverlay: vi.fn(component => {
+					selector = component as SessionSelectorComponent;
+					return { hide, setHidden: vi.fn(), isHidden: () => false };
+				}),
+				setFocus: vi.fn(),
+				requestRender: vi.fn(),
+				terminal: { rows: 24 },
+			},
+		} as unknown as InteractiveModeContext;
+		const controller = new SelectorController(ctx);
+		await controller.showSessionSelector();
+		const row = selector!.render(80).findIndex(line => line.includes("+ New session"));
+		expect(row).toBeGreaterThanOrEqual(0);
+		selector!.handleInput(`\x1b[<0;4;${row + 1}M`);
+		expect(ctx.handleClearCommand).toHaveBeenCalledTimes(1);
+		expect(hide).not.toHaveBeenCalled();
+		sessionId = "next";
+		create.resolve();
+		await create.promise;
+		await Bun.sleep(0);
+		expect(hide).toHaveBeenCalledTimes(1);
+	});
+
 	it("keeps the fullscreen selector visible until the resumed transcript is ready", async () => {
 		const session: SessionInfo = {
 			path: "/tmp/resume.jsonl",
@@ -116,6 +157,7 @@ describe("SelectorController session replacement overlay", () => {
 			editor,
 			editorContainer,
 			sessionManager: {
+				getSessionFile: () => undefined,
 				getCwd: () => "/tmp",
 				getSessionDir: () => "/tmp",
 			},
