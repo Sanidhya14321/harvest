@@ -55,6 +55,11 @@ export class LiveSessionRegistry {
 		return [...this.#entries.values()].map(entry => entry.session);
 	}
 
+	/** Runs and approval requests that need an explicit decision before process exit. */
+	get busySessions(): readonly LiveSessionSnapshot[] {
+		return this.snapshots.filter(snapshot => snapshot.status === "running" || snapshot.status === "waiting");
+	}
+
 	get snapshots(): readonly LiveSessionSnapshot[] {
 		return [...this.#entries.entries()].map(([id, entry]) => ({
 			id,
@@ -113,6 +118,13 @@ export class LiveSessionRegistry {
 		entry.status = "error";
 		if (sessionId !== this.#selectedId) entry.unread = true;
 		this.#emit();
+	}
+
+	/** Stop only the requested run; hiding or selecting tabs never calls this. */
+	async stop(sessionId: string): Promise<void> {
+		const entry = this.#entries.get(sessionId);
+		if (!entry) throw new Error(`Session ${sessionId} is not live`);
+		await entry.session.abort();
 	}
 
 	async dispose(): Promise<void> {

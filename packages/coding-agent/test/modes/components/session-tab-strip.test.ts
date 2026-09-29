@@ -40,6 +40,26 @@ it("shows the latest saved title after a named tab becomes inactive", () => {
 	expect(text).not.toContain("Untitled task");
 });
 
+it("shows each live session's title and distinct activity state after switching", () => {
+	const tabs = new SessionTabs();
+	tabs.open("/work/first.jsonl", "Old title");
+	tabs.open("/work/second.jsonl", "Second task");
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/second.jsonl",
+		() => "Second task",
+		async () => {},
+		path =>
+			path === "/work/first.jsonl"
+				? { id: "first", path, title: "Generated title", status: "running", unread: false, selected: false }
+				: { id: "second", path, title: "Second task", status: "waiting", unread: true, selected: true },
+	);
+	const text = stripVTControlCharacters(strip.renderWorkspace(100, true).join(""));
+	expect(text).toContain("● Generated title");
+	expect(text).toContain("? Second task");
+	expect(text).not.toContain("Old title");
+});
+
 it("keeps the active tab visible when many sessions are open", () => {
 	const tabs = new SessionTabs();
 	for (let index = 1; index <= 12; index++) tabs.open(`/work/${index}.jsonl`, `Task ${index}`);

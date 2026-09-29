@@ -8,6 +8,7 @@ function fakeSession(id: string, path: string, cwd = "C:/project") {
 	const titleListeners = new Set<() => void>();
 	let name = "Untitled";
 	const dispose = mock(async () => {});
+	const abort = mock(async () => {});
 	const session = {
 		isStreaming: false,
 		sessionManager: {
@@ -25,10 +26,12 @@ function fakeSession(id: string, path: string, cwd = "C:/project") {
 			return () => listeners.delete(listener);
 		},
 		dispose,
+		abort,
 	} as unknown as AgentSession;
 	return {
 		session,
 		dispose,
+		abort,
 		emit: (event: AgentSessionEvent) => {
 			for (const listener of listeners) listener(event);
 		},
@@ -85,6 +88,20 @@ describe("LiveSessionRegistry", () => {
 		expect(registry.snapshots.find(item => item.id === "one")).toMatchObject({ status: "completed", unread: true });
 		await registry.select("C:/project/one.jsonl");
 		expect(registry.snapshots.find(item => item.id === "one")).toMatchObject({ status: "idle", unread: false });
+		await registry.dispose();
+	});
+
+	it("keeps a hidden run alive until an explicit stop targets its session", async () => {
+		const first = fakeSession("one", "C:/project/one.jsonl");
+		const second = fakeSession("two", "C:/project/two.jsonl");
+		const registry = new LiveSessionRegistry(first.session, async () => second.session);
+		first.emit({ type: "agent_start" });
+		await registry.select("C:/project/two.jsonl");
+		expect(registry.busySessions.map(snapshot => snapshot.id)).toEqual(["one"]);
+		expect(first.abort).not.toHaveBeenCalled();
+		await registry.stop("one");
+		expect(first.abort).toHaveBeenCalledTimes(1);
+		expect(second.abort).not.toHaveBeenCalled();
 		await registry.dispose();
 	});
 

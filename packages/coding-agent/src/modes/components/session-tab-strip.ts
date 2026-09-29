@@ -1,9 +1,10 @@
 import { type Component, type Tab, TabBar, truncateToWidth } from "@harvest/pi-tui";
 import { normalizePathForComparison } from "@harvest/pi-utils";
 import type { SessionTabs } from "../../session/session-tabs";
+import type { LiveSessionSnapshot } from "../../session/live-session-registry";
 import { sanitizeStatusText, getTabBarTheme } from "../shared";
 
-/** Visible tab strip backed by session files; switching still uses AgentSession's transaction. */
+/** Visible tab strip backed by session files and optional live runtime state. */
 export class SessionTabStrip implements Component {
 	readonly #bar = new TabBar("Sessions", [], getTabBarTheme());
 	readonly #workspaceBar = new TabBar("", [], getTabBarTheme());
@@ -14,6 +15,7 @@ export class SessionTabStrip implements Component {
 		private readonly currentPath: () => string | undefined,
 		private readonly currentTitle: () => string | undefined,
 		private readonly onSelect: (path: string) => Promise<void>,
+		private readonly liveSnapshot?: (path: string) => LiveSessionSnapshot | undefined,
 	) {
 		this.#bar.showHint = false;
 		this.#bar.onTabChange = tab => void this.onSelect(tab.id);
@@ -28,6 +30,25 @@ export class SessionTabStrip implements Component {
 		this.#onNew = callback;
 	}
 
+	#label(path: string, current: string | undefined, limit: number): string {
+		const snapshot = this.liveSnapshot?.(path);
+		const active = current && normalizePathForComparison(path) === normalizePathForComparison(current);
+		const title = sanitizeStatusText(
+			snapshot?.title ?? (active ? this.currentTitle() : undefined) ?? this.tabs.label(path) ?? "New session",
+		);
+		const indicator =
+			snapshot?.status === "running"
+				? "● "
+				: snapshot?.status === "waiting"
+					? "? "
+					: snapshot?.status === "error"
+						? "! "
+						: snapshot?.unread
+							? "✓ "
+							: "";
+		return `${indicator}${truncateToWidth(title, Math.max(1, limit - Bun.stringWidth(indicator)))}`;
+	}
+
 	renderWorkspace(width: number, hasConversation: boolean): readonly string[] {
 		const paths = this.tabs.paths;
 		if (width < 12 || (paths.length < 2 && !hasConversation)) {
@@ -40,14 +61,7 @@ export class SessionTabStrip implements Component {
 		const visible = paths.slice(start, start + 5);
 		const displayed: Tab[] = visible.map((sessionPath, index) => ({
 			id: sessionPath,
-			label: truncateToWidth(
-				sanitizeStatusText(
-					current && normalizePathForComparison(sessionPath) === normalizePathForComparison(current)
-						? (this.currentTitle() ?? this.tabs.label(sessionPath) ?? "New session")
-						: (this.tabs.label(sessionPath) ?? "New session"),
-				),
-				22,
-			),
+			label: this.#label(sessionPath, current, 22),
 			short: `${start + index + 1}`,
 		}));
 		if (start > 0) displayed.unshift({ id: "hidden-before", label: "‹", muted: true });
@@ -83,14 +97,7 @@ export class SessionTabStrip implements Component {
 		const visible = paths.slice(start, start + 7);
 		const displayed: Tab[] = visible.map((sessionPath, index) => ({
 			id: sessionPath,
-			label: `${start + index + 1} ${truncateToWidth(
-				sanitizeStatusText(
-					current && normalizePathForComparison(sessionPath) === normalizePathForComparison(current)
-						? (this.currentTitle() ?? this.tabs.label(sessionPath) ?? "New session")
-						: (this.tabs.label(sessionPath) ?? "New session"),
-				),
-				20,
-			)}`,
+			label: `${start + index + 1} ${this.#label(sessionPath, current, 20)}`,
 			short: `${start + index + 1}`,
 		}));
 		if (start > 0) displayed.unshift({ id: "hidden-before", label: `‹ ${start} more`, short: "‹", muted: true });
