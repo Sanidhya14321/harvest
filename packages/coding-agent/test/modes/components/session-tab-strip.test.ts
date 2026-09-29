@@ -24,6 +24,22 @@ it("shows open session titles and keeps control characters out of the tab strip"
 	expect(text).not.toContain("\t");
 });
 
+it("shows the latest saved title after a named tab becomes inactive", () => {
+	const tabs = new SessionTabs();
+	tabs.open("/work/first.jsonl", "Untitled task");
+	tabs.open("/work/second.jsonl", "Second task");
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/second.jsonl",
+		() => "Second task",
+		async () => {},
+	);
+	tabs.open("/work/first.jsonl", "Investigate parser");
+	const text = stripVTControlCharacters(strip.renderWorkspace(100, true).join(""));
+	expect(text).toContain("Investigate parser");
+	expect(text).not.toContain("Untitled task");
+});
+
 it("keeps the active tab visible when many sessions are open", () => {
 	const tabs = new SessionTabs();
 	for (let index = 1; index <= 12; index++) tabs.open(`/work/${index}.jsonl`, `Task ${index}`);

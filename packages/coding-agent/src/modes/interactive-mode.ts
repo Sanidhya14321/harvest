@@ -1313,8 +1313,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		// refresh) gets the terminal title + accent updates from here. Registered
 		// before initHooksAndCustomTools/#reconcileModeFromSession/#enterPlanMode —
 		// all of which can reach setSessionName during init.
+		const titleSessionManager = this.sessionManager;
 		this.#eventBusUnsubscribers.push(
-			this.sessionManager.onPersistenceError(error => {
+			titleSessionManager.onPersistenceError(error => {
 				const detail = truncateToWidth(
 					replaceTabs(sanitizeText(error.message)).replace(/[\r\n]+/g, " "),
 					TRUNCATE_LENGTHS.LINE,
@@ -1323,9 +1324,14 @@ export class InteractiveMode implements InteractiveModeContext {
 					`Session persistence failed: ${detail}. Unsaved entries remain in memory; persistence will retry on the next entry.`,
 				);
 			}),
-			this.sessionManager.onSessionNameChanged(() => {
-				setSessionTerminalTitle(this.sessionManager.getSessionName(), this.sessionManager.getCwd());
-				this.#handleSessionAccentInputsChanged();
+			titleSessionManager.onSessionNameChanged(() => {
+				const name = titleSessionManager.getSessionName();
+				const file = titleSessionManager.getSessionFile();
+				if (file && name) this.#selectorController.sessionTabs.open(file, name);
+				if (titleSessionManager === this.sessionManager) {
+					setSessionTerminalTitle(name, titleSessionManager.getCwd());
+					this.#handleSessionAccentInputsChanged();
+				} else this.ui.requestRender();
 			}),
 		);
 		this.#syncEditorMaxHeight();

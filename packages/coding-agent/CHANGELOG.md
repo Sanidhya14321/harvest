@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- A generated or manually renamed session keeps its latest title in the tab strip after switching away.
 - The fullscreen start screen keeps the logo and prompt centered together as the terminal width changes.
 - Fullscreen session changes avoid redundant terminal clears, and selecting the current tab keeps its run active.
 - The new-session landing view stays centered without replaying a status message into the transcript.
