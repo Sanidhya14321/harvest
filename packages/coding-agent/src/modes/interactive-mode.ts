@@ -2035,6 +2035,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	): SubmittedUserInput {
 		const submission: SubmittedUserInput = {
 			text: input.text,
+			ownerSession: this.session,
 			images: input.images,
 			imageLinks: input.imageLinks,
 			customType: input.customType,

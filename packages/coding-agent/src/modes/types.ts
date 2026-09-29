@@ -53,6 +53,8 @@ export type CompactionQueuedMessage = {
 
 export type SubmittedUserInput = {
 	text: string;
+	/** Runtime selected when Enter was pressed; navigation cannot reroute this prompt. */
+	ownerSession?: AgentSession;
 	images?: ImageContent[];
 	imageLinks?: (string | undefined)[];
 	customType?: string;
