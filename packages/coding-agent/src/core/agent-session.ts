@@ -116,6 +116,7 @@ export function interceptSessionToolCall(
 export async function interceptSessionToolCallLaya(
 	toolCall: ToolCallPayload,
 	sessionId?: string,
+	signal?: AbortSignal,
 ): Promise<ToolGatingDecision> {
-	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, { sessionId });
+	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, { sessionId, signal });
 }

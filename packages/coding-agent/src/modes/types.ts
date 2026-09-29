@@ -26,6 +26,7 @@ import type { HistoryStorage } from "../session/history-storage";
 import type { SessionContext } from "../session/session-context";
 import type { SessionManager } from "../session/session-manager";
 import type { SessionViewStateStore } from "../session/session-view-state";
+import type { RunDiagnosticsTracker } from "./run-diagnostics";
 import type { ShakeMode } from "../session/shake-types";
 import type { ConfiguredThinkingLevel } from "../thinking";
 import type { LspStartupServerInfo } from "../tools";
@@ -170,6 +171,8 @@ export interface InteractiveModeContext {
 	subagentEventBus?: EventBus;
 	/** In-memory per-session composer drafts; absent in unit-test contexts. */
 	viewStateStore?: SessionViewStateStore;
+	/** Per-session run-stage record; absent in unit-test contexts. */
+	runDiagnostics?: RunDiagnosticsTracker;
 
 	// State
 	isInitialized: boolean;

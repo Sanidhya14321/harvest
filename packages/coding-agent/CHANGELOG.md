@@ -22,6 +22,8 @@
 - Switching sessions keeps each session's unsent composer draft and attachments instead of leaking them into the newly shown session.
 - `/exit` now asks for confirmation when a run is still active or an approval is waiting; denying leaves the run, the approval, and the draft untouched.
 - Switching sessions restores each session's transcript scroll position, and the tab strip shows a running or approval-waiting indicator on the active session.
+- Each session now keeps a run-stage record (current stage, active tool, elapsed time, first-token latency, turn count, finished tool durations, and the preserved failure reason) so stopped or paused work can report why without re-reading the transcript.
+- Aborting a turn now cancels its in-flight Laya tool-gating call instead of riding out the sidecar timeout; the gate still fails closed to approval.
 
 ### Added
 

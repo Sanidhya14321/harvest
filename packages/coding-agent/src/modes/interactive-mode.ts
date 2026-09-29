@@ -218,6 +218,7 @@ import {
 	SessionObserverRegistry,
 } from "./session-observer-registry";
 import { createSessionTeardown, isApprovalDialogOpen, type SessionTeardown } from "./session-teardown";
+import { RunDiagnosticsTracker } from "./run-diagnostics";
 import { runProviderSetupWizard } from "./setup-wizard/lazy";
 import { sanitizeStatusText } from "./shared";
 import { describeSelectedSession, SessionTabStrip } from "./components/session-tab-strip";
@@ -589,6 +590,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	editorContainer: Container;
 	/** In-memory per-session composer drafts; unsent text never persists across restarts. */
 	readonly viewStateStore = new SessionViewStateStore();
+	/** Per-session run-stage record answering "why did work stop or pause". */
+	readonly runDiagnostics = new RunDiagnosticsTracker();
 	/** Composer attachment band (chip cards) rendered directly above the prompt box. */
 	attachmentChipsContainer: Container;
 	hookWidgetContainerAbove: Container;
@@ -1411,6 +1414,11 @@ export class InteractiveMode implements InteractiveModeContext {
 		// Subscribe to agent events
 		this.#subscribeToAgent();
 
+		this.#eventBusUnsubscribers.push(
+			this.session.subscribe(event => {
+				this.runDiagnostics.handleEvent(this.sessionManager.getSessionId(), event, () => this.session.isStreaming);
+			}),
+		);
 		this.#eventBusUnsubscribers.push(
 			this.session.subscribe(event => {
 				if (event.type === "model_changed") {

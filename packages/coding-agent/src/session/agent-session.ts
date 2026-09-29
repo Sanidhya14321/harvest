@@ -3930,6 +3930,7 @@ export class AgentSession {
 						args: (ctx.args ?? {}) as Record<string, unknown>,
 					},
 					this.sessionManager?.getSessionId(),
+					signal,
 				);
 				if (gating.isHighRiskTool && gating.requireApproval) {
 					if (ctx.toolCall.providerMetadata?.type === "computer") {
@@ -4011,6 +4012,7 @@ export class AgentSession {
 					const gating = await interceptSessionToolCallLaya(
 						{ name: ctx.tool.name, args: revisedArgs },
 						this.sessionManager?.getSessionId(),
+						signal,
 					);
 					if (gating.isHighRiskTool && gating.requireApproval) {
 						ctx.toolCall.providerMetadata = {
