@@ -430,6 +430,21 @@ describe("Composer prepaint", () => {
 		expect(rows.join("\n")).not.toContain("Welcome back!");
 		composer.stop();
 	});
+	it("centers the empty-state logo and prompt as one bounded group after resize", () => {
+		const terminal = new CountingTerminal(120, 32);
+		const composer = new Composer({ preferences: { ...config, fullscreen: true }, terminal });
+		composer.start();
+		for (const width of [120, 90]) {
+			const rows = composer.renderFrame({ columns: width, rows: 32 }).viewport.map(row => Bun.stripANSI(row));
+			const logo = rows.find(row => row.includes("harvest"));
+			const prompt = rows.find(row => row.includes("▎"));
+			expect(logo).toBeDefined();
+			expect(prompt).toBeDefined();
+			expect(logo!.indexOf("harvest")).toBe(Math.floor((width - "harvest".length) / 2));
+			expect(prompt!.indexOf("▎")).toBeGreaterThanOrEqual(Math.floor((width - 76) / 2));
+		}
+		composer.stop();
+	});
 	it("anchors the composer below conversation history in the full-screen workspace", () => {
 		const terminal = new CountingTerminal(80, 24);
 		const composer = new Composer({ preferences: { ...config, fullscreen: true }, terminal });

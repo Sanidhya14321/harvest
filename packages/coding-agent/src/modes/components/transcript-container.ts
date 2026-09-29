@@ -136,6 +136,7 @@ export function trimBlankEdges(rows: readonly string[]): readonly string[] {
 /** Owns transcript order, live capacity, and ordered immutable retirement. */
 export class TranscriptContainer extends Container {
 	#entries: TranscriptEntry[] = [];
+	#syncedChildrenRevision = 0;
 	#frontier = 0;
 	#nextBatchId = 1;
 	#offered: Offered | undefined;
@@ -162,12 +163,14 @@ export class TranscriptContainer extends Container {
 			emitted: 0,
 			stableFrozen: false,
 		});
+		this.#syncedChildrenRevision = this.childrenRevision;
 	}
 
 	override removeChild(component: Component): void {
 		if (this.children.indexOf(component) < 0 || !this.canRemoveBlock(component)) return;
 		super.removeChild(component);
 		this.#entries = this.#entries.filter(candidate => candidate.component !== component);
+		this.#syncedChildrenRevision = this.childrenRevision;
 		this.#frontier = Math.min(this.#frontier, this.#entries.length);
 		this.#childStartRows.delete(component);
 	}
@@ -175,6 +178,7 @@ export class TranscriptContainer extends Container {
 	override clear(): void {
 		super.clear();
 		this.#entries = [];
+		this.#syncedChildrenRevision = this.childrenRevision;
 		this.#frontier = 0;
 		this.#offered = undefined;
 		this.#childStartRows.clear();
@@ -761,11 +765,14 @@ export class TranscriptContainer extends Container {
 	}
 
 	#syncEntries(): void {
+		if (this.#syncedChildrenRevision === this.childrenRevision) return;
 		if (
 			this.#entries.length === this.children.length &&
 			this.#entries.every((entry, index) => entry.component === this.children[index])
-		)
+		) {
+			this.#syncedChildrenRevision = this.childrenRevision;
 			return;
+		}
 		const existing = new Map(this.#entries.map(entry => [entry.component, entry]));
 		this.#entries = this.children.map(
 			component =>
@@ -781,6 +788,7 @@ export class TranscriptContainer extends Container {
 		);
 		this.#frontier = this.#entries.findIndex(entry => entry.state !== "committed");
 		if (this.#frontier < 0) this.#frontier = this.#entries.length;
+		this.#syncedChildrenRevision = this.childrenRevision;
 	}
 }
 

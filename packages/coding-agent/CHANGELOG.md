@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- The fullscreen start screen keeps the logo and prompt centered together as the terminal width changes.
 - Fullscreen session changes avoid redundant terminal clears, and selecting the current tab keeps its run active.
 - The new-session landing view stays centered without replaying a status message into the transcript.
 - Starting Harvest on Windows no longer opens a separate console for the Laya sidecar.

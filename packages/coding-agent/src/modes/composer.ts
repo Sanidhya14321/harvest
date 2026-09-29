@@ -503,17 +503,21 @@ export class Composer implements TerminalFrameProvider {
 			: [this.#bootstrapInputGap, this.editor, this.#statusHost];
 		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
 		const transcript = transcriptIndex >= 0 ? (roots[transcriptIndex] as TranscriptContainer) : undefined;
-		const after = this.#renderRoots(
+		const empty = !transcript || transcript.children.length === 0;
+		const contentWidth = empty ? Math.min(width, 76) : width;
+		const contentInset = empty ? Math.floor((width - contentWidth) / 2) : 0;
+		const afterContent = this.#renderRoots(
 			roots.filter(root => root !== transcript && root !== this.#workspaceTabs),
-			width,
+			contentWidth,
 		);
+		const after = contentInset > 0 ? afterContent.map(row => `${" ".repeat(contentInset)}${row}`) : afterContent;
 		const tabRows = this.#workspaceTabs?.renderWorkspace(width, Boolean(transcript?.children.length)) ?? [];
 		const tabs = tabRows.length > 0 ? [...tabRows, ""] : [];
 		if (after.length >= rows) return after.slice(-rows);
 		if (tabs.length + after.length > rows) return [...tabs.slice(0, rows - after.length), ...after];
 		const available = Math.max(0, rows - tabs.length - after.length);
 		const blank = (count: number): string[] => Array.from({ length: Math.max(0, count) }, () => "");
-		if (!transcript || transcript.children.length === 0) {
+		if (empty) {
 			const word = "harvest";
 			const logo = `${" ".repeat(Math.max(0, Math.floor((width - visibleWidth(word)) / 2)))}${theme.bold(theme.fg("accent", word))}`;
 			const intro = this.#preferences.quiet ? after : [logo, "", ...after];

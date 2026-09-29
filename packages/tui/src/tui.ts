@@ -401,6 +401,8 @@ export interface OverlayHandle {
  */
 export class Container implements Component {
 	children: Component[] = [];
+	/** Child-list revision for containers that keep a parallel index. */
+	protected childrenRevision = 0;
 
 	// Memoized concatenation of the children's latest renders. Children are
 	// still rendered every frame (renders carry side effects: image placement
@@ -425,6 +427,7 @@ export class Container implements Component {
 
 	addChild(component: Component): void {
 		this.children.push(component);
+		this.childrenRevision++;
 		if (this.#ignoreTight) {
 			component.setIgnoreTight?.(true);
 		}
@@ -435,12 +438,14 @@ export class Container implements Component {
 		const index = this.children.indexOf(component);
 		if (index !== -1) {
 			this.children.splice(index, 1);
+			this.childrenRevision++;
 			this.#memoLines = undefined;
 		}
 	}
 
 	clear(): void {
 		this.children = [];
+		this.childrenRevision++;
 		this.#memoLines = undefined;
 	}
 
