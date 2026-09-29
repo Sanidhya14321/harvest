@@ -307,4 +307,40 @@ describe("formatRunDiagnostic", () => {
 		expect(text).toContain("Stage: idle");
 		expect(text).toContain("Failure: socket reset");
 	});
+
+	it("records tool-gating verdicts with local latency", () => {
+		const tracker = new RunDiagnosticsTracker();
+		tracker.handleEvent("a", { type: "agent_start" } as AgentSessionEvent, IDLE, 1000);
+		tracker.handleEvent(
+			"a",
+			{
+				type: "laya_gating_decision",
+				toolName: "write",
+				latencyMs: 45,
+				requireApproval: true,
+				fallback: false,
+				reason: "noul",
+			} as AgentSessionEvent,
+			ACTIVE,
+			1500,
+		);
+		expect(tracker.snapshot("a")).toMatchObject({
+			lastGate: { toolName: "write", latencyMs: 45, verdict: "approval-required" },
+		});
+		expect(formatRunDiagnostic(tracker.snapshot("a", 2000))).toContain("Last gate: write 45ms (approval-required)");
+		tracker.handleEvent(
+			"a",
+			{
+				type: "laya_gating_decision",
+				toolName: "bash",
+				latencyMs: 300,
+				requireApproval: true,
+				fallback: true,
+				reason: "timeout",
+			} as AgentSessionEvent,
+			ACTIVE,
+			2500,
+		);
+		expect(formatRunDiagnostic(tracker.snapshot("a", 3000))).toContain("Last gate: bash 300ms (fallback)");
+	});
 });

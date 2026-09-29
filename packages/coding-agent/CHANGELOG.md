@@ -29,6 +29,7 @@
 - The status line has a `run` segment (in the `default` preset) showing the live run stage with elapsed time, or the preserved failure after an errored stop.
 - Fixed inverted fullscreen scrolling: wheel-down and page-down now move toward the live tail, wheel-up and page-up back in history.
 - Project memory directories use a collision-resistant path encoding with migration from older schemes, so similarly named projects no longer share memory.
+- `/diagnostics` and the run record now include the last tool-gating verdict with its local sidecar latency, separating gating delay from model and tool time.
 - Concurrent Laya sidecar starters now share one spawn run instead of double-spawning daemons behind a port drift; the same singleflight guard now covers the full setup pipeline.
 
 ### Added

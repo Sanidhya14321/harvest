@@ -47,6 +47,15 @@ export type AgentSessionEvent =
 	  }
 	| { type: "retry_fallback_applied"; from: string; to: string; role: string }
 	| { type: "retry_fallback_succeeded"; model: string; role: string }
+	/** Tool-gating verdict with its local sidecar latency, for delay attribution. */
+	| {
+			type: "laya_gating_decision";
+			toolName: string;
+			latencyMs: number;
+			requireApproval: boolean;
+			fallback: boolean;
+			reason: string;
+	  }
 	| { type: "model_changed" }
 	| { type: "config_warnings_changed" }
 	| { type: "advisor_cost_changed" }

@@ -253,6 +253,7 @@ import type {
 	UsageFallbackConfirmer,
 } from "./agent-session-types";
 import { writeArtifact } from "./artifacts";
+import type { ToolGatingDecision } from "../core/harvest/laya-gating";
 import {
 	createHarvestSession,
 	interceptSessionToolCall,
@@ -3932,6 +3933,7 @@ export class AgentSession {
 					this.sessionManager?.getSessionId(),
 					signal,
 				);
+				await this.#emitGatingDecision(ctx.tool.name, gating);
 				if (gating.isHighRiskTool && gating.requireApproval) {
 					if (ctx.toolCall.providerMetadata?.type === "computer") {
 						ctx.toolCall.providerMetadata.layaGatingRequired = true;
@@ -3946,6 +3948,13 @@ export class AgentSession {
 					}
 				}
 			} catch (err) {
+				await this.#emitGatingDecision(ctx.tool.name, {
+					isHighRiskTool: true,
+					requireApproval: true,
+					fallback: true,
+					reason: `Laya gating error: ${String(err)}`,
+					latencyMs: 0,
+				});
 				// Fail CLOSED on gating error
 				if (ctx.toolCall.providerMetadata?.type === "computer") {
 					ctx.toolCall.providerMetadata.layaGatingRequired = true;
@@ -4014,6 +4023,7 @@ export class AgentSession {
 						this.sessionManager?.getSessionId(),
 						signal,
 					);
+					await this.#emitGatingDecision(ctx.tool.name, gating);
 					if (gating.isHighRiskTool && gating.requireApproval) {
 						ctx.toolCall.providerMetadata = {
 							...ctx.toolCall.providerMetadata,
@@ -4023,6 +4033,13 @@ export class AgentSession {
 						};
 						}
 				} catch (error) {
+					await this.#emitGatingDecision(ctx.tool.name, {
+						isHighRiskTool: true,
+						requireApproval: true,
+						fallback: true,
+						reason: `Laya gating error: ${String(error)}`,
+						latencyMs: 0,
+					});
 					ctx.toolCall.providerMetadata = {
 						...ctx.toolCall.providerMetadata,
 						type: "laya",
@@ -4034,6 +4051,31 @@ export class AgentSession {
 			return { args: callResult.input };
 		}
 		return undefined;
+	}
+
+	/**
+	 * Publish a tool-gating verdict for run diagnostics (local-delay
+	 * attribution). Never throws: emission failure must not break the gate.
+	 */
+	async #emitGatingDecision(toolName: string, gating: ToolGatingDecision): Promise<void> {
+		// Low-risk bypasses never consult the sidecar; recording them would
+		// evict the meaningful high-risk measurements they precede.
+		if (!gating.isHighRiskTool && !gating.fallback) return;
+		try {
+			await this.#emitSessionEvent({
+				type: "laya_gating_decision",
+				toolName,
+				latencyMs: gating.latencyMs,
+				requireApproval: gating.requireApproval,
+				fallback: gating.fallback,
+				reason: gating.reason,
+			});
+		} catch (error) {
+			logger.warn("Failed to emit tool gating decision event", {
+				toolName,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 	}
 
 	/** Find the last assistant message in agent state (including aborted ones) */

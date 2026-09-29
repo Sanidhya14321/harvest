@@ -12,6 +12,8 @@ It focuses on current implementation behavior, including fallback paths and cave
 - [`../src/session/session-listing.ts`](../packages/coding-agent/src/session/session-listing.ts)
 - [`../src/session/session-paths.ts`](../packages/coding-agent/src/session/session-paths.ts)
 - [`../src/session/session-tabs.ts`](../packages/coding-agent/src/session/session-tabs.ts)
+- [`../src/session/live-session-registry.ts`](../packages/coding-agent/src/session/live-session-registry.ts)
+- [`../src/session/live-session-factory.ts`](../packages/coding-agent/src/session/live-session-factory.ts)
 - [`../src/session/session-tab-persistence.ts`](../packages/coding-agent/src/session/session-tab-persistence.ts)
 - [`../src/session/session-view-state.ts`](../packages/coding-agent/src/session/session-view-state.ts)
 - [`../src/modes/run-diagnostics.ts`](../packages/coding-agent/src/modes/run-diagnostics.ts)
@@ -165,6 +167,10 @@ Empty-list render behavior:
 - current-folder scope renders `No sessions in current folder. Press Tab to view all.`; all-projects scope renders `No sessions found`
 - Enter/Delete/Backspace on empty do nothing
 - Esc/Ctrl+C still work
+
+## Cold opens for live tabs (`openLiveAgentSession`)
+
+`openLiveAgentSession` (`src/session/live-session-factory.ts`) builds an independent runtime for one live tab without disturbing the current one, mirroring the ACP concurrent-session factory: settings cloned per session (session overrides never leak sideways), a dedicated session manager (`SessionManager.open` for cold reopens, `create` for fresh tabs), the inherited model, a unique `tab:<sessionId>` agent identity, fresh event buses, and shared credentials/model routing. Extension discovery is scoped through the parent's roots/paths; MCP sharing is the caller's explicit choice. The result is adopted into `LiveSessionRegistry`, which deduplicates concurrent opens of the same path. Dual-prompt concurrency (independent transcripts, events, and per-runtime abort) is covered by `dual-session-prompt.test.ts`.
 
 ## Runtime switch execution (`AgentSession.switchSession`)
 

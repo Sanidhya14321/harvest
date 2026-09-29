@@ -33,6 +33,8 @@ export interface RunDiagnosticSnapshot {
 	turnCount: number;
 	/** Most recent finished tool and its wall duration. */
 	lastTool: { name: string; durationMs: number } | undefined;
+	/** Most recent tool-gating verdict with its local sidecar latency. */
+	lastGate: { toolName: string; latencyMs: number; verdict: string } | undefined;
 	/** Terminal failure of the last settled saga; survives until the next run starts. */
 	failure: string | undefined;
 	failureAt: number | undefined;
@@ -68,6 +70,11 @@ export function formatRunDiagnostic(snapshot: RunDiagnosticSnapshot): string {
 	if (snapshot.turnCount > 0) lines.push(`Turns: ${snapshot.turnCount}`);
 	if (snapshot.lastTool) {
 		lines.push(`Last tool: ${snapshot.lastTool.name} (${formatPreciseDuration(snapshot.lastTool.durationMs)})`);
+	}
+	if (snapshot.lastGate) {
+		lines.push(
+			`Last gate: ${snapshot.lastGate.toolName} ${formatPreciseDuration(snapshot.lastGate.latencyMs)} (${snapshot.lastGate.verdict})`,
+		);
 	}
 	if (snapshot.lastEvent) lines.push(`Last event: ${snapshot.lastEvent}`);
 	if (snapshot.failure) lines.push(`Failure: ${snapshot.failure}`);
@@ -117,6 +124,7 @@ export class RunDiagnosticsTracker {
 					run.firstTokenSince = undefined;
 					run.turnCount = 0;
 					run.lastTool = undefined;
+					run.lastGate = undefined;
 				} else if (run.stage === "awaitingDelivery") {
 					run.stage = this.#retryPending.has(sessionId) ? "retry" : "streaming";
 				}
@@ -225,6 +233,15 @@ export class RunDiagnosticsTracker {
 				this.#touch(run, event.type, now);
 				return;
 			}
+			case "laya_gating_decision": {
+				run.lastGate = {
+					toolName: event.toolName,
+					latencyMs: Math.max(0, event.latencyMs),
+					verdict: event.fallback ? "fallback" : event.requireApproval ? "approval-required" : "auto-cleared",
+				};
+				this.#touch(run, event.type, now);
+				return;
+			}
 			case "turn_end": {
 				run.turnCount++;
 				this.#touch(run, event.type, now);
@@ -264,6 +281,7 @@ export class RunDiagnosticsTracker {
 				firstTokenMs: undefined,
 				turnCount: 0,
 				lastTool: undefined,
+				lastGate: undefined,
 				failure: undefined,
 				failureAt: undefined,
 				lastEvent: undefined,
@@ -279,6 +297,7 @@ export class RunDiagnosticsTracker {
 			firstTokenMs: run.firstTokenMs,
 			turnCount: run.turnCount,
 			lastTool: run.lastTool ? { ...run.lastTool } : undefined,
+			lastGate: run.lastGate ? { ...run.lastGate } : undefined,
 			failure: run.failure,
 			failureAt: run.failureAt,
 			lastEvent: run.lastEvent,
@@ -306,6 +325,7 @@ export class RunDiagnosticsTracker {
 				turnCount: 0,
 				toolStartedAt: undefined,
 				lastTool: undefined,
+				lastGate: undefined,
 				pendingFailure: undefined,
 				failure: undefined,
 				failureAt: undefined,
@@ -334,6 +354,7 @@ interface MutableRunDiagnostic {
 	turnCount: number;
 	toolStartedAt: number | undefined;
 	lastTool: { name: string; durationMs: number } | undefined;
+	lastGate: { toolName: string; latencyMs: number; verdict: string } | undefined;
 	pendingFailure: string | undefined;
 	failure: string | undefined;
 	failureAt: number | undefined;
