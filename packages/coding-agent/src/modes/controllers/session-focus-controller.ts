@@ -9,6 +9,7 @@
  * authoritative state.
  */
 
+import { logger } from "@harvest/pi-utils";
 import { AgentLifecycleManager } from "../../registry/agent-lifecycle";
 import { AgentRegistry, MAIN_AGENT_ID, type RegistryEvent } from "../../registry/agent-registry";
 import type { AgentSession } from "../../session/agent-session";
@@ -40,13 +41,31 @@ export class SessionFocusController {
 	/** Retarget the main view to another already-live top-level session. Neither runtime is stopped. */
 	async selectMainSession(session: AgentSession): Promise<void> {
 		if (session === this.ctx.session && !this.#focusedAgentId) return;
+		const previous = this.ctx.session;
 		this.#focusedAgentId = undefined;
 		this.#attachedSession = undefined;
 		this.ctx.session = session;
 		this.ctx.sessionManager = session.sessionManager;
 		this.ctx.settings = session.settings;
 		this.ctx.agent = session.agent;
-		await this.#attach(session);
+		try {
+			await this.#attach(session);
+		} catch (error) {
+			// A failed transcript or todo load must leave input and events on the last
+			// usable runtime. A newer navigation owns the view if it already moved on.
+			if (this.ctx.session === session) {
+				this.ctx.session = previous;
+				this.ctx.sessionManager = previous.sessionManager;
+				this.ctx.settings = previous.settings;
+				this.ctx.agent = previous.agent;
+				try {
+					await this.#attach(previous);
+				} catch (rollbackError) {
+					logger.error("Failed to restore previous session view", { error: String(rollbackError) });
+				}
+			}
+			throw error;
+		}
 	}
 
 	/** Focus the main view on an agent's live session. Throws an Error with a user-displayable message. */

@@ -18,6 +18,9 @@ function makeSessionStub(opts: { isStreaming?: boolean } = {}): SessionStub {
 	let unsubscribeCalls = 0;
 	const stub = {
 		isStreaming: opts.isStreaming ?? false,
+		sessionManager: {},
+		settings: {},
+		agent: {},
 		subscribe(fn: (event: AgentSessionEvent) => Promise<void> | void) {
 			listener = fn;
 			return () => {
@@ -142,6 +145,24 @@ describe("SessionFocusController", () => {
 		await h.controller.selectMainSession(h.main.session);
 		expect(h.ctx.session).toBe(h.main.session);
 		expect(h.reloadTodoSessions).toEqual([other.session, h.main.session]);
+	});
+
+	it("restores the prior input and event target when the selected transcript fails to load", async () => {
+		let failNext = true;
+		const h = makeHarness({
+			renderInitialMessages: () => {
+				if (failNext) {
+					failNext = false;
+					throw new Error("transcript unavailable");
+				}
+			},
+		});
+		const other = makeSessionStub();
+		await expect(h.controller.selectMainSession(other.session)).rejects.toThrow("transcript unavailable");
+		expect(h.ctx.session).toBe(h.main.session);
+		expect(h.ctx.sessionManager).toBe(h.main.session.sessionManager);
+		expect(h.setSessionCalls.at(-1)).toEqual([h.main.session, undefined]);
+		expect(h.counts.renderInitialMessages()).toBe(2);
 	});
 
 	it("focusAgent retargets subscription, transcript anchors, and status line onto the worker session", async () => {
