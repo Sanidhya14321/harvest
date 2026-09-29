@@ -16,16 +16,20 @@ interface NewSessionHarness {
 		resetTranscriptAnchors: () => number;
 		resetTranscript: () => number;
 		presented: () => number;
+		status: () => number;
+		renders: () => number;
 	};
 	setFocused: (id: string | undefined) => void;
 }
 
-function makeHarness(): NewSessionHarness {
+function makeHarness(fullscreen = false): NewSessionHarness {
 	let newSession = 0;
 	let unfocusSession = 0;
 	let resetTranscriptAnchors = 0;
 	let resetTranscript = 0;
 	let presented = 0;
+	let status = 0;
+	let renders = 0;
 	let focusedAgentId: string | undefined = "subagent-1";
 
 	const ctx = {
@@ -65,8 +69,16 @@ function makeHarness(): NewSessionHarness {
 		present: () => {
 			presented++;
 		},
+		showStatus: () => {
+			status++;
+		},
+		settings: { get: (key: string) => key === "tui.fullscreen" && fullscreen },
 		reloadTodos: async () => {},
-		ui: { requestRender: () => {} },
+		ui: {
+			requestRender: () => {
+				renders++;
+			},
+		},
 	} as unknown as InteractiveModeContext;
 
 	return {
@@ -78,6 +90,8 @@ function makeHarness(): NewSessionHarness {
 			resetTranscriptAnchors: () => resetTranscriptAnchors,
 			resetTranscript: () => resetTranscript,
 			presented: () => presented,
+			status: () => status,
+			renders: () => renders,
 		},
 		setFocused: id => {
 			focusedAgentId = id;
@@ -109,5 +123,14 @@ describe("CommandController new-session teardown", () => {
 		expect(harness.counts.unfocusSession()).toBe(0);
 		expect(harness.counts.resetTranscriptAnchors()).toBe(1);
 		expect(harness.counts.resetTranscript()).toBe(1);
+	});
+
+	it("keeps the fullscreen landing view clear after creating a session", async () => {
+		const harness = makeHarness(true);
+		await harness.controller.handleClearCommand();
+		expect(harness.counts.newSession()).toBe(1);
+		expect(harness.counts.presented()).toBe(0);
+		expect(harness.counts.status()).toBe(1);
+		expect(harness.counts.renders()).toBe(1);
 	});
 });

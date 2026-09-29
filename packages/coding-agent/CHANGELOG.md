@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Fullscreen session changes avoid redundant terminal clears, and selecting the current tab keeps its run active.
+- The new-session landing view stays centered without replaying a status message into the transcript.
 - Starting Harvest on Windows no longer opens a separate console for the Laya sidecar.
 - Unsaved or deleted sessions no longer remain as unusable tabs after switching sessions.
 - The session strip stays hidden with one tab and shows a readable name for unnamed sessions.

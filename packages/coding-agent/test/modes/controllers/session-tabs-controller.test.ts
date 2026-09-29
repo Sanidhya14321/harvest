@@ -73,6 +73,22 @@ it("moves through tab history only after the session switch succeeds", async () 
 	expect(controller.sessionTabs.historyTarget(1)).toBe(second);
 });
 
+it("does not restart the active session when its tab number is selected", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
+	roots.push(root);
+	const active = path.join(root, "active.jsonl");
+	await Bun.write(active, "active");
+	const handleResumeSession = vi.fn(async () => {});
+	const ctx = {
+		sessionManager: { getSessionFile: () => active, getSessionName: () => "Active" },
+		handleResumeSession,
+		ui: { requestRender: vi.fn() },
+	} as unknown as InteractiveModeContext;
+	const controller = new SelectorController(ctx);
+	expect(await controller.handleSessionTabsCommand("switch 1")).toBe("Already viewing session tab 1.");
+	expect(handleResumeSession).not.toHaveBeenCalled();
+});
+
 it("removes a tab whose session file disappeared before navigation", async () => {
 	const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
 	roots.push(root);

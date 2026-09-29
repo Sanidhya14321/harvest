@@ -603,6 +603,7 @@ export class Composer implements TerminalFrameProvider {
 		if (this.#stopped) return;
 		const wasQuiet = this.#preferences.quiet;
 		this.#preferences = { ...this.#preferences, ...update };
+		if (this.#preferences.fullscreen) this.#welcome?.stopIntro();
 		this.ui.setBaseFullscreen(this.#preferences.fullscreen === true);
 		this.editor.setTheme(getEditorTheme());
 		try {
@@ -723,6 +724,7 @@ export class Composer implements TerminalFrameProvider {
 
 	/** Play or replay the welcome intro against the stable header render target. */
 	playWelcomeIntro(): void {
+		if (this.#preferences.fullscreen) return;
 		this.#welcome?.playIntro(() => this.ui.requestComponentRender(this.#header));
 	}
 

@@ -226,6 +226,9 @@ export class SelectorController {
 					? this.sessionTabs.paths[Number(value) - 1]
 					: undefined;
 		if (target) {
+			if (current && normalizePathForComparison(current) === normalizePathForComparison(target)) {
+				return `Already viewing session tab ${this.sessionTabs.indexOf(target) + 1}.`;
+			}
 			if (!(await Bun.file(target).exists())) {
 				this.sessionTabs.close(target, false);
 				this.ctx.ui.requestRender();

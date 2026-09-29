@@ -1014,7 +1014,7 @@ export class UiHelpers {
 				const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
 				this.ctx.showStatus(`Session compacted ${times}`);
 			}
-			if (options.clearTerminalHistory) {
+			if (options.clearTerminalHistory && !this.ctx.settings.get("tui.fullscreen")) {
 				this.ctx.ui.requestRender(true, { clearScrollback: true });
 			} else {
 				this.ctx.ui.requestRender();
