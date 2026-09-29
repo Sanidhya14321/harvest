@@ -29,6 +29,8 @@ import {
 	getComposerStyle,
 	Loader,
 	Markdown,
+	matchesKey,
+	routeSgrMouseInput,
 	Spacer,
 	setTerminalTextSizing,
 	setTuiTight,
@@ -863,6 +865,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.settings = session.settings;
 		const preferences = {
 			quiet: settings.get("startup.quiet"),
+			fullscreen: settings.get("tui.fullscreen"),
 			composerShape: settings.get("composer.shape") ?? "band",
 			showHardwareCursor: settings.get("showHardwareCursor"),
 			maxInlineImages: settings.get("tui.maxInlineImages"),
@@ -1205,6 +1208,46 @@ export class InteractiveMode implements InteractiveModeContext {
 		});
 		this.composer.setStatusComponent(this.statusLine);
 
+		const sessionTabStrip = new SessionTabStrip(
+			this.#selectorController.sessionTabs,
+			() => this.sessionManager.getSessionFile(),
+			() => this.sessionManager.getSessionName(),
+			async sessionPath => {
+				try {
+					await this.handleResumeSession(sessionPath);
+				} catch (error) {
+					this.showError(error instanceof Error ? error.message : String(error));
+				}
+			},
+		);
+		sessionTabStrip.setOnNew(() => {
+			void this.handleClearCommand().catch(error => {
+				this.showError(error instanceof Error ? error.message : String(error));
+			});
+		});
+		this.composer.setWorkspaceTabs(sessionTabStrip);
+		this.#eventBusUnsubscribers.push(
+			this.ui.addInputListener(data => {
+				if (!this.settings.get("tui.fullscreen") || this.ui.hasOverlay()) return undefined;
+				if (matchesKey(data, "alt+pageUp") || matchesKey(data, "shift+pageUp")) {
+					this.composer.scrollWorkspace(-Math.max(1, this.ui.terminal.rows - 4));
+					return { consume: true };
+				}
+				if (matchesKey(data, "alt+pageDown") || matchesKey(data, "shift+pageDown")) {
+					this.composer.scrollWorkspace(Math.max(1, this.ui.terminal.rows - 4));
+					return { consume: true };
+				}
+				const consumed = routeSgrMouseInput(data, event => {
+					if (event.wheel !== null) {
+						this.composer.scrollWorkspace(event.wheel * 3);
+						return true;
+					}
+					if (event.leftClick) sessionTabStrip.clickWorkspace(event.row, event.col);
+					return true;
+				});
+				return consumed ? { consume: true } : undefined;
+			}),
+		);
 		this.composer.setRuntimeChildren([
 			this.chatContainer,
 			this.pendingMessagesContainer,
@@ -1216,18 +1259,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.errorBannerContainer,
 			this.modelCycleContainer,
 			this.deferredCommandContainer,
-			new SessionTabStrip(
-				this.#selectorController.sessionTabs,
-				() => this.sessionManager.getSessionFile(),
-				() => this.sessionManager.getSessionName(),
-				async sessionPath => {
-					try {
-						await this.handleResumeSession(sessionPath);
-					} catch (error) {
-						this.showError(error instanceof Error ? error.message : String(error));
-					}
-				},
-			),
+			sessionTabStrip,
 			// Working loader / transient status sits below the sticky todo + subagent
 			// HUDs, just above the editor's hook-widget top margin — so it reads next to
 			// the prompt while keeping the one-line gap above the editor (the band
@@ -2159,7 +2191,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 	syncComposerShape(): void {
 		const shape = settings.get("composer.shape") ?? "band";
-		const style = getComposerStyle(shape);
+		const style = getComposerStyle(this.settings.get("tui.fullscreen") && shape === "band" ? "rail" : shape);
 		this.composer.setPreferences({ composerShape: shape });
 		this.statusLine.setAutocompleteActiveProbe(() => this.editor.isAutocompleteActive());
 		switch (style.statusAttachment) {
@@ -5517,6 +5549,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		const previousFile = this.sessionManager.getSessionFile();
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleClearCommand();
+		this.composer.resetWorkspaceScroll();
 		await this.#selectorController.recordSessionTransition(previousFile);
 	}
 
@@ -5790,6 +5823,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#cleanseController.dispose();
 		this.resetObserverRegistry();
 		await this.#selectorController.handleResumeSession(sessionPath, { settingsFlushed: true });
+		this.composer.resetWorkspaceScroll();
+	}
+
+	setFullscreen(enabled: boolean): void {
+		this.composer.setPreferences({ fullscreen: enabled });
+		this.syncComposerShape();
 	}
 
 	handleSessionTabsCommand(args: string): Promise<string> {

@@ -43,8 +43,10 @@ describe("issue #9597 — cold-launch welcome duplication", () => {
 		resetSettingsForTest();
 		await initTheme();
 		settings = await Settings.init({ inMemory: true });
+		settings.override("tui.fullscreen", false);
 		config = {
 			quiet: settings.get("startup.quiet"),
+			fullscreen: false,
 			composerShape: settings.get("composer.shape") ?? "box",
 			showHardwareCursor: settings.get("showHardwareCursor"),
 			maxInlineImages: settings.get("tui.maxInlineImages"),

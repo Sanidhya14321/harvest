@@ -486,4 +486,28 @@ describe("terminal frame plans", () => {
 		expect(resized).toEqual(["history-one@30", "history-two@30", "editor@30"]);
 		tui.stop();
 	});
+
+	it("keeps a primary workspace in the alternate screen and restores the shell on exit", async () => {
+		const terminal = new CountingTerminal(30, 5);
+		const provider = new Provider({ viewport: ["session tabs", "", "chat message", "", "prompt"] });
+		const renderScheduler = new VirtualRenderScheduler();
+		const tui = new TUI(terminal, true, { renderScheduler });
+		tui.setFrameProvider(provider);
+		tui.setBaseFullscreen(true);
+		tui.start();
+		await renderScheduler.settle(terminal);
+
+		expect(terminal.getViewport().map(row => Bun.stripANSI(row))).toEqual([
+			"session tabs",
+			"",
+			"chat message",
+			"",
+			"prompt",
+		]);
+		expect(terminal.writes.join("")).toContain("\x1b[?1049h");
+		expect(terminal.writes.join("")).toContain("\x1b[?1006h");
+		tui.stop();
+		expect(terminal.writes.join("")).toContain("\x1b[?1049l");
+		expect(plainBuffer(terminal)).not.toContain("chat message");
+	});
 });

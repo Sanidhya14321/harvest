@@ -133,6 +133,7 @@ export interface InteractiveModeContext {
 	hookWidgetContainerBelow: Container;
 	statusLine: StatusLineComponent;
 	syncComposerShape(): void;
+	setFullscreen(enabled: boolean): void;
 	syncEditorSpelling(): void;
 
 	// Session access

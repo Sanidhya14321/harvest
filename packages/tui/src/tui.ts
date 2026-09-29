@@ -814,6 +814,7 @@ export class TUI extends Container {
 	// untouched, so exiting reconciles cleanly against the terminal-restored
 	// normal screen. #altPreviousLines is the last alt frame, for repaint-skip.
 	#altActive = false;
+	#baseFullscreen = false;
 	#altMouseTrackingActive = false;
 	#altPreviousLines: string[] = [];
 	#altEnterWidth = 0;
@@ -852,6 +853,13 @@ export class TUI extends Container {
 		this.#frameProvider = provider;
 		this.#providerWindow = [];
 		this.#resizeReplaySize = undefined;
+		this.requestRender(true);
+	}
+
+	/** Render the primary frame in the alternate buffer, with mouse input for workspace chrome. */
+	setBaseFullscreen(enabled: boolean): void {
+		if (this.#baseFullscreen === enabled) return;
+		this.#baseFullscreen = enabled;
 		this.requestRender(true);
 	}
 
@@ -1660,7 +1668,7 @@ export class TUI extends Container {
 		// erase native history and re-stream the whole transcript at quit; drop
 		// the latch so the flush below writes only un-retired rows.
 		this.#clearScrollbackOnNextRender = false;
-		this.#flushHistoryBeforeStop();
+		if (!this.#baseFullscreen) this.#flushHistoryBeforeStop();
 		// Deliberately leave transmitted images in the terminal's graphics store:
 		// placeholder cells committed to native scrollback render only while their
 		// image data lives, so a delete-by-id here blanks every transcript image
@@ -1682,7 +1690,7 @@ export class TUI extends Container {
 		// enough; emitting `\r\n` would create an extra blank row. If the content
 		// already reaches the viewport bottom, scroll exactly once so the prompt
 		// lands directly below the last visible TUI row.
-		if (this.#previousFrameLength > 0) {
+		if (!this.#baseFullscreen && this.#previousFrameLength > 0) {
 			// Provider frames anchor the mutable viewport below retained history;
 			// the shell prompt belongs on the first row after that content.
 			const targetRow = this.#providerViewportTop + this.#previousFrameLength;
@@ -2585,12 +2593,12 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Fullscreen alt-screen short-circuit. While the topmost visible overlay
-		// requests it, borrow the terminal's alternate buffer and paint only the
-		// modal there; the normal screen and all accounting stay untouched.
+		// Fullscreen overlays and primary workspaces share the alternate buffer.
+		// Overlay-only mode leaves the normal screen and history untouched.
 		const topOverlay = this.#getTopmostVisibleOverlay();
-		const wantAlt = topOverlay?.options?.fullscreen === true;
-		const wantMouseTracking = wantAlt && topOverlay.options?.mouseTracking !== false;
+		const fullscreenOverlay = topOverlay?.options?.fullscreen === true;
+		const wantAlt = fullscreenOverlay || this.#baseFullscreen;
+		const wantMouseTracking = wantAlt && (!fullscreenOverlay || topOverlay?.options?.mouseTracking !== false);
 		if (wantAlt && !this.#altActive) {
 			// Enhanced keyboard modes can be buffer-local: re-push the active
 			// modified-key reporting sequence on the freshly entered alternate
@@ -2641,7 +2649,7 @@ export class TUI extends Container {
 			this.#altMouseTrackingActive = wantMouseTracking;
 		}
 		if (this.#altActive) {
-			this.#renderAltFrame(width, height);
+			this.#renderAltFrame(width, height, fullscreenOverlay);
 			return;
 		}
 		if (this.#frameProvider !== undefined) {
@@ -2956,22 +2964,35 @@ export class TUI extends Container {
 	/**
 	 * Compose and paint a single fullscreen overlay frame on the alt buffer.
 	 * Cursor markers are stripped (the modal draws its own in-band caret and
-	 * keeps the hardware cursor hidden), and only the modal is composited over a
-	 * blank base — the transcript is never touched while the alt buffer is up.
+	 * keeps the hardware cursor hidden). A primary fullscreen provider supplies
+	 * the base; fullscreen overlays instead paint over an empty base.
 	 */
-	#renderAltFrame(width: number, height: number): void {
+	#renderAltFrame(width: number, height: number, fullscreenOverlay = true): void {
 		// oxlint-disable-next-line unicorn/no-new-array -- alt-frame length preallocation
-		const base: string[] = new Array(Math.max(0, height)).fill("");
+		let base: string[] = new Array(Math.max(0, height)).fill("");
+		if (!fullscreenOverlay && this.#baseFullscreen && this.#frameProvider) {
+			let frame: TerminalFramePlan;
+			do {
+				this.#imageBudget.beginPass();
+				frame = this.#frameProvider.renderFrame({ columns: width, rows: height });
+			} while (this.#imageBudget.endPass());
+			base = [...frame.viewport];
+			while (base.length < height) base.push("");
+		}
 		let lines = this.#compositeOverlaysIntoWindow(base, width, height);
-		this.#extractCursorMarkers(lines);
+		const cursor = this.#extractCursorMarkers(lines).at(-1);
 		lines = this.#prepareLinesArray(lines, width);
 		this.#emitAltFrame(lines, width, height);
+		if (!fullscreenOverlay && cursor && this.#showHardwareCursor) {
+			this.terminal.write(`\x1b[${cursor.row + 1};${cursor.col + 1}H\x1b[?25h`);
+		}
 	}
 
 	/**
 	 * Full per-row viewport rewrite on the alt buffer. Emits only sync-output
 	 * brackets, a cursor home, and per-row rewrites — never ED3 or any
-	 * native-scrollback byte. The hardware cursor stays hidden here.
+	 * native-scrollback byte. The caller positions the hardware cursor for a
+	 * primary workspace after this paint.
 	 */
 	#emitAltFrame(lines: string[], width: number, height: number): void {
 		// oxlint-disable-next-line unicorn/no-new-array -- alt-frame length preallocation

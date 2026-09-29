@@ -53,3 +53,45 @@ it("hides a lone tab and uses a session title instead of a filename", () => {
 	expect(text).toContain("New session");
 	expect(text).not.toContain("2026-09-28");
 });
+
+it("opens and switches workspace sessions from their visible tab hit targets", () => {
+	const tabs = new SessionTabs();
+	tabs.open("/work/first.jsonl", "First task");
+	tabs.open("/work/second.jsonl", "Second task");
+	let created = 0;
+	let selected: string | undefined;
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/first.jsonl",
+		() => "First task",
+		async path => {
+			selected = path;
+		},
+	);
+	strip.setOnNew(() => {
+		created++;
+	});
+	const row = stripVTControlCharacters(strip.renderWorkspace(80, true).join(""));
+	expect(strip.clickWorkspace(0, row.indexOf("Second task") + 2)).toBe(true);
+	expect(selected).toBe("/work/second.jsonl");
+	expect(strip.clickWorkspace(0, row.indexOf("New session") + 2)).toBe(true);
+	expect(created).toBe(1);
+	strip.renderWorkspace(80, false);
+	tabs.close("/work/second.jsonl");
+	strip.renderWorkspace(80, false);
+	expect(strip.clickWorkspace(0, row.indexOf("New session") + 2)).toBe(false);
+});
+
+it("keeps the selected workspace tab visible in a narrow terminal", () => {
+	const tabs = new SessionTabs();
+	for (let index = 1; index <= 12; index++) tabs.open(`/work/${index}.jsonl`, `Task ${index}`);
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/12.jsonl",
+		() => "Task 12",
+		async () => {},
+	);
+	const rows = strip.renderWorkspace(24, true).map(row => stripVTControlCharacters(row));
+	expect(rows.join(" ")).toContain("12");
+	expect(rows.every(row => Bun.stringWidth(row) <= 24)).toBe(true);
+});

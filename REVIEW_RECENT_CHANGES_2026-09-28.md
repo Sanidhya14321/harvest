@@ -57,7 +57,7 @@ Harvest already has persisted JSONL sessions, `/resume` with a picker, `/new`, `
 
 1. Define supported installation targets and exercise a clean Laya install and autostart on each target.
 2. Build a coding-specific labeled Laya harness and retain fail-closed tool gating on sidecar error until measured evidence supports policy changes.
-3. Validate the session tab strip in a live TUI on narrow terminals and decide whether tabs should restore after process restart.
+3. Validate the full-screen session workspace in Windows Terminal and a narrow terminal, then decide whether tabs should restore after process restart.
 
 ## Follow-up from the Windows Terminal screenshot
 
@@ -70,4 +70,11 @@ Harvest already has persisted JSONL sessions, `/resume` with a picker, `/new`, `
 
 The supplied screenshots show a centered empty-state composer, a session strip pinned to the top after a session starts, a visible `+ New session` tab, and a composer pinned to the bottom of an alternate-screen workspace. Harvest's current main transcript uses the terminal's normal buffer and native scrollback; its session picker already uses a full-screen alternate buffer with mouse-enabled session rows. The picker now adds a clickable `+ New session` action, and keeps its overlay until session creation completes.
 
-Replicating the main screen needs a distinct full-screen transcript renderer rather than moving the existing tab strip: it must retain the full transcript, support wheel/keyboard history navigation, keep the prompt anchored while messages stream, preserve editor focus and terminal cursor behavior, and restore the original buffer on exit. Native terminal text selection may require Shift-drag while mouse tracking is enabled. This main-screen renderer has not been implemented by the picker change.
+Replicating the main screen needed a distinct full-screen transcript renderer rather than moving the existing tab strip: it must retain the full transcript, support wheel/keyboard history navigation, keep the prompt anchored while messages stream, preserve editor focus and terminal cursor behavior, and restore the original buffer on exit. Native terminal text selection may require Shift-drag while mouse tracking is enabled. The picker change alone did not implement this renderer; the follow-up below does.
+
+## Full-screen workspace follow-up
+
+- Interactive Harvest now uses the terminal alternate screen by default. The empty state centers the Harvest wordmark and composer; conversations put clickable session tabs at the top and the composer at the bottom. The + New session tab creates a session through the existing session transition, while existing tabs switch through the same transactional path as /tab.
+- The transcript remains in memory for the workspace view. Mouse wheel and Alt/Shift+Page Up/Down move through older messages; session changes reset the view to the latest message. The prior normal-buffer layout remains available through the tui.fullscreen appearance setting.
+- The TUI now paints a primary full-screen frame with mouse tracking and restores the original terminal screen on exit. This was verified with a virtual terminal, including the alternate-screen enter/exit bytes and absence of chat rows in the restored shell buffer.
+- Focused tests cover the centered empty state, clickable tab hit targets, cache round-tripping of the display preference, legacy scrollback mode, and primary alternate-screen lifecycle. The coding-agent type check passed. A live Windows Terminal pass with model streaming, resize, graphics, and terminal text selection is still needed to judge visual fidelity and terminal-specific behavior.

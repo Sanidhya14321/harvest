@@ -17,6 +17,7 @@ import {
 	visibleWidth,
 } from "@harvest/pi-tui";
 import { CustomEditor } from "./components/custom-editor";
+import type { SessionTabStrip } from "./components/session-tab-strip";
 import { type AnimationFrame, TranscriptContainer } from "./components/transcript-container";
 import { type LspServerInfo, type RecentSession, WelcomeComponent } from "./components/welcome";
 import { getEditorTheme, initThemeSync, theme } from "./theme/theme";
@@ -26,6 +27,7 @@ const DOUBLE_INTERRUPT_MS = 500;
 /** Live settings that affect the composer before and after session adoption. */
 export interface ComposerPreferences {
 	readonly quiet: boolean;
+	readonly fullscreen: boolean;
 	readonly composerShape: string;
 	readonly showHardwareCursor: boolean;
 	readonly maxInlineImages: number;
@@ -40,6 +42,7 @@ export interface ComposerPreferences {
 /** Settings-schema-compatible defaults used when constructing a dependency-free composer. */
 export const COMPOSER_DEFAULTS: ComposerPreferences = {
 	quiet: false,
+	fullscreen: true,
 	composerShape: "band",
 	showHardwareCursor: true,
 	maxInlineImages: 8,
@@ -156,6 +159,8 @@ export class Composer implements TerminalFrameProvider {
 	#headerBefore: readonly Component[] = [];
 	#headerAfter: readonly Component[] = [];
 	#runtimeChildren: readonly Component[] = [];
+	#workspaceTabs: SessionTabStrip | undefined;
+	#workspaceScrollOffset = 0;
 	#statusSnapshot: ComposerStatusSnapshot | undefined;
 	#runtimeMounted = false;
 	// Composer-owned history id space. Transcript batch ids restart across
@@ -213,6 +218,7 @@ export class Composer implements TerminalFrameProvider {
 			options.tuiOptions,
 		);
 		this.ui.setFrameProvider(this);
+		this.ui.setBaseFullscreen(this.#preferences.fullscreen === true);
 		this.ui.setMaxInlineImages(this.#preferences.maxInlineImages);
 		this.ui.setResizeScrollback(this.#preferences.resizeScrollback);
 
@@ -227,7 +233,7 @@ export class Composer implements TerminalFrameProvider {
 			autocorrect: this.#preferences.spellingAutocorrect,
 		});
 		try {
-			this.editor.setBorderStyle(this.#preferences.composerShape);
+			this.editor.setBorderStyle(this.#workspaceComposerShape());
 		} catch {
 			// Extension-defined styles arrive with the session; InteractiveMode reapplies them.
 		}
@@ -252,6 +258,7 @@ export class Composer implements TerminalFrameProvider {
 		if (!this.#started || this.#stopped) return { viewport: [] };
 		const width = Math.max(1, viewport.columns);
 		const rows = Math.max(0, viewport.rows);
+		if (this.#preferences.fullscreen) return { viewport: this.#renderWorkspace(width, rows) };
 		if (this.#resizeRetiredHeaderStart !== undefined) {
 			this.#retiredHeaderStart = this.#resizeRetiredHeaderStart;
 			this.#resizeRetiredHeaderStart = undefined;
@@ -314,6 +321,7 @@ export class Composer implements TerminalFrameProvider {
 		if (!this.#started || this.#stopped) return [];
 		const width = Math.max(1, viewport.columns);
 		const rows = Math.max(0, viewport.rows);
+		if (this.#preferences.fullscreen) return this.#renderWorkspace(width, rows);
 		const tail = this.#runtimeMounted
 			? this.#renderResizeTail(width, rows)
 			: this.#renderRoots([this.#bootstrapInputGap, this.editor, this.#statusHost], width);
@@ -467,6 +475,59 @@ export class Composer implements TerminalFrameProvider {
 		for (const root of roots) rows.push(...root.render(width));
 		return rows;
 	}
+
+	#workspaceComposerShape(): string {
+		return this.#preferences.fullscreen && this.#preferences.composerShape === "band"
+			? "rail"
+			: this.#preferences.composerShape;
+	}
+
+	setWorkspaceTabs(tabs: SessionTabStrip): void {
+		this.#workspaceTabs = tabs;
+		this.ui.requestRender();
+	}
+
+	scrollWorkspace(delta: number): void {
+		this.#workspaceScrollOffset = Math.max(0, this.#workspaceScrollOffset + delta);
+		this.ui.requestRender();
+	}
+
+	resetWorkspaceScroll(): void {
+		this.#workspaceScrollOffset = 0;
+		this.ui.requestRender();
+	}
+
+	#renderWorkspace(width: number, rows: number): readonly string[] {
+		const roots = this.#runtimeMounted
+			? [...this.#runtimeChildren, this.#statusHost]
+			: [this.#bootstrapInputGap, this.editor, this.#statusHost];
+		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
+		const transcript = transcriptIndex >= 0 ? (roots[transcriptIndex] as TranscriptContainer) : undefined;
+		const after = this.#renderRoots(
+			roots.filter(root => root !== transcript && root !== this.#workspaceTabs),
+			width,
+		);
+		const tabRows = this.#workspaceTabs?.renderWorkspace(width, Boolean(transcript?.children.length)) ?? [];
+		const tabs = tabRows.length > 0 ? [...tabRows, ""] : [];
+		if (after.length >= rows) return after.slice(-rows);
+		if (tabs.length + after.length > rows) return [...tabs.slice(0, rows - after.length), ...after];
+		const available = Math.max(0, rows - tabs.length - after.length);
+		const blank = (count: number): string[] => Array.from({ length: Math.max(0, count) }, () => "");
+		if (!transcript || transcript.children.length === 0) {
+			const word = "harvest";
+			const logo = `${" ".repeat(Math.max(0, Math.floor((width - visibleWidth(word)) / 2)))}${theme.bold(theme.fg("accent", word))}`;
+			const intro = this.#preferences.quiet ? after : [logo, "", ...after];
+			const before = Math.max(0, Math.floor((rows - tabs.length - intro.length) / 2));
+			return [...tabs, ...blank(before), ...intro, ...blank(rows - tabs.length - before - intro.length)].slice(
+				0,
+				rows,
+			);
+		}
+		const tail = transcript.renderTail(width, available + this.#workspaceScrollOffset);
+		this.#workspaceScrollOffset = Math.min(this.#workspaceScrollOffset, Math.max(0, tail.length - available));
+		const visible = this.#workspaceScrollOffset > 0 ? tail.slice(0, available) : tail;
+		return [...tabs, ...visible, ...blank(available - visible.length), ...after].slice(0, rows);
+	}
 	/**
 	 * Mounted-runtime rows for the transient resize buffer. Only the trailing
 	 * viewport can survive the caller's bottom slice, so the transcript renders
@@ -542,9 +603,10 @@ export class Composer implements TerminalFrameProvider {
 		if (this.#stopped) return;
 		const wasQuiet = this.#preferences.quiet;
 		this.#preferences = { ...this.#preferences, ...update };
+		this.ui.setBaseFullscreen(this.#preferences.fullscreen === true);
 		this.editor.setTheme(getEditorTheme());
 		try {
-			this.editor.setBorderStyle(this.#preferences.composerShape);
+			this.editor.setBorderStyle(this.#workspaceComposerShape());
 		} catch {
 			// Extension-defined styles arrive with the session; InteractiveMode reapplies them.
 		}

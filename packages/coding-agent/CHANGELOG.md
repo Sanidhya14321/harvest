@@ -18,6 +18,7 @@
 
 ### Added
 
+- Interactive sessions now open in a full-screen workspace with clickable session tabs, a centered new-session composer, and mouse or Page Up/Down transcript navigation.
 - The session picker now has a clickable “+ New session” action.
 - GitHub releases now include binaries for Windows, macOS, and Linux on x64 and ARM64, plus checksums and license notices.
 - `/sessions` opens the session picker, `/timeline` opens the session tree, and a visible tab strip supports switching, history, closing, and reopening sessions.

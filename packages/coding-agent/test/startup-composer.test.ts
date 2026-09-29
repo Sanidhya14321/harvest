@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { KeybindingsManager } from "@harvest/pi-coding-agent/config/keybindings";
 import { resetSettingsForTest, Settings } from "@harvest/pi-coding-agent/config/settings";
 import { getDefault } from "@harvest/pi-coding-agent/config/settings-schema";
+import { TranscriptContainer } from "@harvest/pi-coding-agent/modes/components/transcript-container";
 import { COMPOSER_DEFAULTS, Composer, type ComposerPreferences } from "@harvest/pi-coding-agent/modes/composer";
 import { InteractiveMode } from "@harvest/pi-coding-agent/modes/interactive-mode";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@harvest/pi-coding-agent/modes/startup-composer";
 import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal";
+import { Text } from "@harvest/pi-tui";
 import { createTestSession } from "./utilities";
 
 class CountingTerminal extends VirtualTerminal {
@@ -62,8 +64,10 @@ describe("Composer prepaint", () => {
 		resetSettingsForTest();
 		await initTheme();
 		settings = await Settings.init({ inMemory: true });
+		settings.override("tui.fullscreen", false);
 		config = {
 			quiet: settings.get("startup.quiet"),
+			fullscreen: settings.get("tui.fullscreen"),
 			composerShape: settings.get("composer.shape") ?? "box",
 			showHardwareCursor: settings.get("showHardwareCursor"),
 			maxInlineImages: settings.get("tui.maxInlineImages"),
@@ -398,6 +402,7 @@ describe("Composer prepaint", () => {
 	it("first frame mirrors the canonical settings-schema defaults", () => {
 		expect(COMPOSER_DEFAULTS).toEqual({
 			quiet: getDefault("startup.quiet"),
+			fullscreen: getDefault("tui.fullscreen"),
 			composerShape: getDefault("composer.shape") ?? "box",
 			showHardwareCursor: getDefault("showHardwareCursor"),
 			maxInlineImages: getDefault("tui.maxInlineImages"),
@@ -408,6 +413,35 @@ describe("Composer prepaint", () => {
 			spellingAutocomplete: getDefault("spelling.autocomplete"),
 			spellingAutocorrect: getDefault("spelling.autocorrect"),
 		});
+	});
+	it("centers the initial composer in the full-screen workspace", async () => {
+		const terminal = new CountingTerminal(80, 32);
+		const composer = new Composer({
+			preferences: { ...config, fullscreen: true },
+			terminal,
+			welcome: { version: "9.9.9" },
+		});
+		composer.start();
+		await terminal.waitForRender(() => terminal.getViewport().some(row => Bun.stripANSI(row).includes("harvest")));
+		const rows = terminal.getViewport().map(row => Bun.stripANSI(row));
+		const logoRow = rows.findIndex(row => row.includes("harvest"));
+		expect(logoRow).toBeGreaterThan(8);
+		expect(logoRow).toBeLessThan(20);
+		expect(rows.join("\n")).not.toContain("Welcome back!");
+		composer.stop();
+	});
+	it("anchors the composer below conversation history in the full-screen workspace", () => {
+		const terminal = new CountingTerminal(80, 24);
+		const composer = new Composer({ preferences: { ...config, fullscreen: true }, terminal });
+		const transcript = new TranscriptContainer();
+		transcript.addChild(new Text("first message"));
+		composer.setRuntimeChildren([transcript, composer.editor]);
+		composer.start();
+		const rows = composer.renderFrame({ columns: 80, rows: 24 }).viewport.map(row => Bun.stripANSI(row));
+		expect(rows.length).toBe(24);
+		expect(rows.findIndex(row => row.includes("first message"))).toBeLessThan(8);
+		expect(rows.findLastIndex(row => row.includes("▎"))).toBeGreaterThan(19);
+		composer.stop();
 	});
 	it("renders the complete interactive welcome scene on the first frame", async () => {
 		const terminal = new CountingTerminal(80, 32);
@@ -550,6 +584,7 @@ describe("Composer prepaint", () => {
 
 		applyStartupComposerPreferences({
 			quiet: true,
+			fullscreen: false,
 			composerShape: "box",
 			showHardwareCursor: config.showHardwareCursor,
 			maxInlineImages: config.maxInlineImages,
