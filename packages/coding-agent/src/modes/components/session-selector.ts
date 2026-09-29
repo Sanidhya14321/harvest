@@ -818,6 +818,7 @@ export class SessionSelectorComponent extends OverlayPanel {
 	// resume a session scrolled off-screen.
 	#footerStart = 0;
 	#newSessionLine = -1;
+	#newSessionEnd = 0;
 	readonly #onNewSession?: () => void;
 	readonly #getTerminalRows: () => number;
 	readonly #fillHeight: boolean;
@@ -1010,6 +1011,7 @@ export class SessionSelectorComponent extends OverlayPanel {
 		const innerWidth = Math.max(1, width - 4);
 		const lines: string[] = [topBorder(width, this.title)];
 		this.#newSessionLine = this.#onNewSession ? lines.length : -1;
+		this.#newSessionEnd = Math.min(2 + visibleWidth("+ New session"), Math.max(2, width - 2));
 		if (this.#onNewSession) lines.push(row(theme.fg("accent", "+ New session"), width));
 		for (const child of this.children) {
 			const childLines = child.render(innerWidth);
@@ -1056,7 +1058,12 @@ export class SessionSelectorComponent extends OverlayPanel {
 	#handleMouse(data: string): void {
 		if (this.#confirmationDialog) return;
 		routeSgrMouseInput(data, event => {
-			if (event.leftClick && event.row === this.#newSessionLine) {
+			if (
+				event.leftClick &&
+				event.row === this.#newSessionLine &&
+				event.col >= 2 &&
+				event.col < this.#newSessionEnd
+			) {
 				this.#onNewSession?.();
 				return true;
 			}

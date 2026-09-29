@@ -75,6 +75,8 @@ describe("SessionSelectorComponent mouse", () => {
 		selector.handleInput(leftClick(newRow + 1));
 		expect(created).toBe(1);
 		expect(selected).toBe(0);
+		selector.handleInput(leftClick(newRow + 1, 70));
+		expect(created).toBe(1);
 	});
 
 	it("resumes the session under a left click", () => {
