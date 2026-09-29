@@ -11,6 +11,9 @@ function fakeSession(id: string, path: string, cwd = "C:/project") {
 	const abort = mock(async () => {});
 	const session = {
 		isStreaming: false,
+		isBashRunning: false,
+		isEvalRunning: false,
+		hasPendingAsyncWork: () => false,
 		sessionManager: {
 			getSessionId: () => id,
 			getSessionFile: () => path,
@@ -164,5 +167,31 @@ describe("LiveSessionRegistry", () => {
 		await closing;
 		expect(first.dispose).toHaveBeenCalledTimes(1);
 		expect(second.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	it("releases the oldest idle runtime while keeping a running hidden session", async () => {
+		const sessions = Array.from({ length: 8 }, (_, index) =>
+			fakeSession(`session-${index}`, `C:/project/${index}.jsonl`),
+		);
+		const first = sessions[0]!;
+		const registry = new LiveSessionRegistry(first.session, async path => {
+			const match = sessions.find(item => item.session.sessionManager.getSessionFile() === path);
+			if (!match) throw new Error("missing fixture");
+			return match.session;
+		});
+		first.emit({ type: "agent_start" });
+		for (const item of sessions.slice(1)) await registry.select(item.session.sessionManager.getSessionFile()!);
+		sessions[1]!.emit({ type: "agent_start" });
+		sessions[1]!.emit({ type: "agent_end", messages: [] });
+		await registry.releaseIdleRuntimes();
+		expect(first.dispose).not.toHaveBeenCalled();
+		expect(sessions[1]!.dispose).toHaveBeenCalledTimes(1);
+		expect(registry.snapshots.map(item => item.id)).toContain("session-0");
+		expect(registry.snapshots.find(item => item.id === "session-1")).toMatchObject({
+			status: "completed",
+			unread: true,
+		});
+		expect(registry.sessions).not.toContain(sessions[1]!.session);
+		await registry.dispose();
 	});
 });

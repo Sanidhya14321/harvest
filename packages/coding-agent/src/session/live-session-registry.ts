@@ -21,6 +21,7 @@ export interface LiveSessionSelection {
 interface LiveSessionEntry {
 	session: AgentSession;
 	path: string;
+	lastUsed: number;
 	status: LiveSessionStatus;
 	unread: boolean;
 	unsubscribe: () => void;
@@ -31,11 +32,13 @@ interface LiveSessionEntry {
 export class LiveSessionRegistry {
 	readonly #entries = new Map<string, LiveSessionEntry>();
 	readonly #idsByPath = new Map<string, string>();
+	readonly #dormant = new Map<string, LiveSessionSnapshot>();
 	readonly #opening = new Map<string, Promise<AgentSession>>();
 	readonly #listeners = new Set<() => void>();
 	readonly #project: string;
 	#selectedId: string;
 	#selectionGeneration = 0;
+	#usageOrder = 0;
 	#disposed = false;
 
 	constructor(
@@ -61,7 +64,7 @@ export class LiveSessionRegistry {
 	}
 
 	get snapshots(): readonly LiveSessionSnapshot[] {
-		return [...this.#entries.entries()].map(([id, entry]) => ({
+		const live = [...this.#entries.entries()].map(([id, entry]) => ({
 			id,
 			path: entry.session.sessionManager.getSessionFile() ?? entry.path,
 			title: entry.session.sessionManager.getSessionName(),
@@ -69,6 +72,7 @@ export class LiveSessionRegistry {
 			unread: entry.unread,
 			selected: id === this.#selectedId,
 		}));
+		return [...live, ...this.#dormant.values()];
 	}
 
 	onChange(listener: () => void): () => void {
@@ -89,6 +93,7 @@ export class LiveSessionRegistry {
 		const id = session.sessionManager.getSessionId();
 		this.#selectedId = id;
 		const entry = this.#entries.get(id)!;
+		entry.lastUsed = ++this.#usageOrder;
 		entry.unread = false;
 		if (entry.status === "completed") entry.status = "idle";
 		this.#emit();
@@ -101,6 +106,44 @@ export class LiveSessionRegistry {
 		this.#selectionGeneration++;
 		this.#add(session);
 		this.#selectedId = session.sessionManager.getSessionId();
+		this.#entries.get(this.#selectedId)!.lastUsed = ++this.#usageOrder;
+		this.#emit();
+	}
+
+	/** Release least-recently-used idle runtimes after a view has detached from them. */
+	async releaseIdleRuntimes(limit = 6): Promise<void> {
+		if (this.#disposed) return;
+		const idle = [...this.#entries.entries()]
+			.filter(
+				([, entry]) =>
+					entry.status !== "running" &&
+					entry.status !== "waiting" &&
+					!entry.session.isStreaming &&
+					!entry.session.isBashRunning &&
+					!entry.session.isEvalRunning &&
+					!entry.session.hasPendingAsyncWork(),
+			)
+			.sort((left, right) => left[1].lastUsed - right[1].lastUsed);
+		let toRelease = Math.max(0, idle.length - Math.max(1, limit));
+		for (const [id, entry] of idle) {
+			if (toRelease === 0) break;
+			if (id === this.#selectedId) continue;
+			const snapshot = {
+				id,
+				path: entry.path,
+				title: entry.session.sessionManager.getSessionName(),
+				status: entry.status,
+				unread: entry.unread,
+				selected: false,
+			} satisfies LiveSessionSnapshot;
+			await entry.session.dispose();
+			entry.unsubscribe();
+			entry.unsubscribeTitle();
+			this.#entries.delete(id);
+			this.#idsByPath.delete(normalizePathForComparison(entry.path));
+			this.#dormant.set(normalizePathForComparison(entry.path), snapshot);
+			toRelease--;
+		}
 		this.#emit();
 	}
 
@@ -138,6 +181,7 @@ export class LiveSessionRegistry {
 		await Promise.all([...this.#entries.values()].map(entry => entry.session.dispose()));
 		this.#entries.clear();
 		this.#idsByPath.clear();
+		this.#dormant.clear();
 		this.#listeners.clear();
 	}
 
@@ -179,8 +223,9 @@ export class LiveSessionRegistry {
 		const entry: LiveSessionEntry = {
 			session,
 			path,
-			status: session.isStreaming ? "running" : "idle",
-			unread: false,
+			lastUsed: ++this.#usageOrder,
+			status: session.isStreaming ? "running" : (this.#dormant.get(pathKey)?.status ?? "idle"),
+			unread: this.#dormant.get(pathKey)?.unread ?? false,
 			unsubscribe: () => {},
 			unsubscribeTitle: () => {},
 		};
@@ -198,6 +243,7 @@ export class LiveSessionRegistry {
 		entry.unsubscribeTitle = manager.onSessionNameChanged(() => this.#emit());
 		this.#entries.set(id, entry);
 		this.#idsByPath.set(pathKey, id);
+		this.#dormant.delete(pathKey);
 		this.#emit();
 	}
 
