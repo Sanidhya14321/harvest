@@ -12,6 +12,12 @@ export interface LiveSessionSnapshot {
 	selected: boolean;
 }
 
+export interface LiveSessionSelection {
+	session: AgentSession;
+	/** False when a newer navigation request superseded this one while it loaded. */
+	selected: boolean;
+}
+
 interface LiveSessionEntry {
 	session: AgentSession;
 	path: string;
@@ -24,6 +30,7 @@ interface LiveSessionEntry {
 /** Owns independent agent runtimes for one project; tab visibility never controls execution. */
 export class LiveSessionRegistry {
 	readonly #entries = new Map<string, LiveSessionEntry>();
+	readonly #idsByPath = new Map<string, string>();
 	readonly #opening = new Map<string, Promise<AgentSession>>();
 	readonly #listeners = new Set<() => void>();
 	readonly #project: string;
@@ -65,23 +72,22 @@ export class LiveSessionRegistry {
 	}
 
 	/** Resolve a warm runtime without reading its session file; cold opens are deduplicated. */
-	async select(path: string): Promise<AgentSession> {
+	async select(path: string): Promise<LiveSessionSelection> {
 		if (this.#disposed) throw new Error("Live session registry is closed");
 		const generation = ++this.#selectionGeneration;
 		const key = normalizePathForComparison(path);
-		const warm = [...this.#entries.values()].find(
-			entry => normalizePathForComparison(entry.session.sessionManager.getSessionFile() ?? entry.path) === key,
-		);
+		const warmId = this.#idsByPath.get(key);
+		const warm = warmId ? this.#entries.get(warmId) : undefined;
 		const session = warm?.session ?? (await this.#openOnce(path, key));
 		if (this.#disposed) throw new Error("Live session registry is closed");
-		if (generation !== this.#selectionGeneration) return session;
+		if (generation !== this.#selectionGeneration) return { session, selected: false };
 		const id = session.sessionManager.getSessionId();
 		this.#selectedId = id;
 		const entry = this.#entries.get(id)!;
 		entry.unread = false;
 		if (entry.status === "completed") entry.status = "idle";
 		this.#emit();
-		return session;
+		return { session, selected: true };
 	}
 
 	/** Attach a newly created session without replacing or aborting another runtime. */
@@ -112,12 +118,14 @@ export class LiveSessionRegistry {
 	async dispose(): Promise<void> {
 		if (this.#disposed) return;
 		this.#disposed = true;
+		await Promise.allSettled(this.#opening.values());
 		for (const entry of this.#entries.values()) {
 			entry.unsubscribe();
 			entry.unsubscribeTitle();
 		}
 		await Promise.all([...this.#entries.values()].map(entry => entry.session.dispose()));
 		this.#entries.clear();
+		this.#idsByPath.clear();
 		this.#listeners.clear();
 	}
 
@@ -153,6 +161,9 @@ export class LiveSessionRegistry {
 			if (existing.session !== session) throw new Error(`Session ${id} is already live`);
 			return;
 		}
+		const pathKey = normalizePathForComparison(path);
+		const existingPathId = this.#idsByPath.get(pathKey);
+		if (existingPathId && existingPathId !== id) throw new Error(`Session path ${path} is already live`);
 		const entry: LiveSessionEntry = {
 			session,
 			path,
@@ -174,6 +185,7 @@ export class LiveSessionRegistry {
 		});
 		entry.unsubscribeTitle = manager.onSessionNameChanged(() => this.#emit());
 		this.#entries.set(id, entry);
+		this.#idsByPath.set(pathKey, id);
 		this.#emit();
 	}
 

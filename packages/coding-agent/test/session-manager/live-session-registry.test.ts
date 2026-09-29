@@ -124,8 +124,28 @@ describe("LiveSessionRegistry", () => {
 		const pending = registry.select("C:/project/slow.jsonl");
 		await registry.select("C:/project/one.jsonl");
 		release(slow.session);
-		await pending;
+		expect(await pending).toMatchObject({ session: slow.session, selected: false });
 		expect(registry.selected).toBe(first.session);
 		await registry.dispose();
+	});
+
+	it("closes a cold runtime that finishes opening after shutdown", async () => {
+		const first = fakeSession("one", "C:/project/one.jsonl");
+		const second = fakeSession("two", "C:/project/two.jsonl");
+		let release!: (session: AgentSession) => void;
+		const registry = new LiveSessionRegistry(
+			first.session,
+			() =>
+				new Promise(resolve => {
+					release = resolve;
+				}),
+		);
+		const pending = registry.select("C:/project/two.jsonl");
+		const closing = registry.dispose();
+		release(second.session);
+		await expect(pending).rejects.toThrow("closed");
+		await closing;
+		expect(first.dispose).toHaveBeenCalledTimes(1);
+		expect(second.dispose).toHaveBeenCalledTimes(1);
 	});
 });
