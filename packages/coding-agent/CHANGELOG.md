@@ -24,6 +24,7 @@
 - Switching sessions restores each session's transcript scroll position, and the tab strip shows a running or approval-waiting indicator on the active session.
 - Each session now keeps a run-stage record (current stage, active tool, elapsed time, first-token latency, turn count, finished tool durations, and the preserved failure reason) so stopped or paused work can report why without re-reading the transcript.
 - Aborting a turn now cancels its in-flight Laya tool-gating call instead of riding out the sidecar timeout; the gate still fails closed to approval.
+- Open session tabs now survive restarts: tab references persist per project with private permissions, deleted files are reported instead of opened, and interrupted work keeps its transcript marker when its tab is reopened.
 
 ### Added
 

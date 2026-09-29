@@ -49,6 +49,7 @@ import {
 	hsvToRgb,
 	isEnoent,
 	logger,
+	normalizePathForComparison,
 	postmortem,
 	prompt,
 	sanitizeText,
@@ -116,6 +117,8 @@ import { USER_INTERRUPT_LABEL } from "../session/messages";
 import type { SessionContext } from "../session/session-context";
 import { getRecentSessions } from "../session/session-listing";
 import type { SessionManager } from "../session/session-manager";
+import { FileSessionStorage } from "../session/session-storage";
+import { loadSessionTabs, sessionTabsFile } from "../session/session-tab-persistence";
 import type { ShakeMode } from "../session/shake-types";
 import { SessionViewStateStore } from "../session/session-view-state";
 import { BUILTIN_SLASH_COMMAND_RESERVED_NAMES, buildTuiBuiltinSlashCommands } from "../slash-commands/builtin-registry";
@@ -1287,6 +1290,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		]);
 		this.ui.setFocus(this.editor);
 		this.syncComposerShape();
+		await this.#restorePersistedSessionTabs();
 
 		this.#inputController.setupKeyHandlers();
 		this.#inputController.setupEditorSubmitHandler();
@@ -5596,6 +5600,50 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.composer.setWorkspaceScrollOffset(this.viewStateStore.scrollOffset(sessionId));
 	}
 
+	/**
+	 * Reopen the previous process's tab references for this project. Only
+	 * existing files inside this session directory come back; anything else is
+	 * counted and reported instead of opened. The startup-resolved session
+	 * stays active — restored tabs are navigation targets, and a run that died
+	 * with the former process surfaces its interrupted marker from the session
+	 * transcript when its tab is opened, never as a live run.
+	 */
+	async #restorePersistedSessionTabs(): Promise<void> {
+		const sessionDir = this.sessionManager.getSessionDir();
+		const projectKey = normalizePathForComparison(this.sessionManager.getCwd());
+		const persisted = await loadSessionTabs(new FileSessionStorage(), sessionTabsFile(sessionDir), projectKey);
+		if (!persisted) return;
+		const sessionTabs = this.#selectorController.sessionTabs;
+		let skipped = 0;
+		for (const tab of persisted.tabs) {
+			if (
+				normalizePathForComparison(path.dirname(tab.path)) !== normalizePathForComparison(sessionDir) ||
+				!(await Bun.file(tab.path).exists())
+			) {
+				skipped++;
+				continue;
+			}
+			sessionTabs.open(tab.path, tab.label);
+			sessionTabs.visit(tab.path);
+		}
+		for (const closed of persisted.recentlyClosed) sessionTabs.rememberClosed(closed.path, closed.label);
+		const current = this.sessionManager.getSessionFile();
+		if (current) sessionTabs.visit(current);
+		const notices: string[] = [];
+		if (skipped > 0) notices.push(`${skipped} saved tab${skipped === 1 ? " was" : "s were"} no longer available`);
+		const previousActive = persisted.activePath;
+		if (
+			previousActive &&
+			current &&
+			normalizePathForComparison(previousActive) !== normalizePathForComparison(current) &&
+			(await Bun.file(previousActive).exists())
+		) {
+			notices.push(`previous session is one /tab switch away`);
+		}
+		if (notices.length > 0) this.showStatus(`Restored tabs: ${notices.join("; ")}.`);
+		this.ui.requestRender();
+	}
+
 	handleFreshCommand(): Promise<void> {
 		return this.#commandController.handleFreshCommand();
 	}
@@ -5607,8 +5655,13 @@ export class InteractiveMode implements InteractiveModeContext {
 	async handleDropCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
 		const previousFile = this.sessionManager.getSessionFile();
+		const previousId = this.sessionManager.getSessionId();
+		this.viewStateStore.saveDraft(previousId, this.editor);
+		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleDropCommand();
+		this.composer.resetWorkspaceScroll();
+		this.#restoreSessionView();
 		await this.#selectorController.recordSessionTransition(previousFile, true);
 	}
 

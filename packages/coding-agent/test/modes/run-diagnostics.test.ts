@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AssistantMessage } from "@harvest/pi-ai";
 import type { AgentSessionEvent } from "../../src/session/agent-session-events";
-import { RunDiagnosticsTracker } from "../../src/modes/run-diagnostics";
+import { formatRunDiagnostic, RunDiagnosticsTracker } from "../../src/modes/run-diagnostics";
 
 const IDLE = () => false;
 const ACTIVE = () => true;
@@ -265,5 +265,46 @@ describe("RunDiagnosticsTracker", () => {
 		expect(tracker.snapshot("a").lastTool).toMatchObject({ name: "read", durationMs: 1000 });
 		tracker.handleEvent("a", { type: "agent_start" } as AgentSessionEvent, IDLE, 4000);
 		expect(tracker.snapshot("a")).toMatchObject({ lastTool: undefined, turnCount: 0, firstTokenMs: undefined });
+	});
+});
+
+describe("formatRunDiagnostic", () => {
+	it("renders an idle session as one line", () => {
+		const tracker = new RunDiagnosticsTracker();
+		expect(formatRunDiagnostic(tracker.snapshot("missing"))).toBe("Stage: idle");
+	});
+
+	it("renders the active run with tool, timing, and progress lines", () => {
+		const tracker = new RunDiagnosticsTracker();
+		tracker.handleEvent("a", { type: "agent_start" } as AgentSessionEvent, IDLE, 1000);
+		tracker.handleEvent("a", { type: "message_start", message: {} } as unknown as AgentSessionEvent, ACTIVE, 1100);
+		tracker.handleEvent(
+			"a",
+			{ type: "message_update", message: {}, assistantMessageEvent: {} } as unknown as AgentSessionEvent,
+			ACTIVE,
+			1500,
+		);
+		tracker.handleEvent(
+			"a",
+			{ type: "tool_execution_start", toolCallId: "1", toolName: "bash", args: {} } as AgentSessionEvent,
+			ACTIVE,
+			2000,
+		);
+		const text = formatRunDiagnostic(tracker.snapshot("a", 12_000));
+		expect(text).toContain("Stage: tool (elapsed 11s)");
+		expect(text).toContain("Active tool: bash");
+		expect(text).toContain("First token: 400ms after dispatch");
+		expect(text).toContain("Last event: tool_execution_start");
+		expect(text).not.toContain("Failure:");
+	});
+
+	it("keeps the failure line after the run settles", () => {
+		const tracker = new RunDiagnosticsTracker();
+		tracker.handleEvent("a", { type: "agent_start" } as AgentSessionEvent, IDLE, 1000);
+		tracker.handleEvent("a", { type: "notice", level: "error", message: "socket reset" }, ACTIVE, 1500);
+		tracker.handleEvent("a", agentEnd([], true), IDLE, 2000);
+		const text = formatRunDiagnostic(tracker.snapshot("a", 9000));
+		expect(text).toContain("Stage: idle");
+		expect(text).toContain("Failure: socket reset");
 	});
 });

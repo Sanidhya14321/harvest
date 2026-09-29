@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "bun:test";
+import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -185,4 +185,40 @@ it("forgets a closed tab whose session file was deleted", async () => {
 	controller.sessionTabs.close("/work/deleted.jsonl");
 	expect(await controller.handleSessionTabsCommand("reopen")).toContain("no longer available");
 	expect(await controller.handleSessionTabsCommand("reopen")).toBe("No recently closed session tab.");
+});
+
+describe("tab persistence wiring", () => {
+	it("writes tab references when tabs mutate", async () => {
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
+		roots.push(root);
+		const first = path.join(root, "first.jsonl");
+		const second = path.join(root, "second.jsonl");
+		await Bun.write(first, "first");
+		await Bun.write(second, "second");
+		let active = second;
+		const ctx = {
+			sessionManager: {
+				getSessionFile: () => active,
+				getSessionName: () => "Second task",
+				getSessionDir: () => root,
+				getSessionId: () => "session-two",
+				getCwd: () => root,
+			},
+			ui: { requestRender: vi.fn() },
+		} as unknown as InteractiveModeContext;
+		const controller = new SelectorController(ctx);
+		await controller.recordSessionTransition(first);
+		const tabsFile = path.join(root, "tabs.json");
+		const persisted = (await Bun.file(tabsFile).json()) as {
+			version: number;
+			tabs: { path: string }[];
+			activePath: string;
+		};
+		expect(persisted.version).toBe(1);
+		expect(persisted.tabs.map(tab => tab.path).sort()).toEqual([first, second].sort());
+		expect(persisted.activePath).toBe(second);
+		expect(await controller.handleSessionTabsCommand("close 2")).toContain("Closed session tab");
+		const afterClose = (await Bun.file(tabsFile).json()) as { tabs: { path: string }[] };
+		expect(afterClose.tabs.map(tab => tab.path)).toEqual([second]);
+	});
 });

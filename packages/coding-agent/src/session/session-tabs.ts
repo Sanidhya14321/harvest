@@ -76,6 +76,16 @@ export class SessionTabs {
 		return closed.path;
 	}
 
+	/** Closed tabs available to reopen, most recent last. */
+	get recentlyClosed(): readonly { path: string; label?: string }[] {
+		return [...this.#closed];
+	}
+
+	/** Restore a previously persisted closed entry without disturbing the open order. */
+	rememberClosed(path: string, label?: string): void {
+		this.#closed.push({ path, label });
+	}
+
 	neighbor(current: string, direction: 1 | -1): string | undefined {
 		if (this.#paths.length < 2) return undefined;
 		const index = this.indexOf(current);

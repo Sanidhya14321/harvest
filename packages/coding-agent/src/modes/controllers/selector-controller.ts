@@ -60,6 +60,7 @@ import { resolveResumableSession } from "../../session/session-listing";
 import { loadPinnedSessionIds } from "../../session/session-pins";
 import { SessionTabs } from "../../session/session-tabs";
 import { FileSessionStorage } from "../../session/session-storage";
+import { saveSessionTabs, sessionTabsFile, snapshotSessionTabs } from "../../session/session-tab-persistence";
 import { type LogoutAccount, toLogoutAccounts } from "../../slash-commands/helpers/logout";
 import {
 	describeRedeemOutcome,
@@ -142,7 +143,27 @@ export class SelectorController {
 		else if (previousFile) this.sessionTabs.close(previousFile, false);
 		this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
 		this.sessionTabs.visit(activeFile);
+		this.#persistTabs();
 		this.ctx.ui.requestRender();
+	}
+
+	/**
+	 * Best-effort snapshot of open-tab references for restart restore. Uses
+	 * the atomic private-permission session storage write; failures only log,
+	 * and contexts without a session directory (unit-test doubles) skip.
+	 */
+	#persistTabs(): void {
+		const sessionDir = this.ctx.sessionManager.getSessionDir?.();
+		if (!sessionDir) return;
+		saveSessionTabs(
+			new FileSessionStorage(),
+			sessionTabsFile(sessionDir),
+			snapshotSessionTabs(this.sessionTabs, {
+				projectKey: normalizePathForComparison(this.ctx.sessionManager.getCwd()),
+				activePath: this.ctx.sessionManager.getSessionFile() ?? undefined,
+				activeSessionId: this.ctx.sessionManager.getSessionId(),
+			}),
+		);
 	}
 
 	async handleSessionTabsCommand(args: string): Promise<string> {
@@ -173,11 +194,13 @@ export class SelectorController {
 			const target = match.session.path;
 			const wasOpen = this.sessionTabs.indexOf(target) >= 0;
 			this.sessionTabs.open(target, match.session.title ?? match.session.firstMessage);
+			this.#persistTabs();
 			if (!current || normalizePathForComparison(current) !== normalizePathForComparison(target)) {
 				await this.ctx.handleResumeSession(target);
 				const active = this.ctx.sessionManager.getSessionFile();
 				if (!active || normalizePathForComparison(active) !== normalizePathForComparison(target)) {
 					if (!wasOpen) this.sessionTabs.close(target, false);
+					this.#persistTabs();
 					return "Session switch did not complete; the current session was preserved.";
 				}
 			}
@@ -198,6 +221,7 @@ export class SelectorController {
 				}
 			}
 			this.sessionTabs.close(target);
+			this.#persistTabs();
 			this.ctx.ui.requestRender();
 			return `Closed session tab ${index + 1}.`;
 		}
@@ -206,12 +230,14 @@ export class SelectorController {
 			if (!target) return "No recently closed session tab.";
 			if (!(await Bun.file(target).exists())) {
 				this.sessionTabs.close(target, false);
+				this.#persistTabs();
 				return "The closed session file is no longer available.";
 			}
 			await this.ctx.handleResumeSession(target);
 			const active = this.ctx.sessionManager.getSessionFile();
 			if (!active || normalizePathForComparison(active) !== normalizePathForComparison(target)) {
 				this.sessionTabs.close(target);
+				this.#persistTabs();
 				return "Session switch did not complete; the closed tab was preserved.";
 			}
 			this.ctx.ui.requestRender();
@@ -231,6 +257,7 @@ export class SelectorController {
 			}
 			if (!(await Bun.file(target).exists())) {
 				this.sessionTabs.close(target, false);
+				this.#persistTabs();
 				this.ctx.ui.requestRender();
 				return "The session file is no longer available; its tab was removed.";
 			}
@@ -2042,6 +2069,7 @@ export class SelectorController {
 	async handleResumeSession(sessionPath: string, options?: { settingsFlushed?: boolean }): Promise<boolean> {
 		if (!(await Bun.file(sessionPath).exists())) {
 			this.sessionTabs.close(sessionPath, false);
+			this.#persistTabs();
 			this.ctx.showError("The session file is no longer available; its tab was removed.");
 			this.ctx.ui.requestRender();
 			return false;
@@ -2094,6 +2122,7 @@ export class SelectorController {
 		await this.ctx.renderInitialMessages({ clearTerminalHistory: true });
 		await this.ctx.reloadTodos();
 		this.ctx.showStatus(movedProject ? `Resumed session in ${shortenPath(newCwd)}` : "Resumed session");
+		this.#persistTabs();
 		return true;
 	}
 
@@ -2130,6 +2159,7 @@ export class SelectorController {
 		// Delete the session file and artifacts directory
 		await storage.deleteSessionWithArtifacts(sessionFile);
 		this.sessionTabs.close(sessionFile, false);
+		this.#persistTabs();
 
 		// Show session selector
 		this.ctx.showStatus("Session deleted");

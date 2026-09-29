@@ -20,6 +20,7 @@ import {
 	type SessionWorktree,
 } from "../session/session-worktree";
 import { formatShakeSummary, type ShakeMode } from "../session/shake-types";
+import { formatRunDiagnostic } from "../modes/run-diagnostics";
 import { hasUnsettledWork, isApprovalDialogOpen } from "../modes/session-teardown";
 import { discoverTitleSystemPromptFile, resolvePromptInput } from "../system-prompt";
 import { resolveToCwd } from "../tools/path-utils";
@@ -455,6 +456,20 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 			} catch (error) {
 				runtime.ctx.showError(error instanceof Error ? error.message : String(error));
 			}
+		},
+	},
+	{
+		name: "diagnostics",
+		icon: "gauge",
+		description: "Show why the current run is active, stalled, or stopped",
+		handleTui: async (_command, runtime) => {
+			runtime.ctx.editor.setText("");
+			const tracker = runtime.ctx.runDiagnostics;
+			if (!tracker) {
+				runtime.ctx.showSessionInfo("Run diagnostics are unavailable in this context.");
+				return;
+			}
+			runtime.ctx.showSessionInfo(formatRunDiagnostic(tracker.snapshot(runtime.ctx.sessionManager.getSessionId())));
 		},
 	},
 	{

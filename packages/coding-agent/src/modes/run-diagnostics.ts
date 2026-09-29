@@ -44,6 +44,36 @@ export interface RunDiagnosticSnapshot {
 /** Terminal failure text kept verbatim, capped so one bad turn cannot bloat the record. */
 const MAX_FAILURE_CHARS = 300;
 
+/** Precise durations for diagnostics; sub-second values keep millisecond resolution. */
+function formatPreciseDuration(ms: number): string {
+	const value = Math.max(0, Math.round(ms));
+	if (value < 1000) return `${value}ms`;
+	return `${Math.round(value / 1000)}s`;
+}
+
+/**
+ * Render a snapshot as plain operator-facing lines. Only populated fields
+ * print, so an idle session reads as one line and an active or failed run
+ * shows exactly what distinguishes model latency, tool execution, and stalls.
+ */
+export function formatRunDiagnostic(snapshot: RunDiagnosticSnapshot): string {
+	const lines = [
+		`Stage: ${snapshot.stage}${snapshot.elapsedMs > 0 ? ` (elapsed ${formatPreciseDuration(snapshot.elapsedMs)})` : ""}`,
+	];
+	if (snapshot.activeTool) lines.push(`Active tool: ${snapshot.activeTool}`);
+	if (snapshot.detail) lines.push(`Detail: ${snapshot.detail}`);
+	if (snapshot.firstTokenMs !== undefined) {
+		lines.push(`First token: ${formatPreciseDuration(snapshot.firstTokenMs)} after dispatch`);
+	}
+	if (snapshot.turnCount > 0) lines.push(`Turns: ${snapshot.turnCount}`);
+	if (snapshot.lastTool) {
+		lines.push(`Last tool: ${snapshot.lastTool.name} (${formatPreciseDuration(snapshot.lastTool.durationMs)})`);
+	}
+	if (snapshot.lastEvent) lines.push(`Last event: ${snapshot.lastEvent}`);
+	if (snapshot.failure) lines.push(`Failure: ${snapshot.failure}`);
+	return lines.join("\n");
+}
+
 /**
  * Passive per-session observer of the agent event stream. Answers "why did
  * work stop or pause": current stage, active tool, last meaningful event,
