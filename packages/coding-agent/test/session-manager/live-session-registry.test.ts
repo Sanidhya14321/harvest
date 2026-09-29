@@ -3,7 +3,7 @@ import type { AgentSession } from "../../src/session/agent-session";
 import type { AgentSessionEvent } from "../../src/session/agent-session-events";
 import { LiveSessionRegistry } from "../../src/session/live-session-registry";
 
-function fakeSession(id: string, path: string, cwd = "C:/project") {
+function fakeSession(id: string, path: string | undefined, cwd = "C:/project") {
 	const listeners = new Set<(event: AgentSessionEvent) => void>();
 	const titleListeners = new Set<() => void>();
 	let name = "Untitled";
@@ -192,6 +192,52 @@ describe("LiveSessionRegistry", () => {
 			unread: true,
 		});
 		expect(registry.sessions).not.toContain(sessions[1]!.session);
+		await registry.dispose();
+	});
+
+	it("adopts a pre-path session and attaches its path without duplicating the runtime", async () => {
+		const pending = fakeSession("pending", undefined);
+		const other = fakeSession("other", "C:/project/other.jsonl");
+		const registry = new LiveSessionRegistry(other.session, async () => {
+			throw new Error("cold open must not run for a live id");
+		});
+		registry.adopt(pending.session);
+		expect(registry.selected).toBe(pending.session);
+		registry.notePath("pending", "C:/project/pending.jsonl");
+		const warm = await registry.select("C:/project/pending.jsonl");
+		expect(warm.session).toBe(pending.session);
+		expect(warm.selected).toBe(true);
+		expect(registry.sessions.filter(item => item.sessionManager.getSessionId() === "pending")).toHaveLength(1);
+		await registry.dispose();
+	});
+
+	it("selects a warm runtime by stable id without opening its file", async () => {
+		const first = fakeSession("one", "C:/project/one.jsonl");
+		const second = fakeSession("two", "C:/project/two.jsonl");
+		const open = mock(async () => second.session);
+		const registry = new LiveSessionRegistry(first.session, open);
+		await registry.select("C:/project/two.jsonl");
+		first.emit({ type: "agent_start" });
+		first.emit({ type: "agent_end", messages: [] });
+		const selection = registry.selectById("one");
+		expect(selection.session).toBe(first.session);
+		expect(selection.selected).toBe(true);
+		expect(open).toHaveBeenCalledTimes(1);
+		expect(registry.snapshots.find(item => item.id === "one")).toMatchObject({ status: "idle", unread: false });
+		await registry.dispose();
+	});
+
+	it("never evicts an unsaved session when releasing idle runtimes", async () => {
+		const first = fakeSession("saved", "C:/project/saved.jsonl");
+		const pending = fakeSession("pending", undefined);
+		const registry = new LiveSessionRegistry(first.session, async () => {
+			throw new Error("unexpected cold open");
+		});
+		registry.adopt(pending.session);
+		registry.selectById("saved");
+		await registry.releaseIdleRuntimes(0);
+		expect(pending.dispose).not.toHaveBeenCalled();
+		expect(registry.sessions).toContain(pending.session);
 		await registry.dispose();
 	});
 });

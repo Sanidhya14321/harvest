@@ -20,7 +20,7 @@ export interface LiveSessionSelection {
 
 interface LiveSessionEntry {
 	session: AgentSession;
-	path: string;
+	path: string | undefined;
 	lastUsed: number;
 	status: LiveSessionStatus;
 	unread: boolean;
@@ -66,7 +66,7 @@ export class LiveSessionRegistry {
 	get snapshots(): readonly LiveSessionSnapshot[] {
 		const live = [...this.#entries.entries()].map(([id, entry]) => ({
 			id,
-			path: entry.session.sessionManager.getSessionFile() ?? entry.path,
+			path: entry.session.sessionManager.getSessionFile() ?? entry.path ?? "",
 			title: entry.session.sessionManager.getSessionName(),
 			status: entry.status,
 			unread: entry.unread,
@@ -100,6 +100,20 @@ export class LiveSessionRegistry {
 		return { session, selected: true };
 	}
 
+	/** Resolve a warm runtime by stable session ID without reading its session file. */
+	selectById(sessionId: string): LiveSessionSelection {
+		if (this.#disposed) throw new Error("Live session registry is closed");
+		const entry = this.#entries.get(sessionId);
+		if (!entry) throw new Error(`Session ${sessionId} is not live`);
+		this.#selectionGeneration++;
+		this.#selectedId = sessionId;
+		entry.lastUsed = ++this.#usageOrder;
+		entry.unread = false;
+		if (entry.status === "completed") entry.status = "idle";
+		this.#emit();
+		return { session: entry.session, selected: true };
+	}
+
 	/** Attach a newly created session without replacing or aborting another runtime. */
 	adopt(session: AgentSession): void {
 		if (this.#disposed) throw new Error("Live session registry is closed");
@@ -110,12 +124,28 @@ export class LiveSessionRegistry {
 		this.#emit();
 	}
 
+	/** Record the persistence path for a previously path-less live session. */
+	notePath(sessionId: string, path: string): void {
+		if (this.#disposed) throw new Error("Live session registry is closed");
+		const entry = this.#entries.get(sessionId);
+		if (!entry) throw new Error(`Session ${sessionId} is not live`);
+		const key = normalizePathForComparison(path);
+		const existingId = this.#idsByPath.get(key);
+		if (existingId && existingId !== sessionId) throw new Error(`Session path ${path} is already live`);
+		if (entry.path) this.#idsByPath.delete(normalizePathForComparison(entry.path));
+		entry.path = path;
+		this.#idsByPath.set(key, sessionId);
+		this.#dormant.delete(key);
+		this.#emit();
+	}
+
 	/** Release least-recently-used idle runtimes after a view has detached from them. */
 	async releaseIdleRuntimes(limit = 6): Promise<void> {
 		if (this.#disposed) return;
 		const idle = [...this.#entries.entries()]
 			.filter(
 				([, entry]) =>
+					entry.path !== undefined &&
 					entry.status !== "running" &&
 					entry.status !== "waiting" &&
 					!entry.session.isStreaming &&
@@ -128,6 +158,7 @@ export class LiveSessionRegistry {
 		for (const [id, entry] of idle) {
 			if (toRelease === 0) break;
 			if (id === this.#selectedId) continue;
+			if (!entry.path) continue;
 			const snapshot = {
 				id,
 				path: entry.path,
@@ -207,8 +238,7 @@ export class LiveSessionRegistry {
 	#add(session: AgentSession): void {
 		const manager = session.sessionManager;
 		const id = manager.getSessionId();
-		const path = manager.getSessionFile();
-		if (!path) throw new Error("A live session must have a session path");
+		const path = manager.getSessionFile() ?? undefined;
 		if (normalizePathForComparison(manager.getCwd()) !== this.#project) {
 			throw new Error("Live tabs are limited to the current project");
 		}
@@ -217,15 +247,17 @@ export class LiveSessionRegistry {
 			if (existing.session !== session) throw new Error(`Session ${id} is already live`);
 			return;
 		}
-		const pathKey = normalizePathForComparison(path);
-		const existingPathId = this.#idsByPath.get(pathKey);
-		if (existingPathId && existingPathId !== id) throw new Error(`Session path ${path} is already live`);
+		const pathKey = path ? normalizePathForComparison(path) : undefined;
+		if (pathKey) {
+			const existingPathId = this.#idsByPath.get(pathKey);
+			if (existingPathId && existingPathId !== id) throw new Error(`Session path ${path} is already live`);
+		}
 		const entry: LiveSessionEntry = {
 			session,
 			path,
 			lastUsed: ++this.#usageOrder,
-			status: session.isStreaming ? "running" : (this.#dormant.get(pathKey)?.status ?? "idle"),
-			unread: this.#dormant.get(pathKey)?.unread ?? false,
+			status: session.isStreaming ? "running" : (pathKey ? (this.#dormant.get(pathKey)?.status ?? "idle") : "idle"),
+			unread: pathKey ? (this.#dormant.get(pathKey)?.unread ?? false) : false,
 			unsubscribe: () => {},
 			unsubscribeTitle: () => {},
 		};
@@ -242,8 +274,10 @@ export class LiveSessionRegistry {
 		});
 		entry.unsubscribeTitle = manager.onSessionNameChanged(() => this.#emit());
 		this.#entries.set(id, entry);
-		this.#idsByPath.set(pathKey, id);
-		this.#dormant.delete(pathKey);
+		if (pathKey) {
+			this.#idsByPath.set(pathKey, id);
+			this.#dormant.delete(pathKey);
+		}
 		this.#emit();
 	}
 
