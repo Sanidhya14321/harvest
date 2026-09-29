@@ -19,6 +19,7 @@
 - Laya setup now connects to the sidecar's rotating local token and ships its Python service in npm and binary builds.
 - Laya setup stops with a diagnostic when an isolated Python environment cannot be created, without installing packages into system Python.
 - Terminal session breadcrumbs are created with private file permissions on Unix systems.
+- Switching sessions keeps each session's unsent composer draft and attachments instead of leaking them into the newly shown session.
 
 ### Added
 

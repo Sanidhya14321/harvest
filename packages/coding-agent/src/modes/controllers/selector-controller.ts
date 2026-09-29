@@ -2049,6 +2049,8 @@ export class SelectorController {
 		const previousCwd = this.ctx.sessionManager.getCwd();
 		const previousFile = this.ctx.sessionManager.getSessionFile();
 		const previousName = this.ctx.sessionManager.getSessionName();
+		const previousId = this.ctx.sessionManager.getSessionId();
+		this.ctx.viewStateStore?.saveDraft(previousId, this.ctx.editor);
 		// Flush pending settings writes before switching sessions so a save
 		// failure leaves the session, process project dir, and Settings in the
 		// source scope.
@@ -2070,9 +2072,11 @@ export class SelectorController {
 				},
 			})) === false
 		) {
+			this.ctx.viewStateStore?.restoreDraft(previousId, this.ctx.editor);
 			return false;
 		}
 		this.ctx.clearTransientSessionUi();
+		this.ctx.viewStateStore?.restoreDraft(this.ctx.sessionManager.getSessionId(), this.ctx.editor);
 		const newCwd = this.ctx.sessionManager.getCwd();
 		if (previousFile && (await Bun.file(previousFile).exists())) this.sessionTabs.open(previousFile, previousName);
 		else if (previousFile) this.sessionTabs.close(previousFile, false);

@@ -42,6 +42,8 @@ export class SessionFocusController {
 	async selectMainSession(session: AgentSession): Promise<void> {
 		if (session === this.ctx.session && !this.#focusedAgentId) return;
 		const previous = this.ctx.session;
+		const previousId = previous.sessionManager.getSessionId();
+		this.ctx.viewStateStore?.saveDraft(previousId, this.ctx.editor);
 		this.#focusedAgentId = undefined;
 		this.#attachedSession = undefined;
 		this.ctx.session = session;
@@ -50,6 +52,7 @@ export class SessionFocusController {
 		this.ctx.agent = session.agent;
 		try {
 			await this.#attach(session);
+			this.ctx.viewStateStore?.restoreDraft(session.sessionManager.getSessionId(), this.ctx.editor);
 		} catch (error) {
 			// A failed transcript or todo load must leave input and events on the last
 			// usable runtime. A newer navigation owns the view if it already moved on.
@@ -60,6 +63,7 @@ export class SessionFocusController {
 				this.ctx.agent = previous.agent;
 				try {
 					await this.#attach(previous);
+					this.ctx.viewStateStore?.restoreDraft(previousId, this.ctx.editor);
 				} catch (rollbackError) {
 					logger.error("Failed to restore previous session view", { error: String(rollbackError) });
 				}

@@ -25,6 +25,7 @@ import type { ForeignSessionSource } from "../session/foreign-session-store";
 import type { HistoryStorage } from "../session/history-storage";
 import type { SessionContext } from "../session/session-context";
 import type { SessionManager } from "../session/session-manager";
+import type { SessionViewStateStore } from "../session/session-view-state";
 import type { ShakeMode } from "../session/shake-types";
 import type { ConfiguredThinkingLevel } from "../thinking";
 import type { LspStartupServerInfo } from "../tools";
@@ -167,6 +168,8 @@ export interface InteractiveModeContext {
 	eventBus?: EventBus;
 	/** Root-scoped bus carrying this session tree's `task:subagent:*` frames. */
 	subagentEventBus?: EventBus;
+	/** In-memory per-session composer drafts; absent in unit-test contexts. */
+	viewStateStore?: SessionViewStateStore;
 
 	// State
 	isInitialized: boolean;

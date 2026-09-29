@@ -256,7 +256,7 @@ export class LiveSessionRegistry {
 			session,
 			path,
 			lastUsed: ++this.#usageOrder,
-			status: session.isStreaming ? "running" : (pathKey ? (this.#dormant.get(pathKey)?.status ?? "idle") : "idle"),
+			status: session.isStreaming ? "running" : pathKey ? (this.#dormant.get(pathKey)?.status ?? "idle") : "idle",
 			unread: pathKey ? (this.#dormant.get(pathKey)?.unread ?? false) : false,
 			unsubscribe: () => {},
 			unsubscribeTitle: () => {},

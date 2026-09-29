@@ -1033,7 +1033,13 @@ export class CommandController {
 				await Bun.sleep(10);
 			}
 		}
-		if (!(await this.ctx.session.newSession(options))) return;
+		const previousId = this.ctx.sessionManager.getSessionId();
+		this.ctx.viewStateStore?.saveDraft(previousId, this.ctx.editor);
+		if (!(await this.ctx.session.newSession(options))) {
+			this.ctx.viewStateStore?.restoreDraft(previousId, this.ctx.editor);
+			return;
+		}
+		this.ctx.viewStateStore?.restoreDraft(this.ctx.sessionManager.getSessionId(), this.ctx.editor);
 		// A focused subagent view keeps its own history: return to the main session
 		// first so the transcript below cannot rebuild from the subagent's surviving
 		// conversation, then drop any turn-scoped anchors (coalescing timers,
