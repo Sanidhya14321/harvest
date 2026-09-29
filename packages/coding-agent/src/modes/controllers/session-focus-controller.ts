@@ -37,6 +37,18 @@ export class SessionFocusController {
 		return this.#attachedSession;
 	}
 
+	/** Retarget the main view to another already-live top-level session. Neither runtime is stopped. */
+	async selectMainSession(session: AgentSession): Promise<void> {
+		if (session === this.ctx.session && !this.#focusedAgentId) return;
+		this.#focusedAgentId = undefined;
+		this.#attachedSession = undefined;
+		this.ctx.session = session;
+		this.ctx.sessionManager = session.sessionManager;
+		this.ctx.settings = session.settings;
+		this.ctx.agent = session.agent;
+		await this.#attach(session);
+	}
+
 	/** Focus the main view on an agent's live session. Throws an Error with a user-displayable message. */
 	async focusAgent(id: string): Promise<void> {
 		if (this.ctx.collabGuest) throw new Error("Viewing agents is unavailable in a collab session.");

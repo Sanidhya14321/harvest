@@ -132,6 +132,18 @@ async function flushAsync(): Promise<void> {
 }
 
 describe("SessionFocusController", () => {
+	it("retargets a top-level view without aborting either live runtime", async () => {
+		const h = makeHarness();
+		const other = makeSessionStub({ isStreaming: true });
+		await h.controller.selectMainSession(other.session);
+		expect(h.ctx.session).toBe(other.session);
+		expect(h.setSessionCalls.at(-1)).toEqual([other.session, undefined]);
+		expect(h.handledEvents).toEqual([{ type: "agent_start" }]);
+		await h.controller.selectMainSession(h.main.session);
+		expect(h.ctx.session).toBe(h.main.session);
+		expect(h.reloadTodoSessions).toEqual([other.session, h.main.session]);
+	});
+
 	it("focusAgent retargets subscription, transcript anchors, and status line onto the worker session", async () => {
 		const h = makeHarness();
 		const worker = makeSessionStub();
