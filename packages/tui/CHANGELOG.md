@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Full-screen workspaces repaint only changed text rows during streaming updates and animations.
+
 ## [18.1.14] - 2026-09-07
 
 ### Fixed

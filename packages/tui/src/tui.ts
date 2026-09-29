@@ -817,6 +817,7 @@ export class TUI extends Container {
 	#baseFullscreen = false;
 	#altMouseTrackingActive = false;
 	#altPreviousLines: string[] = [];
+	#altPreviousWidth = 0;
 	#altEnterWidth = 0;
 	#altEnterHeight = 0;
 	#resizeAltActive = false;
@@ -2989,7 +2990,7 @@ export class TUI extends Container {
 	}
 
 	/**
-	 * Full per-row viewport rewrite on the alt buffer. Emits only sync-output
+	 * Differential viewport rewrite on the alt buffer. Emits only sync-output
 	 * brackets, a cursor home, and per-row rewrites — never ED3 or any
 	 * native-scrollback byte. The caller positions the hardware cursor for a
 	 * primary workspace after this paint.
@@ -3016,7 +3017,13 @@ export class TUI extends Container {
 		// corrupted modal even when our cached frame is byte-identical.
 		const force = this.#forceViewportRepaintOnNextRender;
 		this.#forceViewportRepaintOnNextRender = false;
-		if (!force && this.#altPreviousLines.length === height) {
+		const fullPaint =
+			force ||
+			this.#altPreviousLines.length !== height ||
+			this.#altPreviousWidth !== width ||
+			fitted.some(line => TERMINAL.isImageLine(line) || isOsc66Line(line)) ||
+			this.#altPreviousLines.some(line => TERMINAL.isImageLine(line) || isOsc66Line(line));
+		if (!fullPaint) {
 			let same = true;
 			for (let r = 0; r < height; r++) {
 				if (fitted[r] !== this.#altPreviousLines[r]) {
@@ -3026,14 +3033,15 @@ export class TUI extends Container {
 			}
 			if (same) return;
 		}
-		let buffer = `${this.#paintBeginSequence}\x1b[H`;
+		let buffer = this.#paintBeginSequence;
 		for (let r = 0; r < height; r++) {
-			if (r > 0) buffer += "\r\n";
-			buffer += this.#lineRewriteSequence(fitted[r], width, r, -1, -1, this.#osc66SpacerGlyphWidth(fitted, r));
+			if (!fullPaint && fitted[r] === this.#altPreviousLines[r]) continue;
+			buffer += `\x1b[${r + 1};1H${this.#lineRewriteSequence(fitted[r], width, r, -1, -1, this.#osc66SpacerGlyphWidth(fitted, r))}`;
 		}
 		buffer += this.#paintEndSequence;
 		this.terminal.write(buffer);
 		this.#altPreviousLines = fitted;
+		this.#altPreviousWidth = width;
 		this.#debugPaint = { lines: fitted, windowTop: 0, altScreen: true };
 		this.#fullRedrawCount += 1;
 	}
