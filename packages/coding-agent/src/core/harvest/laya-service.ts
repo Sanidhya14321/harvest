@@ -825,7 +825,50 @@ export async function startLayaSidecarProcess(
 	baseUrl: string = DEFAULT_LAYA_URL,
 	onProgress?: (msg: string) => void,
 	setupLogger?: LayaSetupLogger,
-): Promise<{ success: boolean; error?: string; actualBaseUrl?: string }> {
+): Promise<SidecarSpawnResult> {
+	return singleflight(sidecarSpawnInflight, baseUrl.replace(/\/+$/, ""), () =>
+		runSidecarSpawnProcess(pythonPath, baseUrl, onProgress, setupLogger),
+	);
+}
+
+type SidecarSpawnResult = { success: boolean; error?: string; actualBaseUrl?: string };
+
+/** In-flight sidecar spawns keyed by normalized base URL. */
+const sidecarSpawnInflight = new Map<string, Promise<SidecarSpawnResult>>();
+
+/**
+ * Share one in-flight async run per key: concurrent starters receive the
+ * same promise instead of duplicating the work. The slot clears when the run
+ * settles (success or failure), so a later starter begins a fresh run. A
+ * synchronously throwing `start` propagates without poisoning the map.
+ */
+export function singleflight<K, V>(runs: Map<K, Promise<V>>, key: K, start: () => Promise<V>): Promise<V> {
+	const existing = runs.get(key);
+	if (existing) return existing;
+	const run = start();
+	runs.set(key, run);
+	// then(clear, clear) — not finally: the derived promise must never reject,
+	// while callers of the returned `run` still observe its real outcome.
+	run.then(clear, clear);
+	function clear(): void {
+		if (runs.get(key) === run) runs.delete(key);
+	}
+	return run;
+}
+
+/**
+ * The spawn pipeline itself (single run): reuse/health checks, port-conflict
+ * resolution, PID file, early-exit fast-fail, and kill-on-timeout. Prefer
+ * {@link startLayaSidecarProcess}, which singleflights concurrent starters
+ * (autostart racing a manual start) onto one shared run so a second daemon
+ * can never hide behind a port drift.
+ */
+async function runSidecarSpawnProcess(
+	pythonPath: string,
+	baseUrl: string = DEFAULT_LAYA_URL,
+	onProgress?: (msg: string) => void,
+	setupLogger?: LayaSetupLogger,
+): Promise<SidecarSpawnResult> {
 	if (await isLayaSidecarRunning(baseUrl)) {
 		return { success: true, actualBaseUrl: baseUrl };
 	}
@@ -1043,14 +1086,7 @@ const layaConfigureInflight = new Map<string, Promise<LayaSetupResult>>();
  * run instead of spawning duplicate sidecar children behind a port drift.
  */
 export async function configureLayaLocally(options: ConfigureLayaOptions = {}): Promise<LayaSetupResult> {
-	const key = options.baseUrl || DEFAULT_LAYA_URL;
-	const existing = layaConfigureInflight.get(key);
-	if (existing) return existing;
-	const run = runLayaConfiguration(options).finally(() => {
-		if (layaConfigureInflight.get(key) === run) layaConfigureInflight.delete(key);
-	});
-	layaConfigureInflight.set(key, run);
-	return run;
+	return singleflight(layaConfigureInflight, options.baseUrl || DEFAULT_LAYA_URL, () => runLayaConfiguration(options));
 }
 
 /**

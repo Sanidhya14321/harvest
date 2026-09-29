@@ -241,6 +241,7 @@ export type StatusLineSegmentId =
 	| "status"
 	| "model"
 	| "mode"
+	| "run"
 	| "path"
 	| "git"
 	| "pr"

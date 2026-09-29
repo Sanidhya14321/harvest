@@ -25,6 +25,10 @@
 - Each session now keeps a run-stage record (current stage, active tool, elapsed time, first-token latency, turn count, finished tool durations, and the preserved failure reason) so stopped or paused work can report why without re-reading the transcript.
 - Aborting a turn now cancels its in-flight Laya tool-gating call instead of riding out the sidecar timeout; the gate still fails closed to approval.
 - Open session tabs now survive restarts: tab references persist per project with private permissions, deleted files are reported instead of opened, and interrupted work keeps its transcript marker when its tab is reopened.
+- `/diagnostics` shows the current run's stage, active tool, elapsed and first-token timing, turn count, and the preserved failure reason.
+- The status line has a `run` segment (in the `default` preset) showing the live run stage with elapsed time, or the preserved failure after an errored stop.
+- Fixed inverted fullscreen scrolling: wheel-down and page-down now move toward the live tail, wheel-up and page-up back in history.
+- Concurrent Laya sidecar starters now share one spawn run instead of double-spawning daemons behind a port drift; the same singleflight guard now covers the full setup pipeline.
 
 ### Added
 

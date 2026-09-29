@@ -330,8 +330,12 @@ describe("agentLoop with AgentMessage", () => {
 		const config: AgentLoopConfig = { model: mock.model, convertToLlm: identityConverter };
 		const controller = new AbortController();
 		let returnCalled = false;
-		const streamFn = () =>
-			({
+		// Abort inside the provider-stream factory so the abort lands
+		// deterministically in-stream (after preparation succeeded) rather
+		// than racing preparation on microtask timing.
+		const streamFn = () => {
+			controller.abort("stop now");
+			return {
 				result: () => Promise.withResolvers<AssistantMessage>().promise,
 				[Symbol.asyncIterator]: () => ({
 					next: () => Promise.withResolvers<IteratorResult<AssistantMessageEvent>>().promise,
@@ -340,10 +344,10 @@ describe("agentLoop with AgentMessage", () => {
 						return Promise.withResolvers<IteratorResult<AssistantMessageEvent>>().promise;
 					},
 				}),
-			}) as AssistantMessageEventStream;
+			} as AssistantMessageEventStream;
+		};
 
 		const stream = agentLoop([createUserMessage("Hello")], context, config, controller.signal, streamFn);
-		queueMicrotask(() => controller.abort("stop now"));
 		const messages = await stream.result();
 
 		expect(returnCalled).toBe(true);
@@ -352,6 +356,36 @@ describe("agentLoop with AgentMessage", () => {
 		if (finalMessage.role !== "assistant") throw new Error("Expected assistant message");
 		expect(finalMessage.stopReason).toBe("aborted");
 		expect(finalMessage.errorMessage).toBe("stop now");
+	});
+
+	it("settles gracefully instead of waiting out a hung convertToLlm when the turn aborts", async () => {
+		const context: AgentContext = {
+			systemPrompt: ["You are helpful."],
+			messages: [],
+			tools: [],
+		};
+		const mock = createMockModel();
+		const hungConverter = (): Promise<Message[]> => new Promise<never>(() => {});
+		const config: AgentLoopConfig = { model: mock.model, convertToLlm: hungConverter };
+		const controller = new AbortController();
+		const streamFn = () => new AssistantMessageEventStream();
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("Hello")], context, config, controller.signal, streamFn);
+		queueMicrotask(() => controller.abort());
+
+		const start = performance.now();
+		for await (const event of stream) {
+			events.push(event);
+		}
+		expect(performance.now() - start).toBeLessThan(5000);
+		expect(mock.calls).toHaveLength(0);
+		expect(events.map(event => event.type)).toContain("agent_end");
+		const messages = await stream.result();
+		const finalMessage = messages[messages.length - 1];
+		expect(finalMessage.role).toBe("assistant");
+		if (finalMessage.role !== "assistant") throw new Error("Expected assistant message");
+		expect(finalMessage.stopReason).toBe("aborted");
 	});
 
 	it("surfaces a custom abort reason on the synthesized aborted message", async () => {
@@ -4679,7 +4713,10 @@ describe("agentLoopContinue with AgentMessage", () => {
 		release.resolve();
 		await consuming;
 
-		expect(mock.calls).toHaveLength(2);
+		// The abort lands while the tool result is still being processed, so
+		// the next turn settles in preparation without opening a doomed
+		// provider call — but the abort boundary itself is preserved.
+		expect(mock.calls).toHaveLength(1);
 		const aborted = events.find(
 			event =>
 				event.type === "message_end" &&

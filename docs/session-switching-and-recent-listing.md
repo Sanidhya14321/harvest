@@ -2,7 +2,7 @@
 
 This document describes how coding-agent discovers recent sessions, resolves `--resume` targets, presents session pickers, and switches the active runtime session.
 
-In the interactive terminal, `/sessions` opens the same picker as `/resume`, and `/timeline` opens the existing session tree navigator. A tab strip appears near the composer and updates when sessions are selected from the picker. `/tab open <session id>` opens and switches to a session; `/tab list`, `/tab switch <number>`, `/tab next`, `/tab prev`, `/tab back`, `/tab forward`, `/tab close [number]`, and `/tab reopen` manage tabs and navigation. Ctrl+Tab and Ctrl+Shift+Tab cycle tabs, and Ctrl+Shift+T reopens the last closed tab. Tabs live for the current terminal process; inactive tabs retain their session files, not a running agent instance.
+In the interactive terminal, `/sessions` opens the same picker as `/resume`, and `/timeline` opens the existing session tree navigator. A tab strip appears near the composer and updates when sessions are selected from the picker. `/tab open <session id>` opens and switches to a session; `/tab list`, `/tab switch <number>`, `/tab next`, `/tab prev`, `/tab back`, `/tab forward`, `/tab close [number]`, and `/tab reopen` manage tabs and navigation. Ctrl+Tab and Ctrl+Shift+Tab cycle tabs, and Ctrl+Shift+T reopens the last closed tab. Open-tab references persist per project (`tabs.json` in the session directory, atomic write with private permissions) and are restored on startup; files deleted outside Harvest are reported instead of opened. Tabs still share one agent runtime: switching stops the previous run and rebuilds the transcript, and inactive tabs retain their session files, not a running agent instance. The active tab shows a running (`●`), approval-waiting (`?`), error (`!`), or unread-completion (`✓`) indicator.
 
 It focuses on current implementation behavior, including fallback paths and caveats.
 
@@ -11,6 +11,10 @@ It focuses on current implementation behavior, including fallback paths and cave
 - [`../src/session/session-manager.ts`](../packages/coding-agent/src/session/session-manager.ts)
 - [`../src/session/session-listing.ts`](../packages/coding-agent/src/session/session-listing.ts)
 - [`../src/session/session-paths.ts`](../packages/coding-agent/src/session/session-paths.ts)
+- [`../src/session/session-tabs.ts`](../packages/coding-agent/src/session/session-tabs.ts)
+- [`../src/session/session-tab-persistence.ts`](../packages/coding-agent/src/session/session-tab-persistence.ts)
+- [`../src/session/session-view-state.ts`](../packages/coding-agent/src/session/session-view-state.ts)
+- [`../src/modes/run-diagnostics.ts`](../packages/coding-agent/src/modes/run-diagnostics.ts)
 - [`../src/session/agent-session.ts`](../packages/coding-agent/src/session/agent-session.ts)
 - [`../src/cli/session-picker.ts`](../packages/coding-agent/src/cli/session-picker.ts)
 - [`../src/modes/components/session-selector.ts`](../packages/coding-agent/src/modes/components/session-selector.ts)
@@ -199,6 +203,24 @@ Any failure after the snapshot restores the previous manager and runtime state, 
 - show `Resumed session` (or `Resumed session in <dir>` for a cross-project resume)
 
 So visible conversation/todo state is rebuilt from the new session file.
+
+## Per-session view state across switches
+
+`SessionViewStateStore` (`src/session/session-view-state.ts`) keeps each session's unsent composer draft (text plus image attachments) and transcript scroll offset in memory, keyed by session ID. Drafts are never persisted: process exit drops them. The interactive navigation wrappers (`InteractiveMode.handleResumeSession`, `handleClearCommand`, `handleDropCommand`) save the outgoing view before the switch and restore the incoming view after the scroll reset, reading the session ID fresh so a failed switch (same ID) restores the outgoing view. `SessionFocusController.selectMainSession` applies the same save/restore around subagent view retargeting. Typed slash commands (`/tab`, `/new`, `/drop`) replace the editor with command text before dispatch, so only mouse/keyboard-initiated switches carry a draft worth preserving.
+
+Scroll offsets are capped at 20 retained sessions (oldest evicted); the fullscreen wheel/page direction contract lives on `Composer.scrollWorkspaceWheel`/`scrollWorkspacePage` (wheel-up and page-up look back, wheel-down and page-down return to the live tail at offset 0).
+
+## Tab persistence and restart restore
+
+`SelectorController` snapshots open-tab references after every tab mutation (`tabs.json` beside the session JSONLs: schema version, canonical project key, ordered paths with labels and the active session's ID, the active path, and up to 10 recently closed entries). Writes go through `FileSessionStorage.writeTextSync` (temp file plus atomic rename, `0600`, private directory); failures log and never break navigation. Payloads with a wrong version, a foreign project key, or malformed entries are discarded on load.
+
+`InteractiveMode.init` restores references for the current project only: paths outside the session directory or deleted from disk are counted and reported instead of opened, recently closed entries return to the reopen stack, and the startup-resolved session stays active (restored tabs are navigation targets). A run that died with the former process is never presented as live; opening its tab replays the persisted `session_exit` handling, including the interrupted-turn marker (`createInterruptedTurnAbortMessage`).
+
+## Exit confirmation and run diagnostics
+
+`/exit` asks once (`showHookConfirm`) when a turn streams, a bash/eval tool runs, background jobs are unsettled, or an approval dialog waits (`hasUnsettledWork` in `src/modes/session-teardown.ts`); denying leaves the run, the approval, and the draft untouched. Ctrl+C-double, Ctrl+D, signals, and the extension deferred-shutdown path keep their no-dialog behavior.
+
+`RunDiagnosticsTracker` (`src/modes/run-diagnostics.ts`) passively observes the session event stream per session ID: stage (`idle`/`streaming`/`tool`/`retry`/`compaction`/`awaitingDelivery`), active tool, prompt-to-first-token latency, turn count, finished tool durations, last meaningful event, and the preserved terminal failure (error notices, failed retry sagas, failed compactions, errored tools, and `stopReason === "error"` turns only). It applies the same superseded-end and non-terminal-settle guards as `EventController.#handleAgentEnd`. `/diagnostics` renders the current session's snapshot; the selected tab's strip indicator derives from the same streaming/approval state.
 
 ## Startup resume vs in-session switch
 

@@ -488,8 +488,25 @@ export class Composer implements TerminalFrameProvider {
 	}
 
 	scrollWorkspace(delta: number): void {
+		// Positive deltas look back in history (older rows); negative deltas
+		// move toward the live tail. Callers must use scrollWorkspaceWheel /
+		// scrollWorkspacePage so every input shares this convention.
 		this.#workspaceScrollOffset = Math.max(0, this.#workspaceScrollOffset + delta);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Mouse-wheel scroll in row units. Wheel-up (`-1`) goes back in history,
+	 * wheel-down (`1`) returns toward the live tail.
+	 */
+	scrollWorkspaceWheel(wheel: -1 | 1, linesPerNotch = 3): void {
+		this.scrollWorkspace(-wheel * linesPerNotch);
+	}
+
+	/** Page-key scroll: page-up goes back in history, page-down toward live. */
+	scrollWorkspacePage(direction: "up" | "down", rows: number): void {
+		const page = Math.max(1, rows - 4);
+		this.scrollWorkspace(direction === "up" ? page : -page);
 	}
 
 	/** Current transcript scroll-back offset in rows; restored per session on tab switches. */

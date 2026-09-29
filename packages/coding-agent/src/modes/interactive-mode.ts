@@ -1012,6 +1012,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.statusLine.setVibeWorkerTokenRateProvider(() =>
 			aggregateVibeWorkerTokensPerSecond(this.session.getAgentId() ?? MAIN_AGENT_ID),
 		);
+		this.statusLine.setRunSnapshotProvider(sessionId => this.runDiagnostics.snapshot(sessionId));
 
 		this.hideToolActivity = settings.get("display.hideToolActivity");
 		this.chatContainer.setToolActivityVisible(!this.hideToolActivity);
@@ -1248,16 +1249,16 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.ui.addInputListener(data => {
 				if (!this.settings.get("tui.fullscreen") || this.ui.hasOverlay()) return undefined;
 				if (matchesKey(data, "alt+pageUp") || matchesKey(data, "shift+pageUp")) {
-					this.composer.scrollWorkspace(-Math.max(1, this.ui.terminal.rows - 4));
+					this.composer.scrollWorkspacePage("up", this.ui.terminal.rows);
 					return { consume: true };
 				}
 				if (matchesKey(data, "alt+pageDown") || matchesKey(data, "shift+pageDown")) {
-					this.composer.scrollWorkspace(Math.max(1, this.ui.terminal.rows - 4));
+					this.composer.scrollWorkspacePage("down", this.ui.terminal.rows);
 					return { consume: true };
 				}
 				const consumed = routeSgrMouseInput(data, event => {
 					if (event.wheel !== null) {
-						this.composer.scrollWorkspace(event.wheel * 3);
+						this.composer.scrollWorkspaceWheel(event.wheel);
 						return true;
 					}
 					if (event.leftClick) sessionTabStrip.clickWorkspace(event.row, event.col);
