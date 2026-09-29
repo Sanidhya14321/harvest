@@ -42,7 +42,13 @@ it("closes the active tab by switching first, then reopens the saved session", a
 });
 
 it("moves through tab history only after the session switch succeeds", async () => {
-	let active = "/work/two.jsonl";
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
+	roots.push(root);
+	const first = path.join(root, "one.jsonl");
+	const second = path.join(root, "two.jsonl");
+	await Bun.write(first, "first");
+	await Bun.write(second, "second");
+	let active = second;
 	let allowSwitch = false;
 	const ctx = {
 		sessionManager: {
@@ -55,16 +61,54 @@ it("moves through tab history only after the session switch succeeds", async () 
 		ui: { requestRender: vi.fn() },
 	} as unknown as InteractiveModeContext;
 	const controller = new SelectorController(ctx);
-	controller.sessionTabs.open("/work/one.jsonl", "First task");
-	controller.sessionTabs.visit("/work/one.jsonl");
-	controller.sessionTabs.visit("/work/two.jsonl");
+	controller.sessionTabs.open(first, "First task");
+	controller.sessionTabs.visit(first);
+	controller.sessionTabs.visit(second);
 
 	expect(await controller.handleSessionTabsCommand("back")).toContain("did not complete");
-	expect(controller.sessionTabs.historyTarget(-1)).toBe("/work/one.jsonl");
+	expect(controller.sessionTabs.historyTarget(-1)).toBe(first);
 	allowSwitch = true;
 	expect(await controller.handleSessionTabsCommand("back")).toContain("Switched to session tab");
-	expect(active).toBe("/work/one.jsonl");
-	expect(controller.sessionTabs.historyTarget(1)).toBe("/work/two.jsonl");
+	expect(active).toBe(first);
+	expect(controller.sessionTabs.historyTarget(1)).toBe(second);
+});
+
+it("removes a tab whose session file disappeared before navigation", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
+	roots.push(root);
+	const active = path.join(root, "active.jsonl");
+	const missing = path.join(root, "missing.jsonl");
+	await Bun.write(active, "active");
+	const handleResumeSession = vi.fn(async () => {});
+	const ctx = {
+		sessionManager: { getSessionFile: () => active, getSessionName: () => "Active" },
+		handleResumeSession,
+		ui: { requestRender: vi.fn() },
+	} as unknown as InteractiveModeContext;
+	const controller = new SelectorController(ctx);
+	controller.sessionTabs.open(missing);
+	expect(await controller.handleSessionTabsCommand("next")).toContain("tab was removed");
+	expect(controller.sessionTabs.paths).toEqual([active]);
+	expect(handleResumeSession).not.toHaveBeenCalled();
+});
+
+it("keeps the active session when a clicked tab has been deleted", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-session-tabs-"));
+	roots.push(root);
+	const active = path.join(root, "active.jsonl");
+	const missing = path.join(root, "deleted.jsonl");
+	await Bun.write(active, "active");
+	const showError = vi.fn();
+	const ctx = {
+		sessionManager: { getSessionFile: () => active, getSessionName: () => "Active" },
+		showError,
+		ui: { requestRender: vi.fn() },
+	} as unknown as InteractiveModeContext;
+	const controller = new SelectorController(ctx);
+	controller.sessionTabs.open(missing);
+	expect(await controller.handleResumeSession(missing)).toBe(false);
+	expect(controller.sessionTabs.paths).toEqual([active]);
+	expect(showError).toHaveBeenCalledWith(expect.stringContaining("no longer available"));
 });
 
 it("tracks persisted sessions while removing a moved path", async () => {
@@ -104,6 +148,7 @@ it("does not leave an unsaved startup session as a ghost tab after creating a ne
 		ui: { requestRender: vi.fn() },
 	} as unknown as InteractiveModeContext;
 	const controller = new SelectorController(ctx);
+	expect(await controller.handleSessionTabsCommand("list")).toContain("New session");
 	active = next;
 	await controller.recordSessionTransition(startup);
 	expect(controller.sessionTabs.paths).toEqual([next]);

@@ -63,5 +63,5 @@ Harvest already has persisted JSONL sessions, `/resume` with a picker, `/new`, `
 
 - The extra window was traced to the Laya sidecar launch using `detached: true` on Windows. It now uses the existing console-aware daemon spawn policy, so a terminal launch shares its console and a console-less launch hides the child. This path is covered by the spawn policy tests; a packaged Windows launch with a real Laya checkpoint still needs a live check.
 - A single open session no longer adds a tab row above the prompt. Unnamed tabs display `New session` instead of a timestamped JSONL filename, and the active tab reads the current session title while rendering.
-- Switching away from an unsaved startup session now removes its nonexistent file from the open tabs and navigation history. Persisted prior sessions remain available.
-- Focused session strip and controller tests passed (8 tests), the daemon spawn policy tests passed, and the coding-agent TypeScript check passed.
+- Switching away from an unsaved startup session now removes its nonexistent file from the open tabs and navigation history. A tab whose file was deleted outside Harvest is removed on navigation while the active session stays in place. Persisted prior sessions remain available.
+- Focused session strip and controller tests passed, the daemon spawn policy tests passed, and the coding-agent TypeScript check passed.

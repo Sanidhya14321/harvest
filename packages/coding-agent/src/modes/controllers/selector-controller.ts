@@ -152,15 +152,14 @@ export class SelectorController {
 			const paths = this.sessionTabs.paths;
 			if (paths.length === 0) return "No session tabs are open. Use /tab open <session id>.";
 			return paths
-				.map(
-					(sessionPath, index) => {
-						const active = current && normalizePathForComparison(current) === normalizePathForComparison(sessionPath);
-						const title = active
-							? this.ctx.sessionManager.getSessionName() ?? this.sessionTabs.label(sessionPath) ?? "New session"
-							: this.sessionTabs.label(sessionPath) ?? shortenPath(sessionPath);
-						return `${active ? "*" : " "} ${index + 1}. ${title}`;
-					},
-				)
+				.map((sessionPath, index) => {
+					const active =
+						current && normalizePathForComparison(current) === normalizePathForComparison(sessionPath);
+					const title = active
+						? (this.ctx.sessionManager.getSessionName() ?? this.sessionTabs.label(sessionPath) ?? "New session")
+						: (this.sessionTabs.label(sessionPath) ?? shortenPath(sessionPath));
+					return `${active ? "*" : " "} ${index + 1}. ${title}`;
+				})
 				.join("\n");
 		}
 		if (verb === "open" && value) {
@@ -171,9 +170,6 @@ export class SelectorController {
 				{ allowGlobalFallback: true },
 			);
 			if (!match) return `Session "${value}" not found`;
-			if (current && (await Bun.file(current).exists()))
-				this.sessionTabs.open(current, this.ctx.sessionManager.getSessionName());
-			else if (current) this.sessionTabs.close(current, false);
 			const target = match.session.path;
 			const wasOpen = this.sessionTabs.indexOf(target) >= 0;
 			this.sessionTabs.open(target, match.session.title ?? match.session.firstMessage);
@@ -230,6 +226,11 @@ export class SelectorController {
 					? this.sessionTabs.paths[Number(value) - 1]
 					: undefined;
 		if (target) {
+			if (!(await Bun.file(target).exists())) {
+				this.sessionTabs.close(target, false);
+				this.ctx.ui.requestRender();
+				return "The session file is no longer available; its tab was removed.";
+			}
 			if (historyDirection) this.#historyNavigationTarget = target;
 			try {
 				await this.ctx.handleResumeSession(target);
@@ -2019,6 +2020,12 @@ export class SelectorController {
 	}
 
 	async handleResumeSession(sessionPath: string, options?: { settingsFlushed?: boolean }): Promise<boolean> {
+		if (!(await Bun.file(sessionPath).exists())) {
+			this.sessionTabs.close(sessionPath, false);
+			this.ctx.showError("The session file is no longer available; its tab was removed.");
+			this.ctx.ui.requestRender();
+			return false;
+		}
 		const previousCwd = this.ctx.sessionManager.getCwd();
 		const previousFile = this.ctx.sessionManager.getSessionFile();
 		const previousName = this.ctx.sessionManager.getSessionName();
