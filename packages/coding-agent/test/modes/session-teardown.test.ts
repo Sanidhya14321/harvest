@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { postmortem } from "@harvest/pi-utils";
-import { createSessionTeardown } from "../../src/modes/session-teardown";
+import {
+	createSessionTeardown,
+	hasUnsettledWork,
+	isApprovalDialogOpen,
+	type UnsettledWorkState,
+} from "../../src/modes/session-teardown";
 
 /**
  * Signal-safe session teardown contract (issue #4080). The callback body
@@ -215,5 +220,43 @@ describe("createSessionTeardown", () => {
 		await Promise.all([first, second]);
 
 		expect(received).toEqual([postmortem.Reason.SIGTERM]);
+	});
+});
+
+function idleWork(overrides?: Partial<UnsettledWorkState>): UnsettledWorkState {
+	return {
+		isStreaming: false,
+		isBashRunning: false,
+		isEvalRunning: false,
+		hasPendingAsyncWork: () => false,
+		approvalDialogOpen: false,
+		...overrides,
+	};
+}
+
+describe("hasUnsettledWork", () => {
+	it("exits directly when nothing runs and no approval waits", () => {
+		expect(hasUnsettledWork(idleWork())).toBe(false);
+	});
+
+	it("requires confirmation for a streaming turn, a running tool, or unsettled jobs", () => {
+		expect(hasUnsettledWork(idleWork({ isStreaming: true }))).toBe(true);
+		expect(hasUnsettledWork(idleWork({ isBashRunning: true }))).toBe(true);
+		expect(hasUnsettledWork(idleWork({ isEvalRunning: true }))).toBe(true);
+		expect(hasUnsettledWork(idleWork({ hasPendingAsyncWork: () => true }))).toBe(true);
+	});
+
+	it("requires confirmation while an approval dialog awaits a decision", () => {
+		expect(hasUnsettledWork(idleWork({ approvalDialogOpen: true }))).toBe(true);
+	});
+});
+
+describe("isApprovalDialogOpen", () => {
+	it("is true while any one dialog slot holds a prompt", () => {
+		const empty = { hookSelector: undefined, hookInput: undefined, hookEditor: undefined };
+		expect(isApprovalDialogOpen(empty)).toBe(false);
+		expect(isApprovalDialogOpen({ ...empty, hookSelector: {} })).toBe(true);
+		expect(isApprovalDialogOpen({ ...empty, hookInput: {} })).toBe(true);
+		expect(isApprovalDialogOpen({ ...empty, hookEditor: {} })).toBe(true);
 	});
 });

@@ -20,6 +20,7 @@ import {
 	type SessionWorktree,
 } from "../session/session-worktree";
 import { formatShakeSummary, type ShakeMode } from "../session/shake-types";
+import { hasUnsettledWork, isApprovalDialogOpen } from "../modes/session-teardown";
 import { discoverTitleSystemPromptFile, resolvePromptInput } from "../system-prompt";
 import { resolveToCwd } from "../tools/path-utils";
 import { commandConsumed, errorMessage, usage } from "./helpers/parse";
@@ -41,8 +42,34 @@ export const shutdownHandlerTui = (
 	_command: ParsedSlashCommand,
 	runtime: TuiSlashCommandRuntime,
 ): SlashCommandResult => {
-	runtime.ctx.editor.setText("");
-	void runtime.ctx.shutdown();
+	const ctx = runtime.ctx;
+	const session = ctx.session;
+	if (
+		hasUnsettledWork({
+			isStreaming: session.isStreaming,
+			isBashRunning: session.isBashRunning,
+			isEvalRunning: session.isEvalRunning,
+			hasPendingAsyncWork: () => session.hasPendingAsyncWork(),
+			approvalDialogOpen: isApprovalDialogOpen(ctx),
+		})
+	) {
+		// Confirm before abandoning the run: denial leaves the session, its
+		// draft, and the pending approval untouched. Dialogs queue on the
+		// shared editor surface, so a confirm issued while an approval is
+		// presented waits its turn instead of stealing focus.
+		void (async () => {
+			const confirmed = await ctx.showHookConfirm(
+				"Exit with work in progress?",
+				"A run is still active or an approval is waiting. Exiting stops it.",
+			);
+			if (!confirmed) return;
+			ctx.editor.setText("");
+			void ctx.shutdown();
+		})();
+		return commandConsumed();
+	}
+	ctx.editor.setText("");
+	void ctx.shutdown();
 	return commandConsumed();
 };
 

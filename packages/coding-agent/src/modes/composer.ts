@@ -492,6 +492,17 @@ export class Composer implements TerminalFrameProvider {
 		this.ui.requestRender();
 	}
 
+	/** Current transcript scroll-back offset in rows; restored per session on tab switches. */
+	get workspaceScrollOffset(): number {
+		return this.#workspaceScrollOffset;
+	}
+
+	/** Restore a per-session scroll-back offset; negative values clamp to the live tail. */
+	setWorkspaceScrollOffset(offset: number): void {
+		this.#workspaceScrollOffset = Math.max(0, Math.floor(offset));
+		this.ui.requestRender();
+	}
+
 	resetWorkspaceScroll(): void {
 		this.#workspaceScrollOffset = 0;
 		this.ui.requestRender();

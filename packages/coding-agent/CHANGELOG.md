@@ -20,6 +20,8 @@
 - Laya setup stops with a diagnostic when an isolated Python environment cannot be created, without installing packages into system Python.
 - Terminal session breadcrumbs are created with private file permissions on Unix systems.
 - Switching sessions keeps each session's unsent composer draft and attachments instead of leaking them into the newly shown session.
+- `/exit` now asks for confirmation when a run is still active or an approval is waiting; denying leaves the run, the approval, and the draft untouched.
+- Switching sessions restores each session's transcript scroll position, and the tab strip shows a running or approval-waiting indicator on the active session.
 
 ### Added
 

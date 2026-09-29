@@ -217,10 +217,10 @@ import {
 	type SessionObserverChangeKind,
 	SessionObserverRegistry,
 } from "./session-observer-registry";
-import { createSessionTeardown, type SessionTeardown } from "./session-teardown";
+import { createSessionTeardown, isApprovalDialogOpen, type SessionTeardown } from "./session-teardown";
 import { runProviderSetupWizard } from "./setup-wizard/lazy";
 import { sanitizeStatusText } from "./shared";
-import { SessionTabStrip } from "./components/session-tab-strip";
+import { describeSelectedSession, SessionTabStrip } from "./components/session-tab-strip";
 import { invokeSkillCommandFromText, isKnownSkillCommand } from "./skill-command";
 import { clearMermaidCache } from "./theme/mermaid-cache";
 import { type ShimmerPalette, shimmerEnabled, shimmerText } from "./theme/shimmer";
@@ -1222,6 +1222,15 @@ export class InteractiveMode implements InteractiveModeContext {
 					this.showError(error instanceof Error ? error.message : String(error));
 				}
 			},
+			path =>
+				describeSelectedSession({
+					sessionId: this.sessionManager.getSessionId(),
+					sessionFile: this.sessionManager.getSessionFile() ?? undefined,
+					sessionName: this.sessionManager.getSessionName(),
+					path,
+					isStreaming: this.session.isStreaming,
+					approvalOpen: isApprovalDialogOpen(this),
+				}),
 		);
 		sessionTabStrip.setOnNew(() => {
 			void this.handleClearCommand().catch(error => {
@@ -5557,10 +5566,26 @@ export class InteractiveMode implements InteractiveModeContext {
 	async handleClearCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
 		const previousFile = this.sessionManager.getSessionFile();
+		const previousId = this.sessionManager.getSessionId();
+		this.viewStateStore.saveDraft(previousId, this.editor);
+		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleClearCommand();
 		this.composer.resetWorkspaceScroll();
+		this.#restoreSessionView();
 		await this.#selectorController.recordSessionTransition(previousFile);
+	}
+
+	/**
+	 * Restore the current session's draft and scroll offset after a
+	 * navigation boundary. The session ID is read fresh so a failed switch
+	 * (same ID) restores the outgoing view and a successful one restores the
+	 * target's saved view — or clears to a fresh composer when it has none.
+	 */
+	#restoreSessionView(): void {
+		const sessionId = this.sessionManager.getSessionId();
+		this.viewStateStore.restoreDraft(sessionId, this.editor);
+		this.composer.setWorkspaceScrollOffset(this.viewStateStore.scrollOffset(sessionId));
 	}
 
 	handleFreshCommand(): Promise<void> {
@@ -5832,8 +5857,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#omfgController.dispose();
 		this.#cleanseController.dispose();
 		this.resetObserverRegistry();
+		const previousId = this.sessionManager.getSessionId();
+		this.viewStateStore.saveDraft(previousId, this.editor);
+		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
 		await this.#selectorController.handleResumeSession(sessionPath, { settingsFlushed: true });
 		this.composer.resetWorkspaceScroll();
+		this.#restoreSessionView();
 	}
 
 	setFullscreen(enabled: boolean): void {

@@ -63,4 +63,26 @@ describe("SessionViewStateStore", () => {
 		expect(editor.pendingImages).toHaveLength(2);
 		expect(editor.pendingImageLinks).toEqual(["file://a", undefined]);
 	});
+
+	it("restores each session's scroll offset without moving the other", () => {
+		const store = new SessionViewStateStore();
+		store.saveScrollOffset("a", 12);
+		store.saveScrollOffset("b", 0);
+		expect(store.scrollOffset("a")).toBe(12);
+		expect(store.scrollOffset("b")).toBe(0);
+		expect(store.scrollOffset("unknown")).toBe(0);
+		store.saveScrollOffset("a", 3);
+		expect(store.scrollOffset("a")).toBe(3);
+	});
+
+	it("evicts the oldest scroll offset past the bound", () => {
+		const store = new SessionViewStateStore();
+		for (let index = 0; index <= SessionViewStateStore.maxScrollEntries; index++) {
+			store.saveScrollOffset(`session-${index}`, index);
+		}
+		expect(store.scrollOffset("session-0")).toBe(0);
+		expect(store.scrollOffset(`session-${SessionViewStateStore.maxScrollEntries}`)).toBe(
+			SessionViewStateStore.maxScrollEntries,
+		);
+	});
 });

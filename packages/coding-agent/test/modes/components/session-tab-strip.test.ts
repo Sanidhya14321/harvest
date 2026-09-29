@@ -1,6 +1,6 @@
-import { beforeAll, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
-import { SessionTabStrip } from "../../../src/modes/components/session-tab-strip";
+import { describeSelectedSession, SessionTabStrip } from "../../../src/modes/components/session-tab-strip";
 import { initTheme } from "../../../src/modes/theme/theme";
 import { SessionTabs } from "../../../src/session/session-tabs";
 
@@ -130,4 +130,48 @@ it("keeps the selected workspace tab visible in a narrow terminal", () => {
 	const rows = strip.renderWorkspace(24, true).map(row => stripVTControlCharacters(row));
 	expect(rows.join(" ")).toContain("12");
 	expect(rows.every(row => Bun.stringWidth(row) <= 24)).toBe(true);
+});
+
+describe("describeSelectedSession", () => {
+	const base = {
+		sessionId: "abc",
+		sessionFile: "/work/active.jsonl",
+		sessionName: "Active task",
+		path: "/work/active.jsonl",
+		isStreaming: false,
+		approvalOpen: false,
+	};
+
+	it("marks a streaming session running and an approval-blocked one waiting", () => {
+		expect(describeSelectedSession({ ...base, isStreaming: true })?.status).toBe("running");
+		expect(describeSelectedSession({ ...base, approvalOpen: true })?.status).toBe("waiting");
+		expect(describeSelectedSession(base)?.status).toBe("idle");
+	});
+
+	it("resolves only the selected path and never carries unread", () => {
+		expect(describeSelectedSession({ ...base, path: "/work/other.jsonl" })).toBeUndefined();
+		expect(describeSelectedSession({ ...base, sessionFile: undefined })).toBeUndefined();
+		expect(describeSelectedSession({ ...base, isStreaming: true })).toMatchObject({
+			id: "abc",
+			selected: true,
+			unread: false,
+		});
+	});
+
+	it("paints the running indicator on the selected tab through the strip feed", () => {
+		const tabs = new SessionTabs();
+		tabs.open("/work/active.jsonl", "Active task");
+		tabs.open("/work/other.jsonl", "Other task");
+		const strip = new SessionTabStrip(
+			tabs,
+			() => "/work/active.jsonl",
+			() => "Active task",
+			async () => {},
+			path => describeSelectedSession({ ...base, path, isStreaming: path === "/work/active.jsonl" }),
+		);
+		const text = stripVTControlCharacters(strip.renderWorkspace(100, true).join(""));
+		expect(text).toContain("● Active task");
+		expect(text).toContain("Other task");
+		expect(text).not.toContain("? Active task");
+	});
 });

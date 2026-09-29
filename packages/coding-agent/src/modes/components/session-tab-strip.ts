@@ -112,3 +112,33 @@ export class SessionTabStrip implements Component {
 		return this.#bar.render(width);
 	}
 }
+
+/** State the tab strip needs to describe the currently selected session. */
+export interface SelectedSessionDescription {
+	sessionId: string;
+	sessionFile: string | undefined;
+	sessionName: string | undefined;
+	/** Tab path being described; only the selected session's path resolves. */
+	path: string;
+	isStreaming: boolean;
+	approvalOpen: boolean;
+}
+
+/**
+ * Synthesize the selected session's live snapshot for the tab strip: running
+ * while a turn streams, waiting while an approval dialog holds the editor,
+ * idle otherwise. Other paths resolve to undefined until the live-session
+ * registry feeds background runtimes. The selected tab never carries unread.
+ */
+export function describeSelectedSession(description: SelectedSessionDescription): LiveSessionSnapshot | undefined {
+	const file = description.sessionFile;
+	if (!file || normalizePathForComparison(file) !== normalizePathForComparison(description.path)) return undefined;
+	return {
+		id: description.sessionId,
+		path: file,
+		title: description.sessionName,
+		status: description.isStreaming ? "running" : description.approvalOpen ? "waiting" : "idle",
+		unread: false,
+		selected: true,
+	};
+}
