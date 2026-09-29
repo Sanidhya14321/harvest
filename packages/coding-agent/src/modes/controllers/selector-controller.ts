@@ -144,6 +144,7 @@ export class SelectorController {
 		this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
 		this.sessionTabs.visit(activeFile);
 		this.#persistTabs();
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
 		this.ctx.ui.requestRender();
 	}
 
@@ -2123,6 +2124,7 @@ export class SelectorController {
 		await this.ctx.reloadTodos();
 		this.ctx.showStatus(movedProject ? `Resumed session in ${shortenPath(newCwd)}` : "Resumed session");
 		this.#persistTabs();
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
 		return true;
 	}
 

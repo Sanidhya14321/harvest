@@ -4,6 +4,7 @@ import type { InteractiveModeContext } from "@harvest/pi-coding-agent/modes/type
 import { AgentLifecycleManager } from "@harvest/pi-coding-agent/registry/agent-lifecycle";
 import { AgentRegistry, MAIN_AGENT_ID } from "@harvest/pi-coding-agent/registry/agent-registry";
 import type { AgentSession, AgentSessionEvent } from "@harvest/pi-coding-agent/session/agent-session";
+import { SessionViewStateStore } from "@harvest/pi-coding-agent/session/session-view-state";
 
 interface SessionStub {
 	session: AgentSession;
@@ -13,12 +14,18 @@ interface SessionStub {
 	setStreaming: (streaming: boolean) => void;
 }
 
-function makeSessionStub(opts: { isStreaming?: boolean } = {}): SessionStub {
+function makeSessionStub(opts: { isStreaming?: boolean; id?: string; file?: string } = {}): SessionStub {
 	let listener: ((event: AgentSessionEvent) => Promise<void> | void) | undefined;
 	let unsubscribeCalls = 0;
 	const stub = {
 		isStreaming: opts.isStreaming ?? false,
-		sessionManager: {},
+		sessionManager: {
+			getSessionId: () => opts.id ?? "main",
+			getSessionFile: () => opts.file,
+			getCwd: () => "C:/project",
+			getSessionName: () => undefined,
+			onSessionNameChanged: () => () => {},
+		},
 		settings: {},
 		agent: {},
 		subscribe(fn: (event: AgentSessionEvent) => Promise<void> | void) {
@@ -51,6 +58,10 @@ interface Harness {
 	handledEvents: unknown[];
 	setSessionCalls: Array<[AgentSession, string | undefined]>;
 	reloadTodoSessions: AgentSession[];
+	editorText: () => string;
+	setEditorText: (text: string) => void;
+	scrollOffset: () => number;
+	setScrollOffset: (offset: number) => void;
 	counts: {
 		clearTransientSessionUi: () => number;
 		resetTranscriptAnchors: () => number;
@@ -68,11 +79,27 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 	let resetTranscriptAnchors = 0;
 	let renderInitialMessages = 0;
 	let mainUnsubscribe = 0;
+	let editorText = "";
+	let scrollOffset = 0;
 
 	const ctx = {
 		session: main.session,
 		unsubscribe: () => {
 			mainUnsubscribe++;
+		},
+		editor: {
+			getText: () => editorText,
+			setText: (text: string) => {
+				editorText = text;
+			},
+			pendingImages: [],
+			pendingImageLinks: [],
+			imageLinks: undefined,
+		},
+		viewStateStore: new SessionViewStateStore(),
+		getWorkspaceScrollOffset: () => scrollOffset,
+		setWorkspaceScrollOffset: (offset: number) => {
+			scrollOffset = offset;
 		},
 		eventController: {
 			handleEvent: async (event: unknown) => {
@@ -116,6 +143,14 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 		handledEvents,
 		setSessionCalls,
 		reloadTodoSessions,
+		editorText: () => editorText,
+		setEditorText: (text: string) => {
+			editorText = text;
+		},
+		scrollOffset: () => scrollOffset,
+		setScrollOffset: (offset: number) => {
+			scrollOffset = offset;
+		},
 		counts: {
 			clearTransientSessionUi: () => clearTransientSessionUi,
 			resetTranscriptAnchors: () => resetTranscriptAnchors,
@@ -145,6 +180,24 @@ describe("SessionFocusController", () => {
 		await h.controller.selectMainSession(h.main.session);
 		expect(h.ctx.session).toBe(h.main.session);
 		expect(h.reloadTodoSessions).toEqual([other.session, h.main.session]);
+	});
+
+	it("preserves each session's draft and scroll offset across retargeting", async () => {
+		const h = makeHarness();
+		const other = makeSessionStub({ id: "other" });
+		h.setEditorText("draft for main");
+		h.setScrollOffset(7);
+		await h.controller.selectMainSession(other.session);
+		expect(h.editorText()).toBe("");
+		expect(h.scrollOffset()).toBe(0);
+		h.setEditorText("draft for other");
+		h.setScrollOffset(3);
+		await h.controller.selectMainSession(h.main.session);
+		expect(h.editorText()).toBe("draft for main");
+		expect(h.scrollOffset()).toBe(7);
+		await h.controller.selectMainSession(other.session);
+		expect(h.editorText()).toBe("draft for other");
+		expect(h.scrollOffset()).toBe(3);
 	});
 
 	it("restores the prior input and event target when the selected transcript fails to load", async () => {

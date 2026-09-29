@@ -240,4 +240,84 @@ describe("LiveSessionRegistry", () => {
 		expect(registry.sessions).toContain(pending.session);
 		await registry.dispose();
 	});
+
+	it("detaches a runtime without disposing it and falls back to the most recent survivor", async () => {
+		const first = fakeSession("one", "C:/project/one.jsonl");
+		const second = fakeSession("two", "C:/project/two.jsonl");
+		const registry = new LiveSessionRegistry(first.session, async () => second.session);
+		await registry.select("C:/project/two.jsonl");
+		await registry.select("C:/project/one.jsonl");
+		registry.detach("one");
+		expect(first.dispose).not.toHaveBeenCalled();
+		expect(registry.sessions).not.toContain(first.session);
+		expect(registry.selected).toBe(second.session);
+		expect(registry.snapshotForPath("C:/project/one.jsonl")).toBeUndefined();
+		registry.detach("missing");
+		await registry.dispose();
+	});
+
+	it("resolves snapshots for warm, released, and unknown paths", async () => {
+		const first = fakeSession("one", "C:/project/one.jsonl");
+		const registry = new LiveSessionRegistry(first.session, async path => {
+			if (path === "C:/project/two.jsonl") return fakeSession("two", path).session;
+			throw new Error("missing fixture");
+		});
+		expect(registry.snapshotForPath("C:/project/one.jsonl")?.id).toBe("one");
+		expect(registry.snapshotForPath("C:/project/nowhere.jsonl")).toBeUndefined();
+		await registry.dispose();
+	});
+
+	it("tracks an in-place identity change without duplicating the runtime", async () => {
+		let liveId = "old";
+		let livePath: string | undefined = "C:/project/old.jsonl";
+		const listeners = new Set<(event: AgentSessionEvent) => void>();
+		const dispose = mock(async () => {});
+		const session = {
+			isStreaming: false,
+			isBashRunning: false,
+			isEvalRunning: false,
+			hasPendingAsyncWork: () => false,
+			sessionManager: {
+				getSessionId: () => liveId,
+				getSessionFile: () => livePath,
+				getSessionName: () => "mutating",
+				getCwd: () => "C:/project",
+				onSessionNameChanged: () => () => {},
+			},
+			subscribe: (listener: (event: AgentSessionEvent) => void) => {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			},
+			dispose,
+			abort: mock(async () => {}),
+		} as unknown as AgentSession;
+		const registry = new LiveSessionRegistry(session, async () => {
+			throw new Error("unexpected cold open");
+		});
+		expect(registry.snapshots).toHaveLength(1);
+		liveId = "new";
+		livePath = "C:/project/new.jsonl";
+		registry.trackCurrent(session, "old");
+		expect(registry.sessions).toHaveLength(1);
+		expect(registry.sessions).toContain(session);
+		expect(registry.selected).toBe(session);
+		expect(registry.snapshotForPath("C:/project/old.jsonl")).toBeUndefined();
+		expect(registry.snapshotForPath("C:/project/new.jsonl")?.id).toBe("new");
+		expect(dispose).not.toHaveBeenCalled();
+		livePath = "C:/project/renamed.jsonl";
+		registry.trackCurrent(session);
+		expect(registry.sessions).toHaveLength(1);
+		expect(registry.snapshotForPath("C:/project/renamed.jsonl")?.id).toBe("new");
+		await registry.dispose();
+	});
+
+	it("ignores cross-project transitions instead of adopting them", async () => {
+		const first = fakeSession("one", "C:/project/one.jsonl");
+		const other = fakeSession("two", "C:/other/two.jsonl", "C:/other");
+		const registry = new LiveSessionRegistry(first.session, async () => other.session);
+		registry.trackCurrent(other.session);
+		expect(registry.sessions).toHaveLength(1);
+		expect(registry.selected).toBe(first.session);
+		await registry.dispose();
+	});
 });

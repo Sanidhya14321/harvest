@@ -75,6 +75,15 @@ export class LiveSessionRegistry {
 		return [...live, ...this.#dormant.values()];
 	}
 
+	/** Snapshot for a tab path across live and released runtimes; undefined when unknown. */
+	snapshotForPath(path: string): LiveSessionSnapshot | undefined {
+		const key = normalizePathForComparison(path);
+		const warmId = this.#idsByPath.get(key);
+		const snapshots = this.snapshots;
+		if (warmId) return snapshots.find(snapshot => snapshot.id === warmId);
+		return snapshots.find(snapshot => normalizePathForComparison(snapshot.path) === key);
+	}
+
 	onChange(listener: () => void): () => void {
 		this.#listeners.add(listener);
 		return () => this.#listeners.delete(listener);
@@ -118,6 +127,10 @@ export class LiveSessionRegistry {
 	adopt(session: AgentSession): void {
 		if (this.#disposed) throw new Error("Live session registry is closed");
 		this.#selectionGeneration++;
+		const id = session.sessionManager.getSessionId();
+		for (const [liveId, entry] of this.#entries) {
+			if (entry.session === session && liveId !== id) this.detach(liveId);
+		}
 		this.#add(session);
 		this.#selectedId = session.sessionManager.getSessionId();
 		this.#entries.get(this.#selectedId)!.lastUsed = ++this.#usageOrder;
@@ -201,6 +214,36 @@ export class LiveSessionRegistry {
 		await entry.session.abort();
 	}
 
+	/**
+	 * Drop a live entry without disposing its runtime — for sessions that
+	 * continue outside registry ownership (an in-place cross-project switch
+	 * mutates the adopted object into a new identity the registry must
+	 * re-adopt). The caller owns what happens next.
+	 */
+	detach(sessionId: string): void {
+		const entry = this.#entries.get(sessionId);
+		if (!entry) return;
+		entry.unsubscribe();
+		entry.unsubscribeTitle();
+		this.#entries.delete(sessionId);
+		if (entry.path) this.#idsByPath.delete(normalizePathForComparison(entry.path));
+		if (sessionId === this.#selectedId) {
+			let fallback: string | undefined;
+			let fallbackUsed = -1;
+			for (const [id, candidate] of this.#entries) {
+				if (candidate.lastUsed > fallbackUsed) {
+					fallback = id;
+					fallbackUsed = candidate.lastUsed;
+				}
+			}
+			if (fallback) {
+				this.#selectedId = fallback;
+				this.#entries.get(fallback)!.lastUsed = ++this.#usageOrder;
+			}
+		}
+		this.#emit();
+	}
+
 	async dispose(): Promise<void> {
 		if (this.#disposed) return;
 		this.#disposed = true;
@@ -245,6 +288,7 @@ export class LiveSessionRegistry {
 		const existing = this.#entries.get(id);
 		if (existing) {
 			if (existing.session !== session) throw new Error(`Session ${id} is already live`);
+			this.#reindex(session, existing);
 			return;
 		}
 		const pathKey = path ? normalizePathForComparison(path) : undefined;
@@ -277,6 +321,40 @@ export class LiveSessionRegistry {
 		if (pathKey) {
 			this.#idsByPath.set(pathKey, id);
 			this.#dormant.delete(pathKey);
+		}
+		this.#emit();
+	}
+
+	/**
+	 * Mirror an in-place session transition on the single-runtime legacy
+	 * path: the same object mutated into a new identity (or a new path)
+	 * drops its stale id entry and is adopted under the current one.
+	 * Idempotent when nothing changed. Cross-project transitions stay on the
+	 * legacy path and are ignored here. Emits only when membership changes.
+	 */
+	trackCurrent(session: AgentSession, previousId?: string): void {
+		if (this.#disposed) return;
+		if (normalizePathForComparison(session.sessionManager.getCwd()) !== this.#project) return;
+		const id = session.sessionManager.getSessionId();
+		if (previousId && previousId !== id) this.detach(previousId);
+		// adopt() reselects, refreshes recency, and drops any residual same-object
+		// entry the explicit detach missed, so the tracked session is current.
+		this.adopt(session);
+	}
+
+	/** Refresh the path index when a live object moves files under the same id. */
+	#reindex(session: AgentSession, entry: LiveSessionEntry): void {
+		const livePath = session.sessionManager.getSessionFile() ?? undefined;
+		if (livePath === entry.path) return;
+		if (entry.path) this.#idsByPath.delete(normalizePathForComparison(entry.path));
+		entry.path = livePath;
+		if (livePath) {
+			const pathKey = normalizePathForComparison(livePath);
+			const clash = this.#idsByPath.get(pathKey);
+			if (clash && clash !== session.sessionManager.getSessionId()) {
+				throw new Error(`Session path ${livePath} is already live`);
+			}
+			this.#idsByPath.set(pathKey, session.sessionManager.getSessionId());
 		}
 		this.#emit();
 	}

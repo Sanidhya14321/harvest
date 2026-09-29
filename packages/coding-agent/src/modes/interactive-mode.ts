@@ -119,6 +119,8 @@ import { getRecentSessions } from "../session/session-listing";
 import type { SessionManager } from "../session/session-manager";
 import { FileSessionStorage } from "../session/session-storage";
 import { loadSessionTabs, sessionTabsFile } from "../session/session-tab-persistence";
+import { LiveSessionRegistry } from "../session/live-session-registry";
+import { openLiveAgentSession } from "../session/live-session-factory";
 import type { ShakeMode } from "../session/shake-types";
 import { SessionViewStateStore } from "../session/session-view-state";
 import { BUILTIN_SLASH_COMMAND_RESERVED_NAMES, buildTuiBuiltinSlashCommands } from "../slash-commands/builtin-registry";
@@ -224,7 +226,7 @@ import { createSessionTeardown, isApprovalDialogOpen, type SessionTeardown } fro
 import { RunDiagnosticsTracker } from "./run-diagnostics";
 import { runProviderSetupWizard } from "./setup-wizard/lazy";
 import { sanitizeStatusText } from "./shared";
-import { describeSelectedSession, SessionTabStrip } from "./components/session-tab-strip";
+import { describeSelectedSession, mergeRegistrySnapshot, SessionTabStrip } from "./components/session-tab-strip";
 import { invokeSkillCommandFromText, isKnownSkillCommand } from "./skill-command";
 import { clearMermaidCache } from "./theme/mermaid-cache";
 import { type ShimmerPalette, shimmerEnabled, shimmerText } from "./theme/shimmer";
@@ -595,6 +597,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	readonly viewStateStore = new SessionViewStateStore();
 	/** Per-session run-stage record answering "why did work stop or pause". */
 	readonly runDiagnostics = new RunDiagnosticsTracker();
+	/** Live tab runtime ownership; the initial session is adopted in init. */
+	liveSessions: LiveSessionRegistry | undefined;
 	/** Composer attachment band (chip cards) rendered directly above the prompt box. */
 	attachmentChipsContainer: Container;
 	hookWidgetContainerAbove: Container;
@@ -803,6 +807,37 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 	unfocusSession(): Promise<void> {
 		return this.#focusController.unfocus();
+	}
+	/** Retarget the main view to another already-live top-level session. Neither runtime is stopped. */
+	selectMainSession(session: AgentSession): Promise<void> {
+		return this.#focusController.selectMainSession(session);
+	}
+	getWorkspaceScrollOffset(): number {
+		return this.composer.workspaceScrollOffset;
+	}
+	setWorkspaceScrollOffset(offset: number): void {
+		this.composer.setWorkspaceScrollOffset(offset);
+	}
+	/**
+	 * Cold-open one live tab runtime through the registry opener: an
+	 * independent session inheriting the current model, credentials, and
+	 * routing. The previous runtime keeps running untouched.
+	 */
+	async #openColdLiveSession(sessionPath: string): Promise<AgentSession> {
+		const session = this.session;
+		const model = session.model;
+		if (!model) throw new Error("Cannot open a live tab before a model is resolved");
+		return openLiveAgentSession({
+			cwd: this.sessionManager.getCwd(),
+			sessionDir: this.sessionManager.getSessionDir(),
+			sessionPath,
+			settings: session.settings,
+			authStorage: session.modelRegistry.authStorage,
+			modelRegistry: session.modelRegistry,
+			model,
+			extensionRoots: () => session.effectiveExtensionRoots,
+			mcpManager: this.mcpManager,
+		});
 	}
 	clearTransientSessionUi(): void {
 		this.#hideSessionInfo();
@@ -1218,6 +1253,20 @@ export class InteractiveMode implements InteractiveModeContext {
 		});
 		this.composer.setStatusComponent(this.statusLine);
 
+		// Live tab runtime ownership. Fails open to legacy abort-and-reload
+		// navigation when the startup session cannot be adopted (unit-test
+		// doubles, exotic sessions): every live path optional-chains it.
+		try {
+			this.liveSessions = new LiveSessionRegistry(
+				this.session,
+				sessionPath => this.#openColdLiveSession(sessionPath),
+			);
+		} catch (error) {
+			logger.debug("Live session registry unavailable; using legacy session switching", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+
 		const sessionTabStrip = new SessionTabStrip(
 			this.#selectorController.sessionTabs,
 			() => this.sessionManager.getSessionFile(),
@@ -1230,14 +1279,18 @@ export class InteractiveMode implements InteractiveModeContext {
 				}
 			},
 			path =>
-				describeSelectedSession({
-					sessionId: this.sessionManager.getSessionId(),
-					sessionFile: this.sessionManager.getSessionFile() ?? undefined,
-					sessionName: this.sessionManager.getSessionName(),
-					path,
-					isStreaming: this.session.isStreaming,
-					approvalOpen: isApprovalDialogOpen(this),
-				}),
+				mergeRegistrySnapshot(
+					this.liveSessions?.snapshotForPath(path),
+					describeSelectedSession({
+						sessionId: this.sessionManager.getSessionId(),
+						sessionFile: this.sessionManager.getSessionFile() ?? undefined,
+						sessionName: this.sessionManager.getSessionName(),
+						path,
+						isStreaming: this.session.isStreaming,
+						approvalOpen: isApprovalDialogOpen(this),
+					}),
+					isApprovalDialogOpen(this),
+				),
 		);
 		sessionTabStrip.setOnNew(() => {
 			void this.handleClearCommand().catch(error => {

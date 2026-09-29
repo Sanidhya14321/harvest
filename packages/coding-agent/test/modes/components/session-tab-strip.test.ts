@@ -1,6 +1,10 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
-import { describeSelectedSession, SessionTabStrip } from "../../../src/modes/components/session-tab-strip";
+import {
+	describeSelectedSession,
+	mergeRegistrySnapshot,
+	SessionTabStrip,
+} from "../../../src/modes/components/session-tab-strip";
 import { initTheme } from "../../../src/modes/theme/theme";
 import { SessionTabs } from "../../../src/session/session-tabs";
 
@@ -173,5 +177,48 @@ describe("describeSelectedSession", () => {
 		expect(text).toContain("● Active task");
 		expect(text).toContain("Other task");
 		expect(text).not.toContain("? Active task");
+	});
+});
+
+describe("mergeRegistrySnapshot", () => {
+	const live = {
+		id: "bg",
+		path: "/work/bg.jsonl",
+		title: "Background title",
+		status: "completed" as const,
+		unread: true,
+		selected: false,
+	};
+	const selected = {
+		id: "main",
+		path: "/work/main.jsonl",
+		title: "Main title",
+		status: "running" as const,
+		unread: false,
+		selected: true,
+	};
+
+	it("falls back to whichever side resolves", () => {
+		expect(mergeRegistrySnapshot(undefined, selected, false)).toBe(selected);
+		expect(mergeRegistrySnapshot(live, undefined, false)).toBe(live);
+		expect(mergeRegistrySnapshot(undefined, undefined, false)).toBeUndefined();
+	});
+
+	it("lets the visible tab own selection and title, keeping background state", () => {
+		const merged = mergeRegistrySnapshot(live, selected, false);
+		expect(merged).toMatchObject({
+			id: "bg",
+			selected: true,
+			title: "Main title",
+			status: "completed",
+			unread: true,
+		});
+	});
+
+	it("forces waiting while an approval holds the editor", () => {
+		const merged = mergeRegistrySnapshot(live, { ...selected, status: "idle" as const }, true);
+		expect(merged?.status).toBe("waiting");
+		const background = mergeRegistrySnapshot(live, { ...selected, selected: false }, true);
+		expect(background?.status).toBe("completed");
 	});
 });

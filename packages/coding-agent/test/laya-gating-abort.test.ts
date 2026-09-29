@@ -17,6 +17,28 @@ afterEach(() => {
 });
 
 describe("checkToolCallGating abort propagation", () => {
+	it.each([
+		{ noul: Number.NaN, confidence: 0.95 },
+		{ noul: 0.1, confidence: Number.NaN },
+		{ noul: -1, confidence: 0.95 },
+		{ noul: 0.1, confidence: 2 },
+	])("requires approval for malformed sidecar probabilities (%j)", async answer => {
+		const client = new LayaClient();
+		vi.spyOn(client, "decide").mockResolvedValue({
+			success: true,
+			fallback: false,
+			latencyMs: 0,
+			data: { irreversibility: { type: "noul", ...answer } },
+		});
+		const decision = await checkToolCallGating(
+			"write",
+			{ path: "/tmp/x" },
+			{ client, settings: Settings.isolated({ "laya.enabled": true }) },
+		);
+		expect(decision.requireApproval).toBe(true);
+		expect(decision.fallback).toBe(true);
+		expect(decision.reason).toBe("fallback_invalid_gating_answer");
+	});
 	it("settles fail-CLOSED fast without a sidecar call when already aborted", async () => {
 		const decide = vi.fn(() => new Promise<never>(() => {}));
 		const mockClient = { decide } as unknown as LayaClientType;

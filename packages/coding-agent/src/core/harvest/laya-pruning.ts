@@ -20,7 +20,7 @@
 
 import type { ToolResultMessage, TextContent } from "@harvest/pi-ai";
 import type { AgentMessage } from "@harvest/pi-agent-core";
-import { logger } from "@harvest/pi-utils";
+import { isRecord, logger } from "@harvest/pi-utils";
 import { type Settings, settings as globalSettings, type SettingPath } from "../../config/settings";
 import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
 import { getDerivedPruningEnabledSync } from "./laya-calibration";
@@ -279,9 +279,7 @@ export async function pruneContextWithLaya(
 		options.minKeptTurns ??
 		safeGetSetting<number>(activeSettings, "laya.pruningMinKeptTurns") ??
 		DEFAULT_PRUNING_MIN_KEPT_TURNS;
-	const minChunkTokens =
-		options.minChunkTokens ??
-		DEFAULT_PRUNING_MIN_CHUNK_TOKENS;
+	const minChunkTokens = options.minChunkTokens ?? DEFAULT_PRUNING_MIN_CHUNK_TOKENS;
 	const safetyTokenFloor = options.safetyTokenFloor ?? DEFAULT_PRUNING_SAFETY_TOKEN_FLOOR;
 
 	// Partition messages into logical turns
@@ -350,7 +348,10 @@ export async function pruneContextWithLaya(
 				}
 			} else if (msg.role === "assistant") {
 				// Exclude assistant messages containing tool calls from pruning to prevent orphan tool results
-				if (Array.isArray(msg.content) && msg.content.some((b: any) => b && (b.type === "toolCall" || b.type === "tool_call"))) {
+				if (
+					Array.isArray(msg.content) &&
+					msg.content.some(b => isRecord(b) && (b.type === "toolCall" || b.type === "tool_call"))
+				) {
 					continue;
 				}
 
@@ -490,6 +491,20 @@ export async function pruneContextWithLaya(
 	}
 
 	// Attach returned scores to candidate records
+	// Missing or invalid answers are scoring failures, not permission to discard context.
+	if (
+		candidates.some(candidate => {
+			const score = decideResult.data?.[candidate.id]?.score;
+			return typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 3;
+		})
+	) {
+		return {
+			...createPassthroughResult(messages, "invalid_relevance_scores"),
+			fallback: true,
+			candidatesCount: candidates.length,
+			latencyMs: performance.now() - startTime,
+		};
+	}
 	for (const c of candidates) {
 		const ans = decideResult.data[c.id];
 		if (ans && typeof ans.score === "number") {
@@ -508,11 +523,9 @@ export async function pruneContextWithLaya(
 	// Step 4: Budget-based selection in Harvest
 	// Respect configured laya.pruningTokenBudget or retain 40% of candidate tokens
 	const configuredBudget =
-		options.prunableTokenBudget ??
-		safeGetSetting<number>(activeSettings, "laya.pruningTokenBudget" as SettingPath);
+		options.prunableTokenBudget ?? safeGetSetting<number>(activeSettings, "laya.pruningTokenBudget" as SettingPath);
 
-	const prunableBudget =
-		configuredBudget ?? Math.max(safetyTokenFloor, Math.floor(totalCandidateTokens * 0.4));
+	const prunableBudget = configuredBudget ?? Math.max(safetyTokenFloor, Math.floor(totalCandidateTokens * 0.4));
 
 	// Rank candidates descending by score (highest relevance first)
 	const rankedCandidates = [...candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -606,7 +619,10 @@ export async function pruneContextWithLaya(
 					: [];
 				clonedMessages.push({
 					...original,
-					content: [{ type: "text", text: preLocked.placeholder ?? "" } as TextContent, ...(nonTextBlocks as any[])],
+					content: [
+						{ type: "text", text: preLocked.placeholder ?? "" } as TextContent,
+						...(nonTextBlocks as any[]),
+					],
 				});
 			} else {
 				clonedMessages.push(original);

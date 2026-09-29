@@ -1034,6 +1034,7 @@ export class CommandController {
 			}
 		}
 		if (!(await this.ctx.session.newSession(options))) return;
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
 		// A focused subagent view keeps its own history: return to the main session
 		// first so the transcript below cannot rebuild from the subagent's surviving
 		// conversation, then drop any turn-scoped anchors (coalescing timers,
@@ -1130,6 +1131,7 @@ export class CommandController {
 			this.ctx.showError("Fork failed (session not persisted or cancelled)");
 			return;
 		}
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
 
 		this.ctx.statusLine.invalidate();
 		this.ctx.ui.requestRender();

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Invalid Laya relevance scores preserve full context, and invalid tool-risk probabilities require approval.
+
 - A generated or manually renamed session keeps its latest title in the tab strip after switching away.
 - The fullscreen start screen keeps the logo and prompt centered together as the terminal width changes.
 - Fullscreen session changes avoid redundant terminal clears, and selecting the current tab keeps its run active.
@@ -33,6 +35,8 @@
 - Concurrent Laya sidecar starters now share one spawn run instead of double-spawning daemons behind a port drift; the same singleflight guard now covers the full setup pipeline.
 
 ### Added
+
+- Project and user Markdown brains retrieve cited knowledge and skill sections using cached page indexing, graph links, and optional Laya reranking.
 
 - Interactive sessions now open in a full-screen workspace with clickable session tabs, a centered new-session composer, and mouse or Page Up/Down transcript navigation.
 - The session picker now has a clickable “+ New session” action.

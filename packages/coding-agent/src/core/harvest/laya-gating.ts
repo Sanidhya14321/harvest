@@ -136,6 +136,24 @@ export async function checkToolCallGating(
 	}
 
 	const answer = decision.data.irreversibility;
+	if (
+		typeof answer.noul !== "number" ||
+		!Number.isFinite(answer.noul) ||
+		answer.noul < 0 ||
+		answer.noul > 1 ||
+		typeof answer.confidence !== "number" ||
+		!Number.isFinite(answer.confidence) ||
+		answer.confidence < 0 ||
+		answer.confidence > 1
+	) {
+		return {
+			isHighRiskTool: true,
+			requireApproval: true,
+			fallback: true,
+			reason: "fallback_invalid_gating_answer",
+			latencyMs: decision.latencyMs,
+		};
+	}
 	// noul probability represents likelihood of irreversible action
 	const noulScore = typeof answer.noul === "number" ? answer.noul : 0.5;
 	const confidence = answer.confidence ?? 0.5;

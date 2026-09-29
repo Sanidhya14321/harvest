@@ -142,3 +142,26 @@ export function describeSelectedSession(description: SelectedSessionDescription)
 		selected: true,
 	};
 }
+
+/**
+ * Prefer a registry snapshot for background tabs, but never let it describe
+ * the visible tab: selection always comes from the live current path, and an
+ * approval holding the editor forces the waiting state even when the
+ * registry has not been told (its wait markers are set by callers that do
+ * not exist yet on every path).
+ */
+export function mergeRegistrySnapshot(
+	live: LiveSessionSnapshot | undefined,
+	selected: LiveSessionSnapshot | undefined,
+	approvalOpen: boolean,
+): LiveSessionSnapshot | undefined {
+	if (!live) return selected;
+	if (!selected) return live;
+	const merged: LiveSessionSnapshot = {
+		...live,
+		selected: selected.selected,
+		title: selected.title ?? live.title,
+	};
+	if (selected.selected && approvalOpen) merged.status = "waiting";
+	return merged;
+}

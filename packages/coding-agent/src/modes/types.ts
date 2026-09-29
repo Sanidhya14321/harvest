@@ -25,6 +25,7 @@ import type { ForeignSessionSource } from "../session/foreign-session-store";
 import type { HistoryStorage } from "../session/history-storage";
 import type { SessionContext } from "../session/session-context";
 import type { SessionManager } from "../session/session-manager";
+import type { LiveSessionRegistry } from "../session/live-session-registry";
 import type { SessionViewStateStore } from "../session/session-view-state";
 import type { RunDiagnosticsTracker } from "./run-diagnostics";
 import type { ShakeMode } from "../session/shake-types";
@@ -173,6 +174,14 @@ export interface InteractiveModeContext {
 	viewStateStore?: SessionViewStateStore;
 	/** Per-session run-stage record; absent in unit-test contexts. */
 	runDiagnostics?: RunDiagnosticsTracker;
+	/** Current transcript scroll-back offset in rows; absent in unit-test contexts. */
+	getWorkspaceScrollOffset?: () => number;
+	/** Restore a transcript scroll-back offset; absent in unit-test contexts. */
+	setWorkspaceScrollOffset?: (offset: number) => void;
+	/** Retarget the main view to another already-live session; absent in unit-test contexts. */
+	selectMainSession?: (session: AgentSession) => Promise<void>;
+	/** Live tab runtime ownership; absent in unit-test contexts. */
+	liveSessions?: LiveSessionRegistry;
 
 	// State
 	isInitialized: boolean;
