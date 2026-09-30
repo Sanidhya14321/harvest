@@ -2231,12 +2231,7 @@ export class SelectorController {
 
 		// Deleting a live run would orphan its in-flight work: stop it first.
 		const session = this.ctx.session;
-		if (
-			session.isStreaming ||
-			session.isBashRunning ||
-			session.isEvalRunning ||
-			session.hasPendingAsyncWork()
-		) {
+		if (session.isStreaming || session.isBashRunning || session.isEvalRunning || session.hasPendingAsyncWork()) {
 			this.ctx.showError("Stop the run first (Esc), then delete the session.");
 			return;
 		}

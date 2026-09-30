@@ -45,7 +45,9 @@ export const shutdownHandlerTui = (
 ): SlashCommandResult => {
 	const ctx = runtime.ctx;
 	const session = ctx.session;
-	const backgroundBusy = ctx.liveSessions?.busySessions.filter(entry => entry.id !== session.sessionManager.getSessionId()) ?? [];
+	const currentId = session.sessionManager?.getSessionId?.() ?? ctx.sessionManager?.getSessionId?.();
+	const backgroundBusy =
+		currentId === undefined ? [] : (ctx.liveSessions?.busySessions.filter(entry => entry.id !== currentId) ?? []);
 	if (
 		hasUnsettledWork({
 			isStreaming: session.isStreaming,

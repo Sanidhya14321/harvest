@@ -210,8 +210,17 @@ describe("CommandController live-tab new session", () => {
 					}
 				: undefined,
 		} as unknown as InteractiveModeContext;
-		return { ctx, controller: new CommandController(ctx), registry, current, fresh, seen, errors, selected,
-			counts: { presented: () => presented, status: () => status } };
+		return {
+			ctx,
+			controller: new CommandController(ctx),
+			registry,
+			current,
+			fresh,
+			seen,
+			errors,
+			selected,
+			counts: { presented: () => presented, status: () => status },
+		};
 	}
 
 	it("opens an independent tab without aborting the previous run", async () => {
