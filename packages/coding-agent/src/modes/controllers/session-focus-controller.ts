@@ -59,6 +59,8 @@ export class SessionFocusController {
 				store.restoreDraft(targetId, this.ctx.editor);
 				this.ctx.setWorkspaceScrollOffset?.(store.scrollOffset(targetId));
 			}
+			this.ctx.attachSessionRunnerUI?.(session);
+			void this.ctx.presentQueuedApprovals?.(session.sessionManager.getSessionId());
 		} catch (error) {
 			// A failed transcript or todo load must leave input and events on the last
 			// usable runtime. A newer navigation owns the view if it already moved on.
@@ -74,6 +76,8 @@ export class SessionFocusController {
 						store.restoreDraft(previousId, this.ctx.editor);
 						this.ctx.setWorkspaceScrollOffset?.(store.scrollOffset(previousId));
 					}
+					this.ctx.attachSessionRunnerUI?.(previous);
+					void this.ctx.presentQueuedApprovals?.(previousId);
 				} catch (rollbackError) {
 					logger.error("Failed to restore previous session view", { error: String(rollbackError) });
 				}

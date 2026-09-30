@@ -62,6 +62,8 @@ interface Harness {
 	setEditorText: (text: string) => void;
 	scrollOffset: () => number;
 	setScrollOffset: (offset: number) => void;
+	attachedRunners: AgentSession[];
+	presentedQueues: string[];
 	counts: {
 		clearTransientSessionUi: () => number;
 		resetTranscriptAnchors: () => number;
@@ -81,6 +83,8 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 	let mainUnsubscribe = 0;
 	let editorText = "";
 	let scrollOffset = 0;
+	const attachedRunners: AgentSession[] = [];
+	const presentedQueues: string[] = [];
 
 	const ctx = {
 		session: main.session,
@@ -129,6 +133,12 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 		ui: { requestRender() {} },
 		showStatus() {},
 		collabGuest: undefined,
+		attachSessionRunnerUI: (session: AgentSession) => {
+			attachedRunners.push(session);
+		},
+		presentQueuedApprovals: async (sessionId: string) => {
+			presentedQueues.push(sessionId);
+		},
 	} as unknown as InteractiveModeContext;
 
 	const registry = new AgentRegistry();
@@ -151,6 +161,8 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 		setScrollOffset: (offset: number) => {
 			scrollOffset = offset;
 		},
+		attachedRunners,
+		presentedQueues,
 		counts: {
 			clearTransientSessionUi: () => clearTransientSessionUi,
 			resetTranscriptAnchors: () => resetTranscriptAnchors,
@@ -190,14 +202,17 @@ describe("SessionFocusController", () => {
 		await h.controller.selectMainSession(other.session);
 		expect(h.editorText()).toBe("");
 		expect(h.scrollOffset()).toBe(0);
+		expect(h.attachedRunners).toEqual([other.session]);
 		h.setEditorText("draft for other");
 		h.setScrollOffset(3);
 		await h.controller.selectMainSession(h.main.session);
 		expect(h.editorText()).toBe("draft for main");
 		expect(h.scrollOffset()).toBe(7);
+		expect(h.attachedRunners).toEqual([other.session, h.main.session]);
 		await h.controller.selectMainSession(other.session);
 		expect(h.editorText()).toBe("draft for other");
 		expect(h.scrollOffset()).toBe(3);
+		expect(h.presentedQueues).toEqual(["other", "main", "other"]);
 	});
 
 	it("restores the prior input and event target when the selected transcript fails to load", async () => {

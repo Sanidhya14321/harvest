@@ -31,6 +31,7 @@ import { HookSelectorComponent, type HookSelectorSlider } from "../../modes/comp
 import { getAvailableThemesWithPaths, getThemeByName, setTheme, type Theme, theme } from "../../modes/theme/theme";
 import type { InteractiveModeContext, InteractiveSelectorDialogOptions } from "../../modes/types";
 import { normalizeCustomMessagePayload, USER_INTERRUPT_LABEL } from "../../session/messages";
+import type { AgentSession } from "../../session/agent-session";
 import { setExtensionTerminalTitle, setSessionTerminalTitle } from "../../utils/title-generator";
 
 const MAX_WIDGET_LINES = 10;
@@ -64,6 +65,15 @@ function toWireSelectOptions(options: ExtensionUISelectItem[]): CollabUiSelectIt
 	);
 }
 
+interface QueuedApproval {
+	ownerId: string;
+	present: () => Promise<unknown>;
+	resolve: (value: unknown) => void;
+	cancelValue: unknown;
+	signal?: AbortSignal;
+	onAbort?: () => void;
+}
+
 export class ExtensionUiController {
 	#extensionTerminalInputUnsubscribers = new Set<() => void>();
 	#composerShapeDisposers: Array<() => void> = [];
@@ -80,6 +90,14 @@ export class ExtensionUiController {
 	 * call with the same picker/dialog primitives a live tool call would get.
 	 */
 	#toolUIContext: ExtensionUIContext | undefined;
+	/**
+	 * Approval/question requests parked per owning session while another tab
+	 * is visible. Presented FIFO when the owner becomes visible; denied when
+	 * their session stops or the process quits. Timeouts live in the dialog
+	 * components, which are only constructed at presentation, so a queued
+	 * request never times out while waiting.
+	 */
+	#approvalQueues = new Map<string, QueuedApproval[]>();
 	constructor(private ctx: InteractiveModeContext) {}
 
 	#syncExtensionComposerShapes(): void {
@@ -322,6 +340,212 @@ export class ExtensionUiController {
 	 */
 	getToolUIContext(): ExtensionUIContext | undefined {
 		return this.#toolUIContext;
+	}
+
+	/**
+	 * Bind a live tab session's extension runner to a UI context owned by
+	 * that session: dialog requests present immediately while the session is
+	 * visible, and park in a per-session queue (badge plus toast) while
+	 * another tab is visible. Queued requests present FIFO when the owner
+	 * becomes visible, so approval timeouts only ever run on screen; stopping
+	 * the session or quitting denies everything still parked. No-op before
+	 * hooks have initialized or for sessions without a runner.
+	 */
+	attachSessionRunner(session: AgentSession): void {
+		const uiContext = this.#toolUIContext;
+		if (!uiContext) return;
+		let sessionId: string | undefined;
+		try {
+			sessionId = session.sessionManager.getSessionId();
+		} catch {
+			return;
+		}
+		if (!sessionId) return;
+		try {
+			session.extensionRunner?.setUIContext(this.#proxyUIContext(sessionId, uiContext));
+		} catch {
+			// A failing bind leaves fail-closed denial in place; navigation
+			// and the run itself are unaffected.
+		}
+	}
+
+	/** Owner-tagged view of the shared dialog primitives for one tab session. */
+	#proxyUIContext(ownerId: string, shared: ExtensionUIContext): ExtensionUIContext {
+		return Object.create(shared, {
+			select: {
+				value: (title: string, options: ExtensionUISelectItem[], dialogOptions?: ExtensionUIDialogOptions) =>
+					this.#routeApproval(
+						ownerId,
+						() => this.showHookSelector(title, options, dialogOptions),
+						undefined,
+						dialogOptions?.signal,
+					),
+				enumerable: true,
+			},
+			confirm: {
+				value: (title: string, message: string, dialogOptions?: ExtensionUIDialogOptions) =>
+					this.#routeApproval(
+						ownerId,
+						() => this.showHookConfirm(title, message, dialogOptions),
+						false,
+						dialogOptions?.signal,
+					),
+				enumerable: true,
+			},
+			askDialog: {
+				value: (questions: ExtensionAskDialogQuestion[], dialogOptions?: ExtensionUIDialogOptions) =>
+					this.#routeApproval(
+						ownerId,
+						() => this.showAskDialog(questions, dialogOptions),
+						undefined,
+						dialogOptions?.signal,
+					),
+				enumerable: true,
+			},
+			input: {
+				value: (title: string, placeholder?: string, dialogOptions?: ExtensionUIDialogOptions) =>
+					this.#routeApproval(
+						ownerId,
+						() => this.showHookInput(title, placeholder, dialogOptions),
+						undefined,
+						dialogOptions?.signal,
+					),
+				enumerable: true,
+			},
+			editor: {
+				value: (
+					title: string,
+					prefill?: string,
+					dialogOptions?: ExtensionUIDialogOptions,
+					editorOptions?: { promptStyle?: boolean },
+				) =>
+					this.#routeApproval(
+						ownerId,
+						() => this.showHookEditor(title, prefill, dialogOptions, editorOptions),
+						undefined,
+						dialogOptions?.signal,
+					),
+				enumerable: true,
+			},
+		}) as ExtensionUIContext;
+	}
+
+	/** Session id currently on screen; unknown when unreadable (present, matching current behavior). */
+	#visibleSessionId(): string | undefined {
+		try {
+			return this.ctx.sessionManager.getSessionId();
+		} catch {
+			return undefined;
+		}
+	}
+
+	async #routeApproval<T>(
+		ownerId: string,
+		present: () => Promise<T>,
+		cancelValue: T,
+		signal?: AbortSignal,
+	): Promise<T> {
+		if (this.#visibleSessionId() === undefined || this.#visibleSessionId() === ownerId) {
+			return present();
+		}
+		return this.#enqueueApproval(ownerId, present, cancelValue, signal);
+	}
+
+	async #enqueueApproval<T>(
+		ownerId: string,
+		present: () => Promise<T>,
+		cancelValue: T,
+		signal?: AbortSignal,
+	): Promise<T> {
+		const { promise, resolve } = Promise.withResolvers<T>();
+		const entry: QueuedApproval = {
+			ownerId,
+			present: present as () => Promise<unknown>,
+			resolve: resolve as (value: unknown) => void,
+			cancelValue,
+			signal,
+		};
+		const settleQueued = (): void => {
+			const queue = this.#approvalQueues.get(ownerId);
+			if (!queue) return;
+			const index = queue.indexOf(entry);
+			if (index >= 0) queue.splice(index, 1);
+			if (queue.length === 0) {
+				this.#approvalQueues.delete(ownerId);
+				this.ctx.liveSessions?.markWaiting(ownerId, false);
+			}
+		};
+		const cancelQueued = (): void => {
+			settleQueued();
+			resolve(cancelValue);
+		};
+		if (signal?.aborted) {
+			resolve(cancelValue);
+			return promise;
+		}
+		if (signal) {
+			const onAbort = (): void => {
+				signal.removeEventListener("abort", onAbort);
+				cancelQueued();
+			};
+			signal.addEventListener("abort", onAbort, { once: true });
+			entry.onAbort = () => signal.removeEventListener("abort", onAbort);
+		}
+		let queue = this.#approvalQueues.get(ownerId);
+		if (!queue) {
+			queue = [];
+			this.#approvalQueues.set(ownerId, queue);
+			this.ctx.liveSessions?.markWaiting(ownerId, true);
+			const title = this.ctx.liveSessions?.snapshots.find(snapshot => snapshot.id === ownerId)?.title;
+			this.ctx.showStatus(`Approval waiting in "${title ?? ownerId}" — switch tabs to decide.`);
+		}
+		queue.push(entry);
+		return promise;
+	}
+
+	/**
+	 * Present everything parked for a newly visible session, FIFO. Entries
+	 * aborted while queued settle cancelled without presenting; entries for
+	 * a tab that lost visibility mid-drain stay parked. Never rejects:
+	 * presentation failures settle cancelled so tools fail closed.
+	 */
+	async presentQueuedApprovals(sessionId: string): Promise<void> {
+		for (;;) {
+			const queue = this.#approvalQueues.get(sessionId);
+			const entry = queue?.[0];
+			if (!entry) return;
+			if (entry.signal?.aborted || this.#visibleSessionId() !== sessionId) return;
+			queue!.shift();
+			entry.onAbort?.();
+			if (queue!.length === 0) {
+				this.#approvalQueues.delete(sessionId);
+				this.ctx.liveSessions?.markWaiting(sessionId, false);
+			}
+			try {
+				entry.resolve(await entry.present());
+			} catch {
+				entry.resolve(entry.cancelValue);
+			}
+		}
+	}
+
+	/** Deny everything parked for one session (stop) or all sessions (quit). */
+	denySessionQueue(sessionId: string): void {
+		const queue = this.#approvalQueues.get(sessionId);
+		if (!queue) return;
+		this.#approvalQueues.delete(sessionId);
+		for (const entry of queue) {
+			entry.onAbort?.();
+			entry.resolve(entry.cancelValue);
+		}
+		this.ctx.liveSessions?.markWaiting(sessionId, false);
+	}
+
+	denyAllQueuedApprovals(): void {
+		// Deleting the visited entry during Map iteration is safe: entries
+		// deleted before their visit are simply skipped, and each deny
+		// removes exactly the entry being visited.
+		for (const sessionId of this.#approvalQueues.keys()) this.denySessionQueue(sessionId);
 	}
 
 	setHookWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void {

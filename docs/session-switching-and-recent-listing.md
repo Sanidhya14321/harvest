@@ -178,7 +178,11 @@ Empty-list render behavior:
 
 `+ New session` (`CommandController`) opens a fresh runtime through the same factory and adopts it; the previous run keeps going under its tab, falling back to the legacy in-place flow only when the factory cannot build. Closing a tab hides it and leaves its run alive; deleting refuses while the session's run is live (stop it first). `/exit` counts background busy tabs in its confirmation, and interactive shutdown disposes every adopted runtime (session disposal is idempotent, so the visible one settles once).
 
-Known limitation carried into per-session UI isolation work: tool-approval dialogs are still a single shared surface, so a background tab's approval prompt presents in the visible tab. Denying is always safe; approving runs the owning session's tool.
+Remaining UI isolation work: a dialog already open during a tab switch stays open (it still decides its owning session's request). Per-session dialog queues with present-on-activate would remove even that case; denying remains always safe.
+
+Interactive UI ownership follows the visible tab: each adopted session's extension runner gets an owner-tagged proxy of the shared dialog primitives (`ExtensionUiController.attachSessionRunner`, bound on every `selectMainSession`). Requests from the visible session present immediately; requests from background tabs park in a per-session FIFO with an attention badge (`LiveSessionRegistry.markWaiting`) and a toast, then present in order when their tab becomes active — so approval timeouts only ever run on screen. Parked entries cancelled while waiting, or denied on stop/quit, settle fail-closed without presenting. Subagent focus peeks never rebind (the main session keeps its UI).
+
+Interactive UI ownership follows the visible tab: `ExtensionUiController.attachSessionRunner` binds the shared dialog primitives to the newly attached session's extension runner and drops the previous one to the denying no-op context, so background approvals fail closed instead of presenting into the wrong tab, and returning to a tab restores its approval capability. Subagent focus peeks never rebind (the main session keeps its UI). A dialog already open during a switch stays open; per-session dialog queues with present-on-activate remain future work.
 
 ## Runtime switch execution (`AgentSession.switchSession`)
 
@@ -221,6 +225,8 @@ So visible conversation/todo state is rebuilt from the new session file.
 ## Per-session view state across switches
 
 `SessionViewStateStore` (`src/session/session-view-state.ts`) keeps each session's unsent composer draft (text plus image attachments) and transcript scroll offset in memory, keyed by session ID. Drafts are never persisted: process exit drops them. The interactive navigation wrappers (`InteractiveMode.handleResumeSession`, `handleClearCommand`, `handleDropCommand`) save the outgoing view before the switch and restore the incoming view after the scroll reset, reading the session ID fresh so a failed switch (same ID) restores the outgoing view. `SessionFocusController.selectMainSession` applies the same save/restore around subagent view retargeting. Typed slash commands (`/tab`, `/new`, `/drop`) replace the editor with command text before dispatch, so only mouse/keyboard-initiated switches carry a draft worth preserving.
+
+Undispatched submissions are keyed the same way (`InteractiveMode.#pendingSubmissionsByOwner`): submitting in one tab can never clobber or cancel another tab's dispatch — matching is by object identity against the owning session's entry — while the visible-session entry drives optimistic/goal flows exactly as before. Dispatch itself already routes through `input.ownerSession`, and completion cleanup reads the owner's streaming state rather than the visible tab's.
 
 Scroll offsets are capped at 20 retained sessions (oldest evicted); the fullscreen wheel/page direction contract lives on `Composer.scrollWorkspaceWheel`/`scrollWorkspacePage` (wheel-up and page-up look back, wheel-down and page-down return to the live tail at offset 0).
 

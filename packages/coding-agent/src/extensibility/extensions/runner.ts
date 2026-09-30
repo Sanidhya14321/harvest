@@ -398,7 +398,7 @@ export async function emitSessionShutdownEvent(extensionRunner: ExtensionRunner 
 	}
 }
 
-const noOpUIContext: ExtensionUIContext = {
+export const noOpUIContext: ExtensionUIContext = {
 	select: async (_title, _options, _dialogOptions) => undefined,
 	confirm: async (_title, _message, _dialogOptions) => false,
 	input: async (_title, _placeholder, _dialogOptions) => undefined,
@@ -876,6 +876,17 @@ export class ExtensionRunner {
 
 	getUIContext(): ExtensionUIContext {
 		return this.#uiContext;
+	}
+
+	/**
+	 * Rebind the UI context without re-running initialization (live-tab
+	 * switches): the visible session gets the interactive context, hidden
+	 * sessions get the denying no-op so their approvals fail closed instead
+	 * of presenting into the wrong tab. No events fire and no generations
+	 * churn — use `initialize` for first-time setup.
+	 */
+	setUIContext(uiContext: ExtensionUIContext): void {
+		this.#uiContext = uiContext ?? noOpUIContext;
 	}
 
 	hasUI(): boolean {

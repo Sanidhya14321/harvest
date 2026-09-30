@@ -698,7 +698,13 @@ export class InteractiveMode implements InteractiveModeContext {
 	onInputCallback?: (input: SubmittedUserInput) => void;
 	optimisticUserMessageSignature: string | undefined = undefined;
 	locallySubmittedUserSignatures: Set<string> = new Set();
-	#pendingSubmittedInput: SubmittedUserInput | undefined;
+	/**
+	 * Undispatched submissions keyed by owning session, so submitting in one
+	 * tab can never clobber (or cancel dispatch of) another tab's submission.
+	 * Dispatch matches by object identity against the owner entry; the
+	 * visible-session entry drives optimistic/goal flows as before.
+	 */
+	#pendingSubmissionsByOwner = new Map<AgentSession, SubmittedUserInput>();
 	#pendingSubmissionDispose: (() => void) | undefined;
 	#pendingSubmissionPreservesDraft = false;
 	#optimisticUserMessageComponents: Component[] = [];
@@ -811,6 +817,14 @@ export class InteractiveMode implements InteractiveModeContext {
 	/** Retarget the main view to another already-live top-level session. Neither runtime is stopped. */
 	selectMainSession(session: AgentSession): Promise<void> {
 		return this.#focusController.selectMainSession(session);
+	}
+	/** Move interactive UI ownership (tool-approval dialogs) to the newly visible session. */
+	attachSessionRunnerUI(session: AgentSession): void {
+		this.#extensionUiController.attachSessionRunner(session);
+	}
+	/** Present approvals parked while another tab was visible. Never rejects. */
+	presentQueuedApprovals(sessionId: string): Promise<void> {
+		return this.#extensionUiController.presentQueuedApprovals(sessionId);
 	}
 	getWorkspaceScrollOffset(): number {
 		return this.composer.workspaceScrollOffset;
@@ -1821,7 +1835,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.planModeEnabled || this.planModePaused) return;
 		if (!this.goalModeEnabled || this.goalModePaused) return;
 		if (this.#goalSuppressNextContinuation) return;
-		if (this.#pendingSubmittedInput) return;
+		if (this.#pendingSubmissionsByOwner.get(this.session)) return;
 		if (this.editor.getText().trim().length > 0) return;
 		if ((this.editor.pendingImages?.length ?? 0) > 0) return;
 		const state = this.session.getGoalModeState();
@@ -1840,7 +1854,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			// `AgentBusyError`. Drop this tick; `#handleGoalSessionEvent` reschedules
 			// on the next `agent_end`.
 			if (this.#isAutoSubmitBlocked()) return;
-			if (this.#pendingSubmittedInput) return;
+			if (this.#pendingSubmissionsByOwner.get(this.session)) return;
 			if (this.editor.getText().trim().length > 0) return;
 			if ((this.editor.pendingImages?.length ?? 0) > 0) return;
 			const latestState = this.session.getGoalModeState();
@@ -2108,7 +2122,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			cancelled: false,
 			started: false,
 		};
-		this.#pendingSubmittedInput = submission;
+		this.#pendingSubmissionsByOwner.set(submission.ownerSession ?? this.session, submission);
 		this.#pendingSubmissionPreservesDraft = options?.preserveDraft === true;
 		if (!submission.customType) {
 			this.#resetGoalContinuationSuppression();
@@ -2140,14 +2154,14 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	cancelPendingSubmission(): boolean {
-		const submission = this.#pendingSubmittedInput;
+		const submission = this.#pendingSubmissionsByOwner.get(this.session);
 		if (!submission || submission.started) {
 			return false;
 		}
 		const preserveDraft = this.#pendingSubmissionPreservesDraft;
 
 		submission.cancelled = true;
-		this.#pendingSubmittedInput = undefined;
+		this.#pendingSubmissionsByOwner.delete(this.session);
 		this.#pendingSubmissionPreservesDraft = false;
 		this.clearOptimisticUserMessage();
 		this.#pendingWorkingMessage = undefined;
@@ -2194,7 +2208,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	markPendingSubmissionStarted(input: SubmittedUserInput): boolean {
-		if (this.#pendingSubmittedInput !== input || input.cancelled) {
+		if (this.#pendingSubmissionsByOwner.get(input.ownerSession ?? this.session) !== input || input.cancelled) {
 			return false;
 		}
 		input.started = true;
@@ -2208,10 +2222,11 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	finishPendingSubmission(input: SubmittedUserInput): void {
-		const wasPendingSubmission = this.#pendingSubmittedInput === input;
+		const owner = input.ownerSession ?? this.session;
+		const wasPendingSubmission = this.#pendingSubmissionsByOwner.get(owner) === input;
 		const pendingSubmissionDispose = this.#pendingSubmissionDispose;
 		if (wasPendingSubmission) {
-			this.#pendingSubmittedInput = undefined;
+			this.#pendingSubmissionsByOwner.delete(owner);
 			this.#pendingSubmissionDispose = undefined;
 			this.#pendingSubmissionPreservesDraft = false;
 		}
@@ -2219,7 +2234,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.#goalContinuationTurnInFlight = false;
 		}
 
-		if (wasPendingSubmission && !this.session.isStreaming && !this.streamingComponent) {
+		if (wasPendingSubmission && !owner.isStreaming && !this.streamingComponent) {
 			this.optimisticUserMessageSignature = undefined;
 			pendingSubmissionDispose?.();
 			this.#optimisticUserMessageComponents = [];
@@ -2506,7 +2521,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	#replayOptimisticUserMessage(): void {
 		if (!this.optimisticUserMessageSignature) return;
-		const submission = this.#pendingSubmittedInput;
+		const submission = this.#pendingSubmissionsByOwner.get(this.session);
 		if (!submission || submission.cancelled || submission.customType) return;
 		this.#optimisticUserMessageComponents = this.#captureAddedChatComponents(() => {
 			this.addMessageToChat(
@@ -4993,6 +5008,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#omfgController.dispose();
 		this.#cleanseController.dispose();
 		this.#focusController.dispose();
+		// Deny parked background approvals first so no tool waits on a dialog
+		// that can never present once the terminal goes away.
+		this.#extensionUiController.denyAllQueuedApprovals();
 
 		// Surface an explicit "Closing session…" line so the user sees a reason
 		// for the pause while `session.dispose()` flushes memory consolidate and
@@ -5220,7 +5238,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	showError(message: string): void {
-		this.#pendingSubmittedInput = undefined;
+		this.#pendingSubmissionsByOwner.delete(this.session);
 		this.#pendingSubmissionPreservesDraft = false;
 		this.clearOptimisticUserMessage();
 		this.#pendingWorkingMessage = undefined;

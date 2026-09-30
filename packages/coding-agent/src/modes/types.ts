@@ -181,6 +181,10 @@ export interface InteractiveModeContext {
 	setWorkspaceScrollOffset?: (offset: number) => void;
 	/** Retarget the main view to another already-live session; absent in unit-test contexts. */
 	selectMainSession?: (session: AgentSession) => Promise<void>;
+	/** Move interactive UI ownership to the newly visible session; absent in unit-test contexts. */
+	attachSessionRunnerUI?: (session: AgentSession) => void;
+	/** Present approvals parked for a newly visible session; absent in unit-test contexts. */
+	presentQueuedApprovals?: (sessionId: string) => Promise<void>;
 	/** Live tab runtime ownership; absent in unit-test contexts. */
 	liveSessions?: LiveSessionRegistry;
 	/** Test seam for opening live tab runtimes; defaults to the real factory. */
