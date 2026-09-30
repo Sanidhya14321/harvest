@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Long transcripts no longer scan every historical child to render a short viewport.
+- Full-screen workspaces repaint only changed text rows during streaming updates and animations.
+
 ## [18.1.14] - 2026-09-07
 
 ### Fixed

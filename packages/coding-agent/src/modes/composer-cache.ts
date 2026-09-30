@@ -183,6 +183,7 @@ function readUiState(file: string): { preferences: ComposerPreferences; theme: C
 		return undefined;
 	}
 	const quiet = field(rawPreferences, "quiet");
+	const fullscreen = field(rawPreferences, "fullscreen");
 	const composerShape = field(rawPreferences, "composerShape");
 	const showHardwareCursor = field(rawPreferences, "showHardwareCursor");
 	const maxInlineImages = field(rawPreferences, "maxInlineImages");
@@ -194,6 +195,7 @@ function readUiState(file: string): { preferences: ComposerPreferences; theme: C
 	const spellingAutocorrect = field(rawPreferences, "spellingAutocorrect");
 	if (
 		typeof quiet !== "boolean" ||
+		(fullscreen !== undefined && typeof fullscreen !== "boolean") ||
 		typeof composerShape !== "string" ||
 		typeof showHardwareCursor !== "boolean" ||
 		typeof maxInlineImages !== "number" ||
@@ -227,6 +229,7 @@ function readUiState(file: string): { preferences: ComposerPreferences; theme: C
 	return {
 		preferences: {
 			quiet,
+			fullscreen: typeof fullscreen === "boolean" ? fullscreen : true,
 			composerShape,
 			showHardwareCursor,
 			maxInlineImages,

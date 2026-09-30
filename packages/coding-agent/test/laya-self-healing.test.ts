@@ -61,6 +61,13 @@ describe("Laya Bounded Self-Healing Framework", () => {
 	});
 
 	describe("Failure Mode 6: Pre-flight Disk Space Check", () => {
+		it("does not start a download when free space cannot be measured", async () => {
+			const filePath = `${tempDir}/not-a-directory`;
+			await Bun.write(filePath, "occupied");
+			const res = await layaSelfHealing.checkAvailableDiskSpace(filePath, 2000, setupLogger);
+			expect(res.ok).toBe(false);
+			expect(res.error).toContain("Could not determine free disk space");
+		});
 		it("aborts when free space is below required threshold before download starts", async () => {
 			// Require 100,000,000 MB (100 TB) which is guaranteed to exceed disk free space
 			const res = await layaSelfHealing.checkAvailableDiskSpace(tempDir, 100_000_000, setupLogger);

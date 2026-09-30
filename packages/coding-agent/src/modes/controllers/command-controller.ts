@@ -41,8 +41,10 @@ import { computeContextBreakdown, renderContextUsage } from "../../modes/utils/c
 import { buildHotkeysMarkdown } from "../../modes/utils/hotkeys-markdown";
 import { buildToolsMarkdown } from "../../modes/utils/tools-markdown";
 import type { AsyncJobSnapshotItem } from "../../session/agent-session";
+import type { AgentSession } from "../../session/agent-session";
 import type { AuthStorage, OAuthAccountIdentity } from "../../session/auth-storage";
 import type { CompactMode } from "../../session/compact-modes";
+import { liveSessionFactoryOptions, openLiveAgentSession } from "../../session/live-session-factory";
 import type { NewSessionOptions } from "../../session/session-entries";
 import {
 	cleanSourceCheckoutIfConfigured,
@@ -1033,7 +1035,57 @@ export class CommandController {
 				await Bun.sleep(10);
 			}
 		}
+		if (this.ctx.liveSessions && this.ctx.selectMainSession) {
+			await this.#runNewLiveSessionFlow(options);
+			return;
+		}
 		if (!(await this.ctx.session.newSession(options))) return;
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
+		await this.#finishNewSessionFlow(label);
+	}
+
+	/**
+	 * Live-tab new session: open an independent runtime through the factory
+	 * and adopt it. The previous runtime is never aborted — it keeps running
+	 * headless under its tab until an explicit Stop. Falls back to the legacy
+	 * in-place flow when the factory cannot build (e.g. no resolved model),
+	 * so + New session always lands somewhere usable.
+	 */
+	async #runNewLiveSessionFlow(options?: NewSessionOptions): Promise<void> {
+		const live = this.ctx.liveSessions!;
+		const selectMainSession = this.ctx.selectMainSession!;
+		const openLiveSession = this.ctx.openLiveSession ?? openLiveAgentSession;
+		const previous = this.ctx.session;
+		let fresh: AgentSession;
+		try {
+			fresh = await openLiveSession(liveSessionFactoryOptions(this.ctx));
+		} catch (error) {
+			this.ctx.showError(
+				`Couldn't open a live tab (${error instanceof Error ? error.message : String(error)}); falling back to a fresh in-place session.`,
+			);
+			if (await this.ctx.session.newSession(options)) {
+				this.ctx.liveSessions?.trackCurrent(this.ctx.session);
+				await this.#finishNewSessionFlow("New session started");
+			}
+			return;
+		}
+		live.adopt(fresh);
+		try {
+			await selectMainSession(fresh);
+		} catch (error) {
+			try {
+				live.selectById(previous.sessionManager.getSessionId());
+			} catch {}
+			this.ctx.showError(
+				`Couldn't show the new tab: ${error instanceof Error ? error.message : String(error)}. The previous session was restored; its run never stopped.`,
+			);
+			return;
+		}
+		await live.releaseIdleRuntimes();
+		await this.#finishNewSessionFlow("New session started");
+	}
+
+	async #finishNewSessionFlow(label: string): Promise<void> {
 		// A focused subagent view keeps its own history: return to the main session
 		// first so the transcript below cannot rebuild from the subagent's surviving
 		// conversation, then drop any turn-scoped anchors (coalescing timers,
@@ -1049,9 +1101,14 @@ export class CommandController {
 		this.ctx.clearTransientSessionUi();
 		this.ctx.resetTranscript();
 
-		this.ctx.present([new Spacer(1), new Text(`${theme.fg("accent", `${theme.status.success} ${label}`)}`, 1, 1)]);
+		if (this.ctx.settings.get("tui.fullscreen")) {
+			this.ctx.showStatus(label);
+		} else {
+			this.ctx.present([new Spacer(1), new Text(`${theme.fg("accent", `${theme.status.success} ${label}`)}`, 1, 1)]);
+		}
 		await this.ctx.reloadTodos();
-		this.ctx.ui.requestRender(true, { clearScrollback: true });
+		if (this.ctx.settings.get("tui.fullscreen")) this.ctx.ui.requestRender();
+		else this.ctx.ui.requestRender(true, { clearScrollback: true });
 	}
 
 	async handleClearCommand(): Promise<void> {
@@ -1125,6 +1182,7 @@ export class CommandController {
 			this.ctx.showError("Fork failed (session not persisted or cancelled)");
 			return;
 		}
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
 
 		this.ctx.statusLine.invalidate();
 		this.ctx.ui.requestRender();

@@ -68,6 +68,11 @@ function createRuntime(cwd = tempDir, sessionDir = tempDir) {
 }
 
 describe("/resume slash command", () => {
+	it("opens the same session picker through /sessions", async () => {
+		const harness = createRuntime();
+		expect(await executeBuiltinSlashCommand("/sessions", harness.runtime)).toBe(true);
+		expect(harness.showSessionSelector).toHaveBeenCalledTimes(1);
+	});
 	it("opens the session selector without an argument", async () => {
 		const harness = createRuntime();
 

@@ -2,8 +2,51 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Invalid Laya relevance scores preserve full context, and invalid tool-risk probabilities require approval.
+
+- A generated or manually renamed session keeps its latest title in the tab strip after switching away.
+- The fullscreen start screen keeps the logo and prompt centered together as the terminal width changes.
+- Fullscreen session changes avoid redundant terminal clears, and selecting the current tab keeps its run active.
+- The new-session landing view stays centered without replaying a status message into the transcript.
+- Starting Harvest on Windows no longer opens a separate console for the Laya sidecar.
+- Unsaved or deleted sessions no longer remain as unusable tabs after switching sessions.
+- The session strip stays hidden with one tab and shows a readable name for unnamed sessions.
+- GitHub release installs now verify downloads and preserve an existing CLI when verification fails.
+- Outside-workspace edit deletes now return a path rejection before native parsing.
+- Extension-revised tool arguments are checked again by pre-read enforcement and Laya gating before execution.
+- Laya setup stops before downloading when free disk space cannot be measured.
+- Laya starts its installed sidecar automatically in interactive sessions when autostart is enabled.
+- Laya setup now connects to the sidecar's rotating local token and ships its Python service in npm and binary builds.
+- Laya setup stops with a diagnostic when an isolated Python environment cannot be created, without installing packages into system Python.
+- Terminal session breadcrumbs are created with private file permissions on Unix systems.
+- Switching sessions keeps each session's unsent composer draft and attachments instead of leaking them into the newly shown session.
+- `/exit` now asks for confirmation when a run is still active or an approval is waiting; denying leaves the run, the approval, and the draft untouched.
+- Switching sessions restores each session's transcript scroll position, and the tab strip shows a running or approval-waiting indicator on the active session.
+- Each session now keeps a run-stage record (current stage, active tool, elapsed time, first-token latency, turn count, finished tool durations, and the preserved failure reason) so stopped or paused work can report why without re-reading the transcript.
+- Aborting a turn now cancels its in-flight Laya tool-gating call instead of riding out the sidecar timeout; the gate still fails closed to approval.
+- Open session tabs now survive restarts: tab references persist per project with private permissions, deleted files are reported instead of opened, and interrupted work keeps its transcript marker when its tab is reopened.
+- `/diagnostics` shows the current run's stage, active tool, elapsed and first-token timing, turn count, and the preserved failure reason.
+- The status line has a `run` segment (in the `default` preset) showing the live run stage with elapsed time, or the preserved failure after an errored stop.
+- Fixed inverted fullscreen scrolling: wheel-down and page-down now move toward the live tail, wheel-up and page-up back in history.
+- Project memory directories use a collision-resistant path encoding with migration from older schemes, so similarly named projects no longer share memory.
+- Switching session tabs no longer stops the other session's run: background tabs keep working, reopen warm, and are named in the `/exit` confirmation. `+ New session` leaves the previous run alive in its tab.
+- Closing a tab hides it without stopping its run; deleting a session requires stopping its run first.
+- Submitting in one tab can no longer clobber or cancel another tab's pending dispatch; completion cleanup reads the owning session's state.
+- Tool approvals follow the visible tab: background tabs fail closed instead of prompting into the wrong session, and returning to a tab restores its approval capability.
+- Background approvals queue under their session with an attention badge and present in order when their tab becomes active; stopping or quitting denies whatever is still parked.
+- `/diagnostics` and the run record now include the last tool-gating verdict with its local sidecar latency, separating gating delay from model and tool time.
+- Concurrent Laya sidecar starters now share one spawn run instead of double-spawning daemons behind a port drift; the same singleflight guard now covers the full setup pipeline.
+
 ### Added
 
+- Project and user Markdown brains retrieve cited knowledge and skill sections using cached page indexing, graph links, and optional Laya reranking.
+
+- Interactive sessions now open in a full-screen workspace with clickable session tabs, a centered new-session composer, and mouse or Page Up/Down transcript navigation.
+- The session picker now has a clickable “+ New session” action.
+- GitHub releases now include binaries for Windows, macOS, and Linux on x64 and ARM64, plus checksums and license notices.
+- `/sessions` opens the session picker, `/timeline` opens the session tree, and a visible tab strip supports switching, history, closing, and reopening sessions.
 - `/laya on` now provisions the sidecar from your configured `laya.url` and connects it to the agent when missing, instead of only flipping the flag; `/laya setup` and `/laya calibrate` work the same way in-session.
 
 ### Changed

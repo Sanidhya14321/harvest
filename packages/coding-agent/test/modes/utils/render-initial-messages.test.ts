@@ -96,6 +96,7 @@ function makeCtx(): RenderInitialMessagesTestContext {
 		},
 		renderSessionContextIncrementally: renderSessionContextSpy,
 		showStatus: vi.fn(),
+		settings: { get: () => false },
 		ui: { requestRender: vi.fn() },
 		resetTranscript: () => ctx.chatContainer.disposeChildren(),
 	} as unknown as InteractiveModeContext;
@@ -256,6 +257,17 @@ describe("UiHelpers.renderInitialMessages — clearTerminalHistory", () => {
 		await Settings.init({ inMemory: true });
 		const { ctx } = makeCtx();
 		await new UiHelpers(ctx).renderInitialMessages();
+		const clearedCall = (ctx.ui.requestRender as Mock<(...a: unknown[]) => void>).mock.calls.find(
+			([force, opts]) => force === true && (opts as { clearScrollback?: boolean } | undefined)?.clearScrollback,
+		);
+		expect(clearedCall).toBeUndefined();
+	});
+
+	it("preserves the fullscreen viewport when a session is reopened", async () => {
+		await Settings.init({ inMemory: true });
+		const { ctx } = makeCtx();
+		ctx.settings = { get: () => true } as unknown as InteractiveModeContext["settings"];
+		await new UiHelpers(ctx).renderInitialMessages({ clearTerminalHistory: true });
 		const clearedCall = (ctx.ui.requestRender as Mock<(...a: unknown[]) => void>).mock.calls.find(
 			([force, opts]) => force === true && (opts as { clearScrollback?: boolean } | undefined)?.clearScrollback,
 		);

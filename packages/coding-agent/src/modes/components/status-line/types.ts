@@ -5,11 +5,13 @@ import type {
 	StatusLineSegmentId,
 	StatusLineSeparatorStyle,
 } from "../../../config/settings-schema";
+import type { RunDiagnosticSnapshot } from "../../run-diagnostics";
 import type { AgentSession } from "../../../session/agent-session";
 import type { ActiveRepoContext } from "../../../utils/active-repo-context";
 import type { LoopLimitRuntime } from "../../loop-limit";
 
 export type { ContextLineMode, StatusLinePreset, StatusLineSegmentId, StatusLineSeparatorStyle };
+export type { RunDiagnosticSnapshot } from "../../run-diagnostics";
 
 /** Collab session indicator + (guest-only) host-state override for segments. */
 export interface CollabStatus {
@@ -104,6 +106,8 @@ export interface SegmentContext {
 		enabled: boolean;
 		connected: boolean;
 	};
+	/** Current session's run-stage snapshot for the `run` segment; absent when untracked. */
+	run?: RunDiagnosticSnapshot;
 	// Cached values for performance (computed once per render)
 	usageStats: {
 		input: number;

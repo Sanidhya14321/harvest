@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { getTerminalId } from "@harvest/pi-tui";
 import { getSessionsDir, getTerminalSessionsDir, isEnoent, logger, resolveEquivalentPath } from "@harvest/pi-utils";
-import type { SessionStorage } from "./session-storage";
+import { enforcePrivateDir, enforcePrivateFile, type SessionStorage } from "./session-storage";
 
 const migratedSessionRoots = new Set<string>();
 
@@ -228,8 +228,10 @@ export function writeTerminalBreadcrumb(cwd: string, sessionFile: string, fresh 
 	// fire-and-forget could land the two writes out of order and leave a
 	// materialized session marked fresh.
 	try {
-		fs.mkdirSync(breadcrumbDir, { recursive: true });
-		fs.writeFileSync(breadcrumbFile, content);
+		fs.mkdirSync(breadcrumbDir, { recursive: true, mode: 0o700 });
+		enforcePrivateDir(breadcrumbDir);
+		fs.writeFileSync(breadcrumbFile, content, { mode: 0o600 });
+		enforcePrivateFile(breadcrumbFile);
 	} catch (err) {
 		if (!isEnoent(err)) logger.debug("Terminal breadcrumb write failed", { err });
 	}

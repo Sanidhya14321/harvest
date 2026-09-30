@@ -30,23 +30,86 @@ The most capable agent surface that ships. Continuously tuned by real-world use 
 
 ## Install
 
+### Quick install
+
+These commands will work once this repository is public and its first tagged GitHub release has completed. They install the latest [GitHub release](https://github.com/Sanidhya14321/Harvest-Agent/releases/latest) for your operating system and CPU. They verify its SHA-256 checksum and check that the downloaded binary starts before replacing an existing installation. Re-run the same command to update. Use `--source` (PowerShell: `-Source`) only if you want the Bun package install.
+
+**macOS · Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.sh | sh
+```
+
+> **Alpine / musl:** the prebuilt musl binary links `libstdc++`/`libgcc` dynamically, which stock Alpine does not ship. Install them first: `apk add libstdc++ libgcc`.
+
+**Ubuntu:** the Linux binary needs no Bun or Rust installation. The installer places `omp` in `~/.local/bin`; if your shell cannot find it, add that directory to `PATH` or run `~/.local/bin/omp`.
+
+**Bun (developer install)**
+
+```sh
+bun install -g @harvest/pi-coding-agent
+```
+
+**Nix**
+
+```sh
+# Run without installing
+nix run github:Sanidhya14321/Harvest-Agent
+
+# Or install into the active profile
+nix profile install github:Sanidhya14321/Harvest-Agent
+```
+
+Flake consumers can use `packages.<system>.harvest`, `overlays.default`, `nixosModules.default`, or `homeManagerModules.default`. A Home Manager configuration can install Harvest and own its settings declaratively:
+
+```nix
+{
+  inputs.harvest.url = "github:Sanidhya14321/Harvest-Agent";
+
+  # In your Home Manager module:
+  imports = [ inputs.harvest.homeManagerModules.default ];
+  programs.omp = {
+    enable = true;
+    settings.startup.quiet = true;
+  };
+}
+```
+
+**Windows (PowerShell)**
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.ps1)))
+```
+
+The Windows installer places `omp.exe` in `%LOCALAPPDATA%\omp` and adds that directory to your user `PATH`. It also makes `omp` available in the current PowerShell session.
+
+**Manual downloads:** [GitHub Releases](https://github.com/Sanidhya14321/Harvest-Agent/releases) provides binaries for Windows, macOS, Ubuntu/Linux (x64 and ARM64), and musl Linux, with `SHA256SUMS.txt`, [MIT license](LICENSE), and [third-party notices](THIRD-PARTY-NOTICES.txt). The binaries are named `omp-<platform>-<architecture>` (`.exe` on Windows). A failed download, checksum, or startup check leaves an existing installation in place.
+
+**Pinned versions (mise)**
+
+```sh
+mise use -g github:Sanidhya14321/Harvest-Agent
+```
+
+macOS · Linux · Windows · no Bun required for the default install
+
 ### Single-Command Setup (Harvest + Local Laya Decision Layer)
 
 Harvest integrates **Laya** (`convaiinnovations/laya-typed-decisions`), a local ModernBERT decision sidecar providing zero-API-cost specialized subagent routing, tool output pruning, and hardware-adaptive self-calibration. A single command sets up both Harvest and the isolated Laya environment:
 
 **Windows (PowerShell)**:
 ```powershell
-irm https://omp.sh/install.ps1 | iex -WithLaya
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.ps1))) -WithLaya
 ```
 
 **macOS · Linux**:
 ```sh
-curl -fsSL https://omp.sh/install | bash -s -- --laya
+curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.sh | sh -s -- --laya
 ```
 
 **Bun (recommended for developers)**:
 ```sh
-bun install -g @harvest/pi-coding-agent && harvest setup laya
+bun install -g @harvest/pi-coding-agent && omp setup laya
 ```
 
 > [!TIP]
@@ -59,16 +122,16 @@ bun install -g @harvest/pi-coding-agent && harvest setup laya
 
 1. **Run single-command setup**:
    ```sh
-   harvest setup laya
+   omp setup laya
    ```
 2. **Start coding**:
    ```sh
-   harvest
+   omp
    ```
 3. **Check decision status & live hardware benchmarks**:
    ```sh
-   harvest laya status
-   harvest laya calibrate
+   omp laya status
+   omp laya calibrate
    ```
 
 ---
@@ -89,64 +152,9 @@ Harvest includes a bounded self-healing subsystem for Laya setup. If an issue oc
 | **Missing Python Runtime** | Python 3.9+ missing from `PATH` and standard install paths | Automatic installation via `winget` (Windows) or `brew` (macOS), or OS-specific instructions | Missing runtime and resolution steps logged to `laya-setup.log` |
 
 > [!NOTE]
-> If any Laya setup step fails irrecoverably, Harvest **fails open**: core CLI features remain 100% operational with Laya gracefully disabled (`laya.enabled = false`). Check `harvest setup laya` logs at `~/.harvest/agent/logs/laya-setup.log` or run `harvest laya status` to inspect health.
+> If any Laya setup step fails irrecoverably, Harvest **fails open**: core CLI features remain 100% operational with Laya gracefully disabled (`laya.enabled = false`). Check `omp setup laya` logs at `~/.harvest/agent/logs/laya-setup.log` or run `omp laya status` to inspect health.
 
 ---
-
-### Core CLI Only
-
-**macOS · Linux**
-
-```sh
-curl -fsSL https://omp.sh/install | sh
-```
-
-> **Alpine / musl:** the prebuilt musl binary links `libstdc++`/`libgcc` dynamically, which stock Alpine does not ship. Install them first: `apk add libstdc++ libgcc`.
-
-**Bun (recommended)**
-
-```sh
-bun install -g @harvest/pi-coding-agent
-```
-
-**Nix**
-
-```sh
-# Run without installing
-nix run github:harvest/harvest
-
-# Or install into the active profile
-nix profile install github:harvest/harvest
-```
-
-Flake consumers can use `packages.<system>.harvest`, `overlays.default`, `nixosModules.default`, or `homeManagerModules.default`. A Home Manager configuration can install Harvest and own its settings declaratively:
-
-```nix
-{
-  inputs.harvest.url = "github:harvest/harvest";
-
-  # In your Home Manager module:
-  imports = [ inputs.harvest.homeManagerModules.default ];
-  programs.omp = {
-    enable = true;
-    settings.startup.quiet = true;
-  };
-}
-```
-
-**Windows (PowerShell)**
-
-```powershell
-irm https://omp.sh/install.ps1 | iex
-```
-
-**Pinned versions (mise)**
-
-```sh
-mise use -g github:harvest/harvest
-```
-
-macOS · Linux · Windows · bun ≥ 1.3.14
 
 ### Shell completions
 

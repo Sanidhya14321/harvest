@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Repo = if ($env:HARVEST_REPO) { $env:HARVEST_REPO } else { "harvest/harvest" }
+$Repo = if ($env:HARVEST_REPO) { $env:HARVEST_REPO } else { "Sanidhya14321/Harvest-Agent" }
 $Package = "@harvest/pi-coding-agent"
 $InstallDir = if ($env:PI_INSTALL_DIR) { $env:PI_INSTALL_DIR } else { "$env:LOCALAPPDATA\omp" }
 $NativeArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
@@ -257,11 +257,34 @@ function Install-Binary {
 
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
-    # Download binary
+    # Verify and launch the download before replacing an existing installation.
     $BinaryUrl = "https://github.com/$Repo/releases/download/$Latest/$BinaryName"
     Write-Host "Downloading $BinaryName..."
     $OutPath = Join-Path $InstallDir "omp.exe"
-    Invoke-WebRequest -Uri $BinaryUrl -OutFile $OutPath -TimeoutSec 900
+    $TempDir = Join-Path $InstallDir (".omp-download-" + [System.Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+    try {
+        $Downloaded = Join-Path $TempDir $BinaryName
+        $Checksums = Join-Path $TempDir "SHA256SUMS.txt"
+        Invoke-WebRequest -Uri $BinaryUrl -OutFile $Downloaded -TimeoutSec 900 -UseBasicParsing
+        Invoke-WebRequest -Uri "https://github.com/$Repo/releases/download/$Latest/SHA256SUMS.txt" -OutFile $Checksums -TimeoutSec 60 -UseBasicParsing
+        $ChecksumLines = @(Get-Content $Checksums | Where-Object { $_ -match "^([a-fA-F0-9]{64})  $([regex]::Escape($BinaryName))$" })
+        if ($ChecksumLines.Count -ne 1) {
+            throw "Missing or invalid checksum for $BinaryName"
+        }
+        $ExpectedHash = $ChecksumLines[0].Substring(0, 64)
+        $ActualHash = (Get-FileHash -Algorithm SHA256 -Path $Downloaded).Hash
+        if ($ExpectedHash -ine $ActualHash) {
+            throw "Checksum mismatch for $BinaryName; existing installation was not changed"
+        }
+        $VersionOutput = & $Downloaded --version 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Downloaded omp cannot start: $VersionOutput"
+        }
+        Move-Item -Force -Path $Downloaded -Destination $OutPath
+    } finally {
+        Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
+    }
 
     Write-Host ""
     Write-Host "[OK] Installed omp to $OutPath" -ForegroundColor Green
@@ -276,16 +299,17 @@ function Install-Binary {
 
     Configure-BashShell
 
-    if ($needsRestart) {
-        Write-Host "Restart your terminal, then run 'omp' to get started!"
-    } else {
-        Write-Host "Run 'omp' to get started!"
-    }
+    $env:Path = "$InstallDir;$env:Path"
+    Write-Host "Run 'omp' to get started! (New terminals will also find it.)"
 }
 
 # Main logic
 if ($Ref -and -not $Source -and -not $Binary) {
-    $Source = $true
+    if ($Ref -match '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+        $Binary = $true
+    } else {
+        $Source = $true
+    }
 }
 
 if ($Source) {
@@ -297,23 +321,17 @@ if ($Source) {
 } elseif ($Binary) {
     Install-Binary
 } else {
-    # Default: use bun if available, otherwise binary
-    if (Test-BunInstalled) {
-        Assert-BunVersion $MinimumBunVersion
-        Install-ViaBun
-    } else {
-        Install-Binary
-    }
+    Install-Binary
 }
 
 if ($WithLaya -or $Laya) {
     Write-Host ""
     Write-Host "Configuring local Laya decision sidecar..." -ForegroundColor Cyan
     try {
-        if (Test-BunInstalled) {
-            bun x @harvest/pi-coding-agent setup laya
-        } else {
+        if (Test-Path (Join-Path $InstallDir "omp.exe")) {
             & (Join-Path $InstallDir "omp.exe") setup laya
+        } else {
+            bun x @harvest/pi-coding-agent setup laya
         }
         if ($LASTEXITCODE -eq 0) {
             Write-Host "[OK] Harvest + Laya setup complete!" -ForegroundColor Green

@@ -9,6 +9,7 @@
  * authoritative state.
  */
 
+import { logger } from "@harvest/pi-utils";
 import { AgentLifecycleManager } from "../../registry/agent-lifecycle";
 import { AgentRegistry, MAIN_AGENT_ID, type RegistryEvent } from "../../registry/agent-registry";
 import type { AgentSession } from "../../session/agent-session";
@@ -35,6 +36,54 @@ export class SessionFocusController {
 	/** Focused live session, undefined when unfocused. */
 	get target(): AgentSession | undefined {
 		return this.#attachedSession;
+	}
+
+	/** Retarget the main view to another already-live top-level session. Neither runtime is stopped. */
+	async selectMainSession(session: AgentSession): Promise<void> {
+		if (session === this.ctx.session && !this.#focusedAgentId) return;
+		const previous = this.ctx.session;
+		const previousId = previous.sessionManager.getSessionId();
+		this.ctx.viewStateStore?.saveDraft(previousId, this.ctx.editor);
+		this.ctx.viewStateStore?.saveScrollOffset(previousId, this.ctx.getWorkspaceScrollOffset?.() ?? 0);
+		this.#focusedAgentId = undefined;
+		this.#attachedSession = undefined;
+		this.ctx.session = session;
+		this.ctx.sessionManager = session.sessionManager;
+		this.ctx.settings = session.settings;
+		this.ctx.agent = session.agent;
+		try {
+			await this.#attach(session);
+			const store = this.ctx.viewStateStore;
+			if (store) {
+				const targetId = session.sessionManager.getSessionId();
+				store.restoreDraft(targetId, this.ctx.editor);
+				this.ctx.setWorkspaceScrollOffset?.(store.scrollOffset(targetId));
+			}
+			this.ctx.attachSessionRunnerUI?.(session);
+			void this.ctx.presentQueuedApprovals?.(session.sessionManager.getSessionId());
+		} catch (error) {
+			// A failed transcript or todo load must leave input and events on the last
+			// usable runtime. A newer navigation owns the view if it already moved on.
+			if (this.ctx.session === session) {
+				this.ctx.session = previous;
+				this.ctx.sessionManager = previous.sessionManager;
+				this.ctx.settings = previous.settings;
+				this.ctx.agent = previous.agent;
+				try {
+					await this.#attach(previous);
+					const store = this.ctx.viewStateStore;
+					if (store) {
+						store.restoreDraft(previousId, this.ctx.editor);
+						this.ctx.setWorkspaceScrollOffset?.(store.scrollOffset(previousId));
+					}
+					this.ctx.attachSessionRunnerUI?.(previous);
+					void this.ctx.presentQueuedApprovals?.(previousId);
+				} catch (rollbackError) {
+					logger.error("Failed to restore previous session view", { error: String(rollbackError) });
+				}
+			}
+			throw error;
+		}
 	}
 
 	/** Focus the main view on an agent's live session. Throws an Error with a user-displayable message. */

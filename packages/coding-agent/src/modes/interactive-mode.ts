@@ -29,6 +29,8 @@ import {
 	getComposerStyle,
 	Loader,
 	Markdown,
+	matchesKey,
+	routeSgrMouseInput,
 	Spacer,
 	setTerminalTextSizing,
 	setTuiTight,
@@ -47,6 +49,7 @@ import {
 	hsvToRgb,
 	isEnoent,
 	logger,
+	normalizePathForComparison,
 	postmortem,
 	prompt,
 	sanitizeText,
@@ -114,7 +117,12 @@ import { USER_INTERRUPT_LABEL } from "../session/messages";
 import type { SessionContext } from "../session/session-context";
 import { getRecentSessions } from "../session/session-listing";
 import type { SessionManager } from "../session/session-manager";
+import { FileSessionStorage } from "../session/session-storage";
+import { loadSessionTabs, sessionTabsFile } from "../session/session-tab-persistence";
+import { LiveSessionRegistry } from "../session/live-session-registry";
+import { liveSessionFactoryOptions, openLiveAgentSession } from "../session/live-session-factory";
 import type { ShakeMode } from "../session/shake-types";
+import { SessionViewStateStore } from "../session/session-view-state";
 import { BUILTIN_SLASH_COMMAND_RESERVED_NAMES, buildTuiBuiltinSlashCommands } from "../slash-commands/builtin-registry";
 import { formatDuration } from "../slash-commands/helpers/format";
 import { STTController, type SttState } from "../stt";
@@ -214,9 +222,11 @@ import {
 	type SessionObserverChangeKind,
 	SessionObserverRegistry,
 } from "./session-observer-registry";
-import { createSessionTeardown, type SessionTeardown } from "./session-teardown";
+import { createSessionTeardown, isApprovalDialogOpen, type SessionTeardown } from "./session-teardown";
+import { RunDiagnosticsTracker } from "./run-diagnostics";
 import { runProviderSetupWizard } from "./setup-wizard/lazy";
 import { sanitizeStatusText } from "./shared";
+import { describeSelectedSession, mergeRegistrySnapshot, SessionTabStrip } from "./components/session-tab-strip";
 import { invokeSkillCommandFromText, isKnownSkillCommand } from "./skill-command";
 import { clearMermaidCache } from "./theme/mermaid-cache";
 import { type ShimmerPalette, shimmerEnabled, shimmerText } from "./theme/shimmer";
@@ -583,6 +593,12 @@ export class InteractiveMode implements InteractiveModeContext {
 	deferredCommandContainer: Container;
 	editor: CustomEditor;
 	editorContainer: Container;
+	/** In-memory per-session composer drafts; unsent text never persists across restarts. */
+	readonly viewStateStore = new SessionViewStateStore();
+	/** Per-session run-stage record answering "why did work stop or pause". */
+	readonly runDiagnostics = new RunDiagnosticsTracker();
+	/** Live tab runtime ownership; the initial session is adopted in init. */
+	liveSessions: LiveSessionRegistry | undefined;
 	/** Composer attachment band (chip cards) rendered directly above the prompt box. */
 	attachmentChipsContainer: Container;
 	hookWidgetContainerAbove: Container;
@@ -682,7 +698,13 @@ export class InteractiveMode implements InteractiveModeContext {
 	onInputCallback?: (input: SubmittedUserInput) => void;
 	optimisticUserMessageSignature: string | undefined = undefined;
 	locallySubmittedUserSignatures: Set<string> = new Set();
-	#pendingSubmittedInput: SubmittedUserInput | undefined;
+	/**
+	 * Undispatched submissions keyed by owning session, so submitting in one
+	 * tab can never clobber (or cancel dispatch of) another tab's submission.
+	 * Dispatch matches by object identity against the owner entry; the
+	 * visible-session entry drives optimistic/goal flows as before.
+	 */
+	#pendingSubmissionsByOwner = new Map<AgentSession, SubmittedUserInput>();
 	#pendingSubmissionDispose: (() => void) | undefined;
 	#pendingSubmissionPreservesDraft = false;
 	#optimisticUserMessageComponents: Component[] = [];
@@ -792,6 +814,32 @@ export class InteractiveMode implements InteractiveModeContext {
 	unfocusSession(): Promise<void> {
 		return this.#focusController.unfocus();
 	}
+	/** Retarget the main view to another already-live top-level session. Neither runtime is stopped. */
+	selectMainSession(session: AgentSession): Promise<void> {
+		return this.#focusController.selectMainSession(session);
+	}
+	/** Move interactive UI ownership (tool-approval dialogs) to the newly visible session. */
+	attachSessionRunnerUI(session: AgentSession): void {
+		this.#extensionUiController.attachSessionRunner(session);
+	}
+	/** Present approvals parked while another tab was visible. Never rejects. */
+	presentQueuedApprovals(sessionId: string): Promise<void> {
+		return this.#extensionUiController.presentQueuedApprovals(sessionId);
+	}
+	getWorkspaceScrollOffset(): number {
+		return this.composer.workspaceScrollOffset;
+	}
+	setWorkspaceScrollOffset(offset: number): void {
+		this.composer.setWorkspaceScrollOffset(offset);
+	}
+	/**
+	 * Cold-open one live tab runtime through the registry opener: an
+	 * independent session inheriting the current model, credentials, and
+	 * routing. The previous runtime keeps running untouched.
+	 */
+	async #openColdLiveSession(sessionPath: string): Promise<AgentSession> {
+		return openLiveAgentSession(liveSessionFactoryOptions(this, sessionPath));
+	}
 	clearTransientSessionUi(): void {
 		this.#hideSessionInfo();
 		if (this.loadingAnimation) {
@@ -862,6 +910,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.settings = session.settings;
 		const preferences = {
 			quiet: settings.get("startup.quiet"),
+			fullscreen: settings.get("tui.fullscreen"),
 			composerShape: settings.get("composer.shape") ?? "band",
 			showHardwareCursor: settings.get("showHardwareCursor"),
 			maxInlineImages: settings.get("tui.maxInlineImages"),
@@ -999,6 +1048,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.statusLine.setVibeWorkerTokenRateProvider(() =>
 			aggregateVibeWorkerTokensPerSecond(this.session.getAgentId() ?? MAIN_AGENT_ID),
 		);
+		this.statusLine.setRunSnapshotProvider(sessionId => this.runDiagnostics.snapshot(sessionId));
 
 		this.hideToolActivity = settings.get("display.hideToolActivity");
 		this.chatContainer.setToolActivityVisible(!this.hideToolActivity);
@@ -1204,6 +1254,72 @@ export class InteractiveMode implements InteractiveModeContext {
 		});
 		this.composer.setStatusComponent(this.statusLine);
 
+		// Live tab runtime ownership. Fails open to legacy abort-and-reload
+		// navigation when the startup session cannot be adopted (unit-test
+		// doubles, exotic sessions): every live path optional-chains it.
+		try {
+			this.liveSessions = new LiveSessionRegistry(this.session, sessionPath =>
+				this.#openColdLiveSession(sessionPath),
+			);
+		} catch (error) {
+			logger.debug("Live session registry unavailable; using legacy session switching", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+
+		const sessionTabStrip = new SessionTabStrip(
+			this.#selectorController.sessionTabs,
+			() => this.sessionManager.getSessionFile(),
+			() => this.sessionManager.getSessionName(),
+			async sessionPath => {
+				try {
+					await this.handleResumeSession(sessionPath);
+				} catch (error) {
+					this.showError(error instanceof Error ? error.message : String(error));
+				}
+			},
+			path =>
+				mergeRegistrySnapshot(
+					this.liveSessions?.snapshotForPath(path),
+					describeSelectedSession({
+						sessionId: this.sessionManager.getSessionId(),
+						sessionFile: this.sessionManager.getSessionFile() ?? undefined,
+						sessionName: this.sessionManager.getSessionName(),
+						path,
+						isStreaming: this.session.isStreaming,
+						approvalOpen: isApprovalDialogOpen(this),
+					}),
+					isApprovalDialogOpen(this),
+				),
+		);
+		sessionTabStrip.setOnNew(() => {
+			void this.handleClearCommand().catch(error => {
+				this.showError(error instanceof Error ? error.message : String(error));
+			});
+		});
+		this.composer.setWorkspaceTabs(sessionTabStrip);
+		this.#eventBusUnsubscribers.push(
+			this.ui.addInputListener(data => {
+				if (!this.settings.get("tui.fullscreen") || this.ui.hasOverlay()) return undefined;
+				if (matchesKey(data, "alt+pageUp") || matchesKey(data, "shift+pageUp")) {
+					this.composer.scrollWorkspacePage("up", this.ui.terminal.rows);
+					return { consume: true };
+				}
+				if (matchesKey(data, "alt+pageDown") || matchesKey(data, "shift+pageDown")) {
+					this.composer.scrollWorkspacePage("down", this.ui.terminal.rows);
+					return { consume: true };
+				}
+				const consumed = routeSgrMouseInput(data, event => {
+					if (event.wheel !== null) {
+						this.composer.scrollWorkspaceWheel(event.wheel);
+						return true;
+					}
+					if (event.leftClick) sessionTabStrip.clickWorkspace(event.row, event.col);
+					return true;
+				});
+				return consumed ? { consume: true } : undefined;
+			}),
+		);
 		this.composer.setRuntimeChildren([
 			this.chatContainer,
 			this.pendingMessagesContainer,
@@ -1215,6 +1331,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.errorBannerContainer,
 			this.modelCycleContainer,
 			this.deferredCommandContainer,
+			sessionTabStrip,
 			// Working loader / transient status sits below the sticky todo + subagent
 			// HUDs, just above the editor's hook-widget top margin — so it reads next to
 			// the prompt while keeping the one-line gap above the editor (the band
@@ -1227,6 +1344,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		]);
 		this.ui.setFocus(this.editor);
 		this.syncComposerShape();
+		await this.#restorePersistedSessionTabs();
 
 		this.#inputController.setupKeyHandlers();
 		this.#inputController.setupEditorSubmitHandler();
@@ -1268,8 +1386,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		// refresh) gets the terminal title + accent updates from here. Registered
 		// before initHooksAndCustomTools/#reconcileModeFromSession/#enterPlanMode —
 		// all of which can reach setSessionName during init.
+		const titleSessionManager = this.sessionManager;
 		this.#eventBusUnsubscribers.push(
-			this.sessionManager.onPersistenceError(error => {
+			titleSessionManager.onPersistenceError(error => {
 				const detail = truncateToWidth(
 					replaceTabs(sanitizeText(error.message)).replace(/[\r\n]+/g, " "),
 					TRUNCATE_LENGTHS.LINE,
@@ -1278,9 +1397,14 @@ export class InteractiveMode implements InteractiveModeContext {
 					`Session persistence failed: ${detail}. Unsaved entries remain in memory; persistence will retry on the next entry.`,
 				);
 			}),
-			this.sessionManager.onSessionNameChanged(() => {
-				setSessionTerminalTitle(this.sessionManager.getSessionName(), this.sessionManager.getCwd());
-				this.#handleSessionAccentInputsChanged();
+			titleSessionManager.onSessionNameChanged(() => {
+				const name = titleSessionManager.getSessionName();
+				const file = titleSessionManager.getSessionFile();
+				if (file && name) this.#selectorController.sessionTabs.open(file, name);
+				if (titleSessionManager === this.sessionManager) {
+					setSessionTerminalTitle(name, titleSessionManager.getCwd());
+					this.#handleSessionAccentInputsChanged();
+				} else this.ui.requestRender();
 			}),
 		);
 		this.#syncEditorMaxHeight();
@@ -1348,6 +1472,11 @@ export class InteractiveMode implements InteractiveModeContext {
 		// Subscribe to agent events
 		this.#subscribeToAgent();
 
+		this.#eventBusUnsubscribers.push(
+			this.session.subscribe(event => {
+				this.runDiagnostics.handleEvent(this.sessionManager.getSessionId(), event, () => this.session.isStreaming);
+			}),
+		);
 		this.#eventBusUnsubscribers.push(
 			this.session.subscribe(event => {
 				if (event.type === "model_changed") {
@@ -1706,7 +1835,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.planModeEnabled || this.planModePaused) return;
 		if (!this.goalModeEnabled || this.goalModePaused) return;
 		if (this.#goalSuppressNextContinuation) return;
-		if (this.#pendingSubmittedInput) return;
+		if (this.#pendingSubmissionsByOwner.get(this.session)) return;
 		if (this.editor.getText().trim().length > 0) return;
 		if ((this.editor.pendingImages?.length ?? 0) > 0) return;
 		const state = this.session.getGoalModeState();
@@ -1725,7 +1854,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			// `AgentBusyError`. Drop this tick; `#handleGoalSessionEvent` reschedules
 			// on the next `agent_end`.
 			if (this.#isAutoSubmitBlocked()) return;
-			if (this.#pendingSubmittedInput) return;
+			if (this.#pendingSubmissionsByOwner.get(this.session)) return;
 			if (this.editor.getText().trim().length > 0) return;
 			if ((this.editor.pendingImages?.length ?? 0) > 0) return;
 			const latestState = this.session.getGoalModeState();
@@ -1984,6 +2113,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	): SubmittedUserInput {
 		const submission: SubmittedUserInput = {
 			text: input.text,
+			ownerSession: this.session,
 			images: input.images,
 			imageLinks: input.imageLinks,
 			customType: input.customType,
@@ -1992,7 +2122,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			cancelled: false,
 			started: false,
 		};
-		this.#pendingSubmittedInput = submission;
+		this.#pendingSubmissionsByOwner.set(submission.ownerSession ?? this.session, submission);
 		this.#pendingSubmissionPreservesDraft = options?.preserveDraft === true;
 		if (!submission.customType) {
 			this.#resetGoalContinuationSuppression();
@@ -2024,14 +2154,14 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	cancelPendingSubmission(): boolean {
-		const submission = this.#pendingSubmittedInput;
+		const submission = this.#pendingSubmissionsByOwner.get(this.session);
 		if (!submission || submission.started) {
 			return false;
 		}
 		const preserveDraft = this.#pendingSubmissionPreservesDraft;
 
 		submission.cancelled = true;
-		this.#pendingSubmittedInput = undefined;
+		this.#pendingSubmissionsByOwner.delete(this.session);
 		this.#pendingSubmissionPreservesDraft = false;
 		this.clearOptimisticUserMessage();
 		this.#pendingWorkingMessage = undefined;
@@ -2078,7 +2208,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	markPendingSubmissionStarted(input: SubmittedUserInput): boolean {
-		if (this.#pendingSubmittedInput !== input || input.cancelled) {
+		if (this.#pendingSubmissionsByOwner.get(input.ownerSession ?? this.session) !== input || input.cancelled) {
 			return false;
 		}
 		input.started = true;
@@ -2092,10 +2222,11 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	finishPendingSubmission(input: SubmittedUserInput): void {
-		const wasPendingSubmission = this.#pendingSubmittedInput === input;
+		const owner = input.ownerSession ?? this.session;
+		const wasPendingSubmission = this.#pendingSubmissionsByOwner.get(owner) === input;
 		const pendingSubmissionDispose = this.#pendingSubmissionDispose;
 		if (wasPendingSubmission) {
-			this.#pendingSubmittedInput = undefined;
+			this.#pendingSubmissionsByOwner.delete(owner);
 			this.#pendingSubmissionDispose = undefined;
 			this.#pendingSubmissionPreservesDraft = false;
 		}
@@ -2103,7 +2234,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.#goalContinuationTurnInFlight = false;
 		}
 
-		if (wasPendingSubmission && !this.session.isStreaming && !this.streamingComponent) {
+		if (wasPendingSubmission && !owner.isStreaming && !this.streamingComponent) {
 			this.optimisticUserMessageSignature = undefined;
 			pendingSubmissionDispose?.();
 			this.#optimisticUserMessageComponents = [];
@@ -2146,7 +2277,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 	syncComposerShape(): void {
 		const shape = settings.get("composer.shape") ?? "band";
-		const style = getComposerStyle(shape);
+		const style = getComposerStyle(this.settings.get("tui.fullscreen") && shape === "band" ? "rail" : shape);
 		this.composer.setPreferences({ composerShape: shape });
 		this.statusLine.setAutocompleteActiveProbe(() => this.editor.isAutocompleteActive());
 		switch (style.statusAttachment) {
@@ -2390,7 +2521,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	#replayOptimisticUserMessage(): void {
 		if (!this.optimisticUserMessageSignature) return;
-		const submission = this.#pendingSubmittedInput;
+		const submission = this.#pendingSubmissionsByOwner.get(this.session);
 		if (!submission || submission.cancelled || submission.customType) return;
 		this.#optimisticUserMessageComponents = this.#captureAddedChatComponents(() => {
 			this.addMessageToChat(
@@ -4877,6 +5008,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#omfgController.dispose();
 		this.#cleanseController.dispose();
 		this.#focusController.dispose();
+		// Deny parked background approvals first so no tool waits on a dialog
+		// that can never present once the terminal goes away.
+		this.#extensionUiController.denyAllQueuedApprovals();
 
 		// Surface an explicit "Closing session…" line so the user sees a reason
 		// for the pause while `session.dispose()` flushes memory consolidate and
@@ -4900,6 +5034,10 @@ export class InteractiveMode implements InteractiveModeContext {
 			} else {
 				await this.session.dispose({ mnemopiConsolidateTimeoutMs: SHUTDOWN_CONSOLIDATE_BUDGET_MS });
 			}
+			// Settle every other live tab runtime (background runs adopted by
+			// the registry). The visible session is adopted too, but session
+			// disposal is idempotent so the shared entry settles exactly once.
+			await this.liveSessions?.dispose();
 		} finally {
 			clearTimeout(stillClosingTimer);
 		}
@@ -5100,7 +5238,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	showError(message: string): void {
-		this.#pendingSubmittedInput = undefined;
+		this.#pendingSubmissionsByOwner.delete(this.session);
 		this.#pendingSubmissionPreservesDraft = false;
 		this.clearOptimisticUserMessage();
 		this.#pendingWorkingMessage = undefined;
@@ -5501,8 +5639,71 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	async handleClearCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
+		const previousId = this.sessionManager.getSessionId();
+		this.viewStateStore.saveDraft(previousId, this.editor);
+		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleClearCommand();
+		this.composer.resetWorkspaceScroll();
+		this.#restoreSessionView();
+		await this.#selectorController.recordSessionTransition(previousFile);
+	}
+
+	/**
+	 * Restore the current session's draft and scroll offset after a
+	 * navigation boundary. The session ID is read fresh so a failed switch
+	 * (same ID) restores the outgoing view and a successful one restores the
+	 * target's saved view — or clears to a fresh composer when it has none.
+	 */
+	#restoreSessionView(): void {
+		const sessionId = this.sessionManager.getSessionId();
+		this.viewStateStore.restoreDraft(sessionId, this.editor);
+		this.composer.setWorkspaceScrollOffset(this.viewStateStore.scrollOffset(sessionId));
+	}
+
+	/**
+	 * Reopen the previous process's tab references for this project. Only
+	 * existing files inside this session directory come back; anything else is
+	 * counted and reported instead of opened. The startup-resolved session
+	 * stays active — restored tabs are navigation targets, and a run that died
+	 * with the former process surfaces its interrupted marker from the session
+	 * transcript when its tab is opened, never as a live run.
+	 */
+	async #restorePersistedSessionTabs(): Promise<void> {
+		const sessionDir = this.sessionManager.getSessionDir();
+		const projectKey = normalizePathForComparison(this.sessionManager.getCwd());
+		const persisted = await loadSessionTabs(new FileSessionStorage(), sessionTabsFile(sessionDir), projectKey);
+		if (!persisted) return;
+		const sessionTabs = this.#selectorController.sessionTabs;
+		let skipped = 0;
+		for (const tab of persisted.tabs) {
+			if (
+				normalizePathForComparison(path.dirname(tab.path)) !== normalizePathForComparison(sessionDir) ||
+				!(await Bun.file(tab.path).exists())
+			) {
+				skipped++;
+				continue;
+			}
+			sessionTabs.open(tab.path, tab.label);
+			sessionTabs.visit(tab.path);
+		}
+		for (const closed of persisted.recentlyClosed) sessionTabs.rememberClosed(closed.path, closed.label);
+		const current = this.sessionManager.getSessionFile();
+		if (current) sessionTabs.visit(current);
+		const notices: string[] = [];
+		if (skipped > 0) notices.push(`${skipped} saved tab${skipped === 1 ? " was" : "s were"} no longer available`);
+		const previousActive = persisted.activePath;
+		if (
+			previousActive &&
+			current &&
+			normalizePathForComparison(previousActive) !== normalizePathForComparison(current) &&
+			(await Bun.file(previousActive).exists())
+		) {
+			notices.push(`previous session is one /tab switch away`);
+		}
+		if (notices.length > 0) this.showStatus(`Restored tabs: ${notices.join("; ")}.`);
+		this.ui.requestRender();
 	}
 
 	handleFreshCommand(): Promise<void> {
@@ -5515,21 +5716,32 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	async handleDropCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
+		const previousId = this.sessionManager.getSessionId();
+		this.viewStateStore.saveDraft(previousId, this.editor);
+		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleDropCommand();
+		this.composer.resetWorkspaceScroll();
+		this.#restoreSessionView();
+		await this.#selectorController.recordSessionTransition(previousFile, true);
 	}
 
 	async handleForkCommand(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
 		this.#btwController.dispose();
 		this.#omfgController.dispose();
 		this.#cleanseController.dispose();
 		await this.#commandController.handleForkCommand();
+		await this.#selectorController.recordSessionTransition(previousFile);
 	}
 
 	async handleMoveCommand(targetPath?: string): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
+		const previousFile = this.sessionManager.getSessionFile();
 		await this.#commandController.handleMoveCommand(targetPath);
+		await this.#selectorController.recordSessionTransition(previousFile, true);
 	}
 
 	async handleWorktreeCommand(branch?: string): Promise<void> {
@@ -5768,7 +5980,21 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#omfgController.dispose();
 		this.#cleanseController.dispose();
 		this.resetObserverRegistry();
+		const previousId = this.sessionManager.getSessionId();
+		this.viewStateStore.saveDraft(previousId, this.editor);
+		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
 		await this.#selectorController.handleResumeSession(sessionPath, { settingsFlushed: true });
+		this.composer.resetWorkspaceScroll();
+		this.#restoreSessionView();
+	}
+
+	setFullscreen(enabled: boolean): void {
+		this.composer.setPreferences({ fullscreen: enabled });
+		this.syncComposerShape();
+	}
+
+	handleSessionTabsCommand(args: string): Promise<string> {
+		return this.#selectorController.handleSessionTabsCommand(args);
 	}
 
 	handleSessionDeleteCommand(): Promise<void> {

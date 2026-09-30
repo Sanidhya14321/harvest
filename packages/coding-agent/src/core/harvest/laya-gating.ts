@@ -47,7 +47,7 @@ export const MIN_GATING_CONFIDENCE = 0.75;
 export async function checkToolCallGating(
 	toolName: string,
 	args: Record<string, unknown>,
-	options: { client?: LayaClient; sessionId?: string; settings?: Settings } = {},
+	options: { client?: LayaClient; sessionId?: string; settings?: Settings; signal?: AbortSignal } = {},
 ): Promise<ToolGatingDecision> {
 	if (process.env.LAYA_ENABLED === "false") {
 		return {
@@ -89,6 +89,17 @@ export async function checkToolCallGating(
 
 	const client = options.client ?? getLayaClient();
 
+	// An already-aborted turn settles fail-CLOSED without touching the sidecar.
+	if (options.signal?.aborted) {
+		return {
+			isHighRiskTool: true,
+			requireApproval: true,
+			fallback: true,
+			reason: "fallback_operation_cancelled",
+			latencyMs: 0,
+		};
+	}
+
 	// Format state representation for Laya
 	const state = {
 		tool: normalizedTool,
@@ -105,6 +116,7 @@ export async function checkToolCallGating(
 	const decision = await client.decide(state, questions, {
 		callSite: "tool_gating",
 		sessionId: options.sessionId,
+		signal: options.signal,
 	});
 
 	// If sidecar call failed, timed out, or state was non-English: FAIL CLOSED
@@ -124,6 +136,24 @@ export async function checkToolCallGating(
 	}
 
 	const answer = decision.data.irreversibility;
+	if (
+		typeof answer.noul !== "number" ||
+		!Number.isFinite(answer.noul) ||
+		answer.noul < 0 ||
+		answer.noul > 1 ||
+		typeof answer.confidence !== "number" ||
+		!Number.isFinite(answer.confidence) ||
+		answer.confidence < 0 ||
+		answer.confidence > 1
+	) {
+		return {
+			isHighRiskTool: true,
+			requireApproval: true,
+			fallback: true,
+			reason: "fallback_invalid_gating_answer",
+			latencyMs: decision.latencyMs,
+		};
+	}
 	// noul probability represents likelihood of irreversible action
 	const noulScore = typeof answer.noul === "number" ? answer.noul : 0.5;
 	const confidence = answer.confidence ?? 0.5;

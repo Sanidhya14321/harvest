@@ -1,0 +1,91 @@
+name: GitHub release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, target: linux-x64, native: linux-x64-baseline }
+          - { runner: ubuntu-24.04-arm, target: linux-arm64, native: host }
+          - { runner: ubuntu-24.04, target: linux-musl-x64, native: linux-musl-x64-baseline }
+          - { runner: ubuntu-24.04-arm, target: linux-musl-arm64, native: linux-musl-arm64 }
+          - { runner: macos-15-intel, target: darwin-x64, native: darwin-x64-baseline }
+          - { runner: macos-15-arm64, target: darwin-arm64, native: host }
+          - { runner: ubuntu-24.04, target: win32-x64, native: win32-x64-baseline }
+          - { runner: windows-11-arm, target: win32-arm64, native: host }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-08
+      - name: Check tag matches package version
+        run: bun -e 'const pkg = await Bun.file("packages/coding-agent/package.json").json(); if (process.env.GITHUB_REF_NAME !== "v" + pkg.version) throw new Error("Release tag does not match coding-agent version");'
+      - run: bun install --frozen-lockfile
+      - name: Build native addon
+        run: bun scripts/bazel-natives.ts ${{ matrix.native }} --dest packages/natives/native
+      - name: Build release binary
+        run: bun scripts/ci-release-build-binaries.ts --targets ${{ matrix.target }}
+      - name: Check binary on its target host
+        if: ${{ matrix.native == 'host' || matrix.target == 'linux-x64' || matrix.target == 'darwin-x64' }}
+        shell: bash
+        run: |
+          binary="packages/coding-agent/binaries/omp-${{ matrix.target }}"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then binary="${binary/win32/windows}.exe"; fi
+          "$binary" --version
+          "$binary" --smoke-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: packages/coding-agent/binaries/omp-*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: binaries
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: release-assets
+          merge-multiple: true
+      - name: Validate complete asset set and prepare legal files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for asset in omp-linux-x64 omp-linux-arm64 omp-linux-musl-x64 omp-linux-musl-arm64 omp-darwin-x64 omp-darwin-arm64 omp-windows-x64.exe omp-windows-arm64.exe; do
+            test -s "release-assets/$asset"
+          done
+          cp LICENSE release-assets/LICENSE
+          cp THIRD-PARTY-NOTICES.txt release-assets/THIRD-PARTY-NOTICES.txt
+          bun scripts/ci-release-checksums.ts release-assets/SHA256SUMS.txt release-assets/omp-* release-assets/LICENSE release-assets/THIRD-PARTY-NOTICES.txt
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

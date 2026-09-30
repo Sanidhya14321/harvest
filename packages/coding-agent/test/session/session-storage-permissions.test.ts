@@ -34,15 +34,18 @@ describe("session private permissions", () => {
 	});
 
 	test("terminal breadcrumb round-trips through a private file", async () => {
+		using tempDir = TempDir.createSync("@omp-session-crumb-");
 		const terminalId = `test-perms-${Snowflake.next()}`;
 		const previousWtSession = process.env.WT_SESSION;
 		restoreEnvValue("WT_SESSION", terminalId);
 		const crumb = path.join(getTerminalSessionsDir(), terminalId);
+		const sessionFile = path.join(tempDir.path(), "session.jsonl");
 		try {
-			writeTerminalBreadcrumb("/tmp/work", "/tmp/work/session.jsonl");
+			await Bun.write(sessionFile, "{}\n");
+			writeTerminalBreadcrumb(tempDir.path(), sessionFile);
 			const entry = await readTerminalBreadcrumbEntry();
-			expect(entry?.cwd).toBe("/tmp/work");
-			expect(entry?.sessionFile).toBe("/tmp/work/session.jsonl");
+			expect(entry?.cwd).toBe(tempDir.path());
+			expect(entry?.sessionFile).toBe(sessionFile);
 			if (!isWindows) {
 				expect(fs.statSync(crumb).mode & 0o777).toBe(0o600);
 				expect(fs.statSync(getTerminalSessionsDir()).mode & 0o777).toBe(0o700);

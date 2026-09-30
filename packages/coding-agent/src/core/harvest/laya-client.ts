@@ -7,6 +7,8 @@
  * fallback logging.
  */
 
+import * as os from "node:os";
+import * as path from "node:path";
 import { logger } from "@harvest/pi-utils";
 import { settings } from "../../config/settings";
 
@@ -43,13 +45,10 @@ export interface LayaClientOptions {
 	readonly baseUrl?: string;
 	readonly timeoutMs?: number;
 	readonly autostart?: boolean;
-	/**
-	 * Opt-in bearer token for the sidecar. Only sent when set — the sidecar
-	 * currently accepts unauthenticated loopback requests, so this is
-	 * plumbing for the server-side LAYA_TOKEN workstream. Falls back to the
-	 * LAYA_TOKEN env var when unset.
-	 */
+	/** Explicit token overrides LAYA_TOKEN and the local sidecar token file. */
 	readonly authToken?: string;
+	/** Override the token file path used by a locally managed sidecar. */
+	readonly tokenFilePath?: string;
 }
 
 export interface DecisionResult<T = LayaAnswerResult> {
@@ -68,6 +67,7 @@ export class LayaClient {
 	readonly #baseUrl: string;
 	readonly #timeoutMs: number;
 	readonly #authToken?: string;
+	readonly #tokenFilePath: string;
 
 	constructor(options: LayaClientOptions = {}) {
 		let configuredUrl: string | undefined;
@@ -78,9 +78,12 @@ export class LayaClient {
 		}
 		this.#baseUrl = options.baseUrl || process.env.LAYA_SIDECAR_URL || configuredUrl || DEFAULT_SIDECAR_URL;
 		const envTimeout = process.env.LAYA_TIMEOUT_MS ? Number.parseInt(process.env.LAYA_TIMEOUT_MS, 10) : undefined;
-		this.#timeoutMs = options.timeoutMs ?? (envTimeout && !Number.isNaN(envTimeout) ? envTimeout : DEFAULT_TIMEOUT_MS);
+		this.#timeoutMs =
+			options.timeoutMs ?? (envTimeout && !Number.isNaN(envTimeout) ? envTimeout : DEFAULT_TIMEOUT_MS);
 		const envToken = process.env.LAYA_TOKEN?.trim();
 		this.#authToken = options.authToken ?? (envToken ? envToken : undefined);
+		this.#tokenFilePath =
+			options.tokenFilePath ?? process.env.LAYA_TOKEN_FILE ?? path.join(os.homedir(), ".harvest", "laya-token");
 	}
 
 	get baseUrl(): string {
@@ -89,6 +92,26 @@ export class LayaClient {
 
 	get timeoutMs(): number {
 		return this.#timeoutMs;
+	}
+
+	async #resolveAuthToken(): Promise<string | undefined> {
+		if (this.#authToken) return this.#authToken;
+		// The managed sidecar binds to loopback. Never send its file token to a
+		// configured remote URL, even if that URL was supplied by an environment variable.
+		let host: string;
+		try {
+			host = new URL(this.#baseUrl).hostname;
+		} catch {
+			return undefined;
+		}
+		if (host !== "127.0.0.1" && host !== "localhost" && host !== "[::1]") return undefined;
+		try {
+			// The Python service rotates this token on restart. Read it per call so
+			// a long-running Harvest session follows the new process automatically.
+			return (await Bun.file(this.#tokenFilePath).text()).trim() || undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**
@@ -160,7 +183,13 @@ export class LayaClient {
 	async decide(
 		state: string | Record<string, unknown> | unknown[],
 		questions: Record<string, LayaQuestionDefinition>,
-		metadata: { callSite: string; sessionId?: string; timeoutMs?: number; signal?: AbortSignal; authToken?: string } = { callSite: "unknown" },
+		metadata: {
+			callSite: string;
+			sessionId?: string;
+			timeoutMs?: number;
+			signal?: AbortSignal;
+			authToken?: string;
+		} = { callSite: "unknown" },
 	): Promise<DecisionResult<Record<string, LayaAnswerResult>>> {
 		const startTime = performance.now();
 
@@ -203,7 +232,7 @@ export class LayaClient {
 
 		try {
 			const headers: Record<string, string> = { "Content-Type": "application/json" };
-			const authToken = metadata.authToken ?? this.#authToken;
+			const authToken = metadata.authToken ?? (await this.#resolveAuthToken());
 			if (authToken) headers.Authorization = `Bearer ${authToken}`;
 			const response = await fetch(`${this.#baseUrl}/v1/decide`, {
 				method: "POST",
@@ -300,4 +329,3 @@ export function getLayaClient(baseUrl?: string): LayaClient {
 	}
 	return defaultClient;
 }
-

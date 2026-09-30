@@ -757,6 +757,8 @@ class SessionList implements Component {
 
 export interface SessionSelectorOptions {
 	onDelete?: (session: SessionInfo) => Promise<boolean>;
+	/** Create a new session from the fullscreen picker. Omitted for import-only pickers. */
+	onNewSession?: () => void;
 	historyMatcher?: SessionHistoryMatcher;
 	/** Loads sessions across all projects for the all-projects scope toggle (Tab). */
 	loadAllSessions?: () => Promise<SessionInfo[]>;
@@ -815,6 +817,9 @@ export class SessionSelectorComponent extends OverlayPanel {
 	// hit-test the list, so a footer click on a cramped (trimmed) frame can't
 	// resume a session scrolled off-screen.
 	#footerStart = 0;
+	#newSessionLine = -1;
+	#newSessionEnd = 0;
+	readonly #onNewSession?: () => void;
 	readonly #getTerminalRows: () => number;
 	readonly #fillHeight: boolean;
 	readonly #title: string;
@@ -831,6 +836,7 @@ export class SessionSelectorComponent extends OverlayPanel {
 
 		this.#messageContainer = new Container();
 		this.#onDelete = options.onDelete;
+		this.#onNewSession = options.onNewSession;
 		this.#loadAllSessions = options.loadAllSessions;
 		this.#folderSessions = sessions;
 		this.#globalSessions = options.allSessions ?? null;
@@ -850,7 +856,7 @@ export class SessionSelectorComponent extends OverlayPanel {
 			sessions,
 			options.showCwd ?? false,
 			options.historyMatcher,
-			options.getTerminalRows,
+			this.#onNewSession ? () => Math.max(1, this.#getTerminalRows() - 1) : options.getTerminalRows,
 			options.pinnedIds,
 		);
 		// Every exit path cancels the list's pending history merge, so a stale
@@ -1004,6 +1010,9 @@ export class SessionSelectorComponent extends OverlayPanel {
 	override render(width: number): readonly string[] {
 		const innerWidth = Math.max(1, width - 4);
 		const lines: string[] = [topBorder(width, this.title)];
+		this.#newSessionLine = this.#onNewSession ? lines.length : -1;
+		this.#newSessionEnd = Math.min(2 + visibleWidth("+ New session"), Math.max(2, width - 2));
+		if (this.#onNewSession) lines.push(row(theme.fg("accent", "+ New session"), width));
 		for (const child of this.children) {
 			const childLines = child.render(innerWidth);
 			if (child === this.#contentSlot) this.#listLineOffset = lines.length;
@@ -1049,6 +1058,15 @@ export class SessionSelectorComponent extends OverlayPanel {
 	#handleMouse(data: string): void {
 		if (this.#confirmationDialog) return;
 		routeSgrMouseInput(data, event => {
+			if (
+				event.leftClick &&
+				event.row === this.#newSessionLine &&
+				event.col >= 2 &&
+				event.col < this.#newSessionEnd
+			) {
+				this.#onNewSession?.();
+				return true;
+			}
 			if (event.wheel !== null) {
 				this.#sessionList.handleWheel(event.wheel);
 				return true;

@@ -1196,6 +1196,25 @@ async function runLoopBody(
 					preparedProviderCall = await prepareProviderCall(currentContext, config, signal);
 					gateResult = (await config.beforeModelCall?.(preparedProviderCall.context, signal)) || undefined;
 				} catch (error) {
+					if (signal?.aborted && signal.reason !== TERMINAL_TOOL_RESULT_ABORT_REASON) {
+						// Abort landed during preparation (a hung convertToLlm/hook
+						// preempted by raceWithTurnSignal, or an already-aborted
+						// signal): settle gracefully with an aborted message instead
+						// of failing the stream, mirroring Agent's abort synthesis
+						// one layer up so listeners still see agent_end.
+						const aborted = emitAbortedAssistantMessage(
+							null,
+							false,
+							new Set(),
+							currentContext,
+							config,
+							stream,
+							signal,
+						);
+						newMessages.push(aborted);
+						endAgentStream(stream, newMessages, telemetry, stepCounter.count);
+						return;
+					}
 					if (!turnOpen) {
 						stream.push({ type: "turn_start" });
 						emitInputMessages(stream, turnMessages);

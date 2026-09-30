@@ -253,6 +253,7 @@ import type {
 	UsageFallbackConfirmer,
 } from "./agent-session-types";
 import { writeArtifact } from "./artifacts";
+import type { ToolGatingDecision } from "../core/harvest/laya-gating";
 import {
 	createHarvestSession,
 	interceptSessionToolCall,
@@ -3930,13 +3931,16 @@ export class AgentSession {
 						args: (ctx.args ?? {}) as Record<string, unknown>,
 					},
 					this.sessionManager?.getSessionId(),
+					signal,
 				);
+				await this.#emitGatingDecision(ctx.tool.name, gating);
 				if (gating.isHighRiskTool && gating.requireApproval) {
 					if (ctx.toolCall.providerMetadata?.type === "computer") {
 						ctx.toolCall.providerMetadata.layaGatingRequired = true;
 						ctx.toolCall.providerMetadata.layaGatingReason = gating.reason;
 					} else {
 						ctx.toolCall.providerMetadata = {
+							...ctx.toolCall.providerMetadata,
 							type: "laya",
 							layaGatingRequired: true,
 							layaGatingReason: gating.reason,
@@ -3944,12 +3948,20 @@ export class AgentSession {
 					}
 				}
 			} catch (err) {
+				await this.#emitGatingDecision(ctx.tool.name, {
+					isHighRiskTool: true,
+					requireApproval: true,
+					fallback: true,
+					reason: `Laya gating error: ${String(err)}`,
+					latencyMs: 0,
+				});
 				// Fail CLOSED on gating error
 				if (ctx.toolCall.providerMetadata?.type === "computer") {
 					ctx.toolCall.providerMetadata.layaGatingRequired = true;
 					ctx.toolCall.providerMetadata.layaGatingReason = `Laya gating error: ${String(err)}`;
 				} else {
 					ctx.toolCall.providerMetadata = {
+						...ctx.toolCall.providerMetadata,
 						type: "laya",
 						layaGatingRequired: true,
 						layaGatingReason: `Laya gating error: ${String(err)}`,
@@ -3990,9 +4002,80 @@ export class AgentSession {
 		// A computer call's event input is a synthetic {actions, pendingSafetyChecks}
 		// view, not the execution params — a revision cannot map back onto them.
 		if (callResult?.input !== undefined && !computer) {
+			if (!callResult.input || typeof callResult.input !== "object" || Array.isArray(callResult.input)) {
+				return { block: true, reason: "Extension provided invalid tool arguments" };
+			}
+			const revisedArgs = callResult.input as Record<string, unknown>;
+			const revisedHarvestCheck = interceptSessionToolCall(this.#harvestHooks, {
+				name: ctx.tool.name,
+				args: revisedArgs,
+			});
+			if (!revisedHarvestCheck.allowed) {
+				return {
+					block: true,
+					reason: revisedHarvestCheck.error ?? `Pre-read enforcement blocked tool '${ctx.tool.name}'`,
+				};
+			}
+			if (process.env.LAYA_GATING !== "false") {
+				try {
+					const gating = await interceptSessionToolCallLaya(
+						{ name: ctx.tool.name, args: revisedArgs },
+						this.sessionManager?.getSessionId(),
+						signal,
+					);
+					await this.#emitGatingDecision(ctx.tool.name, gating);
+					if (gating.isHighRiskTool && gating.requireApproval) {
+						ctx.toolCall.providerMetadata = {
+							...ctx.toolCall.providerMetadata,
+							type: "laya",
+							layaGatingRequired: true,
+							layaGatingReason: gating.reason,
+						};
+						}
+				} catch (error) {
+					await this.#emitGatingDecision(ctx.tool.name, {
+						isHighRiskTool: true,
+						requireApproval: true,
+						fallback: true,
+						reason: `Laya gating error: ${String(error)}`,
+						latencyMs: 0,
+					});
+					ctx.toolCall.providerMetadata = {
+						...ctx.toolCall.providerMetadata,
+						type: "laya",
+						layaGatingRequired: true,
+						layaGatingReason: `Laya gating error: ${String(error)}`,
+					};
+				}
+			}
 			return { args: callResult.input };
 		}
 		return undefined;
+	}
+
+	/**
+	 * Publish a tool-gating verdict for run diagnostics (local-delay
+	 * attribution). Never throws: emission failure must not break the gate.
+	 */
+	async #emitGatingDecision(toolName: string, gating: ToolGatingDecision): Promise<void> {
+		// Low-risk bypasses never consult the sidecar; recording them would
+		// evict the meaningful high-risk measurements they precede.
+		if (!gating.isHighRiskTool && !gating.fallback) return;
+		try {
+			await this.#emitSessionEvent({
+				type: "laya_gating_decision",
+				toolName,
+				latencyMs: gating.latencyMs,
+				requireApproval: gating.requireApproval,
+				fallback: gating.fallback,
+				reason: gating.reason,
+			});
+		} catch (error) {
+			logger.warn("Failed to emit tool gating decision event", {
+				toolName,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 	}
 
 	/** Find the last assistant message in agent state (including aborted ones) */

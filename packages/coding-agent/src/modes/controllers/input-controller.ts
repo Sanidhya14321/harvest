@@ -563,6 +563,17 @@ export class InputController {
 		for (const key of this.ctx.keybindings.getKeys("app.session.resume")) {
 			this.ctx.editor.setCustomKeyHandler(key, () => this.ctx.showSessionSelector());
 		}
+		for (const [binding, action] of [
+			["app.session.tab.next", "next"],
+			["app.session.tab.previous", "prev"],
+			["app.session.tab.reopen", "reopen"],
+		] as const) {
+			for (const key of this.ctx.keybindings.getKeys(binding)) {
+				this.ctx.editor.setCustomKeyHandler(key, () => {
+					void this.ctx.handleSessionTabsCommand(action).then(message => this.ctx.showStatus(message));
+				});
+			}
+		}
 		for (const key of this.ctx.keybindings.getKeys("app.message.followUp")) {
 			this.ctx.editor.setCustomKeyHandler(key, () => void this.handleFollowUp());
 		}

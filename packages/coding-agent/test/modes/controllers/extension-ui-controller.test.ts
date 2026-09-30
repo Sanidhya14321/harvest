@@ -8,6 +8,7 @@ import { HookEditorComponent } from "../../../src/modes/components/hook-editor";
 import { ExtensionUiController } from "../../../src/modes/controllers/extension-ui-controller";
 import { InputController } from "../../../src/modes/controllers/input-controller";
 import { getEditorTheme, getThemeByName, setThemeInstance } from "../../../src/modes/theme/theme";
+import type { AgentSession } from "../../../src/session/agent-session";
 import type { InteractiveModeContext } from "../../../src/modes/types";
 
 afterEach(() => {
@@ -41,6 +42,8 @@ function makeHarness() {
 	};
 	const showOverlay = vi.fn(() => fakeHandle);
 	let uiContext: ExtensionUIContext | undefined;
+	let visibleSessionId = "main";
+	const markWaiting = vi.fn();
 	const ctx = {
 		editor,
 		ui: {
@@ -54,6 +57,13 @@ function makeHarness() {
 		session: {
 			extensionRunner: undefined,
 			setUsageFallbackConfirmer: vi.fn(),
+		},
+		sessionManager: {
+			getSessionId: () => visibleSessionId,
+		},
+		liveSessions: {
+			markWaiting,
+			snapshots: [],
 		},
 		setToolUIContext(context: ExtensionUIContext, hasUI: boolean): void {
 			expect(hasUI).toBe(true);
@@ -76,6 +86,10 @@ function makeHarness() {
 		showOverlay,
 		fakeHandle,
 		controller,
+		setVisibleSessionId: (id: string) => {
+			visibleSessionId = id;
+		},
+		markWaiting,
 		inputController: (readText: () => Promise<string>) =>
 			new InputController(ctx, { readImage: async () => null, readText }),
 		handleInput(data: string): void {
@@ -409,6 +423,113 @@ describe("ExtensionUiController editor UI", () => {
 
 		expect(harness.addAutocompleteProvider).toHaveBeenCalledTimes(1);
 		expect(harness.addAutocompleteProvider).toHaveBeenCalledWith(factory);
+	});
+});
+
+describe("ExtensionUiController session approval queue", () => {
+	function mockSession(id: string) {
+		const setUIContext = vi.fn();
+		const session = {
+			extensionRunner: { setUIContext },
+			sessionManager: { getSessionId: () => id },
+		} as unknown as AgentSession;
+		return { session, setUIContext };
+	}
+
+	function boundProxy(setUIContext: ReturnType<typeof vi.fn>): ExtensionUIContext {
+		expect(setUIContext).toHaveBeenCalledTimes(1);
+		return setUIContext.mock.calls[0]?.[0] as ExtensionUIContext;
+	}
+
+	it("binds each tab session to an owner-tagged proxy of the shared primitives", async () => {
+		const harness = makeHarness();
+		await harness.init();
+		const { session, setUIContext } = mockSession("bg");
+		harness.controller.attachSessionRunner(session);
+		const proxy = boundProxy(setUIContext);
+		expect(typeof proxy.confirm).toBe("function");
+		expect(typeof proxy.select).toBe("function");
+		expect(typeof proxy.askDialog).toBe("function");
+	});
+
+	it("presents immediately for the visible session without queueing", async () => {
+		const harness = makeHarness();
+		await harness.init();
+		const { session, setUIContext } = mockSession("main");
+		harness.controller.attachSessionRunner(session);
+		const proxy = boundProxy(setUIContext);
+		const aborted = new AbortController();
+		aborted.abort();
+		await expect(proxy.confirm("Exit?", "Sure?", { signal: aborted.signal })).resolves.toBe(false);
+		expect(harness.markWaiting).not.toHaveBeenCalled();
+	});
+
+	it("parks background requests with badge and toast until the owner is visible", async () => {
+		const harness = makeHarness();
+		await harness.init();
+		const { session, setUIContext } = mockSession("bg");
+		harness.controller.attachSessionRunner(session);
+		const proxy = boundProxy(setUIContext);
+		harness.setVisibleSessionId("other-tab");
+
+		let settled: boolean | undefined;
+		const pending = proxy.confirm("Delete?", "Sure?").then(value => {
+			settled = value;
+		});
+		await Promise.resolve();
+		expect(settled).toBeUndefined();
+		expect(harness.markWaiting).toHaveBeenCalledWith("bg", true);
+		expect(harness.markWaiting).not.toHaveBeenCalledWith("bg", false);
+		harness.setVisibleSessionId("bg");
+		const draining = harness.controller.presentQueuedApprovals("bg");
+		harness.handleInput("\r");
+		await draining;
+		await pending;
+		expect(settled).toBe(true);
+		expect(harness.markWaiting).toHaveBeenCalledWith("bg", false);
+	});
+
+	it("settles queued entries cancelled while parked without presenting", async () => {
+		const harness = makeHarness();
+		await harness.init();
+		const { session, setUIContext } = mockSession("bg");
+		harness.controller.attachSessionRunner(session);
+		const proxy = boundProxy(setUIContext);
+		harness.setVisibleSessionId("other-tab");
+
+		const controller = new AbortController();
+		let settled: boolean | undefined;
+		const pending = proxy.confirm("Delete?", "Sure?", { signal: controller.signal }).then(value => {
+			settled = value;
+		});
+		await Promise.resolve();
+		controller.abort();
+		await pending;
+		expect(settled).toBe(false);
+		expect(harness.editorContainer.children).toEqual([harness.editor]);
+		harness.setVisibleSessionId("bg");
+		await harness.controller.presentQueuedApprovals("bg");
+		expect(harness.editorContainer.children).toEqual([harness.editor]);
+	});
+
+	it("denies everything still parked on quit", async () => {
+		const harness = makeHarness();
+		await harness.init();
+		const { session, setUIContext } = mockSession("bg");
+		harness.controller.attachSessionRunner(session);
+		const proxy = boundProxy(setUIContext);
+		harness.setVisibleSessionId("other-tab");
+
+		const pending = proxy.confirm("Delete?", "Sure?");
+		let settled: boolean | undefined;
+		void pending.then(value => {
+			settled = value;
+		});
+		await Promise.resolve();
+		harness.controller.denyAllQueuedApprovals();
+		await pending;
+		expect(settled).toBe(false);
+		expect(harness.markWaiting).toHaveBeenCalledWith("bg", false);
 	});
 });
 

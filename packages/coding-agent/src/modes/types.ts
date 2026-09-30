@@ -25,6 +25,10 @@ import type { ForeignSessionSource } from "../session/foreign-session-store";
 import type { HistoryStorage } from "../session/history-storage";
 import type { SessionContext } from "../session/session-context";
 import type { SessionManager } from "../session/session-manager";
+import type { LiveSessionRegistry } from "../session/live-session-registry";
+import type { LiveSessionFactoryOptions } from "../session/live-session-factory";
+import type { SessionViewStateStore } from "../session/session-view-state";
+import type { RunDiagnosticsTracker } from "./run-diagnostics";
 import type { ShakeMode } from "../session/shake-types";
 import type { ConfiguredThinkingLevel } from "../thinking";
 import type { LspStartupServerInfo } from "../tools";
@@ -53,6 +57,8 @@ export type CompactionQueuedMessage = {
 
 export type SubmittedUserInput = {
 	text: string;
+	/** Runtime selected when Enter was pressed; navigation cannot reroute this prompt. */
+	ownerSession?: AgentSession;
 	images?: ImageContent[];
 	imageLinks?: (string | undefined)[];
 	customType?: string;
@@ -133,6 +139,7 @@ export interface InteractiveModeContext {
 	hookWidgetContainerBelow: Container;
 	statusLine: StatusLineComponent;
 	syncComposerShape(): void;
+	setFullscreen(enabled: boolean): void;
 	syncEditorSpelling(): void;
 
 	// Session access
@@ -164,6 +171,24 @@ export interface InteractiveModeContext {
 	eventBus?: EventBus;
 	/** Root-scoped bus carrying this session tree's `task:subagent:*` frames. */
 	subagentEventBus?: EventBus;
+	/** In-memory per-session composer drafts; absent in unit-test contexts. */
+	viewStateStore?: SessionViewStateStore;
+	/** Per-session run-stage record; absent in unit-test contexts. */
+	runDiagnostics?: RunDiagnosticsTracker;
+	/** Current transcript scroll-back offset in rows; absent in unit-test contexts. */
+	getWorkspaceScrollOffset?: () => number;
+	/** Restore a transcript scroll-back offset; absent in unit-test contexts. */
+	setWorkspaceScrollOffset?: (offset: number) => void;
+	/** Retarget the main view to another already-live session; absent in unit-test contexts. */
+	selectMainSession?: (session: AgentSession) => Promise<void>;
+	/** Move interactive UI ownership to the newly visible session; absent in unit-test contexts. */
+	attachSessionRunnerUI?: (session: AgentSession) => void;
+	/** Present approvals parked for a newly visible session; absent in unit-test contexts. */
+	presentQueuedApprovals?: (sessionId: string) => Promise<void>;
+	/** Live tab runtime ownership; absent in unit-test contexts. */
+	liveSessions?: LiveSessionRegistry;
+	/** Test seam for opening live tab runtimes; defaults to the real factory. */
+	openLiveSession?: (options: LiveSessionFactoryOptions) => Promise<AgentSession>;
 
 	// State
 	isInitialized: boolean;
@@ -451,6 +476,7 @@ export interface InteractiveModeContext {
 	showTreeSelector(): void;
 	showSessionSelector(source?: ForeignSessionSource): void;
 	handleResumeSession(sessionPath: string): Promise<void>;
+	handleSessionTabsCommand(args: string): Promise<string>;
 	handleSessionDeleteCommand(): Promise<void>;
 	showOAuthSelector(mode: "login" | "logout", providerId?: string): Promise<void>;
 	showSessionPinSelector(): Promise<void>;

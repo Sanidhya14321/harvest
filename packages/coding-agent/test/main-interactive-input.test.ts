@@ -4,10 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	applyResolvedSystemPromptInputs,
+	dispatchInteractiveInput,
 	readPipedInput,
 	submitInteractiveInput,
 } from "@harvest/pi-coding-agent/main";
 import type { SubmittedUserInput } from "@harvest/pi-coding-agent/modes/types";
+import type { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import type { CreateAgentSessionOptions } from "@harvest/pi-coding-agent/sdk";
 import { discoverTitleSystemPromptFile } from "@harvest/pi-coding-agent/system-prompt";
 import { removeWithRetries } from "@harvest/pi-utils";
@@ -70,6 +72,62 @@ describe("applyResolvedSystemPromptInputs", () => {
 });
 
 describe("submitInteractiveInput", () => {
+	it("keeps a submitted prompt on its Enter-time session when the visible tab changes", async () => {
+		let finishPrompt!: () => void;
+		const first = {
+			prompt: vi.fn(() => new Promise<boolean>(resolve => (finishPrompt = () => resolve(true)))),
+			promptCustomMessage: vi.fn(async () => true),
+			isStreaming: false,
+		} as unknown as AgentSession;
+		const second = {
+			prompt: vi.fn(async () => true),
+			promptCustomMessage: vi.fn(async () => true),
+			isStreaming: false,
+		} as unknown as AgentSession;
+		const mode = {
+			session: second,
+			markPendingSubmissionStarted: vi.fn(() => true),
+			finishPendingSubmission: vi.fn(),
+			showError: vi.fn(),
+			checkShutdownRequested: vi.fn(async () => {}),
+		};
+		const input = createInput({ ownerSession: first });
+		const dispatch = dispatchInteractiveInput(mode, input);
+		expect(first.prompt).toHaveBeenCalledWith("hello", { images: undefined, streamingBehavior: "followUp" });
+		expect(second.prompt).not.toHaveBeenCalled();
+		finishPrompt();
+		await dispatch;
+		expect(mode.finishPendingSubmission).toHaveBeenCalledWith(input);
+	});
+
+	it("starts a second session prompt while the first session is still running", async () => {
+		let finishFirst!: () => void;
+		const first = {
+			prompt: vi.fn(() => new Promise<boolean>(resolve => (finishFirst = () => resolve(true)))),
+			promptCustomMessage: vi.fn(async () => true),
+			isStreaming: false,
+		} as unknown as AgentSession;
+		const second = {
+			prompt: vi.fn(async () => true),
+			promptCustomMessage: vi.fn(async () => true),
+			isStreaming: false,
+		} as unknown as AgentSession;
+		const mode = {
+			session: first,
+			markPendingSubmissionStarted: vi.fn(() => true),
+			finishPendingSubmission: vi.fn(),
+			showError: vi.fn(),
+			checkShutdownRequested: vi.fn(async () => {}),
+		};
+		const firstDispatch = dispatchInteractiveInput(mode, createInput({ ownerSession: first }));
+		mode.session = second;
+		await dispatchInteractiveInput(mode, createInput({ text: "second", ownerSession: second }));
+		expect(second.prompt).toHaveBeenCalledWith("second", { images: undefined, streamingBehavior: "followUp" });
+		expect(mode.finishPendingSubmission).toHaveBeenCalledTimes(1);
+		finishFirst();
+		await firstDispatch;
+		expect(mode.finishPendingSubmission).toHaveBeenCalledTimes(2);
+	});
 	it("routes already-started synthetic continue submissions to a hidden developer prompt", async () => {
 		const mode = {
 			markPendingSubmissionStarted: vi.fn(() => false),

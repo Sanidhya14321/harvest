@@ -40,6 +40,7 @@ import { getSeparator } from "./separators";
 import type {
 	CollabStatus,
 	EffectiveStatusLineSettings,
+	RunDiagnosticSnapshot,
 	StatusLineSegmentId,
 	StatusLineSegmentOptions,
 	StatusLineSettings,
@@ -443,6 +444,7 @@ export class StatusLineComponent implements Component {
 	 * dependency graph; interactive-mode wires it to VibeSessionRegistry.
 	 */
 	#vibeWorkerTokenRate: (() => number | null) | null = null;
+	#runSnapshotProvider: ((sessionId: string) => RunDiagnosticSnapshot | undefined) | null = null;
 	#collabStatus: CollabStatus | null = null;
 	#focusedAgentId: string | undefined;
 	#activeRepoCache: ActiveRepoCache | undefined;
@@ -739,6 +741,17 @@ export class StatusLineComponent implements Component {
 	 */
 	setVibeWorkerTokenRateProvider(provider: (() => number | null) | undefined): void {
 		this.#vibeWorkerTokenRate = provider ?? null;
+	}
+
+	/**
+	 * Inject the run-diagnostics lookup for the `run` segment, keyed by
+	 * session ID so a retargeted view reads the newly attached session's
+	 * record. Wired by interactive-mode, which owns the tracker, so the
+	 * render layer stays off the diagnostics dependency graph. Pass
+	 * `undefined` to clear.
+	 */
+	setRunSnapshotProvider(provider: ((sessionId: string) => RunDiagnosticSnapshot | undefined) | undefined): void {
+		this.#runSnapshotProvider = provider ?? null;
 	}
 
 	setCollabStatus(status: CollabStatus | null): void {
@@ -1950,7 +1963,19 @@ export class StatusLineComponent implements Component {
 			worktree: activeRepoCache.worktree,
 			usage: this.#cachedUsage,
 			laya: this.#resolveLayaStatus(),
+			run: this.#resolveRunSnapshot(),
 		};
+	}
+
+	/** Current session's run-stage snapshot for the `run` segment; undefined when untracked. */
+	#resolveRunSnapshot(): RunDiagnosticSnapshot | undefined {
+		try {
+			const sessionId = this.session.sessionManager?.getSessionId?.();
+			if (!sessionId) return undefined;
+			return this.#runSnapshotProvider?.(sessionId);
+		} catch {
+			return undefined;
+		}
 	}
 
 	#resolveSettings(): EffectiveStatusLineSettings {

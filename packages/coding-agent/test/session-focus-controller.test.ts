@@ -4,6 +4,7 @@ import type { InteractiveModeContext } from "@harvest/pi-coding-agent/modes/type
 import { AgentLifecycleManager } from "@harvest/pi-coding-agent/registry/agent-lifecycle";
 import { AgentRegistry, MAIN_AGENT_ID } from "@harvest/pi-coding-agent/registry/agent-registry";
 import type { AgentSession, AgentSessionEvent } from "@harvest/pi-coding-agent/session/agent-session";
+import { SessionViewStateStore } from "@harvest/pi-coding-agent/session/session-view-state";
 
 interface SessionStub {
 	session: AgentSession;
@@ -13,11 +14,20 @@ interface SessionStub {
 	setStreaming: (streaming: boolean) => void;
 }
 
-function makeSessionStub(opts: { isStreaming?: boolean } = {}): SessionStub {
+function makeSessionStub(opts: { isStreaming?: boolean; id?: string; file?: string } = {}): SessionStub {
 	let listener: ((event: AgentSessionEvent) => Promise<void> | void) | undefined;
 	let unsubscribeCalls = 0;
 	const stub = {
 		isStreaming: opts.isStreaming ?? false,
+		sessionManager: {
+			getSessionId: () => opts.id ?? "main",
+			getSessionFile: () => opts.file,
+			getCwd: () => "C:/project",
+			getSessionName: () => undefined,
+			onSessionNameChanged: () => () => {},
+		},
+		settings: {},
+		agent: {},
 		subscribe(fn: (event: AgentSessionEvent) => Promise<void> | void) {
 			listener = fn;
 			return () => {
@@ -48,6 +58,12 @@ interface Harness {
 	handledEvents: unknown[];
 	setSessionCalls: Array<[AgentSession, string | undefined]>;
 	reloadTodoSessions: AgentSession[];
+	editorText: () => string;
+	setEditorText: (text: string) => void;
+	scrollOffset: () => number;
+	setScrollOffset: (offset: number) => void;
+	attachedRunners: AgentSession[];
+	presentedQueues: string[];
 	counts: {
 		clearTransientSessionUi: () => number;
 		resetTranscriptAnchors: () => number;
@@ -65,11 +81,29 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 	let resetTranscriptAnchors = 0;
 	let renderInitialMessages = 0;
 	let mainUnsubscribe = 0;
+	let editorText = "";
+	let scrollOffset = 0;
+	const attachedRunners: AgentSession[] = [];
+	const presentedQueues: string[] = [];
 
 	const ctx = {
 		session: main.session,
 		unsubscribe: () => {
 			mainUnsubscribe++;
+		},
+		editor: {
+			getText: () => editorText,
+			setText: (text: string) => {
+				editorText = text;
+			},
+			pendingImages: [],
+			pendingImageLinks: [],
+			imageLinks: undefined,
+		},
+		viewStateStore: new SessionViewStateStore(),
+		getWorkspaceScrollOffset: () => scrollOffset,
+		setWorkspaceScrollOffset: (offset: number) => {
+			scrollOffset = offset;
 		},
 		eventController: {
 			handleEvent: async (event: unknown) => {
@@ -99,6 +133,12 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 		ui: { requestRender() {} },
 		showStatus() {},
 		collabGuest: undefined,
+		attachSessionRunnerUI: (session: AgentSession) => {
+			attachedRunners.push(session);
+		},
+		presentQueuedApprovals: async (sessionId: string) => {
+			presentedQueues.push(sessionId);
+		},
 	} as unknown as InteractiveModeContext;
 
 	const registry = new AgentRegistry();
@@ -113,6 +153,16 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 		handledEvents,
 		setSessionCalls,
 		reloadTodoSessions,
+		editorText: () => editorText,
+		setEditorText: (text: string) => {
+			editorText = text;
+		},
+		scrollOffset: () => scrollOffset,
+		setScrollOffset: (offset: number) => {
+			scrollOffset = offset;
+		},
+		attachedRunners,
+		presentedQueues,
 		counts: {
 			clearTransientSessionUi: () => clearTransientSessionUi,
 			resetTranscriptAnchors: () => resetTranscriptAnchors,
@@ -132,6 +182,57 @@ async function flushAsync(): Promise<void> {
 }
 
 describe("SessionFocusController", () => {
+	it("retargets a top-level view without aborting either live runtime", async () => {
+		const h = makeHarness();
+		const other = makeSessionStub({ isStreaming: true });
+		await h.controller.selectMainSession(other.session);
+		expect(h.ctx.session).toBe(other.session);
+		expect(h.setSessionCalls.at(-1)).toEqual([other.session, undefined]);
+		expect(h.handledEvents).toEqual([{ type: "agent_start" }]);
+		await h.controller.selectMainSession(h.main.session);
+		expect(h.ctx.session).toBe(h.main.session);
+		expect(h.reloadTodoSessions).toEqual([other.session, h.main.session]);
+	});
+
+	it("preserves each session's draft and scroll offset across retargeting", async () => {
+		const h = makeHarness();
+		const other = makeSessionStub({ id: "other" });
+		h.setEditorText("draft for main");
+		h.setScrollOffset(7);
+		await h.controller.selectMainSession(other.session);
+		expect(h.editorText()).toBe("");
+		expect(h.scrollOffset()).toBe(0);
+		expect(h.attachedRunners).toEqual([other.session]);
+		h.setEditorText("draft for other");
+		h.setScrollOffset(3);
+		await h.controller.selectMainSession(h.main.session);
+		expect(h.editorText()).toBe("draft for main");
+		expect(h.scrollOffset()).toBe(7);
+		expect(h.attachedRunners).toEqual([other.session, h.main.session]);
+		await h.controller.selectMainSession(other.session);
+		expect(h.editorText()).toBe("draft for other");
+		expect(h.scrollOffset()).toBe(3);
+		expect(h.presentedQueues).toEqual(["other", "main", "other"]);
+	});
+
+	it("restores the prior input and event target when the selected transcript fails to load", async () => {
+		let failNext = true;
+		const h = makeHarness({
+			renderInitialMessages: () => {
+				if (failNext) {
+					failNext = false;
+					throw new Error("transcript unavailable");
+				}
+			},
+		});
+		const other = makeSessionStub();
+		await expect(h.controller.selectMainSession(other.session)).rejects.toThrow("transcript unavailable");
+		expect(h.ctx.session).toBe(h.main.session);
+		expect(h.ctx.sessionManager).toBe(h.main.session.sessionManager);
+		expect(h.setSessionCalls.at(-1)).toEqual([h.main.session, undefined]);
+		expect(h.counts.renderInitialMessages()).toBe(2);
+	});
+
 	it("focusAgent retargets subscription, transcript anchors, and status line onto the worker session", async () => {
 		const h = makeHarness();
 		const worker = makeSessionStub();

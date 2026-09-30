@@ -16,6 +16,8 @@ import { getAgentDir, logger } from "@harvest/pi-utils";
 import type { completeSimple } from "@harvest/pi-ai";
 import type { ModelRegistry } from "../../config/model-registry";
 import type { Settings } from "../../config/settings";
+import { hostHasInheritableConsole } from "../../eval/py/spawn-options";
+import { resolveDaemonSpawnOptions } from "../../launch/spawn-options";
 import { ensureCalibrated, loadCalibration, type CalibrationRecord } from "./laya-calibration";
 import { getLayaClient } from "./laya-client";
 import {
@@ -31,7 +33,6 @@ import {
 	checkCalibrationSignatureMismatch,
 	runLayaSmokeTest,
 	createDiagnosticBundle,
-	emitDiagnosticBundle,
 	runLlmAssistedDiagnosis,
 	type EvaluatedDiagnosisProposal,
 	type LayaLLMDiagnosisResult,
@@ -57,6 +58,13 @@ export interface LayaSetupStep {
 }
 
 export const DEFAULT_LAYA_URL = "http://127.0.0.1:8177";
+
+function managedLayaPythonPath(): string {
+	const venvDir = path.join(getAgentDir(), "laya-venv");
+	return process.platform === "win32"
+		? path.join(venvDir, "Scripts", "python.exe")
+		: path.join(venvDir, "bin", "python");
+}
 
 /**
  * Execute a probe command to determine if a candidate Python executable is functional and >= 3.9.
@@ -92,10 +100,7 @@ export async function testPythonExecutable(cmd: string, isPyLauncher = false): P
  */
 export async function findPythonExecutable(): Promise<{ path: string; version: string } | null> {
 	// 1. Check managed virtualenv first
-	const venvDir = path.join(getAgentDir(), "laya-venv");
-	const venvPy = process.platform === "win32"
-		? path.join(venvDir, "Scripts", "python.exe")
-		: path.join(venvDir, "bin", "python");
+	const venvPy = managedLayaPythonPath();
 
 	const venvTest = await testPythonExecutable(venvPy);
 	if (venvTest) {
@@ -308,7 +313,7 @@ export async function bootstrapPythonIfMissing(
 }
 
 /**
- * Ensure an isolated virtual environment exists for Laya dependencies at `~/.harvest/laya-venv`.
+ * Ensure an isolated virtual environment exists under the Harvest agent config directory.
  * This protects against system Python PEP 668 restrictions and dependency conflicts.
  */
 export async function ensureLayaVirtualEnv(
@@ -316,9 +321,7 @@ export async function ensureLayaVirtualEnv(
 	onProgress?: (msg: string) => void,
 ): Promise<{ path: string; version: string; isVenv: boolean }> {
 	const venvDir = path.join(getAgentDir(), "laya-venv");
-	const venvPy = process.platform === "win32"
-		? path.join(venvDir, "Scripts", "python.exe")
-		: path.join(venvDir, "bin", "python");
+	const venvPy = managedLayaPythonPath();
 
 	const existing = await testPythonExecutable(venvPy);
 	if (existing) {
@@ -326,7 +329,7 @@ export async function ensureLayaVirtualEnv(
 	}
 
 	try {
-		onProgress?.("Creating isolated Python virtual environment at ~/.harvest/laya-venv...");
+		onProgress?.(`Creating isolated Python virtual environment at ${venvDir}...`);
 		const proc = Bun.spawn([systemPythonPath, "-m", "venv", venvDir], {
 			stdout: "pipe",
 			stderr: "pipe",
@@ -339,15 +342,9 @@ export async function ensureLayaVirtualEnv(
 			}
 		}
 	} catch (err) {
-		logger.warn("Failed to create isolated virtualenv; falling back to host Python", { error: err });
+		throw new Error(`Failed to create isolated Laya virtualenv at ${venvDir}: ${String(err)}`);
 	}
-
-	const hostTest = await testPythonExecutable(systemPythonPath);
-	return {
-		path: systemPythonPath,
-		version: hostTest?.version ?? "3.9+",
-		isVenv: false,
-	};
+	throw new Error(`Failed to create isolated Laya virtualenv at ${venvDir}. Check that Python's venv module is installed.`);
 }
 
 /**
@@ -446,10 +443,8 @@ export function getSidecarDir(): string {
 		candidates.push(process.env.HARVEST_SIDECAR_DIR);
 	}
 
-	// 5 levels up from packages/coding-agent/src/core/harvest
+	// Source checkouts use the canonical files in the repository.
 	candidates.push(path.resolve(import.meta.dir, "../../../../../decision-sidecar"));
-	candidates.push(path.resolve(process.cwd(), "decision-sidecar"));
-	candidates.push(path.join(getAgentDir(), "sidecar"));
 
 	for (const candidate of candidates) {
 		try {
@@ -463,7 +458,70 @@ export function getSidecarDir(): string {
 		}
 	}
 
+	// Release bundles contain a compressed copy of the Python sources. Resolve
+	// this before cwd so an unrelated project cannot supply executable sidecar code.
+	const embedded = process.env.PI_LAYA_SIDECAR_EMBED;
+	if (embedded) return materializeBundledLayaSidecar(embedded, getAgentDir());
+
+	for (const candidate of [path.resolve(process.cwd(), "decision-sidecar"), path.join(getAgentDir(), "sidecar")]) {
+		try {
+			if (Bun.file(path.join(candidate, "server.py")).size > 0) return candidate;
+		} catch {
+			// Continue
+		}
+	}
+
 	return path.resolve(import.meta.dir, "../../../../../decision-sidecar");
+}
+
+const BUNDLED_SIDECAR_FILES = [
+	"server.py",
+	"hardware.py",
+	"bucketing.py",
+	"calibration.py",
+	"calibration_params.json",
+	"requirements.txt",
+] as const;
+
+/** Materialize the versioned bundled service once for npm and binary installs. */
+export function materializeBundledLayaSidecar(payload: string, agentDir: string): string {
+	const raw = new TextDecoder().decode(Bun.gunzipSync(Buffer.from(payload, "base64")));
+	const parsed: unknown = JSON.parse(raw);
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+		throw new Error("Invalid bundled Laya sidecar payload");
+	}
+	const files = parsed as Record<string, unknown>;
+	for (const name of BUNDLED_SIDECAR_FILES) {
+		if (typeof files[name] !== "string") throw new Error(`Bundled Laya sidecar is missing ${name}`);
+	}
+	const digest = Bun.SHA256.hash(raw, "hex").slice(0, 16);
+	const sidecarRoot = path.join(agentDir, "sidecar");
+	const target = path.join(sidecarRoot, digest);
+	const complete = () => BUNDLED_SIDECAR_FILES.every(name => {
+		try {
+			return fs.readFileSync(path.join(target, name), "utf8") === files[name];
+		} catch {
+			return false;
+		}
+	});
+	if (complete()) return target;
+	if (fs.existsSync(target)) throw new Error(`Bundled Laya sidecar directory is incomplete: ${target}`);
+
+	fs.mkdirSync(sidecarRoot, { recursive: true, mode: 0o700 });
+	const staging = fs.mkdtempSync(path.join(sidecarRoot, ".stage-"));
+	try {
+		for (const name of BUNDLED_SIDECAR_FILES) {
+			fs.writeFileSync(path.join(staging, name), files[name] as string, { mode: 0o600 });
+		}
+		try {
+			fs.renameSync(staging, target);
+		} catch (error) {
+			if (!complete()) throw error;
+		}
+	} finally {
+		if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
+	}
+	return target;
 }
 
 /**
@@ -544,48 +602,19 @@ export async function installLayaDependencies(
 			}
 		};
 
-		let proc = Bun.spawn(baseArgs, {
+		const proc = Bun.spawn(baseArgs, {
 			cwd: sidecarDir,
 			stdout: "pipe",
 			stderr: "pipe",
 		});
 
-		let res = await streamProcessOutput(proc, filterPipProgress, {
+		const res = await streamProcessOutput(proc, filterPipProgress, {
 			activityTimeoutMs: 480_000,
 			totalTimeoutMs: 1200_000,
 		});
 
 		if (res.exitCode !== 0) {
-			if (res.stderr.includes("externally-managed-environment") || res.stdout.includes("externally-managed-environment")) {
-				onProgress?.("Externally-managed Python environment detected; retrying with --break-system-packages...");
-				const breakArgs = [
-					pythonPath,
-					"-m",
-					"pip",
-					"install",
-					"--break-system-packages",
-					"--no-input",
-					"--prefer-binary",
-					"--retries",
-					"3",
-					"--timeout",
-					"30",
-					...extraIndexArgs,
-					...(hasReq ? ["-r", reqPath] : ["laya>=0.3.5", "fastapi>=0.115.0", "uvicorn>=0.30.0", "torch", "pydantic>=2.0.0"]),
-				];
-				proc = Bun.spawn(breakArgs, {
-					cwd: sidecarDir,
-					stdout: "pipe",
-					stderr: "pipe",
-				});
-				res = await streamProcessOutput(proc, filterPipProgress, {
-					activityTimeoutMs: 480_000,
-					totalTimeoutMs: 1200_000,
-				});
-			}
-			if (res.exitCode !== 0) {
-				return { success: false, error: res.stderr || res.stdout || `pip install failed with exit code ${res.exitCode}` };
-			}
+			return { success: false, error: res.stderr || res.stdout || `pip install failed with exit code ${res.exitCode}` };
 		}
 
 		const verified = await checkLayaDependencies(pythonPath);
@@ -796,7 +825,50 @@ export async function startLayaSidecarProcess(
 	baseUrl: string = DEFAULT_LAYA_URL,
 	onProgress?: (msg: string) => void,
 	setupLogger?: LayaSetupLogger,
-): Promise<{ success: boolean; error?: string; actualBaseUrl?: string }> {
+): Promise<SidecarSpawnResult> {
+	return singleflight(sidecarSpawnInflight, baseUrl.replace(/\/+$/, ""), () =>
+		runSidecarSpawnProcess(pythonPath, baseUrl, onProgress, setupLogger),
+	);
+}
+
+type SidecarSpawnResult = { success: boolean; error?: string; actualBaseUrl?: string };
+
+/** In-flight sidecar spawns keyed by normalized base URL. */
+const sidecarSpawnInflight = new Map<string, Promise<SidecarSpawnResult>>();
+
+/**
+ * Share one in-flight async run per key: concurrent starters receive the
+ * same promise instead of duplicating the work. The slot clears when the run
+ * settles (success or failure), so a later starter begins a fresh run. A
+ * synchronously throwing `start` propagates without poisoning the map.
+ */
+export function singleflight<K, V>(runs: Map<K, Promise<V>>, key: K, start: () => Promise<V>): Promise<V> {
+	const existing = runs.get(key);
+	if (existing) return existing;
+	const run = start();
+	runs.set(key, run);
+	// then(clear, clear) — not finally: the derived promise must never reject,
+	// while callers of the returned `run` still observe its real outcome.
+	run.then(clear, clear);
+	function clear(): void {
+		if (runs.get(key) === run) runs.delete(key);
+	}
+	return run;
+}
+
+/**
+ * The spawn pipeline itself (single run): reuse/health checks, port-conflict
+ * resolution, PID file, early-exit fast-fail, and kill-on-timeout. Prefer
+ * {@link startLayaSidecarProcess}, which singleflights concurrent starters
+ * (autostart racing a manual start) onto one shared run so a second daemon
+ * can never hide behind a port drift.
+ */
+async function runSidecarSpawnProcess(
+	pythonPath: string,
+	baseUrl: string = DEFAULT_LAYA_URL,
+	onProgress?: (msg: string) => void,
+	setupLogger?: LayaSetupLogger,
+): Promise<SidecarSpawnResult> {
 	if (await isLayaSidecarRunning(baseUrl)) {
 		return { success: true, actualBaseUrl: baseUrl };
 	}
@@ -850,7 +922,10 @@ export async function startLayaSidecarProcess(
 			serverPath,
 		], {
 			cwd: sidecarDir,
-			detached: true,
+			...resolveDaemonSpawnOptions({
+				platform: process.platform,
+				hostHasInheritableConsole: hostHasInheritableConsole(),
+			}),
 			stdout: logFd,
 			stderr: logFd,
 			env: {
@@ -911,6 +986,25 @@ export async function startLayaSidecarProcess(
 		return { success: false, error: `Timed out waiting 180s for Laya sidecar /health at ${effectiveBaseUrl}` };
 	} catch (err) {
 		return { success: false, error: String(err) };
+	}
+}
+
+/** Start an already-installed sidecar for an interactive CLI session without delaying the TUI. */
+export async function autostartInstalledLayaSidecar(activeSettings: Settings): Promise<void> {
+	if (activeSettings.get("laya.enabled") !== true || activeSettings.get("laya.autostart") !== true) return;
+	const pythonPath = managedLayaPythonPath();
+	if (!(await Bun.file(pythonPath).exists())) {
+		logger.warn("Laya autostart skipped: managed Python environment is missing", { pythonPath });
+		return;
+	}
+	const baseUrl = activeSettings.get("laya.url") || DEFAULT_LAYA_URL;
+	const result = await startLayaSidecarProcess(pythonPath, baseUrl);
+	if (!result.success) {
+		logger.warn("Laya autostart failed", { error: result.error, baseUrl });
+		return;
+	}
+	if (result.actualBaseUrl && result.actualBaseUrl !== baseUrl) {
+		activeSettings.set("laya.url", result.actualBaseUrl);
 	}
 }
 
@@ -992,14 +1086,7 @@ const layaConfigureInflight = new Map<string, Promise<LayaSetupResult>>();
  * run instead of spawning duplicate sidecar children behind a port drift.
  */
 export async function configureLayaLocally(options: ConfigureLayaOptions = {}): Promise<LayaSetupResult> {
-	const key = options.baseUrl || DEFAULT_LAYA_URL;
-	const existing = layaConfigureInflight.get(key);
-	if (existing) return existing;
-	const run = runLayaConfiguration(options).finally(() => {
-		if (layaConfigureInflight.get(key) === run) layaConfigureInflight.delete(key);
-	});
-	layaConfigureInflight.set(key, run);
-	return run;
+	return singleflight(layaConfigureInflight, options.baseUrl || DEFAULT_LAYA_URL, () => runLayaConfiguration(options));
 }
 
 /**

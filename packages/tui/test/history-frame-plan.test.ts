@@ -486,4 +486,53 @@ describe("terminal frame plans", () => {
 		expect(resized).toEqual(["history-one@30", "history-two@30", "editor@30"]);
 		tui.stop();
 	});
+
+	it("keeps a primary workspace in the alternate screen and restores the shell on exit", async () => {
+		const terminal = new CountingTerminal(30, 5);
+		const provider = new Provider({ viewport: ["session tabs", "", "chat message", "", "prompt"] });
+		const renderScheduler = new VirtualRenderScheduler();
+		const tui = new TUI(terminal, true, { renderScheduler });
+		tui.setFrameProvider(provider);
+		tui.setBaseFullscreen(true);
+		tui.start();
+		await renderScheduler.settle(terminal);
+
+		expect(terminal.getViewport().map(row => Bun.stripANSI(row))).toEqual([
+			"session tabs",
+			"",
+			"chat message",
+			"",
+			"prompt",
+		]);
+		expect(terminal.writes.join("")).toContain("\x1b[?1049h");
+		expect(terminal.writes.join("")).toContain("\x1b[?1006h");
+		tui.stop();
+		expect(terminal.writes.join("")).toContain("\x1b[?1049l");
+		expect(plainBuffer(terminal)).not.toContain("chat message");
+	});
+
+	it("repaints only changed workspace rows during incremental updates", async () => {
+		const terminal = new CountingTerminal(30, 5);
+		const provider = new Provider({ viewport: ["tabs", "stable history", "working 1", "", "prompt"] });
+		const renderScheduler = new VirtualRenderScheduler();
+		const tui = new TUI(terminal, undefined, { renderScheduler });
+		tui.setFrameProvider(provider);
+		tui.setBaseFullscreen(true);
+		tui.start();
+		await renderScheduler.settle(terminal);
+		terminal.writes.length = 0;
+		provider.plan = { viewport: ["tabs", "stable history", "working 2", "", "prompt"] };
+		tui.requestRender();
+		await renderScheduler.settle(terminal);
+		const update = terminal.writes.join("");
+		expect(update).toContain("working 2");
+		expect(update).not.toContain("stable history");
+		expect(update).not.toContain("prompt");
+		expect(terminal.getViewport().map(row => Bun.stripANSI(row))[2]).toBe("working 2");
+		terminal.writes.length = 0;
+		terminal.resize(31, 5);
+		await renderScheduler.settle(terminal);
+		expect(terminal.writes.join("")).toContain("stable history");
+		tui.stop();
+	});
 });

@@ -4,6 +4,7 @@ export * from "./loop-policy";
 export * from "./verification";
 export * from "./grounding";
 export * from "./retrieval";
+export * from "./brain";
 export * from "./code-index";
 export * from "./graph";
 export * from "./memory";

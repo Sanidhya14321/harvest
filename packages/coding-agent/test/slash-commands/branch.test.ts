@@ -13,6 +13,15 @@ afterEach(() => {
 });
 
 describe("/branch slash command", () => {
+	it("opens the session tree through /timeline", async () => {
+		const showTreeSelector = vi.fn();
+		const setText = vi.fn();
+		const runtime = {
+			ctx: { collabGuest: false, showTreeSelector, editor: { setText } } as unknown as InteractiveModeContext,
+		};
+		expect(await executeBuiltinSlashCommand("/timeline", runtime)).toBe(true);
+		expect(showTreeSelector).toHaveBeenCalledTimes(1);
+	});
 	it("opens the branch selector even when double-Escape is disabled", async () => {
 		const showTreeSelector = vi.fn();
 		const showUserMessageSelector = vi.fn();

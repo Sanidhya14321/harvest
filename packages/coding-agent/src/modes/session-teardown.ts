@@ -44,6 +44,50 @@ export interface SessionTeardownDeps {
 export type SessionTeardown = (reason?: postmortem.Reason) => Promise<void>;
 
 /**
+ * Minimal run-state surface for the interactive-quit confirmation.
+ */
+export interface UnsettledWorkState {
+	readonly isStreaming: boolean;
+	readonly isBashRunning: boolean;
+	readonly isEvalRunning: boolean;
+	hasPendingAsyncWork(): boolean;
+	/** An approval/question dialog is presented and awaiting a decision. */
+	readonly approvalDialogOpen: boolean;
+}
+
+/**
+ * True when quitting now would abandon in-flight work: a streaming turn, a
+ * running bash/eval tool, unsettled background jobs, or an undecided
+ * approval. Anything else — including a freshly completed background run —
+ * exits directly.
+ */
+export function hasUnsettledWork(state: UnsettledWorkState): boolean {
+	return (
+		state.isStreaming ||
+		state.isBashRunning ||
+		state.isEvalRunning ||
+		state.approvalDialogOpen ||
+		state.hasPendingAsyncWork()
+	);
+}
+
+/** Dialog slots that hold an undecided approval/question when set. */
+export interface ApprovalDialogSlots {
+	readonly hookSelector: unknown;
+	readonly hookInput: unknown;
+	readonly hookEditor: unknown;
+}
+
+/**
+ * True while any approval/question dialog occupies the shared editor surface.
+ * Centralizes the three-slot check so exit confirmation and tab status agree
+ * on what "waiting for approval" means.
+ */
+export function isApprovalDialogOpen(slots: ApprovalDialogSlots): boolean {
+	return slots.hookSelector !== undefined || slots.hookInput !== undefined || slots.hookEditor !== undefined;
+}
+
+/**
  * Build a promise-memoized teardown function. The first call snapshots the
  * draft text, marks the session disposing synchronously, runs `saveDraft`
  * (draft-loss protection for `--resume`), then `disposeSession`; subsequent

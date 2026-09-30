@@ -776,6 +776,35 @@ const collabSegment: StatusLineSegment = {
 	},
 };
 
+const runSegment: StatusLineSegment = {
+	id: "run",
+	render(ctx) {
+		const run = ctx.run;
+		if (!run) return { content: "", visible: false };
+		if (run.stage === "idle" && !run.failure) return { content: "", visible: false };
+		if (run.stage === "idle") {
+			const label = statusValue(ctx, truncateToWidth(sanitizeStatusText(run.failure ?? ""), TRUNCATE_LENGTHS.LINE));
+			if (!label) return { content: "", visible: false };
+			return { content: theme.fg("error", withIcon("!", label)), visible: true };
+		}
+		const elapsed = run.elapsedMs > 0 ? ` ${formatDuration(run.elapsedMs)}` : "";
+		switch (run.stage) {
+			case "tool": {
+				const tool = run.activeTool ? ` ${sanitizeStatusText(run.activeTool)}` : "";
+				return { content: theme.fg("accent", withIcon("●", `working${tool}${elapsed}`)), visible: true };
+			}
+			case "retry":
+				return { content: theme.fg("warning", withIcon("?", `retry${elapsed}`)), visible: true };
+			case "compaction":
+				return { content: theme.fg("accent", withIcon("●", `compacting${elapsed}`)), visible: true };
+			case "awaitingDelivery":
+				return { content: theme.fg("warning", withIcon("?", `waiting${elapsed}`)), visible: true };
+			default:
+				return { content: theme.fg("accent", withIcon("●", `working${elapsed}`)), visible: true };
+		}
+	},
+};
+
 const layaSegment: StatusLineSegment = {
 	id: "laya",
 	render(ctx) {
@@ -904,6 +933,7 @@ export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	status: statusSegment,
 	model: modelSegment,
 	mode: modeSegment,
+	run: runSegment,
 	path: pathSegment,
 	git: gitSegment,
 	pr: prSegment,

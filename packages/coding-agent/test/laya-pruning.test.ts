@@ -11,7 +11,8 @@ import {
 	pruneContextWithLaya,
 	resetLockedPruningDecisions,
 } from "../src/core/harvest/laya-pruning";
-import type { LayaClient } from "../src/core/harvest/laya-client";
+import { LayaClient } from "../src/core/harvest/laya-client";
+import type { Settings } from "../src/config/settings";
 
 function makeUserMessage(text: string, pinned?: boolean): UserMessage {
 	return {
@@ -49,6 +50,36 @@ afterEach(() => {
 });
 
 describe("Laya Context Pruning (Phase 1)", () => {
+	it.each([undefined, Number.NaN, 4])(
+		"keeps full context when the sidecar supplies an invalid relevance score (%s)",
+		async score => {
+			const client = new LayaClient();
+			vi.spyOn(client, "decide").mockImplementation(async (_state, questions) => ({
+				success: true,
+				fallback: false,
+				latencyMs: 0,
+				data: Object.fromEntries(Object.keys(questions).map(key => [key, { type: "score", score, confidence: 1 }])),
+			}));
+			const messages: AgentMessage[] = [
+				makeUserMessage("Inspect database transactions"),
+				makeToolResultMessage("call-old", "read", "transaction evidence ".repeat(100)),
+				makeUserMessage("Now fix the transaction"),
+			];
+			const testSettings = {
+				get: (key: string) => (key === "laya.enabled" || key === "laya.pruning" ? true : undefined),
+			} as unknown as Settings;
+			const result = await pruneContextWithLaya(messages, {
+				client,
+				settings: testSettings,
+				keepRecentTurns: 1,
+				minKeptTurns: 1,
+				prunableTokenBudget: 0,
+			});
+			expect(result.messages).toEqual(messages);
+			expect(result.fallback).toBe(true);
+			expect(result.fallbackReason).toBe("invalid_relevance_scores");
+		},
+	);
 	describe("Token estimation and scoring excerpts (Step 2)", () => {
 		it("estimates tokens based on character length", () => {
 			expect(estimateTextTokens("")).toBe(0);

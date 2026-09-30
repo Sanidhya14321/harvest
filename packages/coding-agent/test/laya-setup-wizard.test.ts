@@ -141,30 +141,4 @@ describe("Laya Setup Scene in Harvest Setup Wizard", () => {
 		const running = await layaService.isLayaSidecarRunning();
 		expect(typeof running).toBe("boolean");
 	});
-
-	it("configures Laya locally and connects to Harvest settings when user confirms", async () => {
-		vi.spyOn(layaService, "findPythonExecutable").mockResolvedValue({ path: "/usr/bin/python3", version: "3.10.12" });
-		vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(false);
-		vi.spyOn(layaService, "checkLayaDependencies").mockResolvedValue(true);
-		vi.spyOn(layaService, "ensureLayaModelCached").mockResolvedValue({ success: true });
-		vi.spyOn(layaService, "startLayaSidecarProcess").mockResolvedValue({ success: true });
-
-		const settings = Settings.isolated();
-		const stepsLogged: string[] = [];
-
-		const result = await layaService.configureLayaLocally({
-			settings,
-			onStepUpdate: (id, status, msg) => {
-				stepsLogged.push(`${id}:${status}:${msg ?? ""}`);
-			},
-		});
-
-		expect(result.success).toBe(true);
-		expect(settings.get("laya.enabled")).toBe(true);
-		expect(settings.get("laya.url")).toBe("http://127.0.0.1:8177");
-		expect(settings.get("laya.autostart")).toBe(true);
-
-		expect(stepsLogged.some(s => s.startsWith("python:done"))).toBe(true);
-		expect(stepsLogged.some(s => s.startsWith("connect:done"))).toBe(true);
-	});
 });

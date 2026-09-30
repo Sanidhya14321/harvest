@@ -378,6 +378,14 @@ export async function submitInteractiveInput(
 	}
 }
 
+/** Bind a submitted prompt to the runtime that owned the composer at Enter. */
+export function dispatchInteractiveInput(
+	mode: Parameters<typeof submitInteractiveInput>[0] & Pick<InteractiveMode, "session">,
+	input: SubmittedUserInput,
+): Promise<void> {
+	return submitInteractiveInput(mode, input.ownerSession ?? mode.session, input);
+}
+
 interface AcpSessionHandle {
 	session: AgentSession;
 	setToolUIContext: (uiContext: ExtensionUIContext, hasUI: boolean) => void;
@@ -645,7 +653,11 @@ async function runInteractiveMode(
 
 	while (true) {
 		const input = await mode.getUserInput();
-		await submitInteractiveInput(mode, session, input);
+		// A prompt can continue while the composer accepts another tab's input.
+		// The submission captures its owner at Enter, before asynchronous navigation.
+		void dispatchInteractiveInput(mode, input).catch(error => {
+			logger.error("Interactive input dispatch failed", { error: String(error) });
+		});
 	}
 }
 
@@ -1602,6 +1614,7 @@ export async function runRootCommand(
 			quiet: settingsInstance.get("startup.quiet"),
 			composerShape: settingsInstance.get("composer.shape") ?? "band",
 			showHardwareCursor: settingsInstance.get("showHardwareCursor"),
+			fullscreen: settingsInstance.get("tui.fullscreen"),
 			maxInlineImages: settingsInstance.get("tui.maxInlineImages"),
 			resizeScrollback: settingsInstance.get("tui.resizeScrollback"),
 			imeSafeCursor: settingsInstance.get("tui.imeSafeCursor"),
@@ -1866,6 +1879,13 @@ export async function runRootCommand(
 		}
 
 		const createAgentSessionImpl = deps.createAgentSession ?? createAgentSession;
+		if (isInteractive && settingsInstance.get("laya.enabled") && settingsInstance.get("laya.autostart")) {
+			void import("./core/harvest/laya-service")
+				.then(({ autostartInstalledLayaSidecar }) => autostartInstalledLayaSidecar(settingsInstance))
+				.catch(error => {
+					logger.warn("Laya autostart encountered an unexpected error", { error: String(error) });
+				});
+		}
 		const createSession = async (options: CreateAgentSessionOptions): Promise<CreateAgentSessionResult> => {
 			const result = await logger.time("createAgentSession", createAgentSessionImpl, options);
 			// Kick off background model discovery only after createAgentSession finishes its parallel

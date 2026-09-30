@@ -241,6 +241,7 @@ export type StatusLineSegmentId =
 	| "status"
 	| "model"
 	| "mode"
+	| "run"
 	| "path"
 	| "git"
 	| "pr"
@@ -1273,6 +1274,16 @@ export const SETTINGS_SCHEMA = {
 		default: 8,
 		description:
 			"Maximum number of inline images kept as live terminal graphics (default 8). Older images fall back to a text placeholder via a full redraw once the limit is exceeded. Set to 0 to keep every image (no limit).",
+	},
+	"tui.fullscreen": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "appearance",
+			group: "Display",
+			label: "Full-screen workspace",
+			description: "Show sessions across the top and keep the prompt at the bottom",
+		},
 	},
 	"tui.resizeScrollback": {
 		type: "enum",

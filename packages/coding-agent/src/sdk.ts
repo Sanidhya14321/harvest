@@ -81,7 +81,7 @@ import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate
 import { applyProviderGlobalsFromSettings } from "./config/provider-globals";
 import { buildServiceTierByFamily } from "./config/service-tier";
 import { Settings, type SkillsSettings } from "./config/settings";
-import { pruneContextWithLaya } from "./core/harvest";
+import { createMarkdownBrain, pruneContextWithLaya } from "./core/harvest";
 import { CursorExecHandlers, type CursorMcpResourceAdapter } from "./cursor";
 import { createBridgeEditTool, createBridgeGrepFactory } from "./cursor-bridge-tools";
 import "./discovery";
@@ -3416,6 +3416,9 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			return obfuscateMessages(obfuscator, converted);
 		};
 
+		let brainCwd = sessionManager.getCwd();
+		let brainSkillsEnabled = settings.get("skills.enabled");
+		let brain = createMarkdownBrain(brainCwd, agentDir, brainSkillsEnabled);
 		const transformContext = async (messages: AgentMessage[], _signal?: AbortSignal) => {
 			const withContext = await extensionRunner.emitContext(messages);
 			const steered = wrapSteeringForModel(withContext);
@@ -3424,7 +3427,22 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				sessionId: sessionManager.getSessionId(),
 				signal: _signal,
 			});
-			return result.messages;
+			if (sessionManager.getCwd() !== brainCwd || settings.get("skills.enabled") !== brainSkillsEnabled) {
+				brainCwd = sessionManager.getCwd();
+				brainSkillsEnabled = settings.get("skills.enabled");
+				brain = createMarkdownBrain(brainCwd, agentDir, brainSkillsEnabled);
+			}
+			try {
+				return await brain.transform(result.messages, {
+					rerank: settings.get("laya.enabled") && process.env.LAYA_ENABLED !== "false",
+					signal: _signal,
+					sessionId: sessionManager.getSessionId(),
+					sanitize: obfuscator ? text => obfuscator.obfuscate(text) : undefined,
+				});
+			} catch (error) {
+				logger.debug("Markdown brain retrieval failed open", { error: String(error) });
+				return result.messages;
+			}
 		};
 		// Per-request provider-context transforms. Obfuscate FIRST so secrets are
 		// redacted from text before snapcompact rasterizes it into PNG frames. Clamp

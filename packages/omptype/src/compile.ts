@@ -222,13 +222,7 @@ class Builder {
 					const present = `own.call(${v},${this.lit(p.key)})`;
 					const predicate = this.predicate(p.val, av);
 					checks.push(
-						p.opt || p.hasDefault
-							? rejectsUndefined(p.val)
-								? `((${av}!==undefined&&(${predicate}))||!(${present}))`
-								: `(!(${present})||(${predicate}))`
-							: rejectsUndefined(p.val)
-								? predicate
-								: `((${present})&&(${predicate}))`,
+						p.opt || p.hasDefault ? `(!(${present})||(${predicate}))` : `((${present})&&(${predicate}))`,
 					);
 				}
 				const stringKey = this.next("k");
@@ -1015,17 +1009,11 @@ class Builder {
 					const present = `own.call(${object},${this.lit(prop.key)})`;
 					this.push(`const ${value}=${this.access(object, prop.key)};`);
 					if (prop.opt || prop.hasDefault) {
-						if (rejectsUndefined(prop.val)) {
-							this.push(`if(${value}!==undefined){`);
-							this.emitAllows(prop.val, value);
-							this.push(`}else if(${present})return false;`);
-						} else {
-							this.push(`if(${present}){`);
-							this.emitAllows(prop.val, value);
-							this.push("}");
-						}
+						this.push(`if(${present}){`);
+						this.emitAllows(prop.val, value);
+						this.push("}");
 					} else {
-						if (!rejectsUndefined(prop.val)) this.push(`if(!(${present}))return false;`);
+						this.push(`if(!(${present}))return false;`);
 						this.emitAllows(prop.val, value);
 					}
 				}

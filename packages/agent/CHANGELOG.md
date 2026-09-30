@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Aborting during turn preparation (for example, a hung context hook) now settles the run with an aborted assistant message and `agent_end` instead of failing the event stream.
+
 ## [18.1.10] - 2026-09-04
 
 ### Fixed

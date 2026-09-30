@@ -45,6 +45,23 @@ function literalStableRow(row: string): TranscriptStableRow {
 	return { key: row };
 }
 
+it("renders a long transcript viewport without rescanning every historical child", () => {
+	const transcript = new TranscriptContainer();
+	for (let index = 0; index < 1_000; index++) transcript.addChild(new Block([`row ${index}`], true));
+	let historicalReads = 0;
+	transcript.children = new Proxy(transcript.children, {
+		get(target, key, receiver) {
+			if (typeof key === "string" && /^\d+$/.test(key)) historicalReads++;
+			return Reflect.get(target, key, receiver);
+		},
+	});
+	for (let frame = 0; frame < 5; frame++) {
+		expect(transcript.renderTail(80, 3)).toEqual(["row 998", "", "row 999"]);
+	}
+	// A frame should depend on visible blocks, not on all 1,000 earlier blocks.
+	expect(historicalReads).toBeLessThan(100);
+});
+
 class AppendBlock extends Block {
 	readonly transcriptBlockMode = "appendOnly" as const;
 	#stable: readonly TranscriptStableRow[];
