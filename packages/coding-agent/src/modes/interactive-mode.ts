@@ -705,8 +705,17 @@ export class InteractiveMode implements InteractiveModeContext {
 	 * visible-session entry drives optimistic/goal flows as before.
 	 */
 	#pendingSubmissionsByOwner = new Map<AgentSession, SubmittedUserInput>();
-	#pendingSubmissionDispose: (() => void) | undefined;
-	#pendingSubmissionPreservesDraft = false;
+	#pendingSubmissionDisposesByOwner = new Map<AgentSession, () => void>();
+	#pendingSubmissionPreservesDraftByOwner = new Map<AgentSession, boolean>();
+	/** Session that owns the visible optimistic user row; undefined when none. */
+	#optimisticUserOwner: AgentSession | undefined;
+	/** Session that owns the visible optimistic `/skill:` row; undefined when none. */
+	#optimisticSkillOwner: AgentSession | undefined;
+	#optimisticSkillMessageByOwner = new Map<
+		AgentSession,
+		{ message: AgentMessage; imageLinks?: readonly (string | undefined)[] }
+	>();
+	#optimisticSignaturesByOwner = new Map<AgentSession, string>();
 	#optimisticUserMessageComponents: Component[] = [];
 	#optimisticSkillMessageComponents: Component[] = [];
 	/** True while an optimistically-rendered `/skill:` row awaits its canonical
@@ -815,8 +824,76 @@ export class InteractiveMode implements InteractiveModeContext {
 		return this.#focusController.unfocus();
 	}
 	/** Retarget the main view to another already-live top-level session. Neither runtime is stopped. */
-	selectMainSession(session: AgentSession): Promise<void> {
-		return this.#focusController.selectMainSession(session);
+	async selectMainSession(session: AgentSession): Promise<void> {
+		if (session === this.session) return this.#focusController.selectMainSession(session);
+		const previous = this.session;
+		this.#optimisticUserMessageComponents = [];
+		this.#optimisticSkillMessageComponents = [];
+		try {
+			previous.setPromptDropped?.(undefined);
+		} catch {}
+		try {
+			previous.setTitleGenerationStart?.(undefined);
+		} catch {}
+		try {
+			await this.#focusController.selectMainSession(session);
+		} catch (error) {
+			try {
+				this.session.setPromptDropped?.(prompt => this.#restoreDroppedPrompt(prompt));
+			} catch {}
+			try {
+				this.session.setTitleGenerationStart?.(() => {
+					this.#inputController.notifyTitleGenerationStart();
+				});
+			} catch {}
+			this.#restoreVisibleOptimistic();
+			throw error;
+		}
+		try {
+			this.session.setPromptDropped?.(prompt => this.#restoreDroppedPrompt(prompt));
+		} catch {}
+		try {
+			this.session.setTitleGenerationStart?.(() => {
+				this.#inputController.notifyTitleGenerationStart();
+			});
+		} catch {}
+		this.#restoreVisibleOptimistic();
+	}
+
+	/**
+	 * Re-point the visible optimistic singletons at the newly attached
+	 * session after a tab switch. Per-owner submission/skill state survives
+	 * in maps; only the visible row is repainted — and only when its dispatch
+	 * has not yet produced a persisted canonical message (finish deletes the
+	 * stashed entry, so a completed background dispatch never duplicates).
+	 */
+	#restoreVisibleOptimistic(): void {
+		const target = this.session;
+		const pending = this.#pendingSubmissionsByOwner.get(target);
+		const stashedSignature = this.#optimisticSignaturesByOwner.get(target);
+		if (pending && !pending.cancelled && !pending.customType && stashedSignature) {
+			this.#optimisticUserOwner = target;
+			this.optimisticUserMessageSignature = stashedSignature;
+			this.#replayOptimisticUserMessage();
+			this.ensureLoadingAnimation();
+		} else {
+			this.#optimisticUserOwner = undefined;
+			this.optimisticUserMessageSignature = undefined;
+			this.#optimisticUserMessageComponents = [];
+		}
+		const skill = this.#optimisticSkillMessageByOwner.get(target);
+		if (skill) {
+			this.#optimisticSkillOwner = target;
+			this.optimisticSkillMessagePending = true;
+			this.#optimisticSkillMessageComponents = this.#captureAddedChatComponents(() => {
+				this.addMessageToChat(skill.message, { imageLinks: skill.imageLinks });
+			});
+			this.ensureLoadingAnimation();
+		} else {
+			this.#optimisticSkillOwner = undefined;
+			this.optimisticSkillMessagePending = false;
+			this.#optimisticSkillMessageComponents = [];
+		}
 	}
 	/** Move interactive UI ownership (tool-approval dialogs) to the newly visible session. */
 	attachSessionRunnerUI(session: AgentSession): void {
@@ -2034,10 +2111,17 @@ export class InteractiveMode implements InteractiveModeContext {
 		return this.chatContainer.children.slice(start);
 	}
 
-	clearOptimisticUserMessage(): void {
+	clearOptimisticUserMessage(options?: { owner?: AgentSession }): void {
+		const owner = options?.owner ?? this.session;
+		const dispose = this.#pendingSubmissionDisposesByOwner.get(owner);
+		if (dispose) {
+			dispose();
+			this.#pendingSubmissionDisposesByOwner.delete(owner);
+		}
+		this.#optimisticSignaturesByOwner.delete(owner);
+		if (this.#optimisticUserOwner !== undefined && this.#optimisticUserOwner !== owner) return;
+		this.#optimisticUserOwner = undefined;
 		this.optimisticUserMessageSignature = undefined;
-		this.#pendingSubmissionDispose?.();
-		this.#pendingSubmissionDispose = undefined;
 		this.#optimisticUserMessageComponents = [];
 	}
 
@@ -2045,9 +2129,19 @@ export class InteractiveMode implements InteractiveModeContext {
 		message: AgentMessage,
 		options?: { imageLinks?: readonly (string | undefined)[] },
 	): void {
+		const owner = this.session;
+		const dispose = this.#pendingSubmissionDisposesByOwner.get(owner);
+		if (dispose) {
+			dispose();
+			this.#pendingSubmissionDisposesByOwner.delete(owner);
+		}
+		this.#optimisticSignaturesByOwner.delete(owner);
+		if (this.#optimisticUserOwner !== undefined && this.#optimisticUserOwner !== owner) {
+			this.addMessageToChat(message, options);
+			return;
+		}
+		this.#optimisticUserOwner = undefined;
 		this.optimisticUserMessageSignature = undefined;
-		this.#pendingSubmissionDispose?.();
-		this.#pendingSubmissionDispose = undefined;
 		for (const component of this.#optimisticUserMessageComponents) {
 			this.chatContainer.removeChild(component);
 		}
@@ -2069,7 +2163,18 @@ export class InteractiveMode implements InteractiveModeContext {
 		message: AgentMessage,
 		options?: { imageLinks?: readonly (string | undefined)[] },
 	): void {
-		this.clearOptimisticSkillMessage();
+		const owner = this.session;
+		if (this.#optimisticSkillOwner !== undefined && this.#optimisticSkillOwner !== owner) {
+			for (const component of this.#optimisticSkillMessageComponents) {
+				try {
+					this.chatContainer.removeChild(component);
+				} catch {}
+			}
+		} else {
+			this.clearOptimisticSkillMessage();
+		}
+		this.#optimisticSkillOwner = owner;
+		this.#optimisticSkillMessageByOwner.set(owner, { message, imageLinks: options?.imageLinks });
 		this.optimisticSkillMessagePending = true;
 		this.#optimisticSkillMessageComponents = this.#captureAddedChatComponents(() => {
 			this.addMessageToChat(message, options);
@@ -2081,6 +2186,13 @@ export class InteractiveMode implements InteractiveModeContext {
 	/** Replace the optimistic `/skill:` row with the canonical message emitted by
 	 *  the session, mirroring {@link replaceOptimisticUserMessage} for skills. */
 	reconcileOptimisticSkillMessage(message: AgentMessage): void {
+		const owner = this.session;
+		this.#optimisticSkillMessageByOwner.delete(owner);
+		if (this.#optimisticSkillOwner !== undefined && this.#optimisticSkillOwner !== owner) {
+			this.addMessageToChat(message);
+			return;
+		}
+		this.#optimisticSkillOwner = undefined;
 		this.optimisticSkillMessagePending = false;
 		for (const component of this.#optimisticSkillMessageComponents) {
 			this.chatContainer.removeChild(component);
@@ -2091,13 +2203,23 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	/** Drop the optimistic `/skill:` row when dispatch fails or bails before the
 	 *  message reaches the agent (aborted preflight, streaming-race requeue). */
-	clearOptimisticSkillMessage(): void {
+	clearOptimisticSkillMessage(options?: { owner?: AgentSession }): void {
+		const owner = options?.owner ?? this.session;
+		this.#optimisticSkillMessageByOwner.delete(owner);
+		if (this.#optimisticSkillOwner !== undefined && this.#optimisticSkillOwner !== owner) return;
+		this.#optimisticSkillOwner = undefined;
 		this.optimisticSkillMessagePending = false;
 		if (this.#optimisticSkillMessageComponents.length === 0) return;
 		for (const component of this.#optimisticSkillMessageComponents) {
 			this.chatContainer.removeChild(component);
 		}
 		this.#optimisticSkillMessageComponents = [];
+	}
+
+	hasPendingOptimisticSkill(session?: AgentSession): boolean {
+		const owner = session ?? this.session;
+		if (this.#optimisticSkillMessageByOwner.has(owner)) return true;
+		return owner === this.session && this.optimisticSkillMessagePending;
 	}
 
 	startPendingSubmission(
@@ -2122,13 +2244,28 @@ export class InteractiveMode implements InteractiveModeContext {
 			cancelled: false,
 			started: false,
 		};
-		this.#pendingSubmissionsByOwner.set(submission.ownerSession ?? this.session, submission);
-		this.#pendingSubmissionPreservesDraft = options?.preserveDraft === true;
+		const owner = submission.ownerSession ?? this.session;
+		this.#pendingSubmissionsByOwner.set(owner, submission);
+		if (options?.preserveDraft === true) this.#pendingSubmissionPreservesDraftByOwner.set(owner, true);
+		else this.#pendingSubmissionPreservesDraftByOwner.delete(owner);
 		if (!submission.customType) {
 			this.#resetGoalContinuationSuppression();
 			const imageCount = submission.images?.length ?? 0;
+			if (this.#optimisticUserOwner !== undefined && this.#optimisticUserOwner !== owner) {
+				for (const component of this.#optimisticUserMessageComponents) {
+					try {
+						this.chatContainer.removeChild(component);
+					} catch {}
+				}
+				this.#optimisticUserMessageComponents = [];
+			} else if (this.#optimisticUserOwner === owner) {
+				this.clearOptimisticUserMessage({ owner });
+			}
 			this.optimisticUserMessageSignature = `${submission.text}\u0000${imageCount}`;
-			this.#pendingSubmissionDispose = this.recordLocalSubmission(submission.text, imageCount);
+			this.#pendingSubmissionDisposesByOwner.get(owner)?.();
+			this.#pendingSubmissionDisposesByOwner.set(owner, this.recordLocalSubmission(submission.text, imageCount));
+			this.#optimisticSignaturesByOwner.set(owner, this.optimisticUserMessageSignature ?? "");
+			this.#optimisticUserOwner = owner;
 			this.#optimisticUserMessageComponents = this.#captureAddedChatComponents(() => {
 				this.addMessageToChat(
 					{
@@ -2141,7 +2278,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				);
 			});
 		} else {
-			this.clearOptimisticUserMessage();
+			this.clearOptimisticUserMessage({ owner });
 		}
 		if (!options?.preserveDraft) {
 			this.editor.setText("");
@@ -2158,12 +2295,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (!submission || submission.started) {
 			return false;
 		}
-		const preserveDraft = this.#pendingSubmissionPreservesDraft;
+		const preserveDraft = this.#pendingSubmissionPreservesDraftByOwner.get(this.session) === true;
 
 		submission.cancelled = true;
 		this.#pendingSubmissionsByOwner.delete(this.session);
-		this.#pendingSubmissionPreservesDraft = false;
-		this.clearOptimisticUserMessage();
+		this.#pendingSubmissionPreservesDraftByOwner.delete(this.session);
+		this.clearOptimisticUserMessage({ owner: this.session });
 		this.#pendingWorkingMessage = undefined;
 		if (submission.customType === "goal-continuation") {
 			this.#goalContinuationTurnInFlight = false;
@@ -2212,7 +2349,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			return false;
 		}
 		input.started = true;
-		this.#pendingSubmissionPreservesDraft = false;
+		this.#pendingSubmissionPreservesDraftByOwner.delete(input.ownerSession ?? this.session);
 		const annotationStateKey = this.#planReviewAnnotationStateBySubmission.get(input);
 		if (annotationStateKey) {
 			this.#planReviewAnnotationStateBySubmission.delete(input);
@@ -2224,17 +2361,21 @@ export class InteractiveMode implements InteractiveModeContext {
 	finishPendingSubmission(input: SubmittedUserInput): void {
 		const owner = input.ownerSession ?? this.session;
 		const wasPendingSubmission = this.#pendingSubmissionsByOwner.get(owner) === input;
-		const pendingSubmissionDispose = this.#pendingSubmissionDispose;
+		const pendingSubmissionDispose = this.#pendingSubmissionsByOwner.get(owner)
+			? this.#pendingSubmissionDisposesByOwner.get(owner)
+			: undefined;
 		if (wasPendingSubmission) {
 			this.#pendingSubmissionsByOwner.delete(owner);
-			this.#pendingSubmissionDispose = undefined;
-			this.#pendingSubmissionPreservesDraft = false;
+			this.#pendingSubmissionDisposesByOwner.delete(owner);
+			this.#pendingSubmissionPreservesDraftByOwner.delete(owner);
+			this.#optimisticSignaturesByOwner.delete(owner);
 		}
 		if (input.customType === "goal-continuation") {
 			this.#goalContinuationTurnInFlight = false;
 		}
 
-		if (wasPendingSubmission && !owner.isStreaming && !this.streamingComponent) {
+		if (wasPendingSubmission && owner === this.session && !owner.isStreaming && !this.streamingComponent) {
+			this.#optimisticUserOwner = undefined;
 			this.optimisticUserMessageSignature = undefined;
 			pendingSubmissionDispose?.();
 			this.#optimisticUserMessageComponents = [];
@@ -2242,6 +2383,8 @@ export class InteractiveMode implements InteractiveModeContext {
 			if (this.loadingAnimation) {
 				this.#stopLoadingAnimation(true);
 			}
+		} else if (wasPendingSubmission && owner !== this.session) {
+			pendingSubmissionDispose?.();
 		}
 	}
 
@@ -2521,6 +2664,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	#replayOptimisticUserMessage(): void {
 		if (!this.optimisticUserMessageSignature) return;
+		if (this.#optimisticUserOwner !== undefined && this.#optimisticUserOwner !== this.session) return;
 		const submission = this.#pendingSubmissionsByOwner.get(this.session);
 		if (!submission || submission.cancelled || submission.customType) return;
 		this.#optimisticUserMessageComponents = this.#captureAddedChatComponents(() => {
@@ -5237,13 +5381,23 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#uiHelpers.showStatus(message, options);
 	}
 
-	showError(message: string): void {
-		this.#pendingSubmissionsByOwner.delete(this.session);
-		this.#pendingSubmissionPreservesDraft = false;
-		this.clearOptimisticUserMessage();
-		this.#pendingWorkingMessage = undefined;
-		if (this.loadingAnimation) {
-			this.#stopLoadingAnimation(true);
+	showError(message: string, options?: { owner?: AgentSession }): void {
+		const owner = options?.owner ?? this.session;
+		const isVisible = owner === this.session;
+		this.#pendingSubmissionsByOwner.delete(owner);
+		this.#pendingSubmissionPreservesDraftByOwner.delete(owner);
+		this.#optimisticSignaturesByOwner.delete(owner);
+		this.#optimisticSkillMessageByOwner.delete(owner);
+		if (isVisible) {
+			this.clearOptimisticUserMessage({ owner });
+			this.clearOptimisticSkillMessage({ owner });
+			this.#pendingWorkingMessage = undefined;
+			if (this.loadingAnimation) {
+				this.#stopLoadingAnimation(true);
+			}
+		} else {
+			this.#pendingSubmissionDisposesByOwner.get(owner)?.();
+			this.#pendingSubmissionDisposesByOwner.delete(owner);
 		}
 		this.#uiHelpers.showError(message);
 	}

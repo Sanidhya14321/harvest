@@ -34,6 +34,7 @@
 - Switching session tabs no longer stops the other session's run: background tabs keep working, reopen warm, and are named in the `/exit` confirmation. `+ New session` leaves the previous run alive in its tab.
 - Closing a tab hides it without stopping its run; deleting a session requires stopping its run first.
 - Submitting in one tab can no longer clobber or cancel another tab's pending dispatch; completion cleanup reads the owning session's state.
+- Optimistic transcript rows follow their submitting tab: background completions and errors no longer erase the visible row, and switching back restores a still-undispatched row without duplicating completed work.
 - Tool approvals follow the visible tab: background tabs fail closed instead of prompting into the wrong session, and returning to a tab restores its approval capability.
 - Background approvals queue under their session with an attention badge and present in order when their tab becomes active; stopping or quitting denies whatever is still parked.
 - `/diagnostics` and the run record now include the last tool-gating verdict with its local sidecar latency, separating gating delay from model and tool time.

@@ -1294,6 +1294,7 @@ export class InputController {
 
 		this.ctx.editor.clearDraft(text);
 		let optimistic = false;
+		const ownerSession = this.ctx.session;
 		try {
 			// Build the user-attributed skill message once so the optimistic
 			// transcript row and the dispatched message share content.
@@ -1319,15 +1320,15 @@ export class InputController {
 			await this.ctx.session.promptCustomMessage(built.message, built.options);
 			return true;
 		} catch (error) {
-			if (optimistic) this.ctx.clearOptimisticSkillMessage();
-			restoreDraft();
-			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			if (optimistic) this.ctx.clearOptimisticSkillMessage({ owner: ownerSession });
+			if (this.ctx.session === ownerSession) restoreDraft();
+			this.ctx.showError(error instanceof Error ? error.message : String(error), { owner: ownerSession });
 			return true;
 		} finally {
-			if (optimistic && this.ctx.optimisticSkillMessagePending) {
+			if (optimistic && this.ctx.hasPendingOptimisticSkill?.(ownerSession)) {
 				// Dispatch resolved without a canonical skill message_start (aborted
 				// preflight, or a streaming-race requeue): drop the pending row.
-				this.ctx.clearOptimisticSkillMessage();
+				this.ctx.clearOptimisticSkillMessage({ owner: ownerSession });
 			}
 			if (this.ctx.session.isStreaming) {
 				this.ctx.updatePendingMessagesDisplay();

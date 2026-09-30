@@ -79,4 +79,35 @@ describe("interactive pending submissions per owner", () => {
 		expect(firstInput.cancelled).toBe(false);
 		expect(first.mode.markPendingSubmissionStarted(firstInput)).toBe(true);
 	});
+
+	it("keeps the visible optimistic row when a background tab's row is cleared", async () => {
+		const first = await makeMode();
+		const second = await makeMode();
+		const firstInput = first.mode.startPendingSubmission({ text: "first tab prompt" });
+		first.mode.session = second.session;
+		first.mode.startPendingSubmission({ text: "second tab prompt" });
+
+		// A background completion/error clearing its own optimistic state must
+		// not erase the visible tab's row or its local-submission marker.
+		first.mode.clearOptimisticUserMessage({ owner: first.session });
+		expect(first.mode.optimisticUserMessageSignature).toBe("second tab prompt\u00000");
+		expect(first.mode.locallySubmittedUserSignatures.has("second tab prompt\u00000")).toBe(true);
+		expect(first.mode.locallySubmittedUserSignatures.has("first tab prompt\u00000")).toBe(false);
+
+		// Both dispatches still resolve against their owning session.
+		expect(first.mode.markPendingSubmissionStarted(firstInput)).toBe(true);
+	});
+
+	it("parks skill rows per owner so a background clear leaves the visible row", async () => {
+		const first = await makeMode();
+		const second = await makeMode();
+		first.mode.renderOptimisticSkillMessage({ role: "custom", content: "first skill" } as never);
+		first.mode.session = second.session;
+		first.mode.renderOptimisticSkillMessage({ role: "custom", content: "second skill" } as never);
+
+		first.mode.clearOptimisticSkillMessage({ owner: first.session });
+		expect(first.mode.optimisticSkillMessagePending).toBe(true);
+		expect(first.mode.hasPendingOptimisticSkill(first.session)).toBe(false);
+		expect(first.mode.hasPendingOptimisticSkill(second.session)).toBe(true);
+	});
 });

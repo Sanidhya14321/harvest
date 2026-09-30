@@ -360,7 +360,9 @@ export async function submitInteractiveInput(
 			try {
 				forwarded = await session.prompt(input.text, { images: input.images, streamingBehavior });
 			} catch (error: unknown) {
-				mode.showError(error instanceof Error ? error.message : "Unknown error occurred");
+				mode.showError(error instanceof Error ? error.message : "Unknown error occurred", {
+					owner: input.ownerSession,
+				});
 			}
 			// Dispatch consumed the body locally (void custom command) or rejected
 			// instead of starting a turn: when it is the armed loop body, park the
@@ -371,7 +373,7 @@ export async function submitInteractiveInput(
 		}
 	} catch (error: unknown) {
 		const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-		mode.showError(errorMessage);
+		mode.showError(errorMessage, { owner: input.ownerSession });
 	} finally {
 		mode.finishPendingSubmission(input);
 		await mode.checkShutdownRequested();

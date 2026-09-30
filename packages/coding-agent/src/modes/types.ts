@@ -315,7 +315,7 @@ export interface InteractiveModeContext {
 	resetTranscript(): void;
 	showStatus(message: string, options?: { dim?: boolean }): void;
 	showModelCycleTrack(track: string): void;
-	showError(message: string): void;
+	showError(message: string, options?: { owner?: AgentSession }): void;
 	showPinnedError(message: string): void;
 	clearPinnedError(): void;
 	showWarning(message: string, options?: { hideWithToolActivity?: boolean }): void;
@@ -356,7 +356,7 @@ export interface InteractiveModeContext {
 	 */
 	withLocalSubmission<T>(text: string, fn: () => Promise<T>, options?: { imageCount?: number }): Promise<T>;
 	/** Clears bookkeeping for an optimistic local user message once the matching session event arrives. */
-	clearOptimisticUserMessage(): void;
+	clearOptimisticUserMessage(options?: { owner?: AgentSession }): void;
 	/** Replaces the raw optimistic user render with the canonical message emitted by the session. */
 	replaceOptimisticUserMessage(
 		message: AgentMessage,
@@ -372,7 +372,9 @@ export interface InteractiveModeContext {
 	/** Swaps the optimistic `/skill:` row for the canonical message emitted by the session. */
 	reconcileOptimisticSkillMessage(message: AgentMessage): void;
 	/** Drops the optimistic `/skill:` row when dispatch fails or bails before reaching the agent. */
-	clearOptimisticSkillMessage(): void;
+	clearOptimisticSkillMessage(options?: { owner?: AgentSession }): void;
+	/** True while the given session owns an unreconciled optimistic `/skill:` row. */
+	hasPendingOptimisticSkill?(session?: AgentSession): boolean;
 	isKnownSlashCommand(text: string): boolean;
 	addMessageToChat(
 		message: AgentMessage,
