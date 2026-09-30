@@ -36,6 +36,18 @@
 - Submitting in one tab can no longer clobber or cancel another tab's pending dispatch; completion cleanup reads the owning session's state.
 - Optimistic transcript rows follow their submitting tab: background completions and errors no longer erase the visible row, and switching back restores a still-undispatched row without duplicating completed work.
 - Tool approvals follow the visible tab: background tabs fail closed instead of prompting into the wrong session, and returning to a tab restores its approval capability.
+- Unknown RPC commands now reject with their request id preserved, so newer clients get an immediate correlated error instead of a timeout.
+- Over-limit RPC input lines are skipped with an error while the next valid frame still processes, serial command floods fail fast with a correlated overload error, and abort commands overtake stalled work instead of queueing behind it.
+- Oversized MCP HTTP response bodies now fail closed with a bounded non-retryable error instead of buffering unboundedly, and never trigger a replay of the request.
+- RPC wait helpers are request-correlated: local-only prompts resolve via their prompt_result instead of timing out, already-idle waits resolve at once, rejections clean up their waiter, and disconnects settle pending waits.
+- The Laya sidecar client now follows runtime URL changes instead of pinning the first resolved port.
+- Laya context pruning skips its inference round trip when all candidate tokens already fit the budget, and scores large sessions in server-sized chunks instead of failing open wholesale.
+- Locked pruning decisions are keyed by scored content (not just position), bounded process-wide, and released with their session, so rewinds and branch switches rescore new content instead of replaying stale drops.
+- Shadow subagent classification no longer serializes handoff dispatch: the default agent starts immediately while scoring runs bounded in the background with its audit outcome still joinable.
+- The completion check asks only the needed question, carries task context, and settles at once on cancelled turns; the unexpected-stop path no longer pays for the unused success question.
+- Pruning relevance now scores against the latest user request with the original task kept as context, instead of always using the first message.
+- Hardware calibration is no longer masked by schema defaults: unset pruning/timeout settings derive from calibration, explicit overrides stay explicit, and `/laya status` shows configured, calibrated, and effective values.
+- Tool gating eligibility now follows each call's structured approval tier, so MCP and extension writes are classified even though their wire names are not listed; read-tier tools bypass without a sidecar call.
 - Background approvals queue under their session with an attention badge and present in order when their tab becomes active; stopping or quitting denies whatever is still parked.
 - `/diagnostics` and the run record now include the last tool-gating verdict with its local sidecar latency, separating gating delay from model and tool time.
 - Concurrent Laya sidecar starters now share one spawn run instead of double-spawning daemons behind a port drift; the same singleflight guard now covers the full setup pipeline.

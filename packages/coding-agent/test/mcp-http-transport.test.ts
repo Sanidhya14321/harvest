@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import { connectToServer } from "@harvest/pi-coding-agent/mcp/client";
 import { MCPTransportError } from "@harvest/pi-coding-agent/mcp/errors";
-import { HttpTransport } from "@harvest/pi-coding-agent/mcp/transports/http";
+import { HttpTransport, MAX_MCP_HTTP_BODY_BYTES } from "@harvest/pi-coding-agent/mcp/transports/http";
 import { postmortem } from "@harvest/pi-utils";
 
 const encoder = new TextEncoder();
@@ -248,24 +248,17 @@ describe("MCP Streamable HTTP transport timeouts", () => {
 		vi.useFakeTimers();
 		const caller = new AbortController();
 		const originalFetch = globalThis.fetch;
-		const jsonStarted = Promise.withResolvers<void>();
-		globalThis.fetch = (async (_input, init) => {
-			const response = new Response(null, { headers: { "Content-Type": "application/json" } });
-			Object.assign(response, {
-				json: () => {
-					const { promise, reject } = Promise.withResolvers<unknown>();
-					const rejectBodyRead = () => {
-						caller.abort();
-						reject(new SyntaxError("Unexpected end of JSON input"));
-					};
-					if (init?.signal?.aborted) rejectBodyRead();
-					else init?.signal?.addEventListener("abort", rejectBodyRead, { once: true });
-					jsonStarted.resolve();
-					return promise;
+		const readStarted = Promise.withResolvers<void>();
+		globalThis.fetch = (async () => {
+			// A body that never produces bytes: the request timeout must win
+			// the race and surface, even if the caller aborts first.
+			const stream = new ReadableStream<Uint8Array>({
+				pull() {
+					readStarted.resolve();
 				},
 			});
-			return response;
-		}) as typeof globalThis.fetch;
+			return new Response(stream, { headers: { "Content-Type": "application/json" } });
+		}) as unknown as typeof globalThis.fetch;
 		try {
 			const transport = new HttpTransport({
 				type: "http",
@@ -274,8 +267,11 @@ describe("MCP Streamable HTTP transport timeouts", () => {
 			});
 			await transport.connect();
 			const request = transport.request("tools/list", undefined, { signal: caller.signal });
-			await jsonStarted.promise;
+			await readStarted.promise;
 			vi.advanceTimersByTime(REQUEST_TIMEOUT_MS);
+			// A caller abort landing after the operation timeout fired must
+			// not displace the timeout result.
+			caller.abort();
 
 			await expect(request).rejects.toThrow(`Request timeout after ${REQUEST_TIMEOUT_MS}ms`);
 		} finally {
@@ -284,29 +280,19 @@ describe("MCP Streamable HTTP transport timeouts", () => {
 		}
 	});
 
-	it("does not report a timeout when caller cancellation wins a delayed JSON body rejection", async () => {
+	it("surfaces caller cancellation instead of a timeout when the caller aborts a stalled body", async () => {
 		vi.useFakeTimers();
 		const caller = new AbortController();
 		const originalFetch = globalThis.fetch;
-		const jsonStarted = Promise.withResolvers<void>();
-		globalThis.fetch = (async (_input, init) => {
-			const response = new Response(null, { headers: { "Content-Type": "application/json" } });
-			Object.assign(response, {
-				json: () => {
-					const { promise, reject } = Promise.withResolvers<unknown>();
-					init?.signal?.addEventListener(
-						"abort",
-						() => {
-							setTimeout(() => reject(new SyntaxError("Unexpected end of JSON input")), REQUEST_TIMEOUT_MS + 20);
-						},
-						{ once: true },
-					);
-					jsonStarted.resolve();
-					return promise;
+		const readStarted = Promise.withResolvers<void>();
+		globalThis.fetch = (async () => {
+			const stream = new ReadableStream<Uint8Array>({
+				pull() {
+					readStarted.resolve();
 				},
 			});
-			return response;
-		}) as typeof globalThis.fetch;
+			return new Response(stream, { headers: { "Content-Type": "application/json" } });
+		}) as unknown as typeof globalThis.fetch;
 		try {
 			const transport = new HttpTransport({
 				type: "http",
@@ -315,11 +301,16 @@ describe("MCP Streamable HTTP transport timeouts", () => {
 			});
 			await transport.connect();
 			const request = transport.request("tools/list", undefined, { signal: caller.signal });
-			await jsonStarted.promise;
+			await readStarted.promise;
 			caller.abort();
-			vi.advanceTimersByTime(REQUEST_TIMEOUT_MS + 20);
 
-			await expect(request).rejects.toThrow("Unexpected end of JSON input");
+			const error = await request.then(
+				() => undefined,
+				(reason: unknown) => reason,
+			);
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).name).toBe("AbortError");
+			expect(String((error as Error).message ?? "")).not.toContain("Request timeout");
 		} finally {
 			globalThis.fetch = originalFetch;
 			vi.useRealTimers();
@@ -699,5 +690,77 @@ describe("MCP Streamable HTTP GET listener resumption", () => {
 		} finally {
 			await transport.close();
 		}
+	});
+});
+
+describe("MCP HTTP response byte limits", () => {
+	it("fails closed without replay on an oversized JSON body", async () => {
+		let posts = 0;
+		server = Bun.serve({
+			port: 0,
+			fetch() {
+				posts++;
+				return new Response("x".repeat(MAX_MCP_HTTP_BODY_BYTES + 1), {
+					headers: { "Content-Type": "application/json" },
+				});
+			},
+		});
+		const transport = await connectedTransport();
+
+		await expect(transport.request("tools/list")).rejects.toMatchObject({
+			transport: "http",
+			stage: "receive",
+			failure: "oversized_response",
+			retryable: false,
+		});
+		expect(posts).toBe(1);
+		await transport.close();
+	});
+
+	it("does not replay a retryable status when its error body is oversized", async () => {
+		let posts = 0;
+		server = Bun.serve({
+			port: 0,
+			fetch() {
+				posts++;
+				return new Response("x".repeat(MAX_MCP_HTTP_BODY_BYTES + 1), { status: 503 });
+			},
+		});
+		const transport = await connectedTransport();
+
+		// A small 503 would be retried; the oversized body must win and stay
+		// non-retryable so the write is never sent twice.
+		await expect(transport.request("tools/call")).rejects.toMatchObject({
+			transport: "http",
+			failure: "oversized_response",
+			retryable: false,
+		});
+		expect(posts).toBe(1);
+		await transport.close();
+	});
+
+	it("fails closed on an oversized SSE stream without matching the request", async () => {
+		let posts = 0;
+		const padding = "y".repeat(100 * 1024);
+		let stream = "";
+		for (let i = 0; i < 50; i++) {
+			stream += `data: {"jsonrpc":"2.0","method":"notifications/pad","params":{"pad":"${padding}"}}\n\n`;
+		}
+		server = Bun.serve({
+			port: 0,
+			fetch() {
+				posts++;
+				return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+			},
+		});
+		const transport = await connectedTransport();
+
+		await expect(transport.request("tools/list")).rejects.toMatchObject({
+			transport: "http",
+			failure: "oversized_response",
+			retryable: false,
+		});
+		expect(posts).toBe(1);
+		await transport.close();
 	});
 });

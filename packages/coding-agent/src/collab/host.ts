@@ -522,6 +522,12 @@ export class CollabHost {
 		const name = this.#peers.get(peer)?.name;
 		this.#peers.delete(peer);
 		if (name) this.#ctx.session.emitNotice("info", `${name} left the collab session`, "collab");
+		// A question parked for a departed guest must not hang: with no
+		// writable peer left the remote branch is over, so settle it as
+		// unavailable and keep the local fallback available.
+		if (!this.#hasWritablePeers()) {
+			for (const pending of this.#pendingUi.values()) pending.settle({ kind: "unavailable" });
+		}
 		this.#updateStatusSegment();
 		this.#scheduleStateBroadcast();
 	}

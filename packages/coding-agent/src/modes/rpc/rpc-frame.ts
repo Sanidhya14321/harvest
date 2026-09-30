@@ -268,6 +268,18 @@ export function encodeRpcFrame(frame: object, streamedMessageCount = 0, streamed
 	return encodeRpcFrameFromJson(frame, JSON.stringify(frame), streamedMessageCount, streamedMessages);
 }
 
+/**
+ * Extract a trustworthy correlation id from an inbound command frame.
+ * Unknown commands from a newer client still carry their string `id`, so
+ * the rejection can resolve the caller's pending request instead of timing
+ * out. Non-string or missing ids stay uncorrelated (parse-error path).
+ */
+export function correlationIdForCommand(command: unknown): string | undefined {
+	if (typeof command !== "object" || command === null) return undefined;
+	const id = (command as { id?: unknown }).id;
+	return typeof id === "string" ? id : undefined;
+}
+
 /** Stateful encoder that tracks which messages a client has already received. */
 export class RpcFrameEncoder {
 	#streamedMessages: unknown[] = [];

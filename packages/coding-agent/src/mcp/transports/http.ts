@@ -31,6 +31,141 @@ import { type MCPFetchInit, mcpFetch, withoutHeader } from "./header-policy";
 const HTTP_SSE_CONNECT_TIMEOUT_MS = 1_000;
 const DEFAULT_SSE_RETRY_MS = 3_000;
 
+/**
+ * Maximum bytes read from one MCP HTTP response body (error text, JSON, or
+ * one SSE resume leg). Bodies are counted post-decompression while reading,
+ * so a compromised or buggy server cannot exhaust process memory before
+ * limits apply. Oversized responses fail closed and are never replayed.
+ */
+export const MAX_MCP_HTTP_BODY_BYTES = 4 * 1024 * 1024;
+
+function oversizedMCPHttpError(maxBytes: number, traceId: string | undefined): MCPTransportError {
+	return new MCPTransportError({
+		transport: "http",
+		stage: "receive",
+		failure: "oversized_response",
+		message: `MCP HTTP response body exceeded ${maxBytes} bytes; not retrying`,
+		retryable: false,
+		traceId,
+	});
+}
+
+/** Read a whole response body enforcing the byte cap while streaming. */
+async function readBoundedBodyText(
+	response: Response,
+	maxBytes: number,
+	traceId: string | undefined,
+	signal?: AbortSignal | null,
+): Promise<string> {
+	if (!response.body) {
+		const text = await response.text();
+		if (Buffer.byteLength(text, "utf8") > maxBytes) throw oversizedMCPHttpError(maxBytes, traceId);
+		return text;
+	}
+	signal?.throwIfAborted();
+	const reader = response.body.getReader();
+	// The body reader is not implicitly tied to the operation signal the way
+	// fetch-native parsing is: cancel it with the abort reason so timeouts
+	// still classify as timeouts and caller cancellation as AbortError.
+	const onAbort = (): void => {
+		try {
+			void reader.cancel(signal?.reason).catch(() => {});
+		} catch {}
+	};
+	signal?.addEventListener("abort", onAbort, { once: true });
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value && value.length > 0) {
+				total += value.length;
+				if (total > maxBytes) {
+					await reader.cancel().catch(() => {});
+					throw oversizedMCPHttpError(maxBytes, traceId);
+				}
+				chunks.push(value);
+			}
+		}
+	} finally {
+		signal?.removeEventListener("abort", onAbort);
+		reader.releaseLock();
+	}
+	const combined = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		combined.set(chunk, offset);
+		offset += chunk.length;
+	}
+	return new TextDecoder().decode(combined);
+}
+
+/**
+ * Wrap an SSE response body so one resume leg cannot accumulate past the
+ * byte cap. Errors with the same closed, non-retryable oversized failure
+ * as {@link readBoundedBodyText}; the per-request drain and resume loop
+ * wrap every leg, so each leg is bounded independently.
+ */
+function boundSSEResponseBody(
+	body: ReadableStream<Uint8Array>,
+	maxBytes: number,
+	traceId: string | undefined,
+	signal?: AbortSignal | null,
+): ReadableStream<Uint8Array> {
+	let total = 0;
+	const reader = body.getReader();
+	const onAbort = (): void => {
+		try {
+			void reader.cancel(signal?.reason).catch(() => {});
+		} catch {}
+	};
+	signal?.addEventListener("abort", onAbort, { once: true });
+	return new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			let done: boolean;
+			let value: Uint8Array | undefined;
+			try {
+				({ done, value } = await reader.read());
+			} catch (error) {
+				signal?.removeEventListener("abort", onAbort);
+				try {
+					reader.releaseLock();
+				} catch {}
+				controller.error(error);
+				return;
+			}
+			if (done) {
+				signal?.removeEventListener("abort", onAbort);
+				reader.releaseLock();
+				controller.close();
+				return;
+			}
+			if (value && value.length > 0) {
+				total += value.length;
+				if (total > maxBytes) {
+					signal?.removeEventListener("abort", onAbort);
+					await reader.cancel().catch(() => {});
+					reader.releaseLock();
+					controller.error(oversizedMCPHttpError(maxBytes, traceId));
+					return;
+				}
+				controller.enqueue(value);
+			}
+		},
+		async cancel(reason) {
+			signal?.removeEventListener("abort", onAbort);
+			try {
+				await reader.cancel(reason);
+			} catch {
+				// Cancelling twice (drain finally + wrapper teardown) is benign.
+			} finally {
+				reader.releaseLock();
+			}
+		},
+	});
+}
+
 interface SSEResumeState {
 	lastEventId: string | null;
 	retryMs: number;
@@ -468,7 +603,7 @@ export class HttpTransport implements MCPTransport {
 			}
 
 			if (!response.ok) {
-				const text = await response.text();
+				const text = await readBoundedBodyText(response, MAX_MCP_HTTP_BODY_BYTES, traceId, operation.signal);
 				const wwwAuthenticate = response.headers.get("WWW-Authenticate");
 				const mcpAuthServer = response.headers.get("Mcp-Auth-Server");
 				const authHints = [
@@ -498,7 +633,9 @@ export class HttpTransport implements MCPTransport {
 
 			stage = "decode";
 			// Handle JSON response
-			const result: unknown = await response.json();
+			const result: unknown = JSON.parse(
+				await readBoundedBodyText(response, MAX_MCP_HTTP_BODY_BYTES, traceId, operation.signal),
+			);
 			if (!isRecord(result) || result.jsonrpc !== "2.0" || (!("result" in result) && !("error" in result))) {
 				throw new SyntaxError("Malformed JSON-RPC response");
 			}
@@ -570,8 +707,9 @@ export class HttpTransport implements MCPTransport {
 			try {
 				for (;;) {
 					if (!current.body) throw new Error("SSE response did not include a body");
+					const sseBody = boundSSEResponseBody(current.body, MAX_MCP_HTTP_BODY_BYTES, traceId, signal);
 					try {
-						for await (const event of readSseEvents(current.body, signal)) {
+						for await (const event of readSseEvents(sseBody, signal)) {
 							if (event.id !== undefined) resume.lastEventId = event.id || null;
 							if (event.retry !== undefined) resume.retryMs = event.retry;
 							if (event.data === "") continue;
@@ -784,7 +922,7 @@ export class HttpTransport implements MCPTransport {
 
 			// 202 Accepted is success for notifications
 			if (!response.ok && response.status !== 202) {
-				const text = await response.text();
+				const text = await readBoundedBodyText(response, MAX_MCP_HTTP_BODY_BYTES, traceId, operation.signal);
 				throw new MCPTransportError({
 					transport: "http",
 					stage,

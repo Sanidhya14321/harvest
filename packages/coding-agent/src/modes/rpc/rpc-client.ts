@@ -31,6 +31,7 @@ import type {
 	RpcHostToolDefinition,
 	RpcHostToolResult,
 	RpcHostToolUpdate,
+	RpcPromptResultFrame,
 	RpcResponse,
 	RpcSessionState,
 	RpcSubagentEventFrame,
@@ -214,6 +215,10 @@ function isRpcAvailableCommandsUpdateFrame(value: unknown): value is RpcAvailabl
 	return value.type === "available_commands_update" && Array.isArray(value.commands);
 }
 
+function isRpcPromptResultFrame(value: unknown): value is RpcPromptResultFrame {
+	return isRecord(value) && value.type === "prompt_result";
+}
+
 function isRpcHostToolCallRequest(value: unknown): value is RpcHostToolCallRequest {
 	if (!isRecord(value)) return false;
 	return (
@@ -277,6 +282,7 @@ export class RpcClient {
 	#subagentProgressListeners = new Set<RpcSubagentProgressListener>();
 	#subagentEventListeners = new Set<RpcSubagentEventListener>();
 	#availableCommandsUpdateListeners = new Set<RpcAvailableCommandsUpdateListener>();
+	#promptResultListeners = new Set<(frame: RpcPromptResultFrame) => void>();
 	#pendingRequests: Map<string, { resolve: (response: RpcResponse) => void; reject: (error: Error) => void }> =
 		new Map();
 	#customTools: RpcClientCustomTool[] = [];
@@ -992,62 +998,187 @@ export class RpcClient {
 
 	/**
 	 * Wait for agent to become idle (no streaming).
-	 * Resolves when agent_end event is received.
+	 * Resolves on the next agent_end, or immediately when the agent is
+	 * already idle. Rejects on timeout or client disconnect.
 	 */
 	waitForIdle(timeout = 60000): Promise<void> {
-		const { promise, resolve, reject } = Promise.withResolvers<void>();
-		let settled = false;
-		const unsubscribe = this.onEvent(event => {
-			if (event.type === "agent_end") {
-				settled = true;
-				unsubscribe();
-				clearTimeout(timeoutId);
-				resolve();
-			}
-		});
-
-		const timeoutId = this.#startTimeout(timeout, () => {
-			if (settled) return;
-			settled = true;
-			unsubscribe();
-			reject(new Error(`Timeout waiting for agent to become idle. Stderr: ${this.#process?.peekStderr() ?? ""}`));
-		});
-		return promise;
+		return this.#awaitRunEnd({
+			timeout,
+			timeoutMessage: "Timeout waiting for agent to become idle.",
+			checkIdle: true,
+		}).waitForRunEnd();
 	}
 
 	/**
-	 * Collect events until agent becomes idle.
+	 * Collect events until agent becomes idle. Resolves immediately with the
+	 * events seen so far when the agent is already idle.
 	 */
 	collectEvents(timeout = 60000): Promise<AgentEvent[]> {
-		const { promise, resolve, reject } = Promise.withResolvers<AgentEvent[]>();
 		const events: AgentEvent[] = [];
-		let settled = false;
-		const unsubscribe = this.onEvent(event => {
-			events.push(event);
-			if (event.type === "agent_end") {
-				settled = true;
-				unsubscribe();
-				clearTimeout(timeoutId);
-				resolve(events);
-			}
+		const completion = this.#awaitRunEnd({
+			timeout,
+			timeoutMessage: "Timeout collecting events.",
+			checkIdle: true,
+			collect: event => events.push(event),
 		});
-
-		const timeoutId = this.#startTimeout(timeout, () => {
-			if (settled) return;
-			settled = true;
-			unsubscribe();
-			reject(new Error(`Timeout collecting events. Stderr: ${this.#process?.peekStderr() ?? ""}`));
-		});
-		return promise;
+		return completion.waitForRunEnd().then(() => events);
 	}
 
 	/**
 	 * Send prompt and wait for completion, returning all events.
+	 *
+	 * The collector subscribes before sending so a fast local-only result
+	 * cannot slip through. Completion is request-correlated: a local-only
+	 * prompt resolves via its `prompt_result` frame (or an
+	 * `agentInvoked: false` response) instead of waiting for an `agent_end`
+	 * that will never arrive. A rejected send settles the collector instead
+	 * of leaving it pending.
+	 *
+	 * Note: `agent_end` frames carry no run id, so concurrent prompts from
+	 * the same client can cross-resolve each other's agent_end wait. Use one
+	 * promptAndWait at a time per client, or correlate via prompt_result ids.
 	 */
 	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<AgentEvent[]> {
-		const eventsPromise = this.collectEvents(timeout);
-		await this.prompt(message, images);
-		return eventsPromise;
+		const events: AgentEvent[] = [];
+		const completion = this.#awaitRunEnd({
+			timeout,
+			timeoutMessage: "Timeout collecting events.",
+			collect: event => events.push(event),
+		});
+		let requestId: string;
+		let response: RpcResponse;
+		try {
+			({ id: requestId, response } = await this.#sendWithId({ type: "prompt", message, images }));
+		} catch (error) {
+			completion.cancel(error instanceof Error ? error : new Error(String(error)));
+			throw error;
+		}
+		if (!response.success) {
+			const failure = response as Extract<RpcResponse, { success: false }>;
+			const error = new RpcCommandError(failure.error, failure.command, failure.code);
+			completion.cancel(error);
+			throw error;
+		}
+		const agentInvoked =
+			response.command === "prompt" && isRecord(response.data) && typeof response.data.agentInvoked === "boolean"
+				? (response.data.agentInvoked as boolean)
+				: undefined;
+		if (agentInvoked === false) {
+			completion.finish();
+			return events;
+		}
+		await completion.waitForRunEnd(requestId, agentInvoked === true);
+		return events;
+	}
+
+	/**
+	 * Shared run-completion tracker behind waitForIdle/collectEvents/
+	 * promptAndWait. Subscribing before any state check or send closes the
+	 * check/subscribe race: an agent_end that lands after subscribing always
+	 * settles the wait, and the idle fast-path only fires when getState still
+	 * reports no active run. Disconnect (process exit/stop) rejects via the
+	 * client's abort controller instead of hanging until the timeout.
+	 */
+	#awaitRunEnd(options: {
+		timeout: number;
+		timeoutMessage: string;
+		/** Resolve without waiting when getState reports no active run. */
+		checkIdle?: boolean;
+		/** Observe every session event until completion (collectEvents/promptAndWait). */
+		collect?: (event: AgentEvent) => void;
+	}): {
+		/** Resolve when the tracked run ends: matching prompt_result or any agent_end after subscribing. */
+		waitForRunEnd: (requestId?: string, agentRunExpected?: boolean) => Promise<void>;
+		/** Settle immediately with whatever was collected (local-only fast path). */
+		finish: () => void;
+		/** Abandon the wait with an error (send failure, rejected prompt). */
+		cancel: (error: Error) => void;
+	} {
+		const { timeout, timeoutMessage } = options;
+		const { promise, resolve, reject } = Promise.withResolvers<void>();
+		// Send-failure and rejected-prompt paths settle this without any
+		// waiter attached yet; observe once so the rejection is never unhandled.
+		void promise.catch(() => {});
+		let settled = false;
+		let requestId: string | undefined;
+		let agentRunExpected = false;
+		const settleResolve = (): void => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			resolve();
+		};
+		const settleReject = (error: Error): void => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(error);
+		};
+		const onPromptResult = (frame: RpcPromptResultFrame): void => {
+			if (settled || frame.id === undefined || frame.id !== requestId) return;
+			if (frame.agentInvoked) return;
+			settleResolve();
+		};
+		const unsubscribeSession = this.onEvent(event => {
+			options.collect?.(event);
+			if (event.type === "agent_end") settleResolve();
+		});
+		const unsubscribePromptResult = ((): (() => void) => {
+			this.#promptResultListeners.add(onPromptResult);
+			return () => {
+				this.#promptResultListeners.delete(onPromptResult);
+			};
+		})();
+		const disconnectSignal = this.#abortController.signal;
+		const onDisconnect = (): void => {
+			settleReject(
+				new Error(
+					`RPC agent disconnected while waiting for completion. Stderr: ${this.#process?.peekStderr() ?? ""}`,
+				),
+			);
+		};
+		if (disconnectSignal.aborted) {
+			onDisconnect();
+		} else {
+			disconnectSignal.addEventListener("abort", onDisconnect, { once: true });
+		}
+		const timeoutId = this.#startTimeout(timeout, () => {
+			settleReject(new Error(`${timeoutMessage} Stderr: ${this.#process?.peekStderr() ?? ""}`));
+		});
+		function cleanup(): void {
+			unsubscribeSession();
+			unsubscribePromptResult();
+			disconnectSignal.removeEventListener("abort", onDisconnect);
+			clearTimeout(timeoutId);
+		}
+		if (options.checkIdle) {
+			// Subscribed above: any agent_end from here on settles the wait,
+			// so an idle snapshot cannot miss a run that already ended, and a
+			// run starting right after the snapshot ends it later.
+			void this.getState().then(
+				state => {
+					if (!state.isStreaming) settleResolve();
+				},
+				() => {
+					// getState failed (stopping/disconnecting): the abort
+					// listener or timeout settles the wait instead.
+				},
+			);
+		}
+		return {
+			waitForRunEnd: (id?: string, expectAgentRun?: boolean): Promise<void> => {
+				requestId = id;
+				agentRunExpected = expectAgentRun === true;
+				if (agentRunExpected) {
+					// The agent will run; only its agent_end (or disconnect/
+					// timeout) can settle this wait.
+					this.#promptResultListeners.delete(onPromptResult);
+				}
+				return promise;
+			},
+			finish: settleResolve,
+			cancel: settleReject,
+		};
 	}
 
 	// =========================================================================
@@ -1111,6 +1242,13 @@ export class RpcClient {
 			return;
 		}
 
+		if (isRpcPromptResultFrame(data)) {
+			for (const listener of this.#promptResultListeners) {
+				listener(data);
+			}
+			return;
+		}
+
 		if (!isAgentSessionEvent(data)) return;
 
 		for (const listener of this.#sessionEventListeners) {
@@ -1125,13 +1263,18 @@ export class RpcClient {
 	}
 
 	#send(command: RpcCommandBody, timeoutMs = 30_000): Promise<RpcResponse> {
+		return this.#sendWithId(command, timeoutMs).then(({ response }) => response);
+	}
+
+	/** Send a command and expose its request id so waiters can correlate `prompt_result` frames. */
+	#sendWithId(command: RpcCommandBody, timeoutMs = 30_000): Promise<{ id: string; response: RpcResponse }> {
 		if (!this.#process?.stdin) {
 			throw new Error("Client not started");
 		}
 
 		const id = `req_${++this.#requestId}`;
 		const fullCommand = { ...command, id } as RpcCommand;
-		const { promise, resolve, reject } = Promise.withResolvers<RpcResponse>();
+		const { promise, resolve, reject } = Promise.withResolvers<{ id: string; response: RpcResponse }>();
 		let settled = false;
 		const timeoutId = this.#startTimeout(timeoutMs, () => {
 			if (settled) return;
@@ -1147,7 +1290,7 @@ export class RpcClient {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timeoutId);
-				resolve(response);
+				resolve({ id, response });
 			},
 			reject: error => {
 				if (settled) return;

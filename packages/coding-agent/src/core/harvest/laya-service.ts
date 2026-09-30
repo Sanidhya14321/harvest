@@ -360,8 +360,13 @@ export async function isLayaSidecarRunning(baseUrl: string = DEFAULT_LAYA_URL): 
 		});
 		clearTimeout(timeout);
 		if (!res.ok) return false;
-		const json = (await res.json()) as { ready?: boolean; status?: string };
-		return json.ready === true || json.status === "ok";
+		const json = (await res.json()) as { ready?: boolean; status?: string; model?: string };
+		if (json.ready !== true && json.status !== "ok") return false;
+		// A bare ready flag is not process identity: require our model id so a
+		// foreign listener on the port is never mistaken for the sidecar.
+		// Full reuse decisions additionally run verifyManagedSidecarIdentity.
+		if (json.model !== undefined && json.model !== EXPECTED_LAYA_MODEL_ID) return false;
+		return true;
 	} catch {
 		return false;
 	}

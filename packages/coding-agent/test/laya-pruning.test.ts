@@ -12,7 +12,8 @@ import {
 	resetLockedPruningDecisions,
 } from "../src/core/harvest/laya-pruning";
 import { LayaClient } from "../src/core/harvest/laya-client";
-import type { Settings } from "../src/config/settings";
+import { setMemoryCachedCalibration, type CalibrationRecord } from "../src/core/harvest/laya-calibration";
+import { Settings } from "../src/config/settings";
 
 function makeUserMessage(text: string, pinned?: boolean): UserMessage {
 	return {
@@ -115,6 +116,41 @@ describe("Laya Context Pruning (Phase 1)", () => {
 			expect(goal).toContain("Fix the bug in auth-broker");
 		});
 
+		it("scores a changed task against the latest request, keeping the original as context", async () => {
+			const mockDecide = vi.fn(async (_state: Record<string, string>) => ({
+				success: true,
+				fallback: false,
+				latencyMs: 5,
+				data: { tool_0_1_bash: { type: "score", score: 2, confidence: 0.9 } },
+			}));
+			const mockClient = {
+				decide: mockDecide,
+			} as unknown as LayaClient;
+
+			await pruneContextWithLaya(
+				[
+					makeUserMessage("Migrate the billing database schema"),
+					makeToolResultMessage("c0", "bash", "MIGRATION_LOG_".repeat(100)),
+					makeUserMessage("Now fix the login page styling instead"),
+					makeUserMessage("Styling follow-up"),
+				],
+				{
+					client: mockClient,
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+					sessionId: "goal-change-test",
+				},
+			);
+
+			expect(mockDecide).toHaveBeenCalledTimes(1);
+			const state = mockDecide.mock.calls[0][0] as Record<string, string>;
+			const scoredText = Object.values(state)[0] ?? "";
+			expect(scoredText).toContain("Current request: Styling follow-up");
+			expect(scoredText).toContain("Original task: Migrate the billing database schema");
+			resetLockedPruningDecisions("goal-change-test");
+		});
+
 		it("partitions messages into interaction turns based on user boundaries", () => {
 			const messages: AgentMessage[] = [
 				makeUserMessage("Turn 0 user"),
@@ -155,6 +191,75 @@ describe("Laya Context Pruning (Phase 1)", () => {
 			expect(mockDecide).not.toHaveBeenCalled();
 			expect(result.pruned).toBe(false);
 			expect(result.messages.length).toBe(messages.length);
+		});
+
+		it("skips scoring entirely when all candidate tokens fit the budget", async () => {
+			const mockDecide = vi.fn();
+			const mockClient = {
+				decide: mockDecide,
+			} as unknown as LayaClient;
+
+			// 3 turns with two ~100-token tool results in prunable turns.
+			// Total (~200 tokens) fits the 1500-token safety floor, so no
+			// inference round trip can drop anything.
+			const messages: AgentMessage[] = [
+				makeUserMessage("Turn 0 user"),
+				makeToolResultMessage("c0", "read", "evidence ".repeat(45)),
+				makeUserMessage("Turn 1 user"),
+				makeToolResultMessage("c1", "read", "evidence ".repeat(45)),
+				makeUserMessage("Turn 2 user"),
+			];
+
+			const result = await pruneContextWithLaya(messages, {
+				client: mockClient,
+				keepRecentTurns: 1,
+				sessionId: "budget-bypass-test",
+			});
+
+			expect(mockDecide).not.toHaveBeenCalled();
+			expect(result.pruned).toBe(false);
+			expect(result.droppedCount).toBe(0);
+			expect(result.tokensSaved).toBe(0);
+			expect(result.messages).toEqual(messages);
+		});
+
+		it("chunks scoring across server batch limits and merges the scores", async () => {
+			const batchSizes: number[] = [];
+			const mockDecide = vi.fn(async (_state: unknown, questions: Record<string, unknown>) => {
+				batchSizes.push(Object.keys(questions).length);
+				return {
+					success: true,
+					fallback: false,
+					latencyMs: 5,
+					data: Object.fromEntries(
+						Object.keys(questions).map((key, index) => [
+							key,
+							{ type: "score", score: index % 4, confidence: 0.9 },
+						]),
+					),
+				};
+			});
+			const mockClient = {
+				decide: mockDecide,
+			} as unknown as LayaClient;
+
+			// 70 prunable tool results: one 64-question batch plus a 6-question tail.
+			const messages: AgentMessage[] = [];
+			for (let turn = 0; turn < 71; turn++) {
+				messages.push(makeUserMessage(`Turn ${turn} user`));
+				if (turn < 70) messages.push(makeToolResultMessage(`c${turn}`, "read", "evidence ".repeat(45)));
+			}
+
+			const result = await pruneContextWithLaya(messages, {
+				client: mockClient,
+				keepRecentTurns: 1,
+				sessionId: "chunk-test",
+			});
+
+			expect(mockDecide).toHaveBeenCalledTimes(2);
+			expect(batchSizes).toEqual([64, 6]);
+			expect(result.droppedCount).toBeGreaterThan(0);
+			expect(result.tokensSaved).toBeGreaterThan(0);
 		});
 
 		it("always keeps user messages, pinned messages, and recent N turns", async () => {
@@ -327,9 +432,12 @@ describe("Laya Context Pruning (Phase 1)", () => {
 
 	describe("Fail-open fallback (Step 6)", () => {
 		it("fails OPEN and returns full unpruned context if sidecar errors or times out", async () => {
+			// The tool output must exceed the pruning budget floor so scoring
+			// is actually attempted (smaller sessions bypass inference).
+			const criticalLog = "CRITICAL_SETUP_LOG_".repeat(400);
 			const messages: AgentMessage[] = [
 				makeUserMessage("Turn 0: Setup project"),
-				makeToolResultMessage("c0", "bash", "CRITICAL_SETUP_LOG_".repeat(50)),
+				makeToolResultMessage("c0", "bash", criticalLog),
 				makeUserMessage("Turn 1: Run tests"),
 				makeAssistantMessage("Tests running"),
 				makeUserMessage("Turn 2: Check output"),
@@ -358,7 +466,7 @@ describe("Laya Context Pruning (Phase 1)", () => {
 			expect(result.tokensSaved).toBe(0);
 			// Full original context is completely preserved
 			expect(result.messages.length).toBe(messages.length);
-			expect(extractMessageText(result.messages[1])).toBe("CRITICAL_SETUP_LOG_".repeat(50));
+			expect(extractMessageText(result.messages[1])).toBe(criticalLog);
 		});
 	});
 
@@ -532,6 +640,184 @@ describe("Laya Context Pruning (Phase 1)", () => {
 
 			// Clean up test session locks
 			resetLockedPruningDecisions(testSessionId);
+		});
+
+		it("scores afresh when a reused position holds different content (rewind/branch)", async () => {
+			const sessionId = `test-rewind-rescore-${Date.now()}`;
+			try {
+				const seenStates: string[] = [];
+				const mockDecide = vi.fn(async (state: unknown) => {
+					seenStates.push(JSON.stringify(state));
+					return {
+						success: true,
+						fallback: false,
+						latencyMs: 5,
+						data: { tool_0_1_bash: { type: "score", score: 0, confidence: 0.9 } },
+					};
+				});
+				const mockClient = {
+					decide: mockDecide,
+				} as unknown as LayaClient;
+				const testSettings = {
+					get: (k: string) => (k === "laya.enabled" || k === "laya.pruning" ? true : undefined),
+				} as any;
+
+				// First pass locks a drop for the chunk at index 1.
+				const first = [
+					makeUserMessage("Goal: inspect logs"),
+					makeToolResultMessage("c0", "bash", "ALPHA_LOG_".repeat(100)),
+					makeUserMessage("Turn 1"),
+					makeUserMessage("Turn 2"),
+				];
+				const result1 = await pruneContextWithLaya(first, {
+					client: mockClient,
+					settings: testSettings,
+					sessionId,
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+				});
+				expect(mockDecide).toHaveBeenCalledTimes(1);
+				expect(result1.droppedCount).toBe(1);
+
+				// Rewind/branch reuses the same position for different content.
+				const second = [
+					makeUserMessage("Goal: inspect logs"),
+					makeToolResultMessage("c0", "bash", "BETA_LOG_".repeat(100)),
+					makeUserMessage("Turn 1"),
+					makeUserMessage("Turn 2"),
+				];
+				const result2 = await pruneContextWithLaya(second, {
+					client: mockClient,
+					settings: testSettings,
+					sessionId,
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+				});
+
+				// The stale positional lock must not replay: new content is scored afresh.
+				expect(mockDecide).toHaveBeenCalledTimes(2);
+				expect(seenStates[1]).toContain("BETA_LOG_");
+				expect(seenStates[1]).not.toContain("ALPHA_LOG_");
+				expect(result2.droppedCount).toBe(1);
+			} finally {
+				resetLockedPruningDecisions(sessionId);
+			}
+		});
+
+		it("bounds the global lock registry, evicting oldest entries first", async () => {			const store = new Map();
+			for (let i = 0; i < 1005; i++) store.set(`stale::k${i}`, { chunkId: `k${i}`, action: "kept" });
+			const mockDecide = vi.fn(async (_state: unknown, questions: Record<string, unknown>) => ({
+				success: true,
+				fallback: false,
+				latencyMs: 5,
+				data: Object.fromEntries(
+					Object.keys(questions).map(key => [key, { type: "score", score: 3, confidence: 0.9 }]),
+				),
+			}));
+			const mockClient = {
+				decide: mockDecide,
+			} as unknown as LayaClient;
+
+			await pruneContextWithLaya(
+				[
+					makeUserMessage("Goal: bound check"),
+					makeToolResultMessage("c0", "bash", "BOUND_LOG_".repeat(100)),
+					makeUserMessage("Turn 1"),
+					makeUserMessage("Turn 2"),
+				],
+				{
+					client: mockClient,
+					sessionId: "bound-test",
+					lockedDecisions: store as any,
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+				},
+			);
+
+			expect(store.size).toBeLessThanOrEqual(1000);
+			expect([...store.keys()].some(key => key.startsWith("bound-test::tool_0_1_bash::"))).toBe(true);
+		});
+
+		it("honors calibrated auto-disable when pruning is unset, explicit enable still scores", async () => {
+			const slowRecord = {
+				timestamp: Date.now(),
+				hardware: {
+					tier: "cpu",
+					device: "cpu",
+					device_name: "slow",
+					reason: "slow",
+					signature: "slow-sig",
+					details: {},
+				},
+				benchmarks: {
+					ultraShort: { medianMs: 5, minMs: 4, samplesMs: [5] },
+					singleChoice: { medianMs: 5000, minMs: 4500, samplesMs: [5000] },
+					singleScore: { medianMs: 2000, minMs: 1800, samplesMs: [2000] },
+					batchedScore: { medianMs: 9000, minMs: 8000, samplesMs: [9000] },
+				},
+				derivedSettings: {
+					rawSingleChoiceLatencyMs: 5000,
+					subagentSelectionTimeoutMs: 10000,
+					subagentSelectionRecommendEnabled: false,
+					subagentSelectionReason: "slow",
+					pruningRecommendEnabled: false,
+					pruningReason: "slow hardware",
+					maxAcceptableLatencyPerTurnMs: 150,
+					estimatedAddedLatencyPerTurnMs: 5000,
+					worstCaseBatchLatencyMs: 9000,
+				},
+			} as unknown as CalibrationRecord;
+			setMemoryCachedCalibration(slowRecord);
+			try {
+				const messages: AgentMessage[] = [
+					makeUserMessage("Goal: inspect logs"),
+					makeToolResultMessage("c0", "bash", "AUTO_LOG_".repeat(100)),
+					makeUserMessage("Turn 1"),
+					makeUserMessage("Turn 2"),
+				];
+				const mockDecide = vi.fn(async (_state: unknown, questions: Record<string, unknown>) => ({
+					success: true,
+					fallback: false,
+					latencyMs: 5,
+					data: Object.fromEntries(
+						Object.keys(questions).map(key => [key, { type: "score", score: 3, confidence: 0.9 }]),
+					),
+				}));
+				const mockClient = {
+					decide: mockDecide,
+				} as unknown as LayaClient;
+
+				// Unset in settings: the calibrated recommendation disables pruning.
+				const autoResult = await pruneContextWithLaya(messages, {
+					client: mockClient,
+					settings: Settings.isolated({ "laya.enabled": true }),
+					sessionId: "auto-pruning-test",
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+				});
+				expect(mockDecide).not.toHaveBeenCalled();
+				expect(autoResult.pruned).toBe(false);
+				expect(autoResult.fallbackReason).toBe("laya_pruning_disabled_by_hardware_calibration");
+
+				// Explicitly enabled: calibration advises otherwise, but the user override scores.
+				const explicitResult = await pruneContextWithLaya(messages, {
+					client: mockClient,
+					settings: Settings.isolated({ "laya.enabled": true, "laya.pruning": true }),
+					sessionId: "auto-pruning-test",
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+				});
+				expect(mockDecide).toHaveBeenCalledTimes(1);
+				expect(explicitResult.candidatesCount).toBe(1);
+			} finally {
+				setMemoryCachedCalibration(null);
+				resetLockedPruningDecisions("auto-pruning-test");
+			}
 		});
 	});
 });

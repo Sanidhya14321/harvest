@@ -4,6 +4,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import {
 	deriveSettingsFromBenchmarks,
+	getExplicitSetting,
 	isCalibrationValidForHardware,
 	loadCalibration,
 	saveCalibration,
@@ -11,6 +12,7 @@ import {
 	type CalibrationRecord,
 	type HardwareInfo,
 } from "../src/core/harvest/laya-calibration";
+import { Settings } from "../src/config/settings";
 
 describe("Laya Hardware Detection & Self-Calibration", () => {
 	const sampleHardware: HardwareInfo = {
@@ -132,6 +134,34 @@ describe("Laya Hardware Detection & Self-Calibration", () => {
 		it("returns false when calibration record is null or missing fields", () => {
 			expect(isCalibrationValidForHardware(null, sampleHardware)).toBe(false);
 			expect(isCalibrationValidForHardware({} as any, sampleHardware)).toBe(false);
+		});
+	});
+
+	describe("getExplicitSetting", () => {
+		it("returns undefined for unset keys so calibration can derive the effective value", () => {
+			expect(getExplicitSetting<boolean>(Settings.isolated({}) as Settings, "laya.pruning")).toBeUndefined();
+			expect(
+				getExplicitSetting<number>(Settings.isolated({}) as Settings, "laya.subagentSelectionTimeoutMs"),
+			).toBeUndefined();
+		});
+
+		it("returns the configured value when explicitly set", () => {
+			expect(
+				getExplicitSetting<boolean>(Settings.isolated({ "laya.pruning": false }) as Settings, "laya.pruning"),
+			).toBe(false);
+			expect(
+				getExplicitSetting<number>(
+					Settings.isolated({ "laya.subagentSelectionTimeoutMs": 900 }) as Settings,
+					"laya.subagentSelectionTimeoutMs",
+				),
+			).toBe(900);
+		});
+
+		it("falls back to get() for sources without isConfigured", () => {
+			expect(getExplicitSetting<boolean>({ get: () => true } as unknown as Settings, "laya.pruning")).toBe(
+				true,
+			);
+			expect(getExplicitSetting<boolean>(undefined, "laya.pruning")).toBeUndefined();
 		});
 	});
 

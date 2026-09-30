@@ -14,6 +14,7 @@ export type MCPFailureClass =
 	| "eof"
 	| "reset"
 	| "malformed_response"
+	| "oversized_response"
 	| "json_rpc"
 	| "http_status"
 	| "closed"
@@ -253,6 +254,8 @@ function nextStep(error: MCPTransportError): string {
 				: "Check the MCP server logs and availability, then retry.";
 		case "malformed_response":
 			return "Inspect the MCP server logs for an invalid JSON-RPC response.";
+		case "oversized_response":
+			return "The MCP response exceeded the transport byte limit and was not retried; narrow the request.";
 		case "json_rpc":
 			return "Address the server-reported MCP error before retrying.";
 		case "http_status":

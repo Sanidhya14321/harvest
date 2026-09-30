@@ -6,6 +6,7 @@
  * File Freshness Tracking into the agent session lifecycle.
  */
 
+import type { ToolTier } from "@harvest/pi-agent-core";
 import { ExecutionGroundingEngine } from "./harvest/grounding";
 import { PreReadEnforcement, type ToolCallPayload } from "./harvest/loop-policy";
 import { routeRole, type RoleRoutingResult, type SpecialistRole } from "./harvest/roles";
@@ -117,6 +118,7 @@ export async function interceptSessionToolCallLaya(
 	toolCall: ToolCallPayload,
 	sessionId?: string,
 	signal?: AbortSignal,
+	toolTier?: ToolTier,
 ): Promise<ToolGatingDecision> {
-	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, { sessionId, signal });
+	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, { sessionId, signal, toolTier });
 }

@@ -1,4 +1,9 @@
-import { ensureCalibrated, loadCalibration } from "../core/harvest/laya-calibration";
+import {
+	ensureCalibrated,
+	getDerivedTimeoutMsSync,
+	getExplicitSetting,
+	loadCalibration,
+} from "../core/harvest/laya-calibration";
 import { getLayaClient } from "../core/harvest/laya-client";
 import {
 	DEFAULT_LAYA_URL,
@@ -10,7 +15,7 @@ import type { SettingPath, Settings } from "../config/settings";
 import { commandConsumed, errorMessage, parseSubcommand, usage } from "./helpers/parse";
 import type { SlashCommandRuntime, SlashCommandSpec, TuiSlashCommandRuntime } from "./types";
 
-type SettingsLike = Pick<Settings, "get" | "set" | "flush">;
+type SettingsLike = Pick<Settings, "get" | "set" | "flush"> & Partial<Pick<Settings, "isConfigured">>;
 type OutputFn = (text: string) => Promise<void> | void;
 
 function readSetting<T>(settings: SettingsLike, path: SettingPath): T | undefined {
@@ -30,16 +35,28 @@ function formatLayaStatusText(args: {
 	connected: boolean;
 	url: string;
 	pruning?: boolean;
+	pruningEffective?: boolean;
 	subagent?: boolean;
 	pruningRecommended?: boolean;
 	subagentRecommended?: boolean;
 	subagentTimeoutMs?: number;
+	subagentTimeoutEffectiveMs?: number;
 }): string {
+	const pruningSource =
+		args.pruning === undefined
+			? `auto (effective: ${args.pruningEffective === false ? "off" : "on"})`
+			: args.pruning
+				? "on (explicit)"
+				: "off (explicit)";
+	const timeoutSource =
+		args.subagentTimeoutMs === undefined
+			? `auto (effective: ${args.subagentTimeoutEffectiveMs ?? 300}ms)`
+			: `${args.subagentTimeoutMs}ms (explicit)`;
 	const lines = [
 		`Laya: ${args.enabled ? "on" : "off"} (${args.connected ? `connected to ${args.url}` : "sidecar offline"})`,
 		`Gating: ${args.enabled ? (args.connected ? "local irreversibility checks (<30ms fast path, fail-closed)" : "fail-closed approvals until sidecar starts") : "disabled"}`,
-		`Pruning: ${args.pruning === undefined ? "default" : args.pruning ? "on" : "off"}${args.pruningRecommended !== undefined ? ` (calibrated: ${args.pruningRecommended ? "recommended" : "not recommended on this hardware"})` : ""}`,
-		`Subagent routing: ${args.subagent === undefined ? "default" : args.subagent ? "on" : "off"}${args.subagentRecommended !== undefined ? ` (calibrated: ${args.subagentRecommended ? "recommended" : "not recommended"})` : ""}${args.subagentTimeoutMs !== undefined ? `, timeout ${args.subagentTimeoutMs}ms` : ""}`,
+		`Pruning: ${pruningSource}${args.pruningRecommended !== undefined ? ` (calibrated: ${args.pruningRecommended ? "recommended" : "not recommended on this hardware"})` : ""}`,
+		`Subagent routing: ${args.subagent === undefined ? "default" : args.subagent ? "on" : "off"}${args.subagentRecommended !== undefined ? ` (calibrated: ${args.subagentRecommended ? "recommended" : "not recommended"})` : ""}, timeout ${timeoutSource}`,
 	];
 	return lines.join("\n");
 }
@@ -47,9 +64,9 @@ function formatLayaStatusText(args: {
 async function buildStatusText(settings: SettingsLike): Promise<string> {
 	const enabled = readSetting<boolean>(settings, "laya.enabled") === true;
 	const url = resolveBaseUrl(settings);
-	const pruning = readSetting<boolean>(settings, "laya.pruning");
+	const pruning = getExplicitSetting<boolean>(settings, "laya.pruning");
 	const subagent = readSetting<boolean>(settings, "laya.subagentSelection");
-	const timeout = readSetting<number>(settings, "laya.subagentSelectionTimeoutMs");
+	const timeout = getExplicitSetting<number>(settings, "laya.subagentSelectionTimeoutMs");
 	let connected = false;
 	try {
 		connected = await isLayaSidecarRunning(url);
@@ -65,15 +82,19 @@ async function buildStatusText(settings: SettingsLike): Promise<string> {
 	} catch {
 		// Calibration cache is optional; status still reports live settings.
 	}
+	const pruningEffective = pruning ?? pruningRecommended ?? true;
+	const timeoutEffective = timeout ?? getDerivedTimeoutMsSync(300);
 	return formatLayaStatusText({
 		enabled,
 		connected,
 		url,
 		pruning,
+		pruningEffective,
 		subagent,
 		pruningRecommended,
 		subagentRecommended,
 		subagentTimeoutMs: timeout,
+		subagentTimeoutEffectiveMs: timeoutEffective,
 	});
 }
 

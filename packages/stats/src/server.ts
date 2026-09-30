@@ -350,7 +350,43 @@ export function formatStatsDashboardUrl(hostname: string, port: number): string 
 	return `http://${urlHostname}:${port}`;
 }
 
-function createDashboardServer(port: number, hostname: string): Server<undefined> {
+/** Environment variable supplying the dashboard bearer token for non-loopback binds. */
+export const STATS_TOKEN_ENV = "HARVEST_STATS_TOKEN";
+
+/** Loopback bind hosts that may serve without a token. */
+export function isLoopbackHost(hostname: string): boolean {
+	const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+	return h === "127.0.0.1" || h === "::1" || h === "localhost";
+}
+
+const TOKEN_ENCODER = new TextEncoder();
+
+/** Constant-time token comparison so the bearer check doesn't leak length/prefix via timing. */
+function timingSafeEqualToken(presented: string, expected: string): boolean {
+	const a = TOKEN_ENCODER.encode(presented);
+	const b = TOKEN_ENCODER.encode(expected);
+	const len = Math.max(a.length, b.length);
+	let diff = a.length ^ b.length;
+	for (let i = 0; i < len; i++) {
+		diff |= ((i < a.length ? a[i] : 0) | 0) ^ ((i < b.length ? b[i] : 0) | 0);
+	}
+	return diff === 0;
+}
+
+/** Resolve the effective bearer token: explicit option wins, then the env var. */
+export function resolveStatsToken(explicit?: string | null): string | null {
+	if (explicit) return explicit;
+	return process.env[STATS_TOKEN_ENV] ?? Bun.env[STATS_TOKEN_ENV] ?? null;
+}
+
+/** True when `req` presents the configured dashboard bearer token. */
+function hasValidBearerToken(req: Request, expected: string): boolean {
+	const match = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
+	if (!match?.[1]) return false;
+	return timingSafeEqualToken(match[1].trim(), expected);
+}
+
+function createDashboardServer(port: number, hostname: string, token: string | null): Server<undefined> {
 	const server = Bun.serve({
 		port,
 		hostname,
@@ -373,6 +409,9 @@ function createDashboardServer(port: number, hostname: string): Server<undefined
 				let response: Response;
 
 				if (path.startsWith("/api/")) {
+					if (token !== null && !hasValidBearerToken(req, token)) {
+						return Response.json({ error: "unauthorized" }, { status: 401 });
+					}
 					response = await handleApi(req);
 				} else {
 					response = await handleStatic(path);
@@ -415,7 +454,22 @@ export interface StatsServerHandle {
 // then dead-end in the reclaim path's self-PID guard.
 const activeServers = new Map<string, StatsServerHandle>();
 
-export async function startServer(port = 3847, hostname = STATS_DASHBOARD_HOSTNAME): Promise<StatsServerHandle> {
+export interface StatsServerOptions {
+	/** Bearer token for API reads; defaults to HARVEST_STATS_TOKEN. Required for non-loopback binds. */
+	token?: string | null;
+}
+
+export async function startServer(
+	port = 3847,
+	hostname = STATS_DASHBOARD_HOSTNAME,
+	options?: StatsServerOptions,
+): Promise<StatsServerHandle> {
+	const token = resolveStatsToken(options?.token);
+	if (!isLoopbackHost(hostname) && !token) {
+		throw new Error(
+			`refusing non-loopback bind '${hostname}' without a token: pass --token or set ${STATS_TOKEN_ENV}`,
+		);
+	}
 	const activeKey = `${hostname}:${port}`;
 	if (port !== 0) {
 		const active = activeServers.get(activeKey);
@@ -440,7 +494,7 @@ export async function startServer(port = 3847, hostname = STATS_DASHBOARD_HOSTNA
 	};
 
 	try {
-		return register(createDashboardServer(port, hostname));
+		return register(createDashboardServer(port, hostname, token));
 	} catch (error) {
 		if (!(error instanceof Error && "code" in error && error.code === "EADDRINUSE")) throw error;
 
@@ -450,7 +504,7 @@ export async function startServer(port = 3847, hostname = STATS_DASHBOARD_HOSTNA
 		}
 
 		try {
-			return register(createDashboardServer(port, hostname));
+			return register(createDashboardServer(port, hostname, token));
 		} catch (retryError) {
 			throw new Error(`Failed to start stats dashboard on ${hostname}:${port} after reclaiming it.`, {
 				cause: retryError,

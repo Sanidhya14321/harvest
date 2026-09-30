@@ -41,7 +41,7 @@ import { calculateTokensPerSecond } from "../../utils/token-rate";
 import { initializeExtensions } from "../runtime-init";
 import { isRpcHostToolResult, isRpcHostToolUpdate, RpcHostToolBridge } from "./host-tools";
 import { isRpcHostUriResult, RpcHostUriBridge } from "./host-uris";
-import { MAX_RPC_FRAME_BYTES, MAX_RPC_REASSEMBLED_BYTES, RpcFrameEncoder } from "./rpc-frame";
+import { correlationIdForCommand, MAX_RPC_FRAME_BYTES, MAX_RPC_REASSEMBLED_BYTES, RpcFrameEncoder } from "./rpc-frame";
 import { claimRpcInput, readRpcInputFrames } from "./rpc-input";
 import { pageRpcMessages, RPC_MESSAGES_PAGE_BUSY_ERROR, RpcMessagesPageError } from "./rpc-messages";
 import { RpcSubagentRegistry, readRpcSubagentTranscript } from "./rpc-subagents";
@@ -348,6 +348,15 @@ function isRpcExtensionUIResponse(value: unknown): value is RpcExtensionUIRespon
 	return value.type === "extension_ui_response" && typeof value.id === "string";
 }
 
+/** Commands that bypass the serialized queue: long-running bash plus the
+ *  cancellation trio, which must reach the live run while slow ordinary
+ *  commands are stalled ahead of it. `abort_and_prompt` stays serialized
+ *  because it starts new work. */
+const RPC_IMMEDIATE_COMMANDS: ReadonlySet<string> = new Set(["bash", "abort", "abort_retry", "abort_bash"]);
+
+/** Maximum running-plus-waiting serialized RPC commands before overload rejection. */
+export const MAX_RPC_SERIAL_QUEUE = 64;
+
 /** Dispatch side-channel frames that must overtake the serialized command queue. */
 export function dispatchRpcControlFrame(parsed: unknown, deps: RpcInputFrameDeps): boolean {
 	if (isRpcExtensionUIResponse(parsed)) {
@@ -377,17 +386,20 @@ export function dispatchRpcControlFrame(parsed: unknown, deps: RpcInputFrameDeps
 /**
  * Dispatch a single parsed frame from the RPC input stream.
  *
- * Bash commands are dispatched in the background so the caller can keep reading
- * subsequent frames while a shell command is still running. This lets a client
- * send `abort_bash` while a long-running `bash` is in flight. Response
- * correlation is preserved via each command's `id`; ordering across concurrent
- * commands is not guaranteed and clients MUST match on `id`.
+ * `bash` and the abort trio bypass the serialized queue: bash can run long,
+ * and cancellation must reach the live run even while a slow ordinary
+ * command is stalled ahead of it. `abort*` targets current-run state in the
+ * session, so immediate dispatch cannot cancel a later run — a prompt queued
+ * after the abort still starts fresh. Response correlation is preserved via
+ * each command's `id`; ordering across concurrent commands is not guaranteed
+ * and clients MUST match on `id`.
  *
  * @returns `undefined` when the frame was routed to a side-channel handler
  *   (extension UI response, host tool/URI frames) or dispatched in the
- *   background (`bash`). Otherwise a promise that resolves once the response
- *   for the command has been emitted via `output`. Errors from `handleCommand`
- *   on non-`bash` commands propagate; the caller is expected to wrap them.
+ *   background (`bash`, `abort`, `abort_retry`, `abort_bash`). Otherwise a
+ *   promise that resolves once the response for the command has been emitted
+ *   via `output`. Errors from `handleCommand` on serialized commands
+ *   propagate; the caller is expected to wrap them.
  */
 export function dispatchRpcInputFrame(parsed: unknown, deps: RpcInputFrameDeps): Promise<void> | undefined {
 	if (dispatchRpcControlFrame(parsed, deps)) return undefined;
@@ -397,17 +409,19 @@ export function dispatchRpcInputFrame(parsed: unknown, deps: RpcInputFrameDeps):
 	// the union here.
 	const command = parsed as RpcCommand;
 
-	// `bash` can run for a long time. Dispatch it in the background so a
-	// subsequent `abort_bash` frame can be read and handled without waiting
-	// for the shell command to finish on its own. The response is emitted
-	// when `handleCommand` resolves; clients correlate via `command.id`.
-	if (command.type === "bash") {
+	// Long-running or preemptive commands run in the background so a
+	// subsequent frame can be read and handled without waiting: `bash` so
+	// `abort_bash` can overtake it, and the abort trio so Stop stays
+	// responsive while a slow ordinary command (compact/login/session work)
+	// is stalled ahead of it. The response is emitted when `handleCommand`
+	// resolves; clients correlate via `command.id`.
+	if (RPC_IMMEDIATE_COMMANDS.has(command.type)) {
 		const task = (async () => {
 			try {
 				deps.output(await deps.handleCommand(command));
 			} catch (err: unknown) {
 				const message = err instanceof Error ? err.message : String(err);
-				deps.output(deps.errorResponse(command.id, "bash", message));
+				deps.output(deps.errorResponse(command.id, command.type, message));
 			}
 		})();
 		deps.trackBackgroundTask?.(task);
@@ -437,8 +451,25 @@ export class RpcInputDispatcher {
 			if (dispatchRpcControlFrame(parsed, this.#deps)) return;
 
 			const command = parsed as RpcCommand;
-			if (command.type === "bash") {
+			// Cancellation and bash overtake the serialized queue (see
+			// dispatchRpcInputFrame); they never wait behind stalled work and
+			// are not subject to admission bounding.
+			if (RPC_IMMEDIATE_COMMANDS.has(command.type)) {
 				dispatchRpcInputFrame(command, this.#deps);
+				return;
+			}
+			// Bound the serialized queue so a burst of requests fails fast
+			// with a correlated overload error instead of growing memory and
+			// delaying cancellation behind work that may never drain.
+			if (this.#tasks.size >= MAX_RPC_SERIAL_QUEUE) {
+				const type = typeof (command as { type?: unknown }).type === "string" ? command.type : "unknown";
+				this.#deps.output(
+					this.#deps.errorResponse(
+						correlationIdForCommand(parsed),
+						type,
+						`RPC command queue full (${MAX_RPC_SERIAL_QUEUE} serial commands); retry after drain`,
+					),
+				);
 				return;
 			}
 
@@ -1560,7 +1591,11 @@ export async function runRpcMode(
 
 			default: {
 				const unknownCommand = command as { type: string };
-				return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
+				return error(
+					correlationIdForCommand(command),
+					unknownCommand.type,
+					`Unknown command: ${unknownCommand.type}`,
+				);
 			}
 		}
 	};
@@ -1599,11 +1634,13 @@ export async function runRpcMode(
 	});
 
 	// Keep the stdin reader moving: side-channel frames dispatch immediately,
-	// ordinary commands serialize through inputDispatcher, and bash remains
-	// background-dispatched so abort_bash can overtake it. Frames are read
-	// line-by-line by readRpcInputFrames so a single malformed line is reported
-	// as an error frame and the loop keeps running instead of throwing out of
-	// the reader and killing the whole process (issue #5194).
+	// ordinary commands serialize through inputDispatcher (bounded, with
+	// overload rejection), and bash plus the abort trio stay
+	// background-dispatched so cancellation can overtake stalled work. Frames
+	// are read line-by-line by readRpcInputFrames so a single malformed or
+	// over-limit line is reported as an error frame and the loop keeps running
+	// instead of throwing out of the reader and killing the whole process
+	// (issue #5194).
 	await readRpcInputFrames(
 		input ?? Bun.stdin.stream(),
 		parsed => inputDispatcher.dispatch(parsed),

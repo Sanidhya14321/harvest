@@ -21,6 +21,44 @@ export function jaccardSimilarity(textA: string, textB: string): number {
 
 	return intersection / (wordsA.size + wordsB.size - intersection);
 }
+
+/**
+ * Native batch kernel with a real TypeScript fallback. The natives loader
+ * serves a `() => null` proxy when the addon cannot load, so a function
+ * export existing is not proof the kernel works: a null/throwing/malformed
+ * result falls through to the TS selection below instead of throwing.
+ * Returns `undefined` when the native path cannot produce a usable ranking.
+ */
+function tryNativeMmr<T extends MmrResult>(
+	sortedResults: readonly T[],
+	contents: string[],
+	scores: Float64Array,
+	lambdaParam: number,
+	nativeLimit: number,
+): T[] | undefined {
+	let picked: unknown;
+	try {
+		if (typeof mmrRerankIndices !== "function") return undefined;
+		picked = mmrRerankIndices(contents, scores, lambdaParam, nativeLimit);
+	} catch {
+		return undefined;
+	}
+	if (picked == null || typeof (picked as Iterable<unknown>)[Symbol.iterator] !== "function") {
+		return undefined;
+	}
+	const out: T[] = [];
+	try {
+		for (const index of picked as Iterable<unknown>) {
+			if (typeof index !== "number" || !Number.isInteger(index)) continue;
+			const item = sortedResults[index];
+			if (item !== undefined) out.push(item);
+			if (out.length >= nativeLimit) break;
+		}
+	} catch {
+		return undefined;
+	}
+	return out.length > 0 ? out : undefined;
+}
 export function mmrRerank<T extends MmrResult>(
 	results: readonly T[],
 	lambdaParam = 0.7,
@@ -54,13 +92,8 @@ export function mmrRerank<T extends MmrResult>(
 		// Clamp before the u32 N-API boundary: Infinity or >= 2**32 would
 		// otherwise wrap (ToUint32) and silently return nothing.
 		const nativeLimit = Math.min(limit, sortedResults.length);
-		const picked = mmrRerankIndices(contents, scores, lambdaParam, nativeLimit);
-		const out: T[] = [];
-		for (const index of picked) {
-			const item = sortedResults[index];
-			if (item !== undefined) out.push(item);
-		}
-		return out;
+		const nativeOut = tryNativeMmr(sortedResults, contents, scores, lambdaParam, nativeLimit);
+		if (nativeOut !== undefined) return nativeOut;
 	}
 
 	const selected: T[] = [first];

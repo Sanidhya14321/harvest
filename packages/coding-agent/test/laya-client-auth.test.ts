@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { LayaClient } from "../src/core/harvest/laya-client";
+import { getLayaClient, LayaClient, resetLayaClient } from "../src/core/harvest/laya-client";
 
 describe("Laya sidecar authentication", () => {
 	let server: ReturnType<typeof Bun.serve> | undefined;
@@ -44,5 +44,37 @@ describe("Laya sidecar authentication", () => {
 		await Bun.write(tokenFilePath, expectedToken);
 		expect((await client.decide("check", questions, { callSite: "test" })).success).toBe(true);
 		expect(received).toEqual(["Bearer first-token", "Bearer second-token"]);
+	});
+});
+
+describe("Laya client singleton URL tracking", () => {
+	afterEach(() => {
+		delete process.env.LAYA_SIDECAR_URL;
+		resetLayaClient();
+	});
+
+	it("reuses the default while the effective URL is unchanged", () => {
+		process.env.LAYA_SIDECAR_URL = "http://127.0.0.1:8177";
+		const first = getLayaClient();
+		const second = getLayaClient();
+		expect(second).toBe(first);
+		expect(first.baseUrl).toBe("http://127.0.0.1:8177");
+	});
+
+	it("rebuilds the default when the effective URL moves (e.g. setup port fallback)", () => {
+		process.env.LAYA_SIDECAR_URL = "http://127.0.0.1:8177";
+		const before = getLayaClient();
+		process.env.LAYA_SIDECAR_URL = "http://127.0.0.1:8178";
+		const after = getLayaClient();
+		expect(after).not.toBe(before);
+		expect(after.baseUrl).toBe("http://127.0.0.1:8178");
+	});
+
+	it("serves an explicit URL without disturbing the shared default", () => {
+		process.env.LAYA_SIDECAR_URL = "http://127.0.0.1:8177";
+		const shared = getLayaClient();
+		const explicit = getLayaClient("http://127.0.0.1:8179");
+		expect(explicit.baseUrl).toBe("http://127.0.0.1:8179");
+		expect(getLayaClient()).toBe(shared);
 	});
 });

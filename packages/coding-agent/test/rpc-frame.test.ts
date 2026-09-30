@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+	correlationIdForCommand,
 	encodeRpcFrame,
 	MAX_RPC_FRAME_BYTES,
 	MAX_RPC_REASSEMBLED_BYTES,
@@ -302,5 +303,19 @@ describe("RPC frame encoding", () => {
 				data: "fQ==",
 			}),
 		).toThrow("rpc chunk sequence mismatch");
+	});
+});
+
+describe("RPC command correlation", () => {
+	it("preserves a string request id for unknown-command rejection", () => {
+		expect(correlationIdForCommand({ id: "req-7", type: "future_command" })).toBe("req-7");
+	});
+
+	it("stays uncorrelated without a trustworthy id", () => {
+		expect(correlationIdForCommand({ type: "future_command" })).toBeUndefined();
+		expect(correlationIdForCommand({ id: 7, type: "future_command" })).toBeUndefined();
+		expect(correlationIdForCommand({ id: null, type: "future_command" })).toBeUndefined();
+		expect(correlationIdForCommand("future_command")).toBeUndefined();
+		expect(correlationIdForCommand(null)).toBeUndefined();
 	});
 });

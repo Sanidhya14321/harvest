@@ -49,6 +49,7 @@ import {
 	type Tracer,
 	trace,
 } from "@opentelemetry/api";
+import { logger } from "@harvest/pi-utils";
 import { AgentRunCollector, type AgentRunCoverage, type AgentRunSummary, type ToolStatus } from "./run-collector";
 import type { AgentTool } from "./types";
 import { EventLoopKeepalive } from "./utils/yield";
@@ -391,7 +392,7 @@ export interface AgentTelemetryConfig {
 	 * {@link AgentRunCoverage} value without parsing OTEL spans.
 	 *
 	 * **Non-fatal.** Exceptions thrown from this callback are caught, logged
-	 * via `console.warn`, and swallowed — a misbehaving telemetry consumer can
+	 * via the shared logger, and swallowed — a misbehaving telemetry consumer can
 	 * NEVER turn a successful agent run into a failed one.
 	 */
 	readonly onRunEnd?: (summary: AgentRunSummary, coverage: AgentRunCoverage) => void;
@@ -631,14 +632,14 @@ export function recordTelemetryWarning(telemetry: AgentTelemetry | undefined, wa
 function emitTelemetryWarning(telemetry: AgentTelemetry | undefined, warning: AgentTelemetryWarning): void {
 	const hook = telemetry?.config.onTelemetryWarning;
 	if (!hook) {
-		if (warning.error === undefined) console.warn(`[pi-agent] ${warning.message}`);
-		else console.warn(`[pi-agent] ${warning.message}`, warning.error);
+		if (warning.error === undefined) logger.warn(`[pi-agent] ${warning.message}`);
+		else logger.warn(`[pi-agent] ${warning.message}`, { error: String(warning.error) });
 		return;
 	}
 	try {
 		hook(warning);
 	} catch (err) {
-		console.warn("[pi-agent] onTelemetryWarning threw; swallowing:", err);
+		logger.warn("[pi-agent] onTelemetryWarning threw; swallowing", { error: String(err) });
 	}
 }
 
@@ -1953,8 +1954,8 @@ export function finishInvokeAgentSpan(
 
 /**
  * Invoke {@link AgentTelemetryConfig.onRunEnd} on `telemetry` if set. Throws
- * are caught and surfaced via the `onTelemetryWarning` hook (falling back to `console.warn`
- * when no hook is set) — telemetry callbacks NEVER turn a
+ * are caught and surfaced via the `onTelemetryWarning` hook (falling back to
+ * the shared logger when no hook is set) — telemetry callbacks NEVER turn a
  * successful agent run into a failed one. Idempotent at the call site via
  * {@link AgentRunCollector.markRunEnded}; callers must check that before
  * calling this helper.

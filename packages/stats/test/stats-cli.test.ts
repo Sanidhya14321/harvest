@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { parseStandaloneStatsArgs } from "../src/index";
+import { describe, expect, it, spyOn } from "bun:test";
+import { emitSyncSummary, parseStandaloneStatsArgs } from "../src/index";
 import { formatStatsDashboardUrl } from "../src/server";
 
 describe("standalone stats CLI", () => {
@@ -10,6 +10,7 @@ describe("standalone stats CLI", () => {
 			json: false,
 			sync: false,
 			help: false,
+			token: null,
 		});
 	});
 
@@ -20,5 +21,25 @@ describe("standalone stats CLI", () => {
 		});
 		expect(formatStatsDashboardUrl("::", 3850)).toBe("http://[::]:3850");
 		expect(formatStatsDashboardUrl("2001:db8::1", 3850)).toBe("http://[2001:db8::1]:3850");
+	});
+
+	it("keeps stdout JSON-parseable by sending the summary to stderr in json mode", () => {
+		const logSpy = spyOn(console, "log").mockImplementation(() => {});
+		const errSpy = spyOn(process.stderr, "write").mockImplementation(() => true as never);
+		try {
+			emitSyncSummary(3, 2, 10, true);
+			expect(logSpy).not.toHaveBeenCalled();
+			expect(errSpy).toHaveBeenCalledTimes(1);
+			expect(String(errSpy.mock.calls[0]?.[0] ?? "")).toContain("Synced 3 new entries");
+
+			logSpy.mockClear();
+			errSpy.mockClear();
+			emitSyncSummary(3, 2, 10, false);
+			expect(logSpy).toHaveBeenCalledTimes(1);
+			expect(errSpy).not.toHaveBeenCalled();
+		} finally {
+			logSpy.mockRestore();
+			errSpy.mockRestore();
+		}
 	});
 });

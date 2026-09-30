@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { RpcHostToolBridge } from "@harvest/pi-coding-agent/modes/rpc/host-tools";
 import {
 	dispatchRpcInputFrame,
+	MAX_RPC_SERIAL_QUEUE,
 	type PendingExtensionRequest,
 	RpcInputDispatcher,
 	type RpcInputFrameDeps,
@@ -106,11 +107,12 @@ describe("dispatchRpcInputFrame", () => {
 		await flushMicrotasks();
 		expect(outputs).toHaveLength(0);
 
-		// Now dispatch abort_bash. It must run serially (not backgrounded)
-		// and resolve after handleCommand completes.
+		// Now dispatch abort_bash. Cancellation bypasses the serialized queue
+		// so it preempts even while bash is still running: the frame-level
+		// dispatch returns undefined and the response lands in the background.
 		const abortAwait = dispatchRpcInputFrame({ id: "a1", type: "abort_bash" }, deps);
-		expect(abortAwait).toBeInstanceOf(Promise);
-		await abortAwait;
+		expect(abortAwait).toBeUndefined();
+		await flushMicrotasks();
 
 		expect(abortBashCalled).toBe(true);
 		expect(outputs[0]).toEqual({
@@ -132,15 +134,12 @@ describe("dispatchRpcInputFrame", () => {
 		}
 	});
 
-	test("non-bash commands are dispatched serially (ordering preserved)", async () => {
+	test("ordinary commands are dispatched serially (ordering preserved)", async () => {
 		const started: string[] = [];
 		const finished: string[] = [];
 		const handleCommand = async (command: RpcCommand): Promise<RpcResponse> => {
 			started.push(command.type);
 			finished.push(command.type);
-			if (command.type === "abort_retry") {
-				return { id: command.id, type: "response", command: "abort_retry", success: true };
-			}
 			if (command.type === "set_auto_retry") {
 				return { id: command.id, type: "response", command: "set_auto_retry", success: true };
 			}
@@ -149,19 +148,19 @@ describe("dispatchRpcInputFrame", () => {
 
 		const { deps, outputs } = makeDeps(handleCommand);
 
-		const first = dispatchRpcInputFrame({ id: "c1", type: "abort_retry" }, deps);
+		const first = dispatchRpcInputFrame({ id: "c1", type: "set_auto_retry", enabled: true }, deps);
 		expect(first).toBeInstanceOf(Promise);
 		// The input loop awaits each command's promise before pulling the next
 		// frame; simulate that contract by awaiting before the next dispatch.
 		await first;
 		expect(outputs).toHaveLength(1);
-		expect(started).toEqual(["abort_retry"]);
-		expect(finished).toEqual(["abort_retry"]);
+		expect(started).toEqual(["set_auto_retry"]);
+		expect(finished).toEqual(["set_auto_retry"]);
 
-		const second = dispatchRpcInputFrame({ id: "c2", type: "set_auto_retry", enabled: true }, deps);
+		const second = dispatchRpcInputFrame({ id: "c2", type: "set_auto_retry", enabled: false }, deps);
 		await second;
 		expect(outputs).toHaveLength(2);
-		expect(started).toEqual(["abort_retry", "set_auto_retry"]);
+		expect(started).toEqual(["set_auto_retry", "set_auto_retry"]);
 	});
 
 	test("bash handler errors surface as an error response on the background frame", async () => {
@@ -303,9 +302,15 @@ describe("RpcInputDispatcher", () => {
 		const started: string[] = [];
 		const { deps, outputs } = makeDeps(async command => {
 			started.push(command.type);
-			if (command.type === "abort_retry") {
+			if (command.type === "prompt") {
 				await releaseFirst.promise;
-				return { id: command.id, type: "response", command: "abort_retry", success: true };
+				return {
+					id: command.id,
+					type: "response",
+					command: "prompt",
+					success: true,
+					data: { agentInvoked: false },
+				};
 			}
 			if (command.type === "get_state") {
 				return {
@@ -335,17 +340,17 @@ describe("RpcInputDispatcher", () => {
 		});
 		const dispatcher = new RpcInputDispatcher({ deps });
 
-		dispatcher.dispatch({ id: "first", type: "abort_retry" });
+		dispatcher.dispatch({ id: "first", type: "prompt", message: "block the queue" });
 		dispatcher.dispatch({ id: "second", type: "get_state" });
 		await flushMicrotasks();
 
-		expect(started).toEqual(["abort_retry"]);
+		expect(started).toEqual(["prompt"]);
 		expect(outputs).toHaveLength(0);
 
 		releaseFirst.resolve();
 		await dispatcher.drain();
 
-		expect(started).toEqual(["abort_retry", "get_state"]);
+		expect(started).toEqual(["prompt", "get_state"]);
 		expect((outputs[0] as RpcResponse).id).toBe("first");
 		expect((outputs[1] as RpcResponse).id).toBe("second");
 		expect((outputs[1] as RpcResponse).command).toBe("get_state");
@@ -355,7 +360,7 @@ describe("RpcInputDispatcher", () => {
 		const started: string[] = [];
 		const { deps, outputs } = makeDeps(async command => {
 			started.push(command.type);
-			if (command.type === "abort_retry") throw new Error("retry controller exploded");
+			if (command.type === "prompt") throw new Error("prompt handler exploded");
 			if (command.type === "set_auto_retry") {
 				return { id: command.id, type: "response", command: "set_auto_retry", success: true };
 			}
@@ -363,18 +368,18 @@ describe("RpcInputDispatcher", () => {
 		});
 		const dispatcher = new RpcInputDispatcher({ deps });
 
-		dispatcher.dispatch({ id: "bad", type: "abort_retry" });
+		dispatcher.dispatch({ id: "bad", type: "prompt", message: "blow up" });
 		dispatcher.dispatch({ id: "next", type: "set_auto_retry", enabled: true });
 		await dispatcher.drain();
 
-		expect(started).toEqual(["abort_retry", "set_auto_retry"]);
+		expect(started).toEqual(["prompt", "set_auto_retry"]);
 		expect(outputs).toEqual([
 			{
 				id: "bad",
 				type: "response",
-				command: "abort_retry",
+				command: "prompt",
 				success: false,
-				error: "retry controller exploded",
+				error: "prompt handler exploded",
 			},
 			{
 				id: "next",
@@ -521,6 +526,110 @@ describe("RpcInputDispatcher", () => {
 				error: disconnectMessage,
 			},
 		]);
+	});
+
+	test("abort overtakes a stalled serial command instead of queueing behind it", async () => {
+		const releaseCompact = Promise.withResolvers<void>();
+		const started: string[] = [];
+		const { deps, outputs } = makeDeps(async command => {
+			started.push(command.type);
+			if (command.type === "prompt") {
+				await releaseCompact.promise;
+				return {
+					id: command.id,
+					type: "response",
+					command: "prompt",
+					success: true,
+					data: { agentInvoked: false },
+				};
+			}
+			if (command.type === "abort") {
+				return { id: command.id, type: "response", command: "abort", success: true };
+			}
+			throw new Error(`unexpected command type: ${command.type}`);
+		});
+		const dispatcher = new RpcInputDispatcher({ deps });
+
+		dispatcher.dispatch({ id: "slow", type: "prompt", message: "stall the queue" });
+		dispatcher.dispatch({ id: "stop", type: "abort" });
+		await flushMicrotasks();
+
+		// The abort must be observed while the prompt is still stalled —
+		// it runs on the immediate lane instead of queueing behind the
+		// serial task (order between the two concurrent lanes is not fixed).
+		expect(started).toHaveLength(2);
+		expect(started).toContain("prompt");
+		expect(started).toContain("abort");
+		expect(outputs).toEqual([{ id: "stop", type: "response", command: "abort", success: true }]);
+
+		releaseCompact.resolve();
+		await dispatcher.drain();
+
+		expect(outputs).toEqual([
+			{ id: "stop", type: "response", command: "abort", success: true },
+			{
+				id: "slow",
+				type: "response",
+				command: "prompt",
+				success: true,
+				data: { agentInvoked: false },
+			},
+		]);
+	});
+
+	test("a flooded serial queue fails fast with a correlated overload error", async () => {
+		const releaseFirst = Promise.withResolvers<void>();
+		const { deps, outputs } = makeDeps(async command => {
+			if (command.type === "prompt" && command.id === "first") {
+				await releaseFirst.promise;
+			}
+			return {
+				id: command.id,
+				type: "response",
+				command: "prompt",
+				success: true,
+				data: { agentInvoked: false },
+			};
+		});
+		const dispatcher = new RpcInputDispatcher({ deps });
+
+		dispatcher.dispatch({ id: "first", type: "prompt", message: "block the queue" });
+		for (let i = 0; i < MAX_RPC_SERIAL_QUEUE; i++) {
+			dispatcher.dispatch({ id: `queued-${i}`, type: "prompt", message: `waiting ${i}` });
+		}
+		await flushMicrotasks();
+
+		const overloads = outputs.filter(
+			output =>
+				typeof output === "object" &&
+				output !== null &&
+				"type" in output &&
+				output.type === "response" &&
+				"success" in output &&
+				output.success === false,
+		) as RpcResponse[];
+		expect(overloads).toHaveLength(1);
+		expect(overloads[0]).toMatchObject({
+			id: `queued-${MAX_RPC_SERIAL_QUEUE - 1}`,
+			type: "response",
+			command: "prompt",
+			success: false,
+		});
+		expect(String((overloads[0] as { error?: unknown }).error ?? "")).toContain("queue full");
+
+		releaseFirst.resolve();
+		await dispatcher.drain();
+
+		const successes = outputs.filter(
+			output =>
+				typeof output === "object" &&
+				output !== null &&
+				"type" in output &&
+				output.type === "response" &&
+				"success" in output &&
+				output.success === true,
+		);
+		expect(successes).toHaveLength(MAX_RPC_SERIAL_QUEUE);
 	});
 });
 

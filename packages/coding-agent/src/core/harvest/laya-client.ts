@@ -318,14 +318,34 @@ export class LayaClient {
 // Global default singleton
 let defaultClient: LayaClient | undefined;
 
+/** Resolve the sidecar URL from explicit arg, env, settings, then default — the same precedence as the constructor. */
+function resolveEffectiveBaseUrl(): string {
+	let configuredUrl: string | undefined;
+	try {
+		configuredUrl = settings.get("laya.url");
+	} catch {
+		// In isolated test environments where settings might not be initialized
+	}
+	return process.env.LAYA_SIDECAR_URL || configuredUrl || DEFAULT_SIDECAR_URL;
+}
+
 export function getLayaClient(baseUrl?: string): LayaClient {
 	if (baseUrl) {
-		if (!defaultClient || defaultClient.baseUrl !== baseUrl) {
-			return new LayaClient({ baseUrl });
-		}
+		// Explicit callers (setup probing a fallback port, calibration) get a
+		// client for exactly that URL without disturbing the shared default.
+		return new LayaClient({ baseUrl });
 	}
-	if (!defaultClient) {
+	// Recompute every call: setup may have resolved a port conflict and
+	// persisted another `laya.url` since the singleton was built. A stale
+	// default would otherwise keep hitting the old port until restart.
+	const effective = resolveEffectiveBaseUrl();
+	if (!defaultClient || defaultClient.baseUrl !== effective) {
 		defaultClient = new LayaClient();
 	}
 	return defaultClient;
+}
+
+/** Drop the shared default client (tests; the next call rebuilds it). */
+export function resetLayaClient(): void {
+	defaultClient = undefined;
 }

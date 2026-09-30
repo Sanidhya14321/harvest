@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import {
 	buildSubagentCriteria,
+	classifySubagentShadow,
+	isLayaSubagentAutoPickEnabled,
+	isLayaSubagentShadowEnabled,
 	selectSubagentWithLaya,
 	SUBAGENT_SELECTION_AUDIT_LOG,
 } from "../src/core/harvest/laya-subagent-selection";
 import type { LayaClient } from "../src/core/harvest/laya-client";
 import type { AgentDefinition } from "../src/task/types";
 import { Settings } from "../src/config/settings";
+import { TempDir } from "@harvest/pi-utils";
 
 const TEST_AGENTS: AgentDefinition[] = [
 	{
@@ -243,6 +247,110 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 			// Forced auto adopts pick regardless of low confidence
 			expect(decision.selectedAgent).toBe("security-reviewer");
 			expect(decision.decisionType).toBe("auto_pick");
+		});
+	});
+
+	describe("Shadow telemetry without blocking dispatch", () => {
+		it("distinguishes auto-pick from shadow settings", () => {
+			expect(isLayaSubagentAutoPickEnabled(Settings.isolated({ "laya.subagentSelection": true }))).toBe(true);
+			expect(isLayaSubagentAutoPickEnabled(Settings.isolated({ "laya.subagentSelection": false }))).toBe(false);
+			expect(
+				isLayaSubagentShadowEnabled(
+					Settings.isolated({ "laya.subagentSelection": false, "laya.subagentSelectionShadow": true }),
+				),
+			).toBe(true);
+			expect(
+				isLayaSubagentShadowEnabled(
+					Settings.isolated({ "laya.subagentSelection": false, "laya.subagentSelectionShadow": false }),
+				),
+			).toBe(false);
+		});
+
+		it("scores the assignment in the background without awaiting dispatch", async () => {
+			const tempDir = TempDir.createSync("@pi-shadow-selection-");
+			try {
+				const release = Promise.withResolvers<void>();
+				const mockClient = {
+					decide: vi.fn(async () => {
+						await release.promise;
+						return {
+							success: true,
+							fallback: false,
+							latencyMs: 1,
+							data: { subagent_choice: { answer: "scout", confidence: 0.9 } },
+						};
+					}),
+				} as unknown as LayaClient;
+
+				const auditBefore = SUBAGENT_SELECTION_AUDIT_LOG.length;
+				// Returns void immediately while the decision still pends:
+				// dispatch never waits for shadow telemetry.
+				const returned = classifySubagentShadow("Explore codebase structure", {
+					client: mockClient,
+					settings: Settings.isolated({ "laya.enabled": true, "laya.subagentSelection": false }),
+					availableAgents: TEST_AGENTS,
+					defaultAgent: "task",
+					agentDir: tempDir.path(),
+				});
+				expect(returned).toBeUndefined();
+				expect(mockClient.decide).toHaveBeenCalledTimes(1);
+				expect(SUBAGENT_SELECTION_AUDIT_LOG).toHaveLength(auditBefore);
+
+				release.resolve();
+				const deadline = Date.now() + 5000;
+				let recentRecord;
+				for (;;) {
+					recentRecord = SUBAGENT_SELECTION_AUDIT_LOG[SUBAGENT_SELECTION_AUDIT_LOG.length - 1];
+					if (recentRecord && SUBAGENT_SELECTION_AUDIT_LOG.length > auditBefore) break;
+					if (Date.now() > deadline) throw new Error("background shadow classification never settled");
+					await Bun.sleep(5);
+				}
+				expect(recentRecord?.decisionType).toBe("shadow");
+				expect(recentRecord?.layaPick).toBe("scout");
+				expect(recentRecord?.selectedAgent).toBe("task");
+			} finally {
+				tempDir.removeSync();
+			}
+		});
+
+		it("drops shadow classifications beyond the in-flight bound instead of queueing", async () => {
+			const tempDir = TempDir.createSync("@pi-shadow-bound-");
+			try {
+				const release = Promise.withResolvers<void>();
+				const mockClient = {
+					decide: vi.fn(async () => {
+						await release.promise;
+						return { success: false, fallback: true, latencyMs: 1 };
+					}),
+				} as unknown as LayaClient;
+				const options = {
+					client: mockClient,
+					settings: Settings.isolated({ "laya.enabled": true, "laya.subagentSelection": false }),
+					availableAgents: TEST_AGENTS,
+					defaultAgent: "task",
+					agentDir: tempDir.path(),
+				};
+
+				classifySubagentShadow("first", options);
+				classifySubagentShadow("second", options);
+				classifySubagentShadow("third-over-bound", options);
+				expect(mockClient.decide).toHaveBeenCalledTimes(2);
+
+				const auditBefore = SUBAGENT_SELECTION_AUDIT_LOG.length;
+				release.resolve();
+				const deadline = Date.now() + 5000;
+				while (SUBAGENT_SELECTION_AUDIT_LOG.length < auditBefore + 2) {
+					if (Date.now() > deadline) throw new Error("background shadows never settled");
+					await Bun.sleep(5);
+				}
+				// Let the in-flight counter teardown flush before reusing the bound.
+				await Bun.sleep(0);
+				// Draining the in-flight pair frees the bound for new work.
+				classifySubagentShadow("fourth-after-drain", options);
+				expect(mockClient.decide).toHaveBeenCalledTimes(3);
+			} finally {
+				tempDir.removeSync();
+			}
 		});
 	});
 

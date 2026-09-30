@@ -5,12 +5,16 @@
  * ("does this call write, delete, publish, or change access irreversibly?").
  *
  * Contract:
- * - High-risk tool list: bash, write, edit, ast-edit, patch.
+ * - Eligibility is tier-first: tools declaring a write/exec approval tier
+ *   for these args are gated (covers built-ins, MCP, and custom tools,
+ *   including MCP writes whose wire names are not listed); read-tier tools
+ *   bypass. Without a tier, the HIGH_RISK_TOOLS name list applies.
  * - Fail CLOSED: If sidecar is unavailable, times out (~300ms), or returns
  *   high irreversibility score, require approval.
  * - Feeds into Harvest's existing approval logic as one signal, never replacing it.
  */
 
+import type { ToolTier } from "@harvest/pi-agent-core";
 import { logger } from "@harvest/pi-utils";
 import { type Settings, settings } from "../../config/settings";
 import { getLayaClient, type LayaClient } from "./laya-client";
@@ -47,7 +51,18 @@ export const MIN_GATING_CONFIDENCE = 0.75;
 export async function checkToolCallGating(
 	toolName: string,
 	args: Record<string, unknown>,
-	options: { client?: LayaClient; sessionId?: string; settings?: Settings; signal?: AbortSignal } = {},
+	options: {
+		client?: LayaClient;
+		sessionId?: string;
+		settings?: Settings;
+		signal?: AbortSignal;
+		/**
+		 * Structured approval tier for this call (see resolveToolTier): gate
+		 * write/exec tiers, bypass read tier. When omitted, eligibility falls
+		 * back to the HIGH_RISK_TOOLS name list for older callers.
+		 */
+		toolTier?: ToolTier;
+	} = {},
 ): Promise<ToolGatingDecision> {
 	if (process.env.LAYA_ENABLED === "false") {
 		return {
@@ -74,15 +89,21 @@ export async function checkToolCallGating(
 	}
 
 	const normalizedTool = toolName.toLowerCase().trim();
-	const isHighRisk = HIGH_RISK_TOOLS.has(normalizedTool);
+	// Eligibility is tier-first: the tool's own approval declaration
+	// (evaluated against these args by the caller) covers built-ins, MCP,
+	// and extension tools uniformly — including MCP write tools whose wire
+	// names never appear in HIGH_RISK_TOOLS. The name list remains as the
+	// fallback for callers that cannot supply a tier.
+	const isHighRisk =
+		options.toolTier !== undefined ? options.toolTier !== "read" : HIGH_RISK_TOOLS.has(normalizedTool);
 
-	// Low-risk tools bypass gating check completely
+	// Read-tier tools bypass gating check completely
 	if (!isHighRisk) {
 		return {
 			isHighRiskTool: false,
 			requireApproval: false,
 			fallback: false,
-			reason: "tool_not_in_high_risk_list",
+			reason: options.toolTier !== undefined ? "read_tier_bypass" : "tool_not_in_high_risk_list",
 			latencyMs: 0,
 		};
 	}

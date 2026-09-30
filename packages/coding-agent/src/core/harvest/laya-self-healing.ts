@@ -20,6 +20,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { getAgentDir, logger } from "@harvest/pi-utils";
+import { LayaClient } from "./laya-client";
 
 export interface FailureModeDefinition {
 	readonly id: string;
@@ -536,6 +537,66 @@ export async function isPortInUse(port: number): Promise<boolean> {
 }
 
 /**
+ * Model identity our sidecar serves. Reuse requires this exact id: any
+ * healthy-looking listener without it is treated as foreign (never killed,
+ * never reused).
+ */
+export const EXPECTED_LAYA_MODEL_ID = "convaiinnovations/laya-typed-decisions";
+
+/**
+ * Verify a port occupant is really our managed sidecar before reuse:
+ * `/health` must report ready with the expected model id, and a bounded
+ * authenticated `/v1/decide` probe must succeed (proving the managed token
+ * is accepted, not just that something answers HTTP). Never throws.
+ * Never terminates the occupant — verification failure means "foreign".
+ */
+export async function verifyManagedSidecarIdentity(
+	baseUrl: string,
+	options: { healthTimeoutMs?: number; decideTimeoutMs?: number } = {},
+): Promise<{ ok: boolean; reason?: string }> {
+	const healthTimeoutMs = options.healthTimeoutMs ?? 800;
+	const decideTimeoutMs = options.decideTimeoutMs ?? 2000;
+	try {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), healthTimeoutMs);
+		let res: Response;
+		try {
+			res = await fetch(`${baseUrl}/health`, { signal: controller.signal });
+		} finally {
+			clearTimeout(timeout);
+		}
+		if (!res.ok) return { ok: false, reason: `health status ${res.status}` };
+		const data = (await res.json()) as { ready?: boolean; status?: string; model?: string };
+		if (data.ready !== true && data.status !== "ok") return { ok: false, reason: "model not ready" };
+		if (data.model === undefined) return { ok: false, reason: "health response carries no model identity" };
+		if (data.model !== EXPECTED_LAYA_MODEL_ID) {
+			return { ok: false, reason: `unexpected model ${data.model}` };
+		}
+	} catch (error) {
+		return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+	}
+	try {
+		const client = new LayaClient({ baseUrl, timeoutMs: decideTimeoutMs });
+		const probe = await client.decide(
+			"laya sidecar identity probe",
+			{
+				probe: {
+					type: "noul",
+					instructions: "is this an identity probe of the local decision sidecar?",
+				},
+			},
+			{ callSite: "sidecar_identity_probe", timeoutMs: decideTimeoutMs },
+		);
+		if (probe.fallback || !probe.data?.probe) {
+			return { ok: false, reason: probe.fallbackReason ?? "decide probe failed" };
+		}
+		return { ok: true };
+	} catch (error) {
+		return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+/**
  * Failure Mode 3: Non-destructive port conflict resolution.
  * If preferred port (8177) is occupied:
  * - If healthy Laya sidecar: reuse existing process without restarting.
@@ -568,17 +629,15 @@ export async function resolvePortConflict(
 	}
 
 	const probeHealth = options.probeSidecarHealth ?? (async (url: string) => {
-		try {
-			const controller = new AbortController();
-			const timeout = setTimeout(() => controller.abort(), 800);
-			const res = await fetch(`${url}/health`, { signal: controller.signal });
-			clearTimeout(timeout);
-			if (!res.ok) return false;
-			const data = (await res.json()) as { ready?: boolean; status?: string };
-			return data.ready === true || data.status === "ok";
-		} catch {
-			return false;
+		// Identity-verified reuse: a bare ready/ok is not process identity.
+		const identity = await verifyManagedSidecarIdentity(url);
+		if (!identity.ok) {
+			logger.debug("Laya sidecar reuse refused: occupant failed identity verification", {
+				url,
+				reason: identity.reason,
+			});
 		}
+		return identity.ok;
 	});
 
 	const isHarvestSidecar = await probeHealth(preferredBaseUrl);

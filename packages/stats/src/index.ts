@@ -99,6 +99,17 @@ export interface StandaloneStatsArgs {
 	json: boolean;
 	sync: boolean;
 	help: boolean;
+	token: string | null;
+}
+
+/**
+ * Report the session-sync summary. In `--json` mode stdout must carry exactly
+ * one parseable JSON document, so the human summary goes to stderr there.
+ */
+export function emitSyncSummary(processed: number, files: number, total: number, jsonMode: boolean): void {
+	const line = `Synced ${processed} new entries from ${files} files (${total} total)\n`;
+	if (jsonMode) process.stderr.write(line);
+	else console.log(line);
 }
 
 /** Parse the standalone `omp-stats` arguments used by the production entry point. */
@@ -111,6 +122,7 @@ export function parseStandaloneStatsArgs(args: string[]): StandaloneStatsArgs {
 			json: { type: "boolean", short: "j", default: false },
 			sync: { type: "boolean", short: "s", default: false },
 			help: { type: "boolean", short: "h", default: false },
+			token: { type: "string" },
 		},
 		allowPositionals: true,
 	});
@@ -120,6 +132,7 @@ export function parseStandaloneStatsArgs(args: string[]): StandaloneStatsArgs {
 		json: values.json ?? false,
 		sync: values.sync ?? false,
 		help: values.help ?? false,
+		token: values.token ?? null,
 	};
 }
 
@@ -139,6 +152,8 @@ Usage:
 Options:
   -p, --port <port>  Port for the dashboard server (default: 3847)
   --host <host>       Host to bind (default: 127.0.0.1)
+  --token <token>     Bearer token for API reads (or HARVEST_STATS_TOKEN);
+                      required for non-loopback binds like --host 0.0.0.0
   -j, --json         Output stats as JSON and exit
   -s, --sync         Sync session files and show summary
   -h, --help         Show this help message
@@ -146,7 +161,7 @@ Options:
 Examples:
   omp-stats              # Start dashboard server
   omp-stats --json       # Print stats as JSON
-  omp-stats --host 0.0.0.0 # Explicitly expose on all IPv4 interfaces
+  omp-stats --host 0.0.0.0 --token $HARVEST_STATS_TOKEN # LAN dashboard (token required)
   omp-stats --sync       # Sync and show summary
 `);
 		return;
@@ -177,7 +192,7 @@ Examples:
 		});
 		if (tty && lastWidth > 0) process.stderr.write(`\r${" ".repeat(lastWidth)}\r`);
 		const total = await getTotalMessageCount();
-		console.log(`Synced ${processed} new entries from ${files} files (${total} total)\n`);
+		emitSyncSummary(processed, files, total, values.json === true);
 
 		if (values.json) {
 			const stats = await getDashboardStats();
@@ -191,7 +206,7 @@ Examples:
 		}
 
 		// Start server
-		const { port: actualPort } = await startServer(values.port, values.host);
+		const { port: actualPort } = await startServer(values.port, values.host, { token: values.token });
 		console.log(`Dashboard available at: ${formatStatsDashboardUrl(values.host, actualPort)}`);
 		console.log("Press Ctrl+C to stop\n");
 

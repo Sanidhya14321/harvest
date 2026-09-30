@@ -10,7 +10,9 @@
  *    (default N=2), and pinned messages bypass scoring entirely and are always included.
  * 2. Representative Scoring Window: Chunks > ~800 tokens (~3200 chars) are truncated
  *    to first ~400 + last ~400 tokens solely for scoring. Full original content is preserved if kept.
- * 3. Batched Scoring: Sends exactly ONE /v1/decide request containing all candidate score questions.
+ * 3. Batched Scoring: Sends /v1/decide requests with at most
+ *    MAX_PRUNING_QUESTIONS_PER_REQUEST score questions each (the server
+ *    rejects larger batches), so long sessions are chunked, not failed open.
  * 4. Budget-Based Selection: Ranks candidates by score descending, keeps until budget is met,
  *    and replaces drops with informative placeholders (e.g. "[Earlier tool output omitted for relevance (Laya score: 0.12)]").
  * 5. Safety Floor: Never prunes below minimum turns (default 3) or safety token floor.
@@ -22,8 +24,8 @@ import type { ToolResultMessage, TextContent } from "@harvest/pi-ai";
 import type { AgentMessage } from "@harvest/pi-agent-core";
 import { isRecord, logger } from "@harvest/pi-utils";
 import { type Settings, settings as globalSettings, type SettingPath } from "../../config/settings";
-import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
-import { getDerivedPruningEnabledSync } from "./laya-calibration";
+import { getLayaClient, type LayaAnswerResult, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
+import { getDerivedPruningEnabledSync, getExplicitSetting } from "./laya-calibration";
 
 function safeGetSetting<T>(settings: Settings | undefined, key: SettingPath): T | undefined {
 	if (!settings) return undefined;
@@ -39,6 +41,8 @@ export const DEFAULT_PRUNING_MIN_KEPT_TURNS = 3;
 export const DEFAULT_PRUNING_MIN_CHUNK_TOKENS = 80;
 export const DEFAULT_PRUNING_SAFETY_TOKEN_FLOOR = 1500;
 export const MAX_SCORING_CHUNK_TOKENS = 800; // ~3200 characters
+/** Maximum score questions per sidecar call: the server rejects larger batches. */
+export const MAX_PRUNING_QUESTIONS_PER_REQUEST = 64;
 
 export const RELEVANCE_CRITERIA: readonly string[] = [
 	"irrelevant to current task",
@@ -91,12 +95,42 @@ export interface LockedPruningDecision {
 
 /**
  * In-memory registry of locked pruning decisions.
- * Keyed by `${sessionId}::${chunkId}`.
+ *
+ * Keyed by `${sessionId}::${chunkId}::${contentHash}` where contentHash is a
+ * hash of the exact chunk text that was scored. Positions (turn/message
+ * indices) are reused after rewinds, branch switches, and compactions, so a
+ * positional key alone would replay a stale keep/drop onto different content;
+ * the content hash forces anything at a reused position to be scored afresh.
+ * Entries are also dropped when their session is disposed, and the map is
+ * bounded (oldest evicted first) so long-lived processes cannot grow it
+ * without limit.
+ *
  * Once a candidate chunk ages out of the recent window and is evaluated,
- * its keep/drop decision is locked here permanently for the session.
- * Subsequent turns never re-score or re-drop it, guaranteeing prefix byte-stability.
+ * its keep/drop decision is locked here for identical content. Subsequent
+ * turns never re-score it, guaranteeing prefix byte-stability.
  */
 export const LOCKED_PRUNING_DECISIONS = new Map<string, LockedPruningDecision>();
+
+/** Maximum locked pruning decisions retained process-wide (oldest evicted first). */
+export const MAX_LOCKED_PRUNING_DECISIONS = 1000;
+
+/** Stable content identity for a lock key: the exact text that was scored. */
+export function pruningContentHash(text: string): string {
+	return Bun.hash(text).toString(36);
+}
+
+/** Lock key binding a decision to its session, position, and scored content. */
+export function pruningLockKey(sessionId: string, chunkId: string, text: string): string {
+	return `${sessionId}::${chunkId}::${pruningContentHash(text)}`;
+}
+
+function evictExcessLockedPruningDecisions(store: Map<string, LockedPruningDecision>): void {
+	while (store.size > MAX_LOCKED_PRUNING_DECISIONS) {
+		const oldest = store.keys().next();
+		if (oldest.done) return;
+		store.delete(oldest.value);
+	}
+}
 
 export function resetLockedPruningDecisions(sessionId?: string): void {
 	if (!sessionId) {
@@ -229,6 +263,34 @@ export function extractTaskGoal(messages: readonly AgentMessage[]): string {
 	return "Complete the requested coding task.";
 }
 
+function truncateGoalText(text: string): string {
+	const trimmed = text.trim();
+	if (trimmed.length === 0) return "";
+	return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
+}
+
+/**
+ * Active scoring goal for relevance judgments: the latest user request
+ * steers, with the original request retained as durable context. A long
+ * chat that changes task scores history against the CURRENT request
+ * instead of a stale first message, while a follow-up on the same task
+ * keeps the original goal verbatim.
+ */
+export function extractActiveTaskGoal(messages: readonly AgentMessage[]): string {
+	let first = "";
+	let latest = "";
+	for (const msg of messages) {
+		if (msg.role !== "user") continue;
+		const text = truncateGoalText(extractMessageText(msg));
+		if (!text) continue;
+		if (!first) first = text;
+		latest = text;
+	}
+	if (!first) return "Complete the requested coding task.";
+	if (latest === first) return first;
+	return `Original task: ${first}\nCurrent request: ${latest}`;
+}
+
 /**
  * Prune context messages using Laya relevance scoring before a main LLM call.
  */
@@ -247,7 +309,7 @@ export async function pruneContextWithLaya(
 	if (safeGetSetting<boolean>(activeSettings, "laya.enabled") === false) {
 		return createPassthroughResult(messages, "laya_disabled_by_settings");
 	}
-	const explicitPruningSetting = safeGetSetting<boolean>(activeSettings, "laya.pruning");
+	const explicitPruningSetting = getExplicitSetting<boolean>(activeSettings, "laya.pruning");
 	const effectivePruningEnabled = explicitPruningSetting ?? getDerivedPruningEnabledSync(true);
 	if (!effectivePruningEnabled) {
 		return createPassthroughResult(
@@ -291,7 +353,7 @@ export async function pruneContextWithLaya(
 		return createPassthroughResult(messages, "within_always_keep_window");
 	}
 
-	const taskGoal = options.taskGoal || extractTaskGoal(messages);
+	const taskGoal = options.taskGoal || extractActiveTaskGoal(messages);
 	const alwaysKeepTurnThreshold = totalTurns - keepRecentTurns; // turns at or after this are always kept
 
 	const sessionId = options.sessionId || "default";
@@ -328,7 +390,7 @@ export async function pruneContextWithLaya(
 				if (tokens >= minChunkTokens) {
 					const chunkId = `tool_${turn.turnIndex}_${msgIdx}_${toolMsg.toolName || "tool"}`;
 
-					const lockKey = `${sessionId}::${chunkId}`;
+					const lockKey = pruningLockKey(sessionId, chunkId, text);
 					if (useLocking && lockStore.has(lockKey)) {
 						preLockedByMsgIdx.set(msgIdx, lockStore.get(lockKey)!);
 						continue;
@@ -348,10 +410,7 @@ export async function pruneContextWithLaya(
 				}
 			} else if (msg.role === "assistant") {
 				// Exclude assistant messages containing tool calls from pruning to prevent orphan tool results
-				if (
-					Array.isArray(msg.content) &&
-					msg.content.some(b => isRecord(b) && b.type === "toolCall")
-				) {
+				if (Array.isArray(msg.content) && msg.content.some(b => isRecord(b) && b.type === "toolCall")) {
 					continue;
 				}
 
@@ -361,7 +420,7 @@ export async function pruneContextWithLaya(
 				// Only consider very large assistant outputs in older turns
 				if (tokens >= minChunkTokens * 2) {
 					const chunkId = `assistant_${turn.turnIndex}_${msgIdx}`;
-					const lockKey = `${sessionId}::${chunkId}`;
+					const lockKey = pruningLockKey(sessionId, chunkId, text);
 					if (useLocking && lockStore.has(lockKey)) {
 						preLockedByMsgIdx.set(msgIdx, lockStore.get(lockKey)!);
 						continue;
@@ -444,119 +503,154 @@ export async function pruneContextWithLaya(
 		};
 	}
 
-	// Step 3: Batch scoring call against Laya sidecar
-	const client = options.client ?? getLayaClient();
-	const questions: Record<string, LayaQuestionDefinition> = {};
-	const statePerChunk: Record<string, string> = {};
-
-	for (const c of candidates) {
-		const label = c.toolName ? `Tool '${c.toolName}' result` : `${c.role} response`;
-		questions[c.id] = {
-			type: "score",
-			instructions: `Rate how relevant this ${label} is to the current task/goal`,
-			criteria: RELEVANCE_CRITERIA,
-		};
-		statePerChunk[c.id] = `Current Task/Goal:\n${taskGoal}\n\nCandidate Chunk (${label}):\n${c.scoringExcerpt}`;
-	}
-
-	const decideResult = await client.decide(statePerChunk, questions, {
-		callSite: "context_pruning",
-		sessionId: options.sessionId,
-		timeoutMs: options.timeoutMs,
-		signal: options.signal,
-	});
-
-	// Step 6: Fallback - fail OPEN if sidecar is down, times out, or errors
-	if (decideResult.fallback || !decideResult.data) {
-		const latencyMs = performance.now() - startTime;
-		logger.warn("Laya context pruning fallback [FAIL OPEN]: keeping full unpruned context", {
-			reason: decideResult.fallbackReason,
-			latencyMs,
-			candidatesCount: candidates.length,
-		});
-
-		return {
-			messages: [...messages],
-			pruned: false,
-			fallback: true,
-			fallbackReason: decideResult.fallbackReason || "sidecar_scoring_error",
-			totalOriginalTokens: totalCandidateTokens,
-			totalPrunedTokens: 0,
-			tokensSaved: 0,
-			candidatesCount: candidates.length,
-			droppedCount: 0,
-			latencyMs,
-			auditRecords: [],
-		};
-	}
-
-	// Attach returned scores to candidate records
-	// Missing or invalid answers are scoring failures, not permission to discard context.
-	if (
-		candidates.some(candidate => {
-			const score = decideResult.data?.[candidate.id]?.score;
-			return typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 3;
-		})
-	) {
-		return {
-			...createPassthroughResult(messages, "invalid_relevance_scores"),
-			fallback: true,
-			candidatesCount: candidates.length,
-			latencyMs: performance.now() - startTime,
-		};
-	}
-	for (const c of candidates) {
-		const ans = decideResult.data[c.id];
-		if (ans && typeof ans.score === "number") {
-			c.score = ans.score;
-			// 4 levels: 0 to 3 -> normalize to [0, 1]
-			c.normalizedScore = Math.min(1, Math.max(0, ans.score / 3.0));
-			c.confidence = ans.confidence ?? 0.5;
-		} else {
-			// Default neutral score if missing
-			c.score = 1.5;
-			c.normalizedScore = 0.5;
-			c.confidence = 0.5;
-		}
-	}
-
-	// Step 4: Budget-based selection in Harvest
-	// Respect configured laya.pruningTokenBudget or retain 40% of candidate tokens
+	// Effective budget first: when every candidate token already fits,
+	// scoring cannot drop anything, so keep all candidates without spending
+	// a sidecar round trip (and its 300ms-class latency) for zero savings.
 	const configuredBudget =
 		options.prunableTokenBudget ?? safeGetSetting<number>(activeSettings, "laya.pruningTokenBudget" as SettingPath);
-
 	const prunableBudget = configuredBudget ?? Math.max(safetyTokenFloor, Math.floor(totalCandidateTokens * 0.4));
+	const needsScoring = totalCandidateTokens > prunableBudget;
+	if (!needsScoring) {
+		logger.debug("Laya context pruning skipped scoring: all candidate tokens fit the budget", {
+			totalCandidateTokens,
+			prunableBudget,
+			candidatesCount: candidates.length,
+		});
+		for (const c of candidates) c.dropped = false;
+	} else {
+		// Step 3: Batch scoring call against Laya sidecar
+		const client = options.client ?? getLayaClient();
+		const questions: Record<string, LayaQuestionDefinition> = {};
+		const statePerChunk: Record<string, string> = {};
 
-	// Rank candidates descending by score (highest relevance first)
-	const rankedCandidates = [...candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-
-	let accumulatedBudget = 0;
-	const safetyFloorTurnThreshold = totalTurns - minKeptTurns;
-
-	for (const c of rankedCandidates) {
-		// Step 5: Safety Floor - never prune chunks in minKeptTurns
-		if (c.turnIndex >= safetyFloorTurnThreshold) {
-			c.dropped = false;
-			accumulatedBudget += c.estimatedTokens;
-			continue;
+		for (const c of candidates) {
+			const label = c.toolName ? `Tool '${c.toolName}' result` : `${c.role} response`;
+			questions[c.id] = {
+				type: "score",
+				instructions: `Rate how relevant this ${label} is to the current task/goal`,
+				criteria: RELEVANCE_CRITERIA,
+			};
+			statePerChunk[c.id] = `Current Task/Goal:\n${taskGoal}\n\nCandidate Chunk (${label}):\n${c.scoringExcerpt}`;
 		}
 
-		if (accumulatedBudget + c.estimatedTokens <= prunableBudget) {
-			// Fits within budget: keep
-			c.dropped = false;
-			accumulatedBudget += c.estimatedTokens;
-		} else {
-			// Exceeds budget: drop
-			c.dropped = true;
+		const decideOptions = {
+			callSite: "context_pruning",
+			sessionId: options.sessionId,
+			timeoutMs: options.timeoutMs,
+			signal: options.signal,
+		};
+		// The sidecar rejects more than MAX_PRUNING_QUESTIONS_PER_REQUEST
+		// questions per call: score large candidate sets in sequential
+		// chunks so a long session is scored instead of failing open
+		// wholesale. A failed chunk fails the whole turn open (full context
+		// kept) — never an oversized request, never a partial drop.
+		const scoredAnswers: Record<string, LayaAnswerResult> = {};
+		let scoringFallbackReason: string | undefined;
+		for (let offset = 0; offset < candidates.length; offset += MAX_PRUNING_QUESTIONS_PER_REQUEST) {
+			const batch = candidates.slice(offset, offset + MAX_PRUNING_QUESTIONS_PER_REQUEST);
+			const batchQuestions: Record<string, LayaQuestionDefinition> = {};
+			const batchState: Record<string, string> = {};
+			for (const c of batch) {
+				const question = questions[c.id];
+				const state = statePerChunk[c.id];
+				if (question === undefined || state === undefined) continue;
+				batchQuestions[c.id] = question;
+				batchState[c.id] = state;
+			}
+			const decideResult = await client.decide(batchState, batchQuestions, decideOptions);
+			if (decideResult.fallback || !decideResult.data) {
+				scoringFallbackReason = decideResult.fallbackReason || "sidecar_scoring_error";
+				break;
+			}
+			Object.assign(scoredAnswers, decideResult.data);
+		}
+
+		// Step 6: Fallback - fail OPEN if sidecar is down, times out, or errors
+		if (scoringFallbackReason !== undefined) {
+			const latencyMs = performance.now() - startTime;
+			logger.warn("Laya context pruning fallback [FAIL OPEN]: keeping full unpruned context", {
+				reason: scoringFallbackReason,
+				latencyMs,
+				candidatesCount: candidates.length,
+			});
+
+			return {
+				messages: [...messages],
+				pruned: false,
+				fallback: true,
+				fallbackReason: scoringFallbackReason,
+				totalOriginalTokens: totalCandidateTokens,
+				totalPrunedTokens: 0,
+				tokensSaved: 0,
+				candidatesCount: candidates.length,
+				droppedCount: 0,
+				latencyMs,
+				auditRecords: [],
+			};
+		}
+
+		// Attach returned scores to candidate records
+		// Missing or invalid answers are scoring failures, not permission to discard context.
+		if (
+			candidates.some(candidate => {
+				const score = scoredAnswers[candidate.id]?.score;
+				return typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 3;
+			})
+		) {
+			return {
+				...createPassthroughResult(messages, "invalid_relevance_scores"),
+				fallback: true,
+				candidatesCount: candidates.length,
+				latencyMs: performance.now() - startTime,
+			};
+		}
+		for (const c of candidates) {
+			const ans = scoredAnswers[c.id];
+			if (ans && typeof ans.score === "number") {
+				c.score = ans.score;
+				// 4 levels: 0 to 3 -> normalize to [0, 1]
+				c.normalizedScore = Math.min(1, Math.max(0, ans.score / 3.0));
+				c.confidence = ans.confidence ?? 0.5;
+			} else {
+				// Default neutral score if missing
+				c.score = 1.5;
+				c.normalizedScore = 0.5;
+				c.confidence = 0.5;
+			}
+		}
+
+		// Rank candidates descending by score (highest relevance first)
+		const rankedCandidates = [...candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+		let accumulatedBudget = 0;
+		const safetyFloorTurnThreshold = totalTurns - minKeptTurns;
+
+		for (const c of rankedCandidates) {
+			// Step 5: Safety Floor - never prune chunks in minKeptTurns
+			if (c.turnIndex >= safetyFloorTurnThreshold) {
+				c.dropped = false;
+				accumulatedBudget += c.estimatedTokens;
+				continue;
+			}
+
+			if (accumulatedBudget + c.estimatedTokens <= prunableBudget) {
+				// Fits within budget: keep
+				c.dropped = false;
+				accumulatedBudget += c.estimatedTokens;
+			} else {
+				// Exceeds budget: drop
+				c.dropped = true;
+			}
 		}
 	}
-
 	const now = Date.now();
 
-	// Step 4b: Lock decisions permanently for newly evaluated candidates
-	if (useLocking) {
+	// Step 4b: Lock decisions permanently for newly evaluated candidates.
+	// Bypassed (unscored) keeps are intentionally not locked so later turns
+	// with a fuller context still score them afresh.
+	if (useLocking && needsScoring) {
 		for (const c of candidates) {
-			const lockKey = `${sessionId}::${c.id}`;
+			const lockKey = pruningLockKey(sessionId, c.id, c.originalText);
 			const placeholder = c.dropped
 				? c.role === "toolResult"
 					? `[Earlier tool output for '${c.toolName || "tool"}' omitted for relevance (Laya score: ${(c.normalizedScore ?? 0).toFixed(2)})]`
@@ -573,6 +667,7 @@ export async function pruneContextWithLaya(
 				timestamp: now,
 				estimatedTokens: c.estimatedTokens,
 			});
+			evictExcessLockedPruningDecisions(lockStore);
 		}
 	}
 

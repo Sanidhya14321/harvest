@@ -290,28 +290,45 @@ export async function resolveEffectiveSubagentPolicy(
 	// If the subagent was not explicitly specialized (or was set to the generic default 'task'),
 	// consult Laya subagent selection with confidence gating and fail-open fallback.
 	if (!request.agent?.trim() || request.agent.trim() === spawnPolicy.defaultAgent) {
-		const layaDecision = await layaSubagent.selectSubagentWithLaya(request.assignment, {
-			availableAgents: eligibleAgents,
-			defaultAgent: spawnPolicy.defaultAgent,
-			context: request.context,
-			sessionId: (request.session as { sessionId?: string }).sessionId,
-			settings: request.session.settings,
-			signal: request.signal,
-		});
-		layaTraceId = layaDecision.traceId;
-		if (layaDecision.decisionType === "auto_pick") {
-			const candidatePick = layaDecision.selectedAgent;
-			try {
-				assertDepthAndSpawnAllowed(request, candidatePick);
-				const candidateAgent = getAgent(eligibleAgents, candidatePick);
-				if (candidateAgent && !disabledAgents.includes(candidatePick)) {
-					agentName = candidateAgent.name;
-				} else {
+		if (layaSubagent.isLayaSubagentAutoPickEnabled(request.session.settings)) {
+			const layaDecision = await layaSubagent.selectSubagentWithLaya(request.assignment, {
+				availableAgents: eligibleAgents,
+				defaultAgent: spawnPolicy.defaultAgent,
+				context: request.context,
+				sessionId: (request.session as { sessionId?: string }).sessionId,
+				settings: request.session.settings,
+				signal: request.signal,
+			});
+			layaTraceId = layaDecision.traceId;
+			if (layaDecision.decisionType === "auto_pick") {
+				const candidatePick = layaDecision.selectedAgent;
+				try {
+					assertDepthAndSpawnAllowed(request, candidatePick);
+					const candidateAgent = getAgent(eligibleAgents, candidatePick);
+					if (candidateAgent && !disabledAgents.includes(candidatePick)) {
+						agentName = candidateAgent.name;
+					} else {
+						agentName = spawnPolicy.defaultAgent;
+					}
+				} catch {
 					agentName = spawnPolicy.defaultAgent;
 				}
-			} catch {
-				agentName = spawnPolicy.defaultAgent;
 			}
+		} else if (layaSubagent.isLayaSubagentShadowEnabled(request.session.settings)) {
+			// Shadow telemetry must not serialize handoff dispatch: use the
+			// default agent immediately and score the assignment in the
+			// background (bounded, parent-cancellable). The pre-allocated
+			// trace id keeps the outcome joinable to the shadow audit record.
+			layaTraceId = layaSubagent.generateTraceId();
+			layaSubagent.classifySubagentShadow(request.assignment, {
+				availableAgents: eligibleAgents,
+				defaultAgent: spawnPolicy.defaultAgent,
+				context: request.context,
+				sessionId: (request.session as { sessionId?: string }).sessionId,
+				settings: request.session.settings,
+				signal: request.signal,
+				traceId: layaTraceId,
+			});
 		}
 	}
 

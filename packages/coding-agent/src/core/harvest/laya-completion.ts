@@ -7,7 +7,9 @@
  * Contract:
  * - Fail OPEN: If sidecar is unavailable, times out (~300ms), or state is
  *   non-English, fall back to the existing full-LLM evaluation check.
- * - Batches multiple questions into a single `/v1/decide` call per state.
+ * - Asks only the needed questions per call (the production unexpected-stop
+ *   path sends just `unexpected_stop`) and propagates the turn signal so a
+ *   cancelled turn never waits out the decision timeout.
  */
 
 import { logger } from "@harvest/pi-utils";
@@ -36,6 +38,15 @@ export async function checkCompletionWithLaya(
 		client?: LayaClient;
 		sessionId?: string;
 		settings?: Settings;
+		/** Turn abort signal: an aborted turn settles immediately without touching the sidecar. */
+		signal?: AbortSignal;
+		/**
+		 * Which questions to ask. Defaults to both for the general
+		 * step-evaluation contract; the production unexpected-stop path asks
+		 * only `unexpected_stop` so it never pays for the unused success
+		 * question.
+		 */
+		checks?: readonly ("success" | "unexpected_stop")[];
 	} = {},
 ): Promise<CompletionDecision> {
 	if (process.env.LAYA_ENABLED === "false") {
@@ -44,6 +55,15 @@ export async function checkCompletionWithLaya(
 			isPrematureStop: false,
 			fallback: true,
 			fallbackReason: "laya_disabled",
+			latencyMs: 0,
+		};
+	}
+	if (options.signal?.aborted) {
+		return {
+			isSuccess: true,
+			isPrematureStop: false,
+			fallback: true,
+			fallbackReason: "operation_cancelled",
 			latencyMs: 0,
 		};
 	}
@@ -68,25 +88,32 @@ export async function checkCompletionWithLaya(
 		command: state.command || "",
 		output: (state.output || "").slice(-1500), // inspect recent diagnostic tail
 		text: (state.assistantText || "").slice(0, 1000),
+		...(state.taskContext ? { task_context: state.taskContext.slice(0, 1000) } : {}),
 	};
 
-	// Batch two questions against the same state:
-	// 1. Success check: Did the command/step execute cleanly without errors?
-	// 2. Completion check: Did the assistant stop unexpectedly while promising more actions?
-	const questions = {
-		step_success: {
+	// Ask only the needed questions: the production unexpected-stop path
+	// sends just `unexpected_stop`, while the general step-evaluation
+	// contract keeps both.
+	const checks = options.checks ?? (["success", "unexpected_stop"] as const);
+	const questions: Record<string, { type: "noul"; instructions: string }> = {};
+	if (checks.includes("success")) {
+		questions.step_success = {
 			type: "noul" as const,
 			instructions: "did this execution complete successfully with zero unhandled errors or test failures?",
-		},
-		unexpected_stop: {
+		};
+	}
+	if (checks.includes("unexpected_stop")) {
+		questions.unexpected_stop = {
 			type: "noul" as const,
-			instructions: "does this message indicate an unexpected premature stop where the agent promised more actions but ended?",
-		},
-	};
+			instructions:
+				"does this message indicate an unexpected premature stop where the agent promised more actions but ended?",
+		};
+	}
 
 	const decision = await client.decide(statePayload, questions, {
 		callSite: "completion_check",
 		sessionId: options.sessionId,
+		signal: options.signal,
 	});
 
 	// If sidecar failed or timed out: FAIL OPEN to main LLM / heuristic
@@ -113,8 +140,8 @@ export async function checkCompletionWithLaya(
 	const prematureStopScore = typeof stopAnswer?.noul === "number" ? stopAnswer.noul : 0.0;
 	const avgConfidence = ((successAnswer?.confidence ?? 0.5) + (stopAnswer?.confidence ?? 0.5)) / 2;
 
-	const isSuccess = successScore >= 0.40;
-	const isPrematureStop = prematureStopScore >= 0.50;
+	const isSuccess = successScore >= 0.4;
+	const isPrematureStop = prematureStopScore >= 0.5;
 
 	logger.info("Laya completion check evaluated", {
 		isSuccess,

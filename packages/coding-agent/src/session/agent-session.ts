@@ -200,7 +200,7 @@ import {
 import { isLowSignalTitleInput } from "../tiny/text";
 import { shutdownTinyTitleClient } from "../tiny/title-client";
 import type { ImageAttachmentEntry } from "../tools";
-import { resolveApproval } from "../tools/approval";
+import { resolveApproval, resolveToolTier, type ToolTier } from "../tools/approval";
 import { type AskToolDetails, type AskToolInput, recoverAskQuestions } from "../tools/ask";
 import { releaseTabsForOwner } from "../tools/browser/tab-supervisor";
 import type { CheckpointState, CompletedRewindState } from "../tools/checkpoint";
@@ -254,6 +254,7 @@ import type {
 } from "./agent-session-types";
 import { writeArtifact } from "./artifacts";
 import type { ToolGatingDecision } from "../core/harvest/laya-gating";
+import { resetLockedPruningDecisions } from "../core/harvest/laya-pruning";
 import {
 	createHarvestSession,
 	interceptSessionToolCall,
@@ -509,6 +510,23 @@ function cloneMessageEndNotification(message: AgentMessage): AgentMessage {
 
 const INTERRUPTED_THINKING_MIN_CHARS = 60;
 const SESSION_CWD_CHANGE_REJECTED = Symbol("sessionCwdChangeRejected");
+
+/**
+ * Structured approval tier for Laya gating eligibility. Function-valued
+ * tool approvals run against these args (matching the approval engine), so
+ * MCP/extension writes classify as write/exec even though their wire names
+ * are not listed. Never throws: failures fall back to name-based matching.
+ */
+function resolveToolTierSafe(
+	tool: Parameters<typeof resolveToolTier>[0],
+	args: unknown,
+): ToolTier | undefined {
+	try {
+		return resolveToolTier(tool, args);
+	} catch {
+		return undefined;
+	}
+}
 
 /**
  * Translate a `power.sleepPrevention` mode into `PowerAssertion.start` options,
@@ -3932,6 +3950,7 @@ export class AgentSession {
 					},
 					this.sessionManager?.getSessionId(),
 					signal,
+					resolveToolTierSafe(ctx.tool, ctx.args),
 				);
 				await this.#emitGatingDecision(ctx.tool.name, gating);
 				if (gating.isHighRiskTool && gating.requireApproval) {
@@ -4022,6 +4041,7 @@ export class AgentSession {
 						{ name: ctx.tool.name, args: revisedArgs },
 						this.sessionManager?.getSessionId(),
 						signal,
+						resolveToolTierSafe(ctx.tool, revisedArgs),
 					);
 					await this.#emitGatingDecision(ctx.tool.name, gating);
 					if (gating.isHighRiskTool && gating.requireApproval) {
@@ -4733,6 +4753,11 @@ export class AgentSession {
 		this.#movedFromEmptySessionFile = undefined;
 		this.#closeAllProviderSessions("dispose");
 		this.#maintenance.cancelSpeculation();
+		try {
+			resetLockedPruningDecisions(this.sessionManager.getSessionId());
+		} catch {
+			// Lock cleanup is best-effort hygiene; the bounded map evicts anyway.
+		}
 		this.setHindsightSessionState(undefined);
 		hindsightState?.dispose();
 		this.#disconnectFromAgent();

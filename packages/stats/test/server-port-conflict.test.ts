@@ -103,13 +103,19 @@ describe("startServer access", () => {
 		const nonLoopbackHostname = getNonLoopbackHostname();
 		if (!nonLoopbackHostname) return;
 
-		const server = await startServer(0, "0.0.0.0");
+		const server = await startServer(0, "0.0.0.0", { token: "test-token" });
 
 		try {
 			expect(server.hostname).toBe("0.0.0.0");
 			expect(await tcpConnects(nonLoopbackHostname, server.port)).toBe(true);
 
-			const response = await fetch(`http://${STATS_DASHBOARD_HOSTNAME}:${server.port}/api/stats/models`);
+			const denied = await fetch(`http://${STATS_DASHBOARD_HOSTNAME}:${server.port}/api/stats/models`);
+			expect(denied.status).toBe(401);
+			await denied.body?.cancel();
+
+			const response = await fetch(`http://${STATS_DASHBOARD_HOSTNAME}:${server.port}/api/stats/models`, {
+				headers: { authorization: "Bearer test-token" },
+			});
 			expect(response.status).toBe(200);
 			expect(response.headers.get(STATS_DASHBOARD_HEADER)).toBe(STATS_DASHBOARD_SECURITY_VERSION);
 			expect(response.headers.get(STATS_DASHBOARD_HOSTNAME_HEADER)).toBe("0.0.0.0");

@@ -23,7 +23,7 @@ import { getAgentDir, isEnoent, logger } from "@harvest/pi-utils";
 import { type Settings, settings as globalSettings, type SettingPath } from "../../config/settings";
 import type { AgentDefinition } from "../../task/types";
 import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
-import { getDerivedTimeoutMsSync } from "./laya-calibration";
+import { getDerivedTimeoutMsSync, getExplicitSetting } from "./laya-calibration";
 
 export const DEFAULT_SUBAGENT_SELECTION_CONFIDENCE_THRESHOLD = 0.01;
 export const DEFAULT_SUBAGENT_TIMEOUT_MS = 300;
@@ -55,6 +55,53 @@ export interface LayaSubagentSelectionOptions {
 	readonly agentDir?: string;
 	/** Parent abort signal; an aborted signal settles immediately to a fallback. */
 	readonly signal?: AbortSignal;
+	/** Pre-allocated trace id so background shadow runs can join outcomes recorded by the dispatcher. */
+	readonly traceId?: string;
+}
+
+/** True when settings enable active Laya auto-pick (dispatch must await the decision). */
+export function isLayaSubagentAutoPickEnabled(settings?: Settings): boolean {
+	return safeGetSetting<boolean>(settings, "laya.subagentSelection" as SettingPath) === true;
+}
+
+/** True when shadow telemetry should be recorded (defaults on unless auto-pick or settings disable it). */
+export function isLayaSubagentShadowEnabled(settings?: Settings): boolean {
+	const setting = safeGetSetting<boolean>(settings, "laya.subagentSelectionShadow" as SettingPath);
+	if (setting !== undefined) return setting;
+	return safeGetSetting<boolean>(settings, "laya.subagentSelection" as SettingPath) !== false;
+}
+
+/** Maximum concurrent background shadow classifications (telemetry only; dispatch never waits). */
+export const MAX_SHADOW_SUBAGENT_IN_FLIGHT = 2;
+
+let shadowSubagentInFlight = 0;
+
+/**
+ * Run shadow subagent classification without blocking dispatch: the caller
+ * uses its default agent immediately while Laya scores the assignment in
+ * the background for audit/disagreement data. Bounded (excess requests are
+ * dropped, never queued) and parent-cancellable via `options.signal`.
+ */
+export function classifySubagentShadow(
+	assignment: string,
+	options: LayaSubagentSelectionOptions = {},
+): void {
+	if (shadowSubagentInFlight >= MAX_SHADOW_SUBAGENT_IN_FLIGHT) {
+		logger.debug("Dropping shadow subagent classification: too many in flight", {
+			inFlight: shadowSubagentInFlight,
+		});
+		return;
+	}
+	shadowSubagentInFlight++;
+	void selectSubagentWithLaya(assignment, { ...options, shadow: true })
+		.catch(error => {
+			logger.debug("Background shadow subagent classification failed", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		})
+		.finally(() => {
+			shadowSubagentInFlight--;
+		});
 }
 
 export interface SubagentOutcome {
@@ -144,7 +191,7 @@ export async function selectSubagentWithLaya(
 	options: LayaSubagentSelectionOptions = {},
 ): Promise<SubagentSelectionDecision> {
 	const startTime = performance.now();
-	const traceId = generateTraceId();
+	const traceId = options.traceId ?? generateTraceId();
 	const activeSettings = options.settings ?? globalSettings;
 	const defaultAgent = options.defaultAgent ?? "task";
 
@@ -223,7 +270,7 @@ export async function selectSubagentWithLaya(
 	const derivedTimeout = getDerivedTimeoutMsSync(DEFAULT_SUBAGENT_TIMEOUT_MS);
 	const timeoutMs =
 		options.timeoutMs ??
-		safeGetSetting<number>(activeSettings, "laya.subagentSelectionTimeoutMs" as SettingPath) ??
+		getExplicitSetting<number>(activeSettings, "laya.subagentSelectionTimeoutMs") ??
 		derivedTimeout;
 
 	const decideResult = await client.decide(state, questions, {
@@ -383,7 +430,7 @@ export async function selectSubagentWithLaya(
 	};
 }
 
-function generateTraceId(): string {
+export function generateTraceId(): string {
 	return `laya_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 

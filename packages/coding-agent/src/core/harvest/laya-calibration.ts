@@ -9,6 +9,30 @@
 import * as path from "node:path";
 import { getAgentDir, isEnoent, logger } from "@harvest/pi-utils";
 import type { LayaClient, LayaQuestionDefinition } from "./laya-client";
+import type { SettingPath } from "../../config/settings";
+
+/** Settings surface needed to tell an explicit override from a schema default. */
+export interface ExplicitSettingSource {
+	get(key: SettingPath): unknown;
+	isConfigured?: (key: SettingPath) => boolean;
+}
+
+/**
+ * Explicitly configured value, or undefined when the key is unset. Plain
+ * `get()` cannot make this distinction: schema defaults (e.g.
+ * `laya.pruning: true`, `laya.subagentSelectionTimeoutMs: 300`) would
+ * otherwise mask hardware-derived calibration. Sources without
+ * `isConfigured` (unit-test stubs) fall back to `get()`.
+ */
+export function getExplicitSetting<T>(settings: ExplicitSettingSource | undefined, key: SettingPath): T | undefined {
+	if (!settings) return undefined;
+	try {
+		if (typeof settings.isConfigured === "function" && !settings.isConfigured(key)) return undefined;
+		return settings.get(key) as T;
+	} catch {
+		return undefined;
+	}
+}
 
 export interface HardwareInfo {
 	tier: "cuda" | "apple_silicon_mlx" | "apple_silicon_mps" | "cpu" | string;
