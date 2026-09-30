@@ -120,7 +120,7 @@ import type { SessionManager } from "../session/session-manager";
 import { FileSessionStorage } from "../session/session-storage";
 import { loadSessionTabs, sessionTabsFile } from "../session/session-tab-persistence";
 import { LiveSessionRegistry } from "../session/live-session-registry";
-import { openLiveAgentSession } from "../session/live-session-factory";
+import { liveSessionFactoryOptions, openLiveAgentSession } from "../session/live-session-factory";
 import type { ShakeMode } from "../session/shake-types";
 import { SessionViewStateStore } from "../session/session-view-state";
 import { BUILTIN_SLASH_COMMAND_RESERVED_NAMES, buildTuiBuiltinSlashCommands } from "../slash-commands/builtin-registry";
@@ -824,20 +824,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	 * routing. The previous runtime keeps running untouched.
 	 */
 	async #openColdLiveSession(sessionPath: string): Promise<AgentSession> {
-		const session = this.session;
-		const model = session.model;
-		if (!model) throw new Error("Cannot open a live tab before a model is resolved");
-		return openLiveAgentSession({
-			cwd: this.sessionManager.getCwd(),
-			sessionDir: this.sessionManager.getSessionDir(),
-			sessionPath,
-			settings: session.settings,
-			authStorage: session.modelRegistry.authStorage,
-			modelRegistry: session.modelRegistry,
-			model,
-			extensionRoots: () => session.effectiveExtensionRoots,
-			mcpManager: this.mcpManager,
-		});
+		return openLiveAgentSession(liveSessionFactoryOptions(this, sessionPath));
 	}
 	clearTransientSessionUi(): void {
 		this.#hideSessionInfo();
@@ -1257,9 +1244,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		// navigation when the startup session cannot be adopted (unit-test
 		// doubles, exotic sessions): every live path optional-chains it.
 		try {
-			this.liveSessions = new LiveSessionRegistry(
-				this.session,
-				sessionPath => this.#openColdLiveSession(sessionPath),
+			this.liveSessions = new LiveSessionRegistry(this.session, sessionPath =>
+				this.#openColdLiveSession(sessionPath),
 			);
 		} catch (error) {
 			logger.debug("Live session registry unavailable; using legacy session switching", {
@@ -5030,6 +5016,10 @@ export class InteractiveMode implements InteractiveModeContext {
 			} else {
 				await this.session.dispose({ mnemopiConsolidateTimeoutMs: SHUTDOWN_CONSOLIDATE_BUDGET_MS });
 			}
+			// Settle every other live tab runtime (background runs adopted by
+			// the registry). The visible session is adopted too, but session
+			// disposal is idempotent so the shared entry settles exactly once.
+			await this.liveSessions?.dispose();
 		} finally {
 			clearTimeout(stillClosingTimer);
 		}

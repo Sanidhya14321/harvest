@@ -350,7 +350,7 @@ export async function pruneContextWithLaya(
 				// Exclude assistant messages containing tool calls from pruning to prevent orphan tool results
 				if (
 					Array.isArray(msg.content) &&
-					msg.content.some(b => isRecord(b) && (b.type === "toolCall" || b.type === "tool_call"))
+					msg.content.some(b => isRecord(b) && b.type === "toolCall")
 				) {
 					continue;
 				}

@@ -45,6 +45,7 @@ import {
 } from "../../modes/theme/theme";
 import type { AgentHubOpenOptions, InteractiveModeContext } from "../../modes/types";
 import type { SessionOAuthAccountList } from "../../session/agent-session-types";
+import type { AgentSession } from "../../session/agent-session";
 import type { ResetCreditAccountStatus, ResetCreditRedeemOutcome } from "../../session/auth-storage";
 import {
 	createForeignSessionStore,
@@ -2054,6 +2055,7 @@ export class SelectorController {
 		if (!detached) {
 			return false;
 		}
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
 		this.#refreshSessionTerminalTitle();
 
 		this.ctx.clearTransientSessionUi();
@@ -2074,6 +2076,12 @@ export class SelectorController {
 			this.ctx.showError("The session file is no longer available; its tab was removed.");
 			this.ctx.ui.requestRender();
 			return false;
+		}
+		if (this.ctx.liveSessions && this.ctx.selectMainSession) {
+			const liveResult = await this.#handleLiveResume(sessionPath);
+			// Cross-project targets and unreadable files fall through to the
+			// legacy abort-and-reload path below, which owns cwd changes.
+			if (liveResult !== "fallback") return liveResult;
 		}
 		const previousCwd = this.ctx.sessionManager.getCwd();
 		const previousFile = this.ctx.sessionManager.getSessionFile();
@@ -2128,6 +2136,84 @@ export class SelectorController {
 		return true;
 	}
 
+	/**
+	 * Live-tab resume: warm runtimes reattach instantly and cold same-project
+	 * sessions open through the registry without stopping any running tab.
+	 * Returns "fallback" for cross-project or unreadable targets, which stay
+	 * on the legacy abort-and-reload path that owns cwd changes. Failures
+	 * keep the current session (and its run) untouched with a retryable
+	 * error; a superseded request reports success because the winning
+	 * navigation owns the view.
+	 */
+	async #handleLiveResume(sessionPath: string): Promise<boolean | "fallback"> {
+		const live = this.ctx.liveSessions!;
+		const selectMainSession = this.ctx.selectMainSession!;
+		const previousFile = this.ctx.sessionManager.getSessionFile();
+		const previousName = this.ctx.sessionManager.getSessionName();
+		const previousId = this.ctx.sessionManager.getSessionId();
+		if (previousFile && normalizePathForComparison(previousFile) === normalizePathForComparison(sessionPath)) {
+			this.sessionTabs.visit(sessionPath);
+			this.#persistTabs();
+			return true;
+		}
+		let peek: { cwd: string } | null = null;
+		if (!live.snapshotForPath(sessionPath)) {
+			try {
+				peek = await SessionManager.peekSessionInit(sessionPath);
+			} catch {
+				peek = null;
+			}
+			if (
+				!peek ||
+				normalizePathForComparison(peek.cwd) !== normalizePathForComparison(this.ctx.sessionManager.getCwd())
+			) {
+				return "fallback";
+			}
+		}
+		let selection: { session: AgentSession; selected: boolean };
+		try {
+			selection = await live.select(sessionPath);
+		} catch (error) {
+			this.ctx.showError(
+				`Couldn't open session tab: ${error instanceof Error ? error.message : String(error)}. Nothing was stopped; retry the tab to try again.`,
+			);
+			return false;
+		}
+		if (!selection.selected) return true;
+		try {
+			await selectMainSession(selection.session);
+		} catch (error) {
+			try {
+				live.selectById(previousId);
+			} catch {}
+			this.ctx.showError(
+				`Couldn't show session tab: ${error instanceof Error ? error.message : String(error)}. The previous session was restored; retry the tab to try again.`,
+			);
+			return false;
+		}
+		if (previousFile && (await Bun.file(previousFile).exists())) this.sessionTabs.open(previousFile, previousName);
+		else if (previousFile) this.sessionTabs.close(previousFile, false);
+		const activeFile = this.ctx.sessionManager.getSessionFile();
+		if (activeFile) {
+			this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
+			if (
+				!this.#historyNavigationTarget ||
+				normalizePathForComparison(activeFile) !== normalizePathForComparison(this.#historyNavigationTarget)
+			) {
+				this.sessionTabs.visit(activeFile);
+			}
+		}
+		this.#refreshSessionTerminalTitle();
+		this.ctx.updateEditorBorderColor();
+		this.#persistTabs();
+		this.ctx.ui.requestRender();
+		// Bound retained idle runtimes; running, approval-blocked, selected,
+		// and otherwise busy sessions are never evicted. Evicted tabs keep
+		// their lightweight title/unread state and reopen from disk.
+		await live.releaseIdleRuntimes();
+		return true;
+	}
+
 	async handleSessionDeleteCommand(): Promise<void> {
 		const sessionFile = this.ctx.sessionManager.getSessionFile();
 		if (!sessionFile) {
@@ -2140,6 +2226,18 @@ export class SelectorController {
 		const fileExists = await storage.exists(sessionFile);
 		if (!fileExists) {
 			this.ctx.showError("Session has not been saved yet");
+			return;
+		}
+
+		// Deleting a live run would orphan its in-flight work: stop it first.
+		const session = this.ctx.session;
+		if (
+			session.isStreaming ||
+			session.isBashRunning ||
+			session.isEvalRunning ||
+			session.hasPendingAsyncWork()
+		) {
+			this.ctx.showError("Stop the run first (Esc), then delete the session.");
 			return;
 		}
 
@@ -2162,6 +2260,7 @@ export class SelectorController {
 		await storage.deleteSessionWithArtifacts(sessionFile);
 		this.sessionTabs.close(sessionFile, false);
 		this.#persistTabs();
+		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
 
 		// Show session selector
 		this.ctx.showStatus("Session deleted");

@@ -26,6 +26,7 @@ import type { HistoryStorage } from "../session/history-storage";
 import type { SessionContext } from "../session/session-context";
 import type { SessionManager } from "../session/session-manager";
 import type { LiveSessionRegistry } from "../session/live-session-registry";
+import type { LiveSessionFactoryOptions } from "../session/live-session-factory";
 import type { SessionViewStateStore } from "../session/session-view-state";
 import type { RunDiagnosticsTracker } from "./run-diagnostics";
 import type { ShakeMode } from "../session/shake-types";
@@ -182,6 +183,8 @@ export interface InteractiveModeContext {
 	selectMainSession?: (session: AgentSession) => Promise<void>;
 	/** Live tab runtime ownership; absent in unit-test contexts. */
 	liveSessions?: LiveSessionRegistry;
+	/** Test seam for opening live tab runtimes; defaults to the real factory. */
+	openLiveSession?: (options: LiveSessionFactoryOptions) => Promise<AgentSession>;
 
 	// State
 	isInitialized: boolean;

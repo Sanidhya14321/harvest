@@ -2,6 +2,8 @@ import { describe, expect, it, mock } from "bun:test";
 import type { InteractiveModeContext } from "../../src/modes/types";
 import type { TuiSlashCommandRuntime } from "../../src/slash-commands/types";
 import { executeBuiltinSlashCommand } from "../../src/slash-commands/builtin-registry";
+import type { AgentSession, AgentSessionEvent } from "../../src/session/agent-session";
+import { LiveSessionRegistry } from "../../src/session/live-session-registry";
 
 interface ExitHarness {
 	runtime: TuiSlashCommandRuntime;
@@ -17,7 +19,7 @@ function createHarness(options?: { streaming?: boolean; bashRunning?: boolean; a
 		resolveConfirm = resolve;
 	});
 	const shutdown = mock(async () => {});
-	const confirm = mock(() => confirmGate);
+	const confirm = mock((_title: string, _message: string) => confirmGate);
 	const setText = mock((_text: string) => {});
 	let editorText = "unsent draft";
 	const session = {
@@ -78,6 +80,62 @@ describe("/exit with work in progress", () => {
 		const harness = createHarness({ approvalOpen: true });
 		expect(await executeBuiltinSlashCommand("/exit", harness.runtime)).toBe(true);
 		expect(harness.confirm).toHaveBeenCalledTimes(1);
+		expect(harness.shutdown).not.toHaveBeenCalled();
+	});
+
+	it("names background tabs in the confirmation while the visible session is idle", async () => {
+		const harness = createHarness();
+		const listeners = new Set<(event: AgentSessionEvent) => void>();
+		const background = {
+			isStreaming: false,
+			isBashRunning: false,
+			isEvalRunning: false,
+			hasPendingAsyncWork: () => false,
+			sessionManager: {
+				getSessionId: () => "background",
+				getSessionFile: () => "/work/background.jsonl",
+				getSessionName: () => "Background task",
+				getCwd: () => "/work",
+				onSessionNameChanged: () => () => {},
+			},
+			subscribe: (listener: (event: AgentSessionEvent) => void) => {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			},
+			dispose: async () => {},
+			abort: async () => {},
+		} as unknown as AgentSession;
+		const visible = {
+			isStreaming: false,
+			isBashRunning: false,
+			isEvalRunning: false,
+			hasPendingAsyncWork: () => false,
+			sessionManager: {
+				getSessionId: () => "visible",
+				getSessionFile: () => "/work/visible.jsonl",
+				getSessionName: () => "Visible task",
+				getCwd: () => "/work",
+				onSessionNameChanged: () => () => {},
+			},
+			subscribe: () => () => {},
+			dispose: async () => {},
+			abort: async () => {},
+		} as unknown as AgentSession;
+		const registry = new LiveSessionRegistry(visible, async () => background);
+		await registry.select("/work/background.jsonl");
+		for (const listener of listeners) listener({ type: "agent_start" });
+		(harness.runtime.ctx as unknown as { liveSessions: LiveSessionRegistry }).liveSessions = registry;
+		(harness.runtime.ctx as unknown as { session: AgentSession }).session = {
+			...harness.runtime.ctx.session,
+			sessionManager: {
+				getSessionId: () => "visible",
+			},
+		} as unknown as AgentSession;
+
+		expect(await executeBuiltinSlashCommand("/exit", harness.runtime)).toBe(true);
+		expect(harness.confirm).toHaveBeenCalledTimes(1);
+		const message = (harness.confirm.mock.calls[0]?.[1] ?? "") as string;
+		expect(message).toContain("1 background tab");
 		expect(harness.shutdown).not.toHaveBeenCalled();
 	});
 });

@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { ModelRegistry } from "../../src/config/model-registry";
 import { Settings } from "../../src/config/settings";
 import type { AgentSession } from "../../src/session/agent-session";
-import { openLiveAgentSession } from "../../src/session/live-session-factory";
+import { openLiveAgentSession, liveSessionFactoryOptions } from "../../src/session/live-session-factory";
 import type { CreateAgentSessionResult } from "../../src/sdk";
 import { createInMemoryAuthStorage } from "../helpers/agent-session-setup";
 import type { AuthStorage } from "../../src/session/auth-storage";
@@ -118,5 +118,43 @@ describe("openLiveAgentSession", () => {
 		const manager = options.sessionManager as { getSessionFile: () => string | undefined };
 		expect(manager.getSessionFile()).toBe(sessionPath);
 		expect(options.agentId).toBe("tab:custom");
+	});
+
+	it("builds scoped factory options from live state", async () => {
+		harness();
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-live-open-"));
+		roots.push(root);
+		const model = { provider: "mock", id: "mock-model" } as unknown as Model;
+		const parentSettings = Settings.isolated({ "compaction.enabled": false });
+		const source = {
+			sessionManager: { getCwd: () => root, getSessionDir: () => root },
+			session: {
+				settings: parentSettings,
+				modelRegistry,
+				model,
+				effectiveExtensionRoots: { explicit: [], mode: "merge", configured: [], configuredLevel: "global" },
+				getAvailableModels: () => [model],
+			},
+			mcpManager: undefined,
+		};
+
+		const options = liveSessionFactoryOptions(source as never);
+		expect(options.cwd).toBe(root);
+		expect(options.sessionDir).toBe(root);
+		expect(options.sessionPath).toBeUndefined();
+		expect(options.settings).toBe(parentSettings);
+		expect(options.authStorage).toBe(authStorage);
+		expect(options.modelRegistry).toBe(modelRegistry);
+		expect(options.model).toBe(model);
+		expect(options.mcpManager).toBeUndefined();
+
+		const withPath = liveSessionFactoryOptions(source as never, "/sessions/x.jsonl");
+		expect(withPath.sessionPath).toBe("/sessions/x.jsonl");
+
+		const modelLess = {
+			...source,
+			session: { ...source.session, model: undefined, getAvailableModels: () => [] as Model[] },
+		};
+		expect(() => liveSessionFactoryOptions(modelLess as never)).toThrow(/model/);
 	});
 });

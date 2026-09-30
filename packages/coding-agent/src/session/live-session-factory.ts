@@ -44,6 +44,40 @@ export interface OpenLiveSessionOptions {
 	createSession?: (options: Record<string, unknown>) => Promise<CreateAgentSessionResult>;
 }
 
+/** Options without the factory seam, built from live interactive state. */
+export type LiveSessionFactoryOptions = Omit<OpenLiveSessionOptions, "createSession">;
+
+/** Minimal live state a tab opener is built from (implemented by InteractiveModeContext). */
+export interface LiveSessionSource {
+	sessionManager: Pick<SessionManager, "getCwd" | "getSessionDir">;
+	session: Pick<AgentSession, "settings" | "modelRegistry" | "model" | "effectiveExtensionRoots"> & {
+		getAvailableModels(): Model[];
+	};
+	mcpManager?: MCPManager;
+}
+
+/**
+ * Build cold-open options from live state: same project and session dir,
+ * cloned-later parent settings, shared credentials/routing, the current
+ * model (or the first available one at startup), and fresh buses. Throws
+ * when no model resolves so callers fall back to the legacy in-place flow.
+ */
+export function liveSessionFactoryOptions(source: LiveSessionSource, sessionPath?: string): LiveSessionFactoryOptions {
+	const model = source.session.model ?? source.session.getAvailableModels()[0];
+	if (!model) throw new Error("Cannot open a live tab before a model is resolved");
+	return {
+		cwd: source.sessionManager.getCwd(),
+		sessionDir: source.sessionManager.getSessionDir(),
+		sessionPath,
+		settings: source.session.settings,
+		authStorage: source.session.modelRegistry.authStorage,
+		modelRegistry: source.session.modelRegistry,
+		model,
+		extensionRoots: () => source.session.effectiveExtensionRoots,
+		mcpManager: source.mcpManager,
+	};
+}
+
 /**
  * Open an independent runtime for one live tab: a fresh settings clone, a
  * dedicated session manager (opened from `sessionPath` for cold reopens),

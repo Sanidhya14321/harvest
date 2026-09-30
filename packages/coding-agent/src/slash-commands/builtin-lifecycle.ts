@@ -45,6 +45,7 @@ export const shutdownHandlerTui = (
 ): SlashCommandResult => {
 	const ctx = runtime.ctx;
 	const session = ctx.session;
+	const backgroundBusy = ctx.liveSessions?.busySessions.filter(entry => entry.id !== session.sessionManager.getSessionId()) ?? [];
 	if (
 		hasUnsettledWork({
 			isStreaming: session.isStreaming,
@@ -52,7 +53,8 @@ export const shutdownHandlerTui = (
 			isEvalRunning: session.isEvalRunning,
 			hasPendingAsyncWork: () => session.hasPendingAsyncWork(),
 			approvalDialogOpen: isApprovalDialogOpen(ctx),
-		})
+		}) ||
+		backgroundBusy.length > 0
 	) {
 		// Confirm before abandoning the run: denial leaves the session, its
 		// draft, and the pending approval untouched. Dialogs queue on the
@@ -61,7 +63,9 @@ export const shutdownHandlerTui = (
 		void (async () => {
 			const confirmed = await ctx.showHookConfirm(
 				"Exit with work in progress?",
-				"A run is still active or an approval is waiting. Exiting stops it.",
+				backgroundBusy.length > 0
+					? `A run is still active or an approval is waiting (${backgroundBusy.length} background tab${backgroundBusy.length === 1 ? "" : "s"} will stop too). Exiting stops everything.`
+					: "A run is still active or an approval is waiting. Exiting stops it.",
 			);
 			if (!confirmed) return;
 			ctx.editor.setText("");
