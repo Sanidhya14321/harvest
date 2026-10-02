@@ -165,7 +165,7 @@ class FileSessionStorageWriter implements SessionStorageWriter {
 			} catch (rollbackError) {
 				throw new AggregateError(
 					[toError(writeError), toError(rollbackError)],
-					"Session append failed and its partial bytes could not be rolled back",
+					`Session append failed (${toError(writeError).message}) and its partial bytes could not be rolled back`,
 				);
 			}
 			throw writeError;

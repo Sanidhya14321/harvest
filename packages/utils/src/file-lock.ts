@@ -4,8 +4,10 @@
  * released on exit: Linux uses abstract Unix sockets, Windows uses named
  * mutexes, and other Unix platforms use `flock(2)` on `${filePath}.lock`.
  */
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { FileLock as NativeFileLock } from "@harvest/pi-natives";
+import { isEnoent } from "./fs-error";
 
 /** Controls bounded waiting when an advisory file lock is contended. */
 export interface FileLockOptions {
@@ -20,13 +22,36 @@ const DEFAULT_OPTIONS: Required<FileLockOptions> = {
 	retryDelayMs: 100,
 };
 
+/** Canonical identity, including nonexistent leaves beneath symlinked parents. */
+export function resolveFileLockIdentity(filePath: string): string {
+	let ancestor = path.resolve(filePath);
+	const missing: string[] = [];
+	for (;;) {
+		try {
+			const resolved = path.join(fs.realpathSync(ancestor), ...missing.reverse());
+			return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+		} catch (error) {
+			if (!isEnoent(error)) throw error;
+			const parent = path.dirname(ancestor);
+			if (parent === ancestor) throw error;
+			missing.push(path.basename(ancestor));
+			ancestor = parent;
+		}
+	}
+}
+
 function getLockPath(filePath: string): string {
-	return `${path.resolve(filePath)}.lock`;
+	return `${resolveFileLockIdentity(filePath)}.lock`;
 }
 
 function tryAcquireLock(lockPath: string): NativeFileLock | null {
 	const lock = NativeFileLock.tryAcquire(lockPath);
 	return lock.acquired ? lock : null;
+}
+
+/** Non-blocking lifetime ownership; release explicitly after all resource work drains. */
+export function tryAcquireFileLock(filePath: string): NativeFileLock | null {
+	return tryAcquireLock(getLockPath(filePath));
 }
 
 async function acquireLock(filePath: string, options: FileLockOptions = {}): Promise<NativeFileLock> {

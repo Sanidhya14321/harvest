@@ -26,6 +26,7 @@ const MAX_ADAPTIVE_RENDER_MS = 200;
 
 class ScriptedFrameCost implements Component {
 	#nextCostMs: number | null = null;
+	#text = "probe";
 	scheduler!: { nowMs: number };
 
 	/** Program the next render() to virtually consume `costMs` on the scheduler clock. */
@@ -35,12 +36,16 @@ class ScriptedFrameCost implements Component {
 
 	invalidate(): void {}
 
+	handleInput(data: string): void {
+		this.#text = `typed:${data}`;
+	}
+
 	render(_width: number): readonly string[] {
 		if (this.#nextCostMs !== null) {
 			this.scheduler.nowMs += this.#nextCostMs;
 			this.#nextCostMs = null;
 		}
-		return ["probe"];
+		return [this.#text];
 	}
 }
 
@@ -71,14 +76,42 @@ class DeferredRenderScheduler {
 /** Drain immediates + fire the next scheduled render timer. Returns its `delayMs`. */
 function stepRender(scheduler: DeferredRenderScheduler): number | null {
 	while (scheduler.immediates.length > 0) scheduler.immediates.shift()!();
-	const timer = scheduler.timers.shift();
-	if (!timer || timer.canceled) return null;
+	let timer = scheduler.timers.shift();
+	while (timer?.canceled) timer = scheduler.timers.shift();
+	if (!timer) return null;
 	scheduler.nowMs += timer.delayMs;
 	timer.callback();
 	return timer.delayMs;
 }
 
 describe("TUI adaptive render backpressure (#4145)", () => {
+	it("promotes typed feedback ahead of an already queued slow-animation repaint", () => {
+		const term = new VirtualTerminal(20, 4);
+		const scheduler = new DeferredRenderScheduler();
+		const probe = new ScriptedFrameCost();
+		probe.scheduler = scheduler;
+		const tui = new TUI(term, undefined, { renderScheduler: scheduler });
+		tui.addChild(probe);
+		tui.setFocus(probe);
+		try {
+			tui.start();
+			stepRender(scheduler);
+			probe.scheduleCost(100);
+			tui.requestRender();
+			stepRender(scheduler);
+			tui.requestComponentRender(probe);
+			while (scheduler.immediates.length) scheduler.immediates.shift()!();
+			expect(scheduler.timers.find(timer => !timer.canceled)?.delayMs).toBe(100);
+			const inputAt = scheduler.nowMs;
+			term.sendInput("x");
+			term.sendInput("y");
+			stepRender(scheduler);
+			expect(scheduler.nowMs - inputAt).toBeLessThanOrEqual(MIN_RENDER_INTERVAL_MS);
+			expect(term.getViewport().map(row => row.trimEnd())).toContain("typed:y");
+		} finally {
+			tui.stop();
+		}
+	});
 	it("keeps the plain min-interval cadence when frames are cheap", () => {
 		const term = new VirtualTerminal(20, 4);
 		const scheduler = new DeferredRenderScheduler();

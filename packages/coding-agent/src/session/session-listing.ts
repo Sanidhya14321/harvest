@@ -1,7 +1,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@harvest/pi-ai";
-import { getSessionsDir, logger, parseJsonlLenient, toError } from "@harvest/pi-utils";
+import { getSessionsDir, logger, parseJsonlLenient, toError, tryAcquireFileLock } from "@harvest/pi-utils";
 import { LRUCache } from "@harvest/pi-utils/lru";
 import { computeDefaultSessionDir } from "./session-paths";
 import { FileSessionStorage, type SessionStorage, type SessionStorageStat } from "./session-storage";
@@ -551,7 +551,9 @@ export async function recoverOrphanedBackups(sessionDir: string, storage: Sessio
 		if (dotIdx <= 0) continue;
 		const primaryName = trimmed.slice(0, dotIdx);
 		if (!primaryName.endsWith(".jsonl")) continue;
-		const primaryPath = path.join(sessionDir, primaryName);
+		// Preserve the backend's original path representation (memory/remote
+		// paths may use '/' even when this process runs on Windows).
+		const primaryPath = backup.slice(0, backup.length - name.length) + primaryName;
 		let mtimeMs = 0;
 		try {
 			mtimeMs = storage.statSync(backup).mtimeMs;
@@ -564,8 +566,13 @@ export async function recoverOrphanedBackups(sessionDir: string, storage: Sessio
 		}
 	}
 	for (const [primaryPath, { backup }] of candidates) {
-		if (storage.existsSync(primaryPath)) continue;
+		let lease: ReturnType<typeof tryAcquireFileLock> | undefined;
 		try {
+			if (storage instanceof FileSessionStorage) {
+				lease = tryAcquireFileLock(primaryPath);
+				if (!lease) continue;
+			}
+			if (storage.existsSync(primaryPath)) continue;
 			await storage.rename(backup, primaryPath);
 			logger.warn("Recovered orphaned session backup", {
 				sessionFile: primaryPath,
@@ -577,6 +584,8 @@ export async function recoverOrphanedBackups(sessionDir: string, storage: Sessio
 				backupPath: backup,
 				error: toError(err).message,
 			});
+		} finally {
+			lease?.release();
 		}
 	}
 }

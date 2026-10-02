@@ -442,6 +442,7 @@ describe("SessionManager legacy session migration persistence", () => {
 		await session.flush();
 		expect(fs.existsSync(freshSessionFile!)).toBe(true);
 
+		await session.close();
 		const resumed = await SessionManager.continueRecent(tempDir, tempDir);
 		try {
 			// The `/new` boundary is durable: once materialized, relaunch resumes

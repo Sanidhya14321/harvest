@@ -7,6 +7,7 @@ import type { SessionHeader } from "@harvest/pi-coding-agent/session/session-ent
 import { loadEntriesFromFile } from "@harvest/pi-coding-agent/session/session-loader";
 import { SessionManager } from "@harvest/pi-coding-agent/session/session-manager";
 import { stripOuterDoubleQuotes } from "@harvest/pi-coding-agent/tools/path-utils";
+import { resetSessionTitleIndexForTests } from "../../src/session/title-index";
 import { getConfigRootDir, setAgentDir } from "@harvest/pi-utils";
 
 // -- helpers ----------------------------------------------------------------
@@ -76,6 +77,7 @@ describe("SessionManager.moveTo", () => {
 	});
 
 	afterEach(async () => {
+		resetSessionTitleIndexForTests();
 		if (originalAgentDir) {
 			setAgentDir(originalAgentDir);
 		} else {

@@ -27,6 +27,11 @@ import torch
 import laya
 
 try:
+    from inference_scheduler import InferenceBusyError, InferenceScheduler
+except ImportError:
+    from .inference_scheduler import InferenceBusyError, InferenceScheduler
+
+try:
     from hardware import detect_hardware
 except ImportError:
     from .hardware import detect_hardware
@@ -122,14 +127,14 @@ if _device_override:
     else:
         logger.warning(f"Ignoring invalid LAYA_DEVICE={_device_override!r}; using detected device {_device!r}")
 _calibration_manager: CalibrationManager = CalibrationManager()
-_inference_semaphore: Optional[asyncio.Semaphore] = None
+_inference_scheduler: Optional[InferenceScheduler] = None
 
 
-def get_inference_semaphore() -> asyncio.Semaphore:
-    global _inference_semaphore
-    if _inference_semaphore is None:
-        _inference_semaphore = asyncio.Semaphore(INFERENCE_CONCURRENCY)
-    return _inference_semaphore
+def get_inference_scheduler() -> InferenceScheduler:
+    global _inference_scheduler
+    if _inference_scheduler is None:
+        _inference_scheduler = InferenceScheduler(INFERENCE_CONCURRENCY)
+    return _inference_scheduler
 
 
 def _default_token_path() -> Path:
@@ -581,26 +586,33 @@ async def decide(req: DecideRequest, request: Request) -> DecideResponse:
             non_english=True,
         )
 
-    semaphore = get_inference_semaphore()
-    async with semaphore:
-        start_time = time.perf_counter()
-        try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(_predict_sync, state, req.questions),
-                timeout=INFERENCE_TIMEOUT_S,
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"Inference timed out after {INFERENCE_TIMEOUT_S}s; semaphore slot released")
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=f"Laya inference timed out after {INFERENCE_TIMEOUT_S}s",
-            )
-        except Exception as e:
-            logger.error(f"Inference error during predict: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Laya inference error: {str(e)}",
-            )
+    timeout_ms = (req.metadata or {}).get("request_timeout_ms")
+    if timeout_ms is not None and (
+        isinstance(timeout_ms, bool) or not isinstance(timeout_ms, (int, float))
+        or not 0 < timeout_ms <= INFERENCE_TIMEOUT_S * 1000
+    ):
+        raise HTTPException(status_code=400, detail="Invalid request_timeout_ms")
+    timeout_s = min(INFERENCE_TIMEOUT_S, timeout_ms / 1000) if timeout_ms is not None else INFERENCE_TIMEOUT_S
+    start_time = time.perf_counter()
+
+    async def check_connected() -> None:
+        if await request.is_disconnected():
+            raise HTTPException(status_code=408, detail="Decision caller disconnected before inference")
+
+    try:
+        result = await get_inference_scheduler().run(
+            lambda: _predict_sync(state, req.questions), timeout_s, before_start=check_connected,
+        )
+    except InferenceBusyError:
+        raise HTTPException(status_code=503, detail="Laya inference queue is full")
+    except asyncio.TimeoutError:
+        logger.warning("Decision deadline exceeded; running inference retains its capacity slot")
+        raise HTTPException(status_code=504, detail="Laya decision deadline exceeded")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Inference error during predict")
+        raise HTTPException(status_code=500, detail="Laya inference failed")
 
     latency_ms = (time.perf_counter() - start_time) * 1000
     answers = result.get("answers", {})

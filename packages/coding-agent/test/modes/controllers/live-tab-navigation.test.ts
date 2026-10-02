@@ -115,7 +115,6 @@ describe("live tab navigation", () => {
 			if (!stub) throw new Error(`no such session: ${target}`);
 			return stub.session;
 		};
-		let controller!: SelectorController;
 		const ctx = {
 			sessionManager,
 			get session() {
@@ -141,7 +140,7 @@ describe("live tab navigation", () => {
 			}),
 			handleResumeSession: (target: string) => controller.handleResumeSession(target, { settingsFlushed: true }),
 		} as unknown as InteractiveModeContext;
-		controller = new SelectorController(ctx);
+		const controller: SelectorController = new SelectorController(ctx);
 		const registry = new LiveSessionRegistry(initial.session, openSession);
 		(ctx as unknown as { liveSessions: LiveSessionRegistry }).liveSessions = registry;
 		stubs.set(initial.file, initial);
@@ -212,6 +211,39 @@ describe("live tab navigation", () => {
 		expect(opened).toEqual([fileC]);
 		expect(stubA.abort).not.toHaveBeenCalled();
 		expect(harness.active()).toBe(stubC);
+	});
+
+	it("reattaches a warm session whose backing file disappeared without cold-opening it", async () => {
+		root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-live-nav-"));
+		roots.push(root);
+		const fileA = await writeFile("a", root);
+		const fileB = await writeFile("b", root);
+		const stubA = makeTabStub("a", fileA, root);
+		const stubB = makeTabStub("b", fileB, root);
+		const harness = makeHarness(stubA);
+		register(harness, stubB);
+		harness.registry.adopt(stubB.session);
+		await fs.unlink(fileB);
+		expect(await harness.controller.handleResumeSession(fileB)).toBe(true);
+		expect(harness.active()).toBe(stubB);
+		expect(harness.openCalls).toEqual([]);
+		expect(stubA.abort).not.toHaveBeenCalled();
+	});
+
+	it("rejects a corrupt cold target before the fallback can stop the current run", async () => {
+		root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-live-nav-"));
+		roots.push(root);
+		const fileA = await writeFile("a", root);
+		const broken = path.join(root, "broken.jsonl");
+		await Bun.write(broken, "not a session\n");
+		const stubA = makeTabStub("a", fileA, root);
+		const harness = makeHarness(stubA);
+		stubA.emit({ type: "agent_start" });
+		expect(await harness.controller.handleResumeSession(broken)).toBe(false);
+		expect(harness.active()).toBe(stubA);
+		expect(stubA.session.switchSession).not.toHaveBeenCalled();
+		expect(stubA.abort).not.toHaveBeenCalled();
+		expect(harness.errors.join(" ")).toContain("header");
 	});
 
 	it("preserves the current session when a cold open fails", async () => {

@@ -2070,7 +2070,9 @@ export class SelectorController {
 	}
 
 	async handleResumeSession(sessionPath: string, options?: { settingsFlushed?: boolean }): Promise<boolean> {
-		if (!(await Bun.file(sessionPath).exists())) {
+		const active = this.ctx.sessionManager.getSessionFile();
+		if (active && normalizePathForComparison(active) === normalizePathForComparison(sessionPath)) return true;
+		if (!this.ctx.liveSessions?.hasRuntimeForPath(sessionPath) && !(await Bun.file(sessionPath).exists())) {
 			this.sessionTabs.close(sessionPath, false);
 			this.#persistTabs();
 			this.ctx.showError("The session file is no longer available; its tab was removed.");
@@ -2147,7 +2149,6 @@ export class SelectorController {
 	 */
 	async #handleLiveResume(sessionPath: string): Promise<boolean | "fallback"> {
 		const live = this.ctx.liveSessions!;
-		const selectMainSession = this.ctx.selectMainSession!;
 		const previousFile = this.ctx.sessionManager.getSessionFile();
 		const previousName = this.ctx.sessionManager.getSessionName();
 		const previousId = this.ctx.sessionManager.getSessionId();
@@ -2157,16 +2158,19 @@ export class SelectorController {
 			return true;
 		}
 		let peek: { cwd: string } | null = null;
-		if (!live.snapshotForPath(sessionPath)) {
+		if (!live.hasRuntimeForPath(sessionPath)) {
 			try {
 				peek = await SessionManager.peekSessionInit(sessionPath);
 			} catch {
 				peek = null;
 			}
-			if (
-				!peek ||
-				normalizePathForComparison(peek.cwd) !== normalizePathForComparison(this.ctx.sessionManager.getCwd())
-			) {
+			if (!peek) {
+				this.ctx.showError(
+					"Couldn't read this session's header. The current session is still active; repair the file or choose another tab.",
+				);
+				return false;
+			}
+			if (normalizePathForComparison(peek.cwd) !== normalizePathForComparison(this.ctx.sessionManager.getCwd())) {
 				return "fallback";
 			}
 		}
@@ -2181,7 +2185,7 @@ export class SelectorController {
 		}
 		if (!selection.selected) return true;
 		try {
-			await selectMainSession(selection.session);
+			await this.ctx.selectMainSession!(selection.session);
 		} catch (error) {
 			try {
 				live.selectById(previousId);
@@ -2191,7 +2195,8 @@ export class SelectorController {
 			);
 			return false;
 		}
-		if (previousFile && (await Bun.file(previousFile).exists())) this.sessionTabs.open(previousFile, previousName);
+		if (previousFile && (live.hasRuntimeForPath(previousFile) || (await Bun.file(previousFile).exists())))
+			this.sessionTabs.open(previousFile, previousName);
 		else if (previousFile) this.sessionTabs.close(previousFile, false);
 		const activeFile = this.ctx.sessionManager.getSessionFile();
 		if (activeFile) {

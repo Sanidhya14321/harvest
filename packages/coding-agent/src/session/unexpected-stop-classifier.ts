@@ -72,7 +72,7 @@ export async function classifyUnexpectedStop(
 		try {
 			const layaRes = await checkCompletionWithLaya(
 				{ assistantText: text },
-				{ sessionId: deps.sessionId, signal: deps.signal, checks: ["unexpected_stop"] },
+				{ sessionId: deps.sessionId, settings: deps.settings, signal: deps.signal, checks: ["unexpected_stop"] },
 			);
 			if (!layaRes.fallback) {
 				return layaRes.isPrematureStop;

@@ -76,6 +76,11 @@ export class LiveSessionRegistry {
 	}
 
 	/** Snapshot for a tab path across live and released runtimes; undefined when unknown. */
+	hasRuntimeForPath(path: string): boolean {
+		const id = this.#idsByPath.get(normalizePathForComparison(path));
+		return id !== undefined && this.#entries.has(id);
+	}
+
 	snapshotForPath(path: string): LiveSessionSnapshot | undefined {
 		const key = normalizePathForComparison(path);
 		const warmId = this.#idsByPath.get(key);

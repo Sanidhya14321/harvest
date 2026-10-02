@@ -9,7 +9,7 @@
 
 import * as os from "node:os";
 import * as path from "node:path";
-import { logger } from "@harvest/pi-utils";
+import { isRecord, logger } from "@harvest/pi-utils";
 import { settings } from "../../config/settings";
 
 export interface LayaQuestionDefinition {
@@ -62,6 +62,62 @@ export interface DecisionResult<T = LayaAnswerResult> {
 
 const DEFAULT_SIDECAR_URL = "http://127.0.0.1:8177";
 const DEFAULT_TIMEOUT_MS = 300;
+
+function isProbability(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+/** Reject incomplete or incompatible answers before any agent-loop consumer sees them. */
+function isValidDecisionResponse(
+	value: unknown,
+	questions: Record<string, LayaQuestionDefinition>,
+): value is LayaDecideResponse {
+	if (
+		!isRecord(value) ||
+		!isRecord(value.answers) ||
+		typeof value.model !== "string" ||
+		typeof value.latency_ms !== "number" ||
+		!Number.isFinite(value.latency_ms) ||
+		value.latency_ms < 0 ||
+		(value.non_english !== undefined && typeof value.non_english !== "boolean")
+	)
+		return false;
+	if (value.non_english === true) return true;
+	for (const [id, question] of Object.entries(questions)) {
+		if (!Object.hasOwn(value.answers, id)) return false;
+		const answer = value.answers[id];
+		if (
+			!isRecord(answer) ||
+			answer.type !== question.type ||
+			!isProbability(answer.confidence) ||
+			(answer.calibratedConfidence !== undefined && !isProbability(answer.calibratedConfidence))
+		)
+			return false;
+		if (question.type === "noul" && !isProbability(answer.noul)) return false;
+		if (question.type === "choice") {
+			const choices = Array.isArray(question.criteria) ? question.criteria : Object.keys(question.criteria ?? {});
+			if (typeof answer.choice !== "string" || !choices.includes(answer.choice)) return false;
+		}
+		if (question.type === "score") {
+			const count = Array.isArray(question.criteria)
+				? question.criteria.length
+				: Object.keys(question.criteria ?? {}).length;
+			if (
+				typeof answer.score !== "number" ||
+				!Number.isFinite(answer.score) ||
+				answer.score < 0 ||
+				answer.score > count - 1
+			)
+				return false;
+		}
+		if (
+			answer.probabilities !== undefined &&
+			(!isRecord(answer.probabilities) || !Object.values(answer.probabilities).every(isProbability))
+		)
+			return false;
+	}
+	return true;
+}
 
 export class LayaClient {
 	readonly #baseUrl: string;
@@ -243,6 +299,7 @@ export class LayaClient {
 					metadata: {
 						call_site: metadata.callSite,
 						session_id: metadata.sessionId,
+						request_timeout_ms: Math.max(1, effectiveTimeout - (performance.now() - startTime)),
 					},
 				}),
 				signal: controller.signal,
@@ -263,8 +320,12 @@ export class LayaClient {
 				};
 			}
 
-			const data = (await response.json()) as LayaDecideResponse;
+			const data: unknown = await response.json();
 			const latencyMs = performance.now() - startTime;
+			if (!isValidDecisionResponse(data, questions)) {
+				logger.warn("Laya sidecar returned an invalid decision contract", { callSite: metadata.callSite });
+				return { success: false, fallback: true, fallbackReason: "invalid_decision_response", latencyMs };
+			}
 
 			if (data.non_english) {
 				logger.info("Laya sidecar flagged state as non-English", {

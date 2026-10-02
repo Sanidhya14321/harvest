@@ -517,10 +517,7 @@ const SESSION_CWD_CHANGE_REJECTED = Symbol("sessionCwdChangeRejected");
  * MCP/extension writes classify as write/exec even though their wire names
  * are not listed. Never throws: failures fall back to name-based matching.
  */
-function resolveToolTierSafe(
-	tool: Parameters<typeof resolveToolTier>[0],
-	args: unknown,
-): ToolTier | undefined {
+function resolveToolTierSafe(tool: Parameters<typeof resolveToolTier>[0], args: unknown): ToolTier | undefined {
 	try {
 		return resolveToolTier(tool, args);
 	} catch {
@@ -3895,11 +3892,20 @@ export class AgentSession {
 	#afterToolCall(ctx: AfterToolCallContext): AfterToolCallResult | undefined {
 		const toolName = ctx.toolCall.name.toLowerCase();
 		if (toolName === "bash" || toolName === "exec" || toolName === "command") {
-			const args = (ctx.toolCall.arguments ?? {}) as Record<string, unknown>;
-			const cmd = (args.command || args.cmd || args.CommandLine || "") as string;
-			if (cmd) {
-				const exitCode = ctx.isError ? 1 : 0;
-				const output = typeof ctx.result === "string" ? ctx.result : undefined;
+			const args = ctx.args;
+			const cmd = args.command ?? args.cmd ?? args.CommandLine;
+			const details = isRecord(ctx.result.details) ? ctx.result.details : undefined;
+			const stillRunning = isRecord(details?.async) && details.async.state === "running";
+			if (typeof cmd === "string" && cmd && !stillRunning) {
+				const exitCode = ctx.isError
+					? 1
+					: typeof details?.exitCode === "number" && Number.isSafeInteger(details.exitCode)
+						? details.exitCode
+						: 0;
+				const output = ctx.result.content
+					.filter(block => block.type === "text")
+					.map(block => block.text)
+					.join("\n");
 				this.#harvestHooks.groundingEngine.recordCommandExecution(cmd, exitCode, output);
 			}
 		}
@@ -3951,6 +3957,7 @@ export class AgentSession {
 					this.sessionManager?.getSessionId(),
 					signal,
 					resolveToolTierSafe(ctx.tool, ctx.args),
+					this.settings,
 				);
 				await this.#emitGatingDecision(ctx.tool.name, gating);
 				if (gating.isHighRiskTool && gating.requireApproval) {
@@ -4042,6 +4049,7 @@ export class AgentSession {
 						this.sessionManager?.getSessionId(),
 						signal,
 						resolveToolTierSafe(ctx.tool, revisedArgs),
+						this.settings,
 					);
 					await this.#emitGatingDecision(ctx.tool.name, gating);
 					if (gating.isHighRiskTool && gating.requireApproval) {
@@ -4051,7 +4059,7 @@ export class AgentSession {
 							layaGatingRequired: true,
 							layaGatingReason: gating.reason,
 						};
-						}
+					}
 				} catch (error) {
 					await this.#emitGatingDecision(ctx.tool.name, {
 						isHighRiskTool: true,

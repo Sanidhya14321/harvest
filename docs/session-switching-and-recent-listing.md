@@ -280,9 +280,9 @@ Scroll offsets are capped at 20 retained sessions (oldest evicted); the fullscre
 When opening/switching to a specific path (`setSessionFile`):
 
 - ENOENT -> treated as empty -> new session initialized at that exact path and persisted.
-- malformed/invalid header (or effectively unreadable parsed entries) -> treated as empty -> new session initialized and persisted.
+- malformed/invalid header -> rejected without overwriting the file. In the live UI, the target is rejected before the legacy fallback can stop the source runtime.
 
-This is recovery behavior, not hard failure.
+Missing-path initialization is a SessionManager API behavior. Interactive navigation removes a missing cold tab and preserves the current view; an already-live runtime can be reattached even if its journal disappeared. Its subsequent persistence still requires recovery.
 
 ### Hard failures
 
@@ -293,3 +293,13 @@ Switch/open can still throw on true I/O failures (permission errors, rewrite fai
 - Matching uses `startsWith` on the lowercased session id, lowercased JSONL filename, and lowercased id suffix after the filename timestamp.
 - First match in modified-descending order wins; there is no ambiguity UI if multiple sessions share a prefix.
 - Prefix-listing metadata is intentionally lightweight, so search text may not include messages outside the first 4KB of the session file.
+
+## Mouse navigation and recovery
+
+Fullscreen workspace tabs use SGR mouse reports. Only tab rows actually visible in the final viewport accept clicks or hover. Overflow arrows select the adjacent session outside the displayed window. Inline mode and terminals without SGR support use Ctrl+Tab, Ctrl+Shift+Tab, `/tab switch <number>`, or the session picker.
+
+Interactive resume and New share a serial navigation queue. Superseded queued targets are skipped, identical pending requests are coalesced, and selecting the current tab performs no settings flush or runtime reset. Drafts and scroll offsets are retained per session. Settings-save failures, corrupt cold headers and competing journal owners keep the source session usable and surface retry guidance.
+
+New-tab construction captures its parent runtime for extension-root inheritance. A failed construction releases the acquired journal lease. If the source has active work or approval, failure preserves it; the in-place fallback is reserved for an idle source. Adoption/selection failure disposes an unattached new runtime. Cross-project navigation retains the legacy cwd transaction, which can stop the source run.
+
+Terminal verification: `bun test packages/coding-agent/test/session-terminal-navigation.test.ts`. Set `HARVEST_TERMINAL_CAPTURE_DIR` to capture the rendered emulator cell rows, then run `python packages/coding-agent/bench/render-terminal-captures.py <capture-directory>` on Windows with Pillow/Consolas to rasterize them. This verifies the real InteractiveMode path through a virtual terminal; physical terminal/font/mouse variants require separate testing.

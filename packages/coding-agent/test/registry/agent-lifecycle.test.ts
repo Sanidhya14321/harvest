@@ -60,6 +60,14 @@ describe("AgentLifecycleManager", () => {
 		return registry.register({ id, displayName: "task", kind: "sub", session, sessionFile, status: "idle" });
 	}
 
+	it("refuses a stale revival authorization instead of returning a replacement agent's session", async () => {
+		const original = registerIdleSub("expected-Sub", makeSessionStub().session);
+		const replacement = registerIdleSub("expected-Sub", makeSessionStub().session);
+		await expect(lifecycle.ensureLive(original.id, original)).rejects.toThrow("changed before revival");
+		expect(registry.get(original.id)).toBe(replacement);
+		expect(replacement.status).toBe("idle");
+	});
+
 	it("registerIfAvailable never replaces a collision and reuses only the exact expected ref", () => {
 		const parked = registerIdleSub("generation-Sub", null);
 		registry.setStatus("generation-Sub", "parked", parked);

@@ -533,7 +533,11 @@ export class SettingsList implements Component {
 		const labelPad = padding(Math.max(0, maxLabelWidth - visibleWidth(labelPlain)));
 		const separator = "  ";
 		const valueMaxWidth = rowWidth - prefixWidth - maxLabelWidth - visibleWidth(separator) - 2;
-		const valuePlain = truncateToWidth(sanitizeSingleLine(String(item.currentValue ?? "")), valueMaxWidth, Ellipsis.Omit);
+		const valuePlain = truncateToWidth(
+			sanitizeSingleLine(String(item.currentValue ?? "")),
+			valueMaxWidth,
+			Ellipsis.Omit,
+		);
 		const hovered = !isSelected && this.#theme.hovered !== undefined && item.id === this.#hoveredItemId;
 		// De-emphasized rows (outside the active section) render as plain text
 		// under one dim wash so inner label/value colors don't fight it.
@@ -545,7 +549,9 @@ export class SettingsList implements Component {
 		}
 		const warningStyle = this.#theme.warning ?? this.#theme.description;
 		const labelText =
-			this.#theme.label(sanitizeSingleLine(item.label), isSelected, item.changed === true) + (mark ? warningStyle(mark) : "") + labelPad;
+			this.#theme.label(sanitizeSingleLine(item.label), isSelected, item.changed === true) +
+			(mark ? warningStyle(mark) : "") +
+			labelPad;
 		const valueText = this.#theme.value(valuePlain, isSelected, item.changed === true);
 		const text = truncateToWidth(prefix + labelText + separator + valueText, Math.max(0, rowWidth));
 		// Pointer hover paints a band behind the whole row, distinct from the
@@ -560,7 +566,13 @@ export class SettingsList implements Component {
 		const lines: string[] = [];
 
 		if (this.#items.length === 0) {
-			lines.push(truncateToWidth(this.#theme.hint(`  ${this.#options.emptyText ?? "No settings available"}`), width, Ellipsis.Omit));
+			lines.push(
+				truncateToWidth(
+					this.#theme.hint(`  ${this.#options.emptyText ?? "No settings available"}`),
+					width,
+					Ellipsis.Omit,
+				),
+			);
 			return lines;
 		}
 

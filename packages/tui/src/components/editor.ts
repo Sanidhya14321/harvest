@@ -1189,7 +1189,9 @@ export class Editor implements Component, Focusable {
 						imeSafeCursorTail = true;
 					} else if (after.length === 0 && inlineHint) {
 						const availWidth = Math.max(0, lineContentWidth - displayWidth);
-						const hintText = hintStyle(truncateToWidth(replaceTabs(inlineHint).replace(/[\r\n]+/g, " "), availWidth));
+						const hintText = hintStyle(
+							truncateToWidth(replaceTabs(inlineHint).replace(/[\r\n]+/g, " "), availWidth),
+						);
 						displayText = before + marker + hintText;
 						displayWidth += Math.min(visibleWidth(inlineHint), availWidth);
 					} else if (after.length === 0 && !isSideBordered && displayWidth >= lineContentWidth) {
@@ -1236,7 +1238,9 @@ export class Editor implements Component, Focusable {
 						displayWidth = widthLimitedCursor.width;
 					} else if (inlineHint) {
 						const availWidth = Math.max(0, lineContentWidth - displayWidth - overrideWidth);
-						const hintText = hintStyle(truncateToWidth(replaceTabs(inlineHint).replace(/[\r\n]+/g, " "), availWidth));
+						const hintText = hintStyle(
+							truncateToWidth(replaceTabs(inlineHint).replace(/[\r\n]+/g, " "), availWidth),
+						);
 						displayText = before + marker + this.cursorOverride + hintText;
 						displayWidth += overrideWidth + Math.min(visibleWidth(inlineHint), availWidth);
 					} else {
@@ -1254,7 +1258,9 @@ export class Editor implements Component, Focusable {
 						displayWidth = widthLimitedCursor.width;
 					} else if (inlineHint) {
 						const availWidth = Math.max(0, lineContentWidth - displayWidth - cursorWidth);
-						const hintText = hintStyle(truncateToWidth(replaceTabs(inlineHint).replace(/[\r\n]+/g, " "), availWidth));
+						const hintText = hintStyle(
+							truncateToWidth(replaceTabs(inlineHint).replace(/[\r\n]+/g, " "), availWidth),
+						);
 						displayText = before + marker + cursor + hintText;
 						displayWidth += cursorWidth + Math.min(visibleWidth(inlineHint), availWidth);
 					} else {

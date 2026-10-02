@@ -12,6 +12,7 @@ import { loadEntriesFromFile } from "@harvest/pi-coding-agent/session/session-lo
 import { SessionManager } from "@harvest/pi-coding-agent/session/session-manager";
 import { FileSessionStorage, type WriteTextAtomicOptions } from "@harvest/pi-coding-agent/session/session-storage";
 import type { SessionTitleUpdate } from "@harvest/pi-coding-agent/session/session-title-slot";
+import { resetSessionTitleIndexForTests } from "../../src/session/title-index";
 import { getConfigRootDir, removeSyncWithRetries, setAgentDir } from "@harvest/pi-utils";
 
 import { makeAssistantMessage } from "./helpers";
@@ -72,6 +73,7 @@ describe("session title source persistence", () => {
 	});
 
 	afterEach(() => {
+		resetSessionTitleIndexForTests();
 		if (originalAgentDir) {
 			setAgentDir(originalAgentDir);
 		} else {
@@ -102,7 +104,8 @@ describe("session title source persistence", () => {
 			source: "auto",
 		});
 		expect(parseJsonLine(rawLines[1]).type).toBe("session");
-		const reopened = await SessionManager.open(sessionFile!);
+		await session.close();
+		const reopened = await SessionManager.open(sessionFile!, undefined, undefined, { readOnly: true });
 		expect(reopened.getSessionName()).toBe("Auto title");
 		expect(reopened.titleSource).toBe("auto");
 	});
@@ -120,7 +123,8 @@ describe("session title source persistence", () => {
 		const entries = await loadEntriesFromFile(sessionFile!);
 		expect(getHeader(entries)?.titleSource).toBe("user");
 
-		const reopened = await SessionManager.open(sessionFile!);
+		await session.close();
+		const reopened = await SessionManager.open(sessionFile!, undefined, undefined, { readOnly: true });
 		expect(reopened.getSessionName()).toBe("Manual title");
 		expect(reopened.titleSource).toBe("user");
 	});
@@ -144,7 +148,7 @@ describe("session title source persistence", () => {
 		expect(getHeader(entries)?.title).toBe("Legacy title");
 		expect(getHeader(entries)?.titleSource).toBe("user");
 
-		const reopened = await SessionManager.open(file);
+		const reopened = await SessionManager.open(file, undefined, undefined, { readOnly: true });
 		expect(reopened.getSessionName()).toBe("Legacy title");
 		expect(reopened.titleSource).toBe("user");
 	});
@@ -181,6 +185,7 @@ describe("session title source persistence", () => {
 		const titleChanges = entries.filter(entry => entry.type === TITLE_CHANGE_ENTRY_TYPE);
 		expect(titleChanges.map(entry => entry.title)).toEqual(["Auto title", "Manual title"]);
 		expect(titleChanges.map(entry => entry.trigger)).toEqual(["initial", "rename"]);
+		await session.close();
 	});
 
 	it("notifies name-change subscribers only after successful applied names", async () => {

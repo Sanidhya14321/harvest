@@ -195,7 +195,7 @@ describe("tab persistence wiring", () => {
 		const second = path.join(root, "second.jsonl");
 		await Bun.write(first, "first");
 		await Bun.write(second, "second");
-		let active = second;
+		const active = second;
 		const ctx = {
 			sessionManager: {
 				getSessionFile: () => active,

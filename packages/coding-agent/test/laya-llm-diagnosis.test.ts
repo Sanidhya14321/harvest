@@ -21,7 +21,6 @@ import {
 	evaluateRiskClassification,
 	queryLlmDiagnosis,
 	runLlmAssistedDiagnosis,
-	executeAutoAppliedFix,
 	type DiagnosticBundle,
 	type LayaDiagnosisProposal,
 } from "../src/core/harvest/laya-llm-diagnosis";
@@ -318,7 +317,9 @@ describe("LLM-Assisted Failure Diagnosis Engine", () => {
 			expect(result.proposal).toBeUndefined();
 
 			const logLines = setupLogger.getRecentLines();
-			expect(logLines.some(l => l.includes("LLM connection unavailable or query failed; falling back cleanly"))).toBe(true);
+			expect(
+				logLines.some(l => l.includes("LLM connection unavailable or query failed; falling back cleanly")),
+			).toBe(true);
 		});
 
 		it("degrades gracefully without throwing when LLM completion throws network error", async () => {
@@ -358,7 +359,10 @@ describe("LLM-Assisted Failure Diagnosis Engine", () => {
 			vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(false);
 			vi.spyOn(layaService, "checkLayaDependencies").mockResolvedValue(true);
 			vi.spyOn(layaService, "installLayaDependencies").mockResolvedValue({ success: true });
-			vi.spyOn(layaSelfHealing, "verifyAndRepairTorchWheel").mockResolvedValue({ repaired: false, cudaAvailable: false });
+			vi.spyOn(layaSelfHealing, "verifyAndRepairTorchWheel").mockResolvedValue({
+				repaired: false,
+				cudaAvailable: false,
+			});
 			vi.spyOn(layaService, "ensureLayaModelCached").mockResolvedValue({ success: true, alreadyCached: true });
 			// Simulate unrecognized novel crash
 			vi.spyOn(layaService, "startLayaSidecarProcess").mockResolvedValue({

@@ -4,6 +4,23 @@
 
 ### Fixed
 
+- Mouse session switching and New session work with the real UI, preserve drafts on failure, and coalesce repeated navigation.
+- Hidden tabs cannot be clicked, overflow arrows open adjacent sessions, and pointer hover highlights tab targets.
+- Failed new-tab creation preserves active runs and releases unopened or unattached session resources.
+
+- Writable file sessions reject competing owners and stale snapshots; sharing and export use read-only transcript snapshots.
+- Code search refreshes changed source files asynchronously, reports indexing progress, and preserves correct result paths.
+- Session backup recovery waits for active writers and preserves storage-specific path spelling.
+
+- Laya requires approval when complete tool arguments exceed its evidence budget, and nested permission changes are preserved for classification.
+- Malformed Laya answers fall back before routing, pruning, or completion decisions can consume them.
+- Laya bounds queued inference, honors the remaining client deadline, and retains capacity until timed-out prediction threads actually finish.
+- Verification status now uses completed command results and final arguments, and background commands stay unverified until they finish.
+- Laya tool approval and completion checks now respect the settings of their owning session.
+- Code search refuses cache and source paths that escape the workspace through symlinks.
+- Laya health checks can evaluate the configured checkpoint identity without a missing-constant error.
+- Shared-session guests can only see, read, and control agents belonging to the shared session; advisor transcripts remain private.
+- MCP actions are no longer automatically repeated after an uncertain delivery failure, and errors explain when remote state must be checked.
 - Invalid Laya relevance scores preserve full context, and invalid tool-risk probabilities require approval.
 
 - A generated or manually renamed session keeps its latest title in the tab strip after switching away.
@@ -48,6 +65,7 @@
 - Pruning relevance now scores against the latest user request with the original task kept as context, instead of always using the first message.
 - Hardware calibration is no longer masked by schema defaults: unset pruning/timeout settings derive from calibration, explicit overrides stay explicit, and `/laya status` shows configured, calibrated, and effective values.
 - Tool gating eligibility now follows each call's structured approval tier, so MCP and extension writes are classified even though their wire names are not listed; read-tier tools bypass without a sidecar call.
+- Sidecar reuse now verifies the occupant's model identity plus an authenticated decide probe before reusing a port, so a foreign healthy-looking listener is never mistaken for the managed sidecar.
 - Background approvals queue under their session with an attention badge and present in order when their tab becomes active; stopping or quitting denies whatever is still parked.
 - `/diagnostics` and the run record now include the last tool-gating verdict with its local sidecar latency, separating gating delay from model and tool time.
 - Concurrent Laya sidecar starters now share one spawn run instead of double-spawning daemons behind a port drift; the same singleflight guard now covers the full setup pipeline.

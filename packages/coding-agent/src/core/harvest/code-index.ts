@@ -9,6 +9,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { globPaths, isRecord, logger, untilAborted } from "@harvest/pi-utils";
+import { SecuritySandbox } from "./security";
 
 export interface SymbolDeclaration {
 	readonly name: string;
@@ -65,7 +67,7 @@ export function splitIdentifierSubwords(ident: string): string[] {
 		.replace(/[_\-.]+/g, " ")
 		.toLowerCase()
 		.split(/\s+/)
-		.filter((w) => w.length > 0);
+		.filter(w => w.length > 0);
 }
 
 const DECLARATION_REGEXES = [
@@ -151,63 +153,126 @@ export function extractSymbolsFromContent(content: string, filePath: string): Sy
 export class CodeIndex {
 	readonly #workspaceRoot: string;
 	readonly #cacheFilePath: string;
-	#index: CodeIndexData;
+	readonly #sandbox: SecuritySandbox;
+	#index: CodeIndexData = { version: 1, files: {} };
+	#loadPromise: Promise<void> | undefined;
+	#refreshPromise: Promise<void> | undefined;
+	#refreshController: AbortController | undefined;
+	#refreshUsers = 0;
+	#cacheRevision = 0;
+	#savedCacheRevision = 0;
 
 	constructor(workspaceRoot: string = process.cwd()) {
-		this.#workspaceRoot = path.resolve(workspaceRoot);
+		this.#sandbox = new SecuritySandbox(workspaceRoot);
+		this.#workspaceRoot = this.#sandbox.assertPathJailed(".").resolvedPath;
 		const harvestDir = path.join(this.#workspaceRoot, ".harvest");
 		this.#cacheFilePath = path.join(harvestDir, "code-index.json");
-		this.#index = this.#loadCache();
 	}
 
-	#loadCache(): CodeIndexData {
+	async #loadCache(): Promise<void> {
 		try {
-			if (fs.existsSync(this.#cacheFilePath)) {
-				const raw = fs.readFileSync(this.#cacheFilePath, "utf8");
-				return JSON.parse(raw);
+			const jail = this.#sandbox.assertPathJailed(this.#cacheFilePath);
+			if (!jail.jailed) return;
+			const file = Bun.file(jail.resolvedPath);
+			if ((await fs.promises.stat(jail.resolvedPath)).size > 16 * 1024 * 1024) return;
+			const value: unknown = await file.json();
+			if (!isRecord(value) || value.version !== 1 || !isRecord(value.files)) return;
+			// Cached declarations are untrusted. Refresh from source before serving
+			// workspace searches; malformed records must not crash ranking.
+			const files: Record<string, CachedFileFingerprint> = Object.create(null);
+			for (const [name, entry] of Object.entries(value.files)) {
+				if (
+					!isRecord(entry) ||
+					typeof entry.mtimeMs !== "number" ||
+					typeof entry.size !== "number" ||
+					!Array.isArray(entry.symbols)
+				)
+					continue;
+				const symbols = entry.symbols.filter(
+					(symbol): symbol is SymbolDeclaration =>
+						isRecord(symbol) &&
+						typeof symbol.name === "string" &&
+						typeof symbol.signature === "string" &&
+						typeof symbol.filePath === "string" &&
+						symbol.filePath === name &&
+						Array.isArray(symbol.subwords) &&
+						symbol.subwords.every(word => typeof word === "string") &&
+						Number.isInteger(symbol.lineNumber) &&
+						typeof symbol.column === "number" &&
+						["function", "class", "interface", "type", "struct", "enum"].includes(String(symbol.kind)),
+				);
+				if (symbols.length !== entry.symbols.length) continue;
+				files[name] = { mtimeMs: entry.mtimeMs, size: entry.size, symbols };
 			}
+			this.#index = { version: 1, files };
 		} catch {}
-		return { version: 1, files: {} };
 	}
 
-	#saveCache(): void {
+	async #ensureLoaded(): Promise<void> {
+		this.#loadPromise ??= this.#loadCache();
+		await this.#loadPromise;
+	}
+
+	async #saveCache(): Promise<void> {
+		if (this.#cacheRevision === this.#savedCacheRevision) return;
+		const revision = this.#cacheRevision;
 		try {
-			const dir = path.dirname(this.#cacheFilePath);
-			fs.mkdirSync(dir, { recursive: true });
-			fs.writeFileSync(this.#cacheFilePath, JSON.stringify(this.#index, null, 2), "utf8");
+			const jail = this.#sandbox.assertPathJailed(this.#cacheFilePath);
+			if (!jail.jailed) {
+				logger.warn("Code index cache path rejected", { reason: jail.error });
+				return;
+			}
+			const dir = path.dirname(jail.resolvedPath);
+			await fs.promises.mkdir(dir, { recursive: true });
+			const current = this.#sandbox.assertPathJailed(jail.resolvedPath);
+			if (!current.jailed) return;
+			await Bun.write(current.resolvedPath, JSON.stringify(this.#index));
+			this.#savedCacheRevision = revision;
 		} catch {}
 	}
 
 	/**
 	 * Index a single file, using cached symbols if mtime and size match.
 	 */
-	indexFile(relPath: string): SymbolDeclaration[] {
-		const fullPath = path.join(this.#workspaceRoot, relPath);
+	async indexFile(relPath: string, signal?: AbortSignal): Promise<SymbolDeclaration[]> {
+		await this.#ensureLoaded();
+		signal?.throwIfAborted();
+		const jail = this.#sandbox.assertPathJailed(path.resolve(this.#workspaceRoot, relPath));
+		if (!jail.jailed) {
+			if (Object.hasOwn(this.#index.files, relPath)) this.#cacheRevision++;
+			delete this.#index.files[relPath];
+			return [];
+		}
+		const fullPath = jail.resolvedPath;
 		try {
-			const stat = fs.statSync(fullPath);
+			const stat = await fs.promises.stat(fullPath);
+			signal?.throwIfAborted();
 			const cached = this.#index.files[relPath];
 
+			if (!stat.isFile() || stat.size > 2 * 1024 * 1024) {
+				if (Object.hasOwn(this.#index.files, relPath)) this.#cacheRevision++;
+				delete this.#index.files[relPath];
+				return [];
+			}
 			if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
 				return cached.symbols as SymbolDeclaration[];
 			}
-
-			const content = fs.readFileSync(fullPath, "utf8");
+			const content = await Bun.file(fullPath).text();
+			signal?.throwIfAborted();
 			const symbols = extractSymbolsFromContent(content, relPath);
 
-			this.#index = {
-				...this.#index,
-				files: {
-					...this.#index.files,
-					[relPath]: {
-						mtimeMs: stat.mtimeMs,
-						size: stat.size,
-						symbols,
-					},
-				},
+			this.#index.files[relPath] = {
+				mtimeMs: stat.mtimeMs,
+				size: stat.size,
+				symbols,
 			};
+			this.#cacheRevision++;
 
 			return symbols;
 		} catch {
+			signal?.throwIfAborted();
+			if (Object.hasOwn(this.#index.files, relPath)) this.#cacheRevision++;
+			delete this.#index.files[relPath];
 			return [];
 		}
 	}
@@ -215,21 +280,73 @@ export class CodeIndex {
 	/**
 	 * Scan and update index for given paths (or scanned workspace files).
 	 */
-	updateIndex(files: string[]): void {
-		for (const file of files) {
-			const ext = path.extname(file).toLowerCase();
-			if (SUPPORTED_EXTENSIONS.has(ext)) {
-				this.indexFile(file);
-			}
+	async updateIndex(files: string[], signal?: AbortSignal): Promise<void> {
+		await this.#ensureLoaded();
+		for (let offset = 0; offset < files.length; offset += 4) {
+			signal?.throwIfAborted();
+			await Promise.all(
+				files.slice(offset, offset + 4).map(async file => {
+					if (SUPPORTED_EXTENSIONS.has(path.extname(file).toLowerCase())) await this.indexFile(file, signal);
+				}),
+			);
 		}
-		this.#saveCache();
+		await this.#saveCache();
+	}
+
+	/** Coalesce concurrent queries, refresh fingerprints and evict removed files. */
+	async refreshWorkspace(signal?: AbortSignal): Promise<void> {
+		signal?.throwIfAborted();
+		if (this.#refreshController?.signal.aborted && this.#refreshPromise) {
+			await untilAborted(
+				signal,
+				this.#refreshPromise.catch(() => {}),
+			);
+		}
+		if (!this.#refreshPromise) {
+			this.#refreshController = new AbortController();
+			const operationSignal = AbortSignal.any([this.#refreshController.signal, AbortSignal.timeout(15_000)]);
+			this.#refreshPromise = (async () => {
+				await this.#ensureLoaded();
+				operationSignal.throwIfAborted();
+				const files = await globPaths(
+					`**/*.{${[...SUPPORTED_EXTENSIONS].map(extension => extension.slice(1)).join(",")}}`,
+					{
+						cwd: this.#workspaceRoot,
+						timeoutMs: 5000,
+						dot: true,
+						signal: operationSignal,
+						exclude: ["**/.harvest/**", "**/dist/**", "**/target/**", "**/coverage/**"],
+					},
+				);
+				const present = new Set(files);
+				for (const name of Object.keys(this.#index.files)) {
+					if (!present.has(name)) {
+						delete this.#index.files[name];
+						this.#cacheRevision++;
+					}
+				}
+				await this.updateIndex(files, operationSignal);
+			})();
+			void this.#refreshPromise
+				.finally(() => {
+					this.#refreshPromise = undefined;
+				})
+				.catch(() => {});
+		}
+		this.#refreshUsers++;
+		try {
+			await untilAborted(signal, this.#refreshPromise);
+		} finally {
+			if (--this.#refreshUsers === 0) this.#refreshController?.abort();
+		}
 	}
 
 	/**
 	 * Search indexed symbols by name or subwords.
 	 * e.g. Query "auth token" matches "parseUserAuthToken".
 	 */
-	searchSymbols(query: string, limit: number = 10): SymbolDeclaration[] {
+	async searchSymbols(query: string, limit: number = 10): Promise<SymbolDeclaration[]> {
+		await this.#ensureLoaded();
 		const qSubwords = splitIdentifierSubwords(query);
 		if (qSubwords.length === 0) return [];
 
@@ -266,6 +383,6 @@ export class CodeIndex {
 		}
 
 		matches.sort((a, b) => b.score - a.score);
-		return matches.slice(0, limit).map((m) => m.symbol);
+		return matches.slice(0, limit).map(m => m.symbol);
 	}
 }

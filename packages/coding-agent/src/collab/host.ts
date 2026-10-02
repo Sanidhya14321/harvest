@@ -24,7 +24,7 @@ import type {
 import type { InteractiveModeContext } from "../modes/types";
 import { AgentLifecycleManager } from "../registry/agent-lifecycle";
 import { type AgentRef, AgentRegistry } from "../registry/agent-registry";
-import type { AgentSessionEvent } from "../session/agent-session";
+import type { AgentSession, AgentSessionEvent } from "../session/agent-session";
 import { stripImagesFromMessage, USER_INTERRUPT_LABEL } from "../session/messages";
 import type { SessionEntry as StoredSessionEntry } from "../session/session-entries";
 import { TASK_SUBAGENT_LIFECYCLE_CHANNEL, TASK_SUBAGENT_PROGRESS_CHANNEL } from "../task/types";
@@ -129,6 +129,8 @@ export class CollabHost {
 	#webViewLink = "";
 	#writeToken: Uint8Array | null = null;
 	#sessionId = "";
+	#sharedSession: AgentSession | undefined;
+	#sharedRoot: AgentRef | undefined;
 	#unsubscribe?: () => void;
 	#peers = new Map<number, { name: string; canWrite: boolean }>();
 	#uiReqSeq = 0;
@@ -225,6 +227,10 @@ export class CollabHost {
 		const socket = new CollabSocket({ wsUrl: parsed.wsUrl, role: "host", key });
 		this.#socket = socket;
 		this.#sessionId = this.#ctx.sessionManager.getSessionId();
+		this.#sharedSession = this.#ctx.session;
+		this.#sharedRoot = AgentRegistry.global()
+			.list()
+			.find(ref => ref.session === this.#sharedSession && ref.kind !== "advisor");
 
 		const firstOpen = Promise.withResolvers<void>();
 		let opened = false;
@@ -329,7 +335,7 @@ export class CollabHost {
 
 	#broadcast(frame: CollabFrame): void {
 		if (this.#stopped || !this.#socket) return;
-		if (this.#ctx.sessionManager.getSessionId() !== this.#sessionId) {
+		if (!this.#isCurrentShare()) {
 			void this.stop("session switched");
 			this.#ctx.session.emitNotice("warning", "Collab ended: session switched", "collab");
 			return;
@@ -338,6 +344,11 @@ export class CollabHost {
 	}
 
 	#handleFrame(frame: CollabFrame, fromPeer: number): void {
+		if (this.#stopped) return;
+		if (!this.#isCurrentShare()) {
+			void this.stop("session switched");
+			return;
+		}
 		switch (frame.t) {
 			case "hello":
 				this.#handleHello(frame.name, frame.proto, frame.writeToken, fromPeer);
@@ -567,6 +578,33 @@ export class CollabHost {
 		}
 	}
 
+	#isCurrentShare(): boolean {
+		return (
+			this.#ctx.session === this.#sharedSession &&
+			this.#ctx.sessionManager.getSessionId() === this.#sessionId &&
+			(!this.#sharedRoot ||
+				(AgentRegistry.global().get(this.#sharedRoot.id) === this.#sharedRoot &&
+					this.#sharedRoot.session === this.#sharedSession))
+		);
+	}
+
+	/** Fail closed for unknown roots, advisors, broken ancestry and replaced registrations. */
+	#getSharedAgent(agentId: string): (AgentRef & { kind: "main" | "sub" }) | undefined {
+		if (this.#stopped || !this.#isCurrentShare() || !this.#sharedRoot) return undefined;
+		const registry = AgentRegistry.global();
+		const ref = registry.get(agentId);
+		if (!ref || ref.kind === "advisor") return undefined;
+		let ancestor: AgentRef | undefined = ref;
+		const visited = new Set<string>();
+		while (ancestor && !visited.has(ancestor.id)) {
+			if (ancestor === this.#sharedRoot) return ref as AgentRef & { kind: "main" | "sub" };
+			if (ancestor.kind !== "sub" || !ancestor.parentId) return undefined;
+			visited.add(ancestor.id);
+			ancestor = registry.get(ancestor.parentId);
+		}
+		return undefined;
+	}
+
 	#snapshotAgents(): AgentSnapshot[] {
 		return (
 			AgentRegistry.global()
@@ -574,7 +612,7 @@ export class CollabHost {
 				// Advisor transcripts are local observability only; never mirror them to
 				// guests (the wire AgentSnapshot kind has no `advisor`, and guests must not
 				// be able to chat/kill/revive them).
-				.filter((ref): ref is AgentRef & { kind: "main" | "sub" } => ref.kind !== "advisor")
+				.filter((ref): ref is AgentRef & { kind: "main" | "sub" } => this.#getSharedAgent(ref.id) === ref)
 				.map(ref => ({
 					id: ref.id,
 					displayName: ref.displayName,
@@ -601,10 +639,9 @@ export class CollabHost {
 			this.#rejectReadOnly("agent control", fromPeer);
 			return;
 		}
-		// Advisor refs are excluded from snapshots, but reject control by id defensively:
-		// a stale/malicious client must never chat/kill/revive a read-only advisor transcript.
-		if (AgentRegistry.global().get(agentId)?.kind === "advisor") {
-			this.#socket?.send({ t: "error", message: `agent ${agentId}: advisor transcripts are read-only` }, fromPeer);
+		const authorizedRef = this.#getSharedAgent(agentId);
+		if (!authorizedRef) {
+			this.#socket?.send({ t: "error", message: "agent unavailable in this shared session" }, fromPeer);
 			return;
 		}
 		const fail = (err: unknown) => {
@@ -620,25 +657,32 @@ export class CollabHost {
 				}
 				// Mirrors the hub's #submitChatMessage: revive if parked, steer if mid-turn.
 				AgentLifecycleManager.global()
-					.ensureLive(agentId)
-					.then(session => session.prompt(trimmed, { streamingBehavior: "steer" }))
+					.ensureLive(agentId, authorizedRef)
+					.then(session => {
+						if (this.#getSharedAgent(agentId) !== authorizedRef || authorizedRef.session !== session) {
+							throw new Error("agent unavailable in this shared session");
+						}
+						if (!this.#peers.get(fromPeer)?.canWrite) return;
+						return session.prompt(trimmed, { streamingBehavior: "steer" });
+					})
 					.catch(fail);
 				break;
 			}
 			case "kill": {
 				const kill = async () => {
-					const ref = AgentRegistry.global().get(agentId);
-					if (!ref) return;
+					const ref = this.#getSharedAgent(agentId);
+					if (ref !== authorizedRef) return;
 					if (ref.status === "running" && ref.session) {
 						await ref.session.abort({ reason: USER_INTERRUPT_LABEL });
 					}
+					if (this.#getSharedAgent(agentId) !== ref || !this.#peers.get(fromPeer)?.canWrite) return;
 					await AgentLifecycleManager.global().release(agentId, ref, { tombstone: true });
 				};
 				kill().catch(fail);
 				break;
 			}
 			case "revive":
-				AgentLifecycleManager.global().ensureLive(agentId).catch(fail);
+				AgentLifecycleManager.global().ensureLive(agentId, authorizedRef).catch(fail);
 				break;
 		}
 	}
@@ -647,13 +691,19 @@ export class CollabHost {
 	async #handleFetchTranscript(reqId: number, agentId: string, fromByte: number, fromPeer: number): Promise<void> {
 		const reply = (text: string, newSize: number, error?: string) =>
 			this.#socket?.send({ t: "transcript", reqId, text, newSize, error }, fromPeer);
-		const file = AgentRegistry.global().get(agentId)?.sessionFile;
+		const ref = this.#peers.has(fromPeer) ? this.#getSharedAgent(agentId) : undefined;
+		if (!ref || !Number.isSafeInteger(fromByte) || fromByte < 0) {
+			reply("", 0, "transcript unavailable in this shared session");
+			return;
+		}
+		const file = ref.sessionFile;
 		if (!file) {
 			reply("", fromByte, "no transcript available");
 			return;
 		}
 		try {
 			const stat = await fs.stat(file);
+			if (this.#getSharedAgent(agentId) !== ref || ref.sessionFile !== file || !this.#peers.has(fromPeer)) return;
 			if (stat.size <= fromByte) {
 				reply("", stat.size);
 				return;
@@ -678,6 +728,7 @@ export class CollabHost {
 				}
 				slice = slice.subarray(0, lastNewline + 1);
 			}
+			if (this.#getSharedAgent(agentId) !== ref || ref.sessionFile !== file || !this.#peers.has(fromPeer)) return;
 			reply(slice.toString("utf-8"), reachedEof ? stat.size : fromByte + slice.byteLength);
 		} catch (err) {
 			logger.debug("collab transcript read failed", { agentId, error: String(err) });

@@ -10,6 +10,7 @@ import type { CreateAgentSessionResult } from "../../src/sdk";
 import { createInMemoryAuthStorage } from "../helpers/agent-session-setup";
 import type { AuthStorage } from "../../src/session/auth-storage";
 import type { Model } from "@harvest/pi-ai";
+import { SessionManager } from "../../src/session/session-manager";
 
 /**
  * Cold-open factory contracts: every live tab gets a cloned settings object
@@ -156,5 +157,38 @@ describe("openLiveAgentSession", () => {
 			session: { ...source.session, model: undefined, getAvailableModels: () => [] as Model[] },
 		};
 		expect(() => liveSessionFactoryOptions(modelLess as never)).toThrow(/model/);
+	});
+
+	it("releases the cold journal writer when runtime construction fails so retry can resume", async () => {
+		harness();
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-live-open-"));
+		roots.push(root);
+		const seed = SessionManager.create(root, root);
+		seed.appendMessage({ role: "user", content: "Committed history", timestamp: Date.now() });
+		await seed.ensureOnDisk();
+		const sessionPath = seed.getSessionFile()!;
+		await seed.close();
+		const before = await Bun.file(sessionPath).text();
+		await expect(
+			openLiveAgentSession({
+				cwd: root,
+				sessionDir: root,
+				sessionPath,
+				settings: Settings.isolated(),
+				authStorage,
+				modelRegistry,
+				model: { provider: "mock", id: "mock-model" } as unknown as Model,
+				createSession: async () => {
+					throw new Error("discovery failed");
+				},
+			}),
+		).rejects.toThrow("discovery failed");
+		const reopened = await SessionManager.open(sessionPath, root, undefined, { suppressBreadcrumb: true });
+		try {
+			expect(await Bun.file(sessionPath).text()).toBe(before);
+			expect(reopened.getEntries().some(entry => entry.type === "message")).toBe(true);
+		} finally {
+			await reopened.close();
+		}
 	});
 });

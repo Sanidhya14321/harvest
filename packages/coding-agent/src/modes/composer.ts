@@ -539,7 +539,12 @@ export class Composer implements TerminalFrameProvider {
 			contentWidth,
 		);
 		const after = contentInset > 0 ? afterContent.map(row => `${" ".repeat(contentInset)}${row}`) : afterContent;
-		const tabRows = this.#workspaceTabs?.renderWorkspace(width, Boolean(transcript?.children.length)) ?? [];
+		const tabRows =
+			this.#workspaceTabs?.renderWorkspace(
+				width,
+				Boolean(transcript?.children.length),
+				Math.max(0, rows - after.length),
+			) ?? [];
 		const tabs = tabRows.length > 0 ? [...tabRows, ""] : [];
 		if (after.length >= rows) return after.slice(-rows);
 		if (tabs.length + after.length > rows) return [...tabs.slice(0, rows - after.length), ...after];

@@ -284,6 +284,11 @@ export class VirtualTerminal implements Terminal {
 		return lines;
 	}
 
+	/** Copy visible cell words for terminal screenshot rasterization. */
+	getViewportCellRows(): number[][] {
+		return Array.from({ length: this.#rows }, (_, row) => Array.from(this.#presentedRowCells(row) ?? []));
+	}
+
 	/** Get the entire scroll buffer (clamped scrollback history followed by the active grid). */
 	getScrollBuffer(): string[] {
 		const capped = this.#cappedBaseY();

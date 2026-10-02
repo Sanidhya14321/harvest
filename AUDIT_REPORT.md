@@ -1,6 +1,181 @@
 # Codebase Audit Report
 
+## Implementation Ledger — 2026-10-01, Batch 4: Terminal interaction and session recovery
+
+### Reproduction, changes and verification
+
+Real `InteractiveMode` + real `AgentSession` + file journals were driven from `bun test` through the kitty WASM terminal emulator. SGR press/release reports entered the ordinary TUI input path. No model completion, checkpoint installation or remote tool action was needed. The initial terminal run exposed two failures in tests that assumed native scrollback while fullscreen was enabled; those tests now explicitly select their intended native-scrollback mode and pass.
+
+A real tab switch then reproduced `undefined is not an object (evaluating 'this.session')`: the selector extracted `ctx.selectMainSession` and lost its receiver. After correcting the receiver, the same test reproduced `RangeError: Maximum call stack size exceeded` in the extension-roots callback, because its mutable UI reference pointed back to the new session. Both paths are corrected. Mock-only controller tests had missed these failures.
+
+Navigation now uses the central `Serial` utility, skips superseded queued requests and coalesces repeated requests for the same target, including duplicate New session clicks. Already-active tabs return before settings writes. Drafts and scroll state remain attached to their owner; failed settings saves and cold opens keep the usable current session. Controller disposal happens after a successful transition. If a target load throws without changing the owner, text typed during that wait is retained instead of restoring the older snapshot. New-session factory failure resets in place only when the current runtime is idle; an active or approval-blocked runtime gets a retryable error. Failed construction releases its journal lease. New runtimes that cannot be adopted or shown are disposed when unattached.
+
+Workspace mouse hit testing is limited to rows actually included in the viewport. Hover changes request a render, and overflow arrows select adjacent sessions outside the displayed window. Warm runtimes can be reattached without a backing-file read, including when the journal has disappeared; cold missing/corrupt targets are rejected. This preserves access to in-memory work, not a guarantee that a deleted journal can subsequently persist.
+
+**Final verification:** **84 tests passed across nine files, zero failed, 326 assertions** (23.36 seconds) in the combined terminal/session run. Coding-agent lint/type checking, the full TUI lint/format/type gate, the screenshot renderer Ruff check and `git diff --check` passed. The tests cover real SGR mouse switching/new tabs, owner drafts, text typed during a failed load, duplicate/rapid navigation, unavailable targets, shutdown, focus rollback, resize storms and native-scrollback thinking toggles. Existing repository-wide formatting and Windows temporary-bucket limitations remain as recorded in Batch 3; the full repository suite is not claimed green.
+
+### Terminal screenshots and reproduction commands
+
+Eleven PNG screenshots were rasterized from the emulator's actual visible cell words, including colors and geometry, at `C:/Users/sanid/AppData/Local/Temp/harvest-terminal-audit-20261001/`. These are **virtual-terminal screenshots**, not desktop screenshots or a physical Windows Terminal test. VHS/ffmpeg were unavailable. The renderer uses installed Consolas; Nerd Font glyph fallback and the physical terminal's font/antialiasing are not validated. These captures establish interaction correctness, not a 100× speedup or input-to-paint benchmark.
+
+```powershell
+$env:HARVEST_TERMINAL_CAPTURE_DIR = Join-Path $env:TEMP 'harvest-terminal-audit-20261001'
+bun test packages/coding-agent/test/session-terminal-navigation.test.ts
+python packages/coding-agent/bench/render-terminal-captures.py $env:HARVEST_TERMINAL_CAPTURE_DIR
+```
+
+Screenshots: `01-before-switch.png`, `02-after-mouse-switch.png`, `03-restored-draft.png`, `04-save-failure.png`, `05-rapid-navigation.png`, `06-cold-missing.png`, `06-cold-corrupt.png`, `06-cold-locked.png`, `07-short-viewport.png`, `08-new-tab-by-mouse.png`, `09-typing-during-failed-load.png`. JSON cell captures accompany the images. Outputs are in a temporary directory and may be removed by OS cleanup; rerun the commands to regenerate them.
+
+### Recovery matrix
+
+| Case | Implemented handling | Evidence / fallback |
+| --- | --- | --- |
+| Current tab clicked | No transition, no settings flush | Real SGR terminal regression |
+| Settings save fails | Keep session and draft, display error | Retry click or `/tab switch <number>` |
+| Typing continues while a target load throws | Preserve current editor text when the owner never changed | Deferred-load regression; no stale draft replay |
+| Rapid switch / duplicate New session | Serialize committed transitions, skip superseded pending ones, coalesce identical requests | Deferred-save/deferred-construction tests |
+| Cold file missing | Remove stale tab reference, preserve current run | Error plus other tabs / picker |
+| Cold header corrupt | Reject before live-to-legacy fallback can abort the source | Repair/recover file explicitly; select another session |
+| Cold journal owned elsewhere | Writer-lease error, preserve source | Close other writer; retry; read-only export remains available |
+| Runtime construction fails | Close newly opened manager | Retry without a leaked writer lease |
+| New tab creation fails while busy | Preserve active run and view | Retry after resolving error; no automatic source reset |
+| New tab creation fails while idle | Existing in-place new-session fallback | Focused controller test |
+| Shutdown wins before new runtime adoption | Dispose unattached runtime | Focused shutdown race test |
+| Warm journal disappears | Reattach existing runtime | No cold opener; subsequent persistence needs separate recovery |
+| Transcript retargeting fails | Focus controller restores previous input/event owner | Existing focus rollback contract |
+| Tabs clipped by short viewport | Invisible rows cannot be clicked | `/tab switch`, Ctrl+Tab, picker remain available |
+| Pointer hover / overflow | Hover highlight and clickable overflow arrows | Component contracts |
+| No live registry / cross-project target | Existing legacy transaction remains | Cross-project contract; may stop the source run by design |
+| Terminal lacks SGR mouse / inline UI | Keyboard and slash-command navigation | Physical emulator matrix still needs verification |
+
+### Additional findings discovered and addressed
+
+The evidence snippets below describe the pre-fix source observed during this batch. Locations name current functions; line numbers refer to current source unless a pre-fix line is explicitly identified.
+
+#### U07. Unbound live selection prevents real mouse and New session navigation
+
+- **Severity:** High. **Effort:** S. **Status:** Implemented and terminal-tested.
+- **Location:** `packages/coding-agent/src/modes/controllers/selector-controller.ts:2188`, `#handleLiveResume`; `packages/coding-agent/src/modes/controllers/command-controller.ts:1088`, `#runNewLiveSessionFlow` (both under `packages/coding-agent/`).
+- **Evidence:** pre-fix `const selectMainSession = this.ctx.selectMainSession!; await selectMainSession(selection.session);`; execution raised `undefined is not an object (evaluating 'this.session')` in the real mode.
+- **Recommendation / implementation:** call `this.ctx.selectMainSession!(...)` through its owning context. Retain terminal-driven regressions covering both existing and new tabs.
+
+#### Q09. Mutable extension-root inheritance recurses into the selected child
+
+- **Severity:** High. **Effort:** S. **Status:** Implemented and terminal-tested.
+- **Location:** `packages/coding-agent/src/session/live-session-factory.ts:66`, `liveSessionFactoryOptions`.
+- **Evidence:** pre-fix `extensionRoots: () => source.session.effectiveExtensionRoots`; after selection changed `source.session`, accessing the child's effective roots repeatedly reentered that callback until stack exhaustion.
+- **Recommendation / implementation:** capture `const parent = source.session` once; the callback uses `parent.effectiveExtensionRoots`. Preserve dynamic policy within that parent without following the mutable UI pointer.
+
+#### U08. Navigation transactions overlap and identical New clicks can create duplicates
+
+- **Severity:** High. **Effort:** M. **Status:** Implemented for InteractiveMode resume/new entry points.
+- **Location:** `packages/coding-agent/src/modes/interactive-mode.ts`, `#queueSessionNavigation`, `handleResumeSession`, `handleClearCommand` (around lines 5800 and 6140).
+- **Evidence:** pre-fix handlers independently awaited settings/open/view updates with no shared transaction queue; the outer resume disposed controllers before `handleResumeSession` returned its success flag. Deferred settings and runtime-construction tests exercise overlapping requests.
+- **Recommendation / implementation:** one shared Serial queue with request generations and same-target coalescing; dispose old controllers only after committed transitions. Keep failed views intact. Direct SDK switch callers and other operations such as fork/move still need a separate concurrency review.
+
+#### U09. Hidden workspace tabs retain clickable coordinates
+
+- **Severity:** Medium. **Effort:** S. **Status:** Implemented and tested.
+- **Location:** `packages/coding-agent/src/modes/composer.ts`, `#renderWorkspace`; `packages/coding-agent/src/modes/components/session-tab-strip.ts:54`, `renderWorkspace`, and `:94`, `clickWorkspace` (under `packages/coding-agent/`).
+- **Evidence:** pre-fix composer rendered the tab bar, then returned only `after.slice(-rows)` when the editor/status consumed the viewport; `tabAt` still held the tab zones. The regression clips all tab rows and verifies no session selection occurs.
+- **Recommendation / implementation:** pass the remaining row budget into the tab strip; constrain click/hover tests to visible rows. The 24-column/four-row terminal test verifies command navigation remains usable.
+
+#### U10. New-tab failure silently falls back to resetting an active source
+
+- **Severity:** High. **Effort:** S. **Status:** Implemented and tested.
+- **Location:** `packages/coding-agent/src/modes/controllers/command-controller.ts:1054`, `#runNewLiveSessionFlow`.
+- **Evidence:** pre-fix catch always called `this.ctx.session.newSession(options)` after factory failure. The existing live-tab fixture has `isStreaming: true`; the revised regression verifies no newSession/abort call on that failure.
+- **Recommendation / implementation:** reserve the in-place fallback for idle runtimes; active/compacting/bash/eval/pending-work/approval cases retain the source and report retry guidance. Route live New before legacy compaction teardown.
+
+#### Q10. Runtime construction failure leaks an acquired journal writer
+
+- **Severity:** Medium. **Effort:** S. **Status:** Implemented and tested.
+- **Location:** `packages/coding-agent/src/session/live-session-factory.ts:91`, `openLiveAgentSession`.
+- **Evidence:** a manager was opened before `await createSession(...)`, without a failure cleanup path. The new test throws from creation, then reopens the same file for writing and verifies unchanged committed history.
+- **Recommendation / implementation:** close the manager on construction failure, log cleanup errors, rethrow the original failure. This does not establish complete cleanup of every partially constructed SDK resource.
+
+#### U11. Overflow arrows are inert and workspace tabs lack pointer feedback
+
+- **Severity:** Low. **Effort:** S. **Status:** Implemented and tested.
+- **Location:** `packages/coding-agent/src/modes/components/session-tab-strip.ts:54`, `renderWorkspace` and `:85`, `hoverWorkspace`; `packages/coding-agent/src/modes/interactive-mode.ts`, workspace mouse input listener (under `packages/coding-agent/`).
+- **Evidence:** pre-fix arrow tabs were `{ id: 'hidden-before', muted: true }` / `'hidden-after'`; the mouse listener ignored motion. There was no selectable arrow target or hover update.
+- **Recommendation / implementation:** use adjacent hidden session paths as arrow targets; update hover only when the hit target changes, requesting one render. Ctrl+Tab and `/tab` remain keyboard alternatives.
+
+#### Q12. Shutdown before new-tab adoption leaves a standalone runtime unattached
+
+- **Severity:** Medium. **Effort:** S. **Status:** Implemented and tested.
+- **Location:** `packages/coding-agent/src/modes/controllers/command-controller.ts`, `#runNewLiveSessionFlow` around lines 1085–1106.
+- **Evidence:** pre-fix `live.adopt(fresh)` ran outside the guarded selection block. The regression disposes the registry before the opener resolves and verifies the fresh runtime is disposed exactly once and is never selected.
+- **Recommendation / implementation:** guard adoption and selection together; detach/dispose the unattached runtime on failure, retain the original error and log cleanup failure.
+
+### Remaining work from the holistic re-review
+
+- **Q04 remains open:** visible observers retain startup buses while tab factories create new buses. Resetting observer state does not prove event-bus retargeting; add a real background-subagent/todo/approval visibility contract before changing ownership.
+- **Q01 remains partial:** other storage backends, low-level writers, active directory migrations and revision guarantees remain as in Batch 3.
+- **Q11 remains open:** Windows temporary-directory bucket naming/migration needs an explicit compatibility decision and safe migration.
+- **[NEEDS VERIFICATION]:** typing/attachments during the exact asynchronous successful transcript attach window (failure-before-owner-change now has a regression), simultaneous direct SDK switches, rapid fork/move/delete mixed with navigation, focus changes during parked approvals, and physical Windows Terminal/tmux/SSH mouse protocols. Existing tests establish selected contracts, not every possible interleaving.
+- **[NEEDS VERIFICATION]:** SDK resources created before a factory throws may need cleanup beyond the session manager; inspect partial MCP/extension/subprocess construction in `createAgentSession`.
+- Continue performance work with real input-to-paint measurements and asynchronous documentation retrieval; the source-index callback probe remains the only numeric responsiveness result. No latency claim is inferred from test duration or screenshots.
+
+## Implementation Ledger — 2026-10-01, Batch 3
+
+### Delivered
+
+- **Q01, partial:** `SessionManager` now holds a canonical native file lease for writable `FileSessionStorage` sessions before reading or publishing history. Competing owners get an actionable error. Process death releases ownership. Read-only snapshots are available through `SessionManager.open(..., { readOnly: true })`; sharing/export use them. Closed writers and restored snapshots compare filesystem revision metadata before reacquiring ownership, preventing ordinary stale rewrites. Failed opens release leases; orphan-backup recovery observes the same lease. Journal aliases resolve to their physical path before replacement.
+- **P01/P07, partial:** source indexing loads its cache lazily, refreshes edits/deletions/additions, reads files asynchronously with four concurrent reads, coalesces overlapping refreshes, supports per-caller cancellation and reports progress. Unchanged content and cache serialization are reused. Search results retain their correct relative source paths. Sources above 2 MiB, dependency/build directories, and caches above 16 MiB are excluded. Invalid queries/limits fail before scanning. Malformed cached declarations cause that file to be reindexed.
+- Central glob exclusions compile once per request; an already-aborted empty scan rejects. Append/rollback failures retain the underlying write error in their surfaced message.
+
+### Verification and measured limits
+
+Latest focused run: **23 tests passed, zero failed, 73 assertions** across writer ownership, native locks, backup recovery, symbol refresh, workspace jail and glob cancellation. Earlier targeted runs also exercised session moves, titles, late bash ownership, atomic replacement and close races. Coding-agent type checking and lint, and utility type checking passed during this batch; final verification is recorded below if it differs.
+
+A broader 319-test run initially had six failures: three backup-path failures were subsequently fixed and retested; three Windows temporary-directory bucket expectations remain unresolved. Full package formatting gates remain blocked by the previously recorded 58 coding-agent files and four utility files. These are not claimed green.
+
+Reproducible probe: `bun packages/coding-agent/bench/code-index-refresh.ts`, 500 synthetic source files, Windows/Bun 1.4.2. This measures scheduled callback delay, **not terminal input-to-paint or whole-agent latency**:
+
+| Operation | Total wall time | Scheduled callback delay |
+| --- | ---: | ---: |
+| Reproduced synchronous cold I/O pattern | 113.63 ms | 113.72 ms |
+| Actual asynchronous cold search | 256.76 ms | 2.56 ms |
+| Actual unchanged asynchronous search | 189.73 ms | 1.35 ms |
+
+Responsiveness improved in this probe while total search throughput decreased. No 100× UI or agent speed claim is established. Sequential searches still glob/stat the workspace; exclusions filter walker results rather than necessarily pruning traversal. Symbol parsing, ranking, jail checks and documentation retrieval still perform synchronous work. Next performance step: profile actual large repositories and terminal input-to-paint; add safely invalidated workspace generations/watchers before removing freshness checks.
+
+### Remaining boundaries and next work
+
+File ownership does not cover SQLite/Redis/custom storage, direct low-level storage writers, uncooperative external programs, hard-link aliases or active session-directory migrations. Revision checks use inode/size/time metadata, not cryptographic compare-and-swap. Read-only mode suppresses journal persistence and draft consumption; it is not a filesystem sandbox for every explicit auxiliary API. Q01 remains partial until these contracts are addressed. CodeIndex indexing/search APIs now return promises; external callers must await them.
+
+**Q11 — Medium, effort M: Windows temporary-session bucket precedence (open).** Location: `packages/coding-agent/src/session/session-paths.ts:77`, `getDefaultSessionDirName` (home branch precedes temporary-root branch). Evidence: `if (homeRelative === "" || ...) { scope = "home"; } else if (tempRelative === "" || ...) { scope = "tmp"; }`; when `os.tmpdir()` lies beneath `os.homedir()`, the home branch matches first; three `session-manager/file-operations.test.ts` expectations for temporary buckets fail. Recommendation: establish the intended precedence, migrate existing home-encoded temporary buckets without stranding history, and protect migrations from active writers. [NEEDS VERIFICATION] Test existing installations and migration collisions before changing the bucket naming policy.
+
+## Implementation Ledger — 2026-10-01, Batch 1
+
+The user subsequently authorized implementation. The original audit below remains a historical record; its line numbers and unresolved labels must be reconciled against this ledger and the current source. Implementation began from a clean checkout at `90e621e0cff3c05ee0cee0ab48f9cc906a4c1967`. No commits, external deployment, model installation, or live remote mutations were performed.
+
+| Finding / scope | Implemented change | Verification and remaining limits |
+| --- | --- | --- |
+| I01 — collaboration authorization | `src/collab/host.ts` now restricts snapshots, transcripts and controls to the exact shared root registration and its non-advisor descendants. Session/root replacement ends sharing. `src/registry/agent-lifecycle.ts` accepts an expected registration when reviving to prevent generation races. Paths in this table are relative to `packages/coding-agent/` unless stated otherwise. | Encrypted relay tests cover unrelated roots, nested descendants, advisors, cyclic/orphan ancestry, read-only transcript access, denied mutations and root replacement. Lifecycle tests cover replacement identity. Other relay deployments/platforms remain unassessed. |
+| I02 — MCP uncertain delivery | `src/mcp/tool-bridge.ts` automatically replays only transport-confirmed connection-stage failures before dispatch. Lost responses after a possible remote commit surface `outcomeUnknown` and instructions to check remote state. Server idempotency hints alone do not authorize replay. | Eager/deferred tests simulate a committed action followed by EOF, pre-dispatch recovery, connection acquisition failure and send reset. No real external server mutations were used. Generic untyped failures may still lack an unknown-outcome marker; authentication recovery remains a separate path to review. |
+| F03 — verification grounding | `src/core/agent-session.ts` no longer records a successful command during preflight. `src/session/agent-session.ts` grounds completed results using final executed arguments, exit status and text diagnostics, excluding background jobs still running. | Real session hook test covers blocked checks, exit-zero failure diagnostics, modified arguments, background execution and successful completion. Command-recognition heuristics and F04 read/range provenance remain open. |
+| Q03 — session settings, partial | Tool gating and completion receive the owning session's settings in `src/core/agent-session.ts`, `src/session/agent-session.ts`, and `src/session/unexpected-stop-classifier.ts`. | Two-session test proves enabled/disabled policy isolation and fail-closed approval. The global client/base-URL ownership and other decision consumers still require review; this does not close all configuration ownership issues. |
+| Q05 — automatic code-index paths; P02 — map copying, partial | `src/core/harvest/code-index.ts` uses the existing workspace jail for source and cache paths, reads/writes validated resolved paths and rejects symlink escapes. Per-file updates mutate one map entry instead of copying the growing map. Explicit updates remove deleted files. | Tests verify a symlinked cache neither leaks nor overwrites external content, reject external/linked source files and remove an explicitly refreshed deleted file. Synchronous scans/cache I/O, stale search hits without refresh, cache schema validation and general filesystem races remain open. No scan-speed benchmark is claimed. |
+| UI input latency | `packages/tui/src/tui.ts` promotes a queued background repaint when focused input changes state, bypassing animation adaptive delay while preserving frame cadence, interruption grace and terminal-output backpressure. | A virtual-clock regression failed before the fix at 100 ms scheduling delay and passes after the fix within one 33.33 ms frame budget. This measures scheduler delay only; it does not establish real terminal end-to-end latency or a general 100× improvement. Existing animation, input and output-backpressure tests pass. |
+| Verification blockers | Restored the missing `EXPECTED_LAYA_MODEL_ID` import in `src/core/harvest/laya-service.ts`, removed unused imports, corrected two test declarations and formatted affected TUI files. | Coding-agent type check and lint pass. TUI full package check passes. Coding-agent full package check remains blocked by 58 existing formatting violations outside this batch; no full-suite or Rust/Python verification is claimed. |
+
+**Combined verification:** 85 coding-agent tests across nine files passed (342 assertions), plus 26 TUI tests across five files (86 assertions): **111 passed, zero failed**. Commands used focused `bun test` paths; package gates used `bun --cwd=packages/tui run check`, `bun --cwd=packages/coding-agent run lint`, and `bun --cwd=packages/coding-agent run check:types`. The full coding-agent `check` was attempted and failed at its formatting stage.
+
+**Next implementation sequence:** (1) bound and preserve complete Laya gating evidence, requiring approval when essential arguments cannot be represented; (2) validate sidecar decision response contracts and fix queue/deadline ownership before expanding autonomy; (3) resolve session writer ownership/races; (4) make indexing asynchronous and incremental; (5) measure terminal input-to-paint and animation frame time with large histories, active streaming, multiple tabs, slow output, resize and interruption before choosing further UI optimizations. Use the original acceptance criteria and remaining findings below; do not treat this first batch as completion of the entire audit.
+
 ## Executive Summary
+
+### Implementation Ledger — 2026-10-01, Batch 2
+
+- **L11 — complete tool-gating evidence:** `packages/coding-agent/src/core/harvest/laya-gating.ts`, `sanitizeGatingArgs` / `checkToolCallGating`, preserves nested JSON arguments and array entries rather than replacing objects or silently truncating commands. Evidence is bounded to 256 nodes, depth 8, 2,048 characters per string and 8,192 aggregate key/value characters. Unsupported, cyclic, oversized or accessor-based evidence requires approval with `fallback_incomplete_gating_evidence` and no inference call. These are resource caps, not a new classifier-risk threshold. Large legitimate writes can consequently require human review. The gating prompt now lives in `src/prompts/laya/tool-gating.md`.
+- **L13 — decision validation, partial:** `packages/coding-agent/src/core/harvest/laya-client.ts`, `isValidDecisionResponse` / `decide`, validates envelope, requested answer presence, matching type, confidence/probability ranges, choice membership and ordinal score range. Invalid batches return `invalid_decision_response` without exposing answers. The intentional non-English empty-answer fallback is preserved. HTTP response byte caps, full distribution consistency, checkpoint identity and remaining request/config validation still require review; this is not complete closure of L13.
+- **L01 — inference admission and capacity:** `decision-sidecar/inference_scheduler.py`, `InferenceScheduler.run`, bounds waiting admission to eight requests and active work to the configured concurrency. A single request budget covers queue wait and prediction. Shielded thread work retains capacity after timeout/cancellation until actual completion, and late exceptions are retrieved. `decision-sidecar/server.py`, `decide`, maps queue saturation to 503, expiration to 504, validates `metadata.request_timeout_ms` and checks disconnection before dispatch. The TS client forwards its remaining timeout. Both bundle construction and materialization lists include the scheduler module. A running Torch operation still cannot be forcibly cancelled; a permanently stuck operation requires restart. Queue disconnection is checked at dispatch, rather than continuously polled, and callers without a request budget still use the server's configured timeout. Absolute deadline propagation across HTTP transit and production hardware stress remain unverified.
+
+**Batch verification:** 29 TypeScript tests across six focused Laya files passed (96 assertions); 32 Python sidecar/scheduler tests passed using fake inference, with no checkpoint download or live model launch. The contracts include hidden destructive tails, nested access changes, malformed HTTP decisions, caller cancellation, queue exhaustion, no dispatch after queued deadline, slot retention after timeout, disconnected pre-dispatch callers and bundled payload materialization. Coding-agent lint and type checking pass. New scheduler Python files pass focused Ruff checks; Ruff currently reports 45 findings in the existing server/test files, mainly import/style and deprecated typing conventions, so these files are not claimed lint-clean. The sidecar remains outside the root Python gate's `python/` scope. Full hardware/model latency, training/calibration quality and real terminal performance have not been measured in this batch. Existing full coding-agent formatting blockers from Batch 1 remain.
+
+**Next:** session-writer ownership and stale whole-file rewrites (Q01), followed by asynchronous incremental indexing and measured UI input-to-paint/frame budgets. Preserve the uncompleted audit items below.
 
 1. **Critical — I01:** Collaboration transcript/control authorization uses the process-global registry rather than the shared root.
 2. **High — I02:** MCP reconnect can replay a mutation whose remote effect already committed.
@@ -1826,19 +2001,19 @@ export function createMarkdownBrain(workspaceRoot: string, agentDir: string, inc
 
 ## 6. Master List: All Missing or Incorrect Items
 
-**59 finding records; 58 open/proposed/current follow-up items and one addressed original finding.** Open severity distribution: 36 Medium, 18 High, 3 Low, 1 Critical. These are granular observations/proposals with overlapping root causes, not 58 independently reproduced production bugs. The table includes current source status; acceptance criteria above control implementation.
+**59 original finding records plus nine additional records from implementation review.** Original severity counts are historical; implementation statuses below and the ledgers take precedence. Records include proposals, verification gaps and overlapping root causes, rather than 68 independently reproduced production bugs.
 
 | ID | Severity | Item | Effort | Current evidence/state |
 | --- | --- | --- | --- | --- |
 | F01 | Medium | [Documented Laya model and specialist routing has no production caller](#f01-documented-laya-model-and-specialist-routing-has-no-production-caller) | M | Open / proposed / verify as detailed |
 | F02 | Medium | [Several Harvest facades exist without integration into the real lifecycle](#f02-several-harvest-facades-exist-without-integration-into-the-real-lifecycle) | M | Open / proposed / verify as detailed |
-| F03 | High | [Grounding records successful verification before the command executes](#f03-grounding-records-successful-verification-before-the-command-executes) | M | Open / proposed / verify as detailed |
+| F03 | High | [Grounding records successful verification before the command executes](#f03-grounding-records-successful-verification-before-the-command-executes) | M | Implemented verification grounding; Batch 1 tests |
 | F04 | Medium | [Pre-read eligibility is recorded before a read succeeds](#f04-pre-read-eligibility-is-recorded-before-a-read-succeeds) | M | Open / proposed / verify as detailed |
-| F05 | Medium | [Symbol search can return stale or deleted code indefinitely](#f05-symbol-search-can-return-stale-or-deleted-code-indefinitely) | M | Open / proposed / verify as detailed |
+| F05 | Medium | [Symbol search can return stale or deleted code indefinitely](#f05-symbol-search-can-return-stale-or-deleted-code-indefinitely) | M | Implemented source-symbol freshness; Batch 3 tests |
 | F06 | Low | [Search Code advertises AST and language breadth beyond its parser](#f06-search-code-advertises-ast-and-language-breadth-beyond-its-parser) | M | Open / proposed / verify as detailed |
 | F07 | Medium | [Production Harvest role is initialized without the task and remains fixed](#f07-production-harvest-role-is-initialized-without-the-task-and-remains-fixed) | M | Open / proposed / verify as detailed |
-| I01 | Critical | [Collaboration authorization escapes the shared root](#i01-collaboration-authorization-escapes-the-shared-root) | M | Open / proposed / verify as detailed |
-| I02 | High | [MCP reconnect can replay a committed external mutation](#i02-mcp-reconnect-can-replay-a-committed-external-mutation) | M | Open / proposed / verify as detailed |
+| I01 | Critical | [Collaboration authorization escapes the shared root](#i01-collaboration-authorization-escapes-the-shared-root) | M | Implemented shared-root scope; Batch 1 tests |
+| I02 | High | [MCP reconnect can replay a committed external mutation](#i02-mcp-reconnect-can-replay-a-committed-external-mutation) | M | Implemented uncertain-delivery handling; Batch 1 tests |
 | I03 | High | [All MCP tools are assigned one write approval tier](#i03-all-mcp-tools-are-assigned-one-write-approval-tier) | M | Open / proposed / verify as detailed |
 | I04 | High | [Several network adapters buffer response bodies before enforcing limits](#i04-several-network-adapters-buffer-response-bodies-before-enforcing-limits) | M | Open / proposed / verify as detailed |
 | I05 | High | [Native fallback still breaks vector recall and memory clustering](#i05-native-fallback-still-breaks-vector-recall-and-memory-clustering) | M | Open / proposed / verify as detailed |
@@ -1848,9 +2023,9 @@ export function createMarkdownBrain(workspaceRoot: string, agentDir: string, inc
 | I09 | Medium | [Provider gateway adapters drop response metadata they cannot represent](#i09-provider-gateway-adapters-drop-response-metadata-they-cannot-represent) | M | Open / proposed / verify as detailed |
 | I10 | Medium | [Search constraints can be relaxed while answer and citations stay unfiltered](#i10-search-constraints-can-be-relaxed-while-answer-and-citations-stay-unfiltered) | M | Open / proposed / verify as detailed |
 | I11 | Medium | [Stats server reuse ignores the requested authentication policy](#i11-stats-server-reuse-ignores-the-requested-authentication-policy) | M | Open / proposed / verify as detailed |
-| L01 | High | [Sidecar deadlines do not bound actual inference capacity](#l01-sidecar-deadlines-do-not-bound-actual-inference-capacity) | M | Open / proposed / verify as detailed |
+| L01 | High | [Sidecar deadlines do not bound actual inference capacity](#l01-sidecar-deadlines-do-not-bound-actual-inference-capacity) | M | Implemented bounded queue/deadline ownership; Batch 2 tests; hardware verification pending |
 | L02 | High | [Pruning decisions are permanent positional entries without lifecycle invalidation](#l02-pruning-decisions-are-permanent-positional-entries-without-lifecycle-invalidation) | M | Open / proposed / verify as detailed |
-| L03 | High | [Shipped confidence calibration does not establish safe coding-tool decisions](#l03-shipped-confidence-calibration-does-not-establish-safe-coding-tool-decisions) | L | Open / proposed / verify as detailed |
+| L03 | High | [Shipped confidence calibration does not establish safe coding-tool decisions](#l03-shipped-confidence-calibration-does-not-establish-safe-coding-tool-decisions) | L | Partial response validation; Batch 2; remaining contracts open |
 | L04 | Medium | [Schema defaults mask hardware-derived auto configuration](#l04-schema-defaults-mask-hardware-derived-auto-configuration) | M | Open / proposed / verify as detailed |
 | L05 | Medium | [Default shadow subagent selection sits on the dispatch critical path](#l05-default-shadow-subagent-selection-sits-on-the-dispatch-critical-path) | M | Open / proposed / verify as detailed |
 | L06 | High | [Relevance pruning uses the first user request after the task changes](#l06-relevance-pruning-uses-the-first-user-request-after-the-task-changes) | M | Open / proposed / verify as detailed |
@@ -1868,20 +2043,20 @@ export function createMarkdownBrain(workspaceRoot: string, agentDir: string, inc
 | L18 | Medium | [Shadow caller agreement is stored as ground truth](#l18-shadow-caller-agreement-is-stored-as-ground-truth) | M | Open / proposed / verify as detailed |
 | L19 | Medium | [Per-turn Laya latency setting is advisory rather than a shared admission budget](#l19-per-turn-laya-latency-setting-is-advisory-rather-than-a-shared-admission-budget) | M | Open / proposed / verify as detailed |
 | L20 | Medium | [Request caps apply after FastAPI has parsed the request body](#l20-request-caps-apply-after-fastapi-has-parsed-the-request-body) | M | Open / proposed / verify as detailed |
-| P01 | High | [A search miss synchronously scans and reads the whole workspace](#p01-a-search-miss-synchronously-scans-and-reads-the-whole-workspace) | M | Open / proposed / verify as detailed |
-| P02 | Medium | [Building the code index repeatedly copies the growing file map](#p02-building-the-code-index-repeatedly-copies-the-growing-file-map) | S | Open / proposed / verify as detailed |
+| P01 | High | [A search miss synchronously scans and reads the whole workspace](#p01-a-search-miss-synchronously-scans-and-reads-the-whole-workspace) | M | Partial asynchronous source indexing; sync parsing/jail/docs and full fingerprint walks remain |
+| P02 | Medium | [Building the code index repeatedly copies the growing file map](#p02-building-the-code-index-repeatedly-copies-the-growing-file-map) | S | Implemented map mutation and unchanged cache-write avoidance; Batch 1/3 |
 | P03 | Medium | [Serial tool preflight accumulates one awaited gating call per high-risk tool](#p03-serial-tool-preflight-accumulates-one-awaited-gating-call-per-high-risk-tool) | M | Open / proposed / verify as detailed |
 | P04 | Medium | [Brain reranking repeats another serial sidecar call before provider requests](#p04-brain-reranking-repeats-another-serial-sidecar-call-before-provider-requests) | M | Open / proposed / verify as detailed |
 | P05 | Medium | [Search failover restarts the full provider timeout for every candidate](#p05-search-failover-restarts-the-full-provider-timeout-for-every-candidate) | M | Open / proposed / verify as detailed |
 | P06 | Medium | [Metaharness broadcasts without slow-client backpressure limits](#p06-metaharness-broadcasts-without-slow-client-backpressure-limits) | M | Open / proposed / verify as detailed |
 | P07 | Medium | [Retrieval recomputes term statistics, and read preflight duplicates whole-file hashing](#p07-retrieval-recomputes-term-statistics-and-read-preflight-duplicates-whole-file-hashing) | M | Open / proposed / verify as detailed |
-| Q01 | High | [Multiple writable session owners can lose history on stale rewrite](#q01-multiple-writable-session-owners-can-lose-history-on-stale-rewrite) | M | Open / proposed / verify as detailed |
+| Q01 | High | [Multiple writable session owners can lose history on stale rewrite](#q01-multiple-writable-session-owners-can-lose-history-on-stale-rewrite) | M | Partial file-backed ownership and stale snapshots; Batch 3; other backends/migrations open |
 | Q02 | Medium | [Runtime diagnostics still use console output](#q02-runtime-diagnostics-still-use-console-output) | S | Open / proposed / verify as detailed |
-| Q03 | High | [Gating and completion do not receive the owning tab's settings](#q03-gating-and-completion-do-not-receive-the-owning-tabs-settings) | M | Open / proposed / verify as detailed |
+| Q03 | High | [Gating and completion do not receive the owning tab's settings](#q03-gating-and-completion-do-not-receive-the-owning-tabs-settings) | M | Implemented owner settings; Batch 1; global sidecar URL separate/open |
 | Q04 | Medium | [Live tab creation uses fresh buses but visible observers stay on startup buses](#q04-live-tab-creation-uses-fresh-buses-but-visible-observers-stay-on-startup-buses) | M | Open / proposed / verify as detailed |
-| Q05 | High | [Code-index cache mutations do not use the workspace jail](#q05-code-index-cache-mutations-do-not-use-the-workspace-jail) | M | Open / proposed / verify as detailed |
+| Q05 | High | [Code-index cache mutations do not use the workspace jail](#q05-code-index-cache-mutations-do-not-use-the-workspace-jail) | M | Implemented cache/source jail; Batch 1/3 tests |
 | Q06 | Medium | [Model/provider policy remains hard-coded outside KDL](#q06-modelprovider-policy-remains-hard-coded-outside-kdl) | M | Open / proposed / verify as detailed |
-| Q07 | Medium | [Regression coverage does not yet establish the cross-component contracts in this report](#q07-regression-coverage-does-not-yet-establish-the-cross-component-contracts-in-this-report) | M | Open / proposed / verify as detailed |
+| Q07 | Medium | [Regression coverage does not yet establish the cross-component contracts in this report](#q07-regression-coverage-does-not-yet-establish-the-cross-component-contracts-in-this-report) | M | Partial new contract coverage; broader original gaps remain |
 | Q08 | Medium | [Untyped boundaries conceal integration contracts and unsafe payload shapes](#q08-untyped-boundaries-conceal-integration-contracts-and-unsafe-payload-shapes) | M | Open / proposed / verify as detailed |
 | U01 | High | [RPC convenience waits hang for local-only prompts or already-idle agents](#u01-rpc-convenience-waits-hang-for-local-only-prompts-or-already-idle-agents) | M | Open / proposed / verify as detailed |
 | U02 | High | [RPC abort is queued behind long ordinary commands](#u02-addressed-in-current-source rpc-abort-is-queued-behind-long-ordinary-commands) | M | Source fix present; verify |
@@ -1889,8 +2064,27 @@ export function createMarkdownBrain(workspaceRoot: string, agentDir: string, inc
 | U04 | Medium | [RPC event collection and immediate-command admission remain unbounded](#u04-rpc-event-collection-and-immediate-command-admission-remain-unbounded) | M | Open / proposed / verify as detailed |
 | U05 | Medium | [Authenticated dashboards have no matching browser credential flow](#u05-authenticated-dashboards-have-no-matching-browser-credential-flow) | M | Open / proposed / verify as detailed |
 | U06 | Medium | [Markdown brain lacks independent retrieval scope and rerank controls](#u06-markdown-brain-lacks-independent-retrieval-scope-and-rerank-controls) | M | Open / proposed / verify as detailed |
+| U07 | High | Unbound live selection breaks real terminal navigation | S | Implemented; Batch 4 terminal tests |
+| Q09 | High | Extension inheritance recurses through mutable selected session | S | Implemented; Batch 4 terminal tests |
+| U08 | High | Overlapping navigation / duplicate New session requests | M | Implemented for resume/new; SDK/mixed operations need review |
+| U09 | Medium | Clipped tabs remain clickable | S | Implemented; Batch 4 viewport tests |
+| U10 | High | Factory failure resets an active source | S | Implemented; busy/idle fallback tests |
+| Q10 | Medium | Failed runtime construction retains journal ownership | S | Implemented; failed-construction reopen test |
+| U11 | Low | Inert overflow arrows / missing hover feedback | S | Implemented; Batch 4 component tests |
+| Q12 | Medium | Shutdown race leaks unattached new runtime | S | Implemented; shutdown-before-adoption test |
+| Q11 | Medium | Windows temporary bucket precedence / migration | M | Open; Batch 3 evidence; compatibility verification required |
 
 ## 7. Prioritized Recommendations
+
+### Current next actions after Batch 4
+
+1. Resolve Q04 observer/event-bus ownership using real tab, subagent, todo and parked-approval contracts.
+2. Decide Q11 Windows bucket precedence and implement compatibility migration guarded against active journal writers.
+3. Extend Q01 to other storage backends and direct SDK concurrency; keep busy runs intact on recovery failure.
+4. Profile actual terminal input-to-paint and workspace refresh throughput; safely reuse unchanged workspace generations and make documentation retrieval asynchronous.
+5. Continue the original Laya backlog: latest-task goals, pruning-cache invalidation, aggregate budgets and outcome-based calibration. Preserve fail-closed gating.
+
+### Original audit action plan (historical; reconcile with current statuses)
 
 Before any implementation, inspect `git status` and the concurrent patches. This audit does not authorize overwriting another agent's work or committing. Reproduce the specific consumer contract, fix one logical issue, then stop optional testing once that contract and required gate are established.
 

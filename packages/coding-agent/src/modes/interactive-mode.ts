@@ -53,6 +53,7 @@ import {
 	postmortem,
 	prompt,
 	sanitizeText,
+	Serial,
 	setProjectDir,
 } from "@harvest/pi-utils";
 import chalk from "@harvest/pi-utils/chalk";
@@ -567,6 +568,9 @@ export function renderSubagentHudLines(sessions: ObservableSession[], columns: n
 const CTRL_L_APPEARANCE_RESPONSE_DEADLINE_MS = 2000;
 
 export class InteractiveMode implements InteractiveModeContext {
+	readonly #sessionNavigation = new Serial();
+	#sessionNavigationGeneration = 0;
+	#sessionNavigationIntent: { key: string; generation: number; promise: Promise<void> } | undefined;
 	#ownsStartedUi: boolean;
 	session: AgentSession;
 	sessionManager: SessionManager;
@@ -1391,6 +1395,7 @@ export class InteractiveMode implements InteractiveModeContext {
 						this.composer.scrollWorkspaceWheel(event.wheel);
 						return true;
 					}
+					if (event.motion && sessionTabStrip.hoverWorkspace(event.row, event.col)) this.ui.requestRender();
 					if (event.leftClick) sessionTabStrip.clickWorkspace(event.row, event.col);
 					return true;
 				});
@@ -5791,17 +5796,30 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#hidePlanReview();
 	}
 
-	async handleClearCommand(): Promise<void> {
+	handleClearCommand(): Promise<void> {
+		return this.#queueSessionNavigation("new", () => this.#clearSessionView());
+	}
+
+	async #clearSessionView(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
 		const previousFile = this.sessionManager.getSessionFile();
 		const previousId = this.sessionManager.getSessionId();
 		this.viewStateStore.saveDraft(previousId, this.editor);
 		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
-		this.#prepareSessionSwitch();
-		await this.#commandController.handleClearCommand();
-		this.composer.resetWorkspaceScroll();
-		this.#restoreSessionView();
-		await this.#selectorController.recordSessionTransition(previousFile);
+		try {
+			await this.#commandController.handleClearCommand();
+			if (this.sessionManager.getSessionId() === previousId) return;
+			this.#prepareSessionSwitch();
+			this.#restoreSessionView();
+			await this.#selectorController.recordSessionTransition(previousFile);
+		} catch (error) {
+			this.showError(
+				`Couldn't start a session: ${error instanceof Error ? error.message : String(error)}. Retry New session or use /tab switch <number>.`,
+			);
+			if (this.sessionManager.getSessionId() !== previousId) this.#restoreSessionView();
+		} finally {
+			this.ui.requestRender();
+		}
 	}
 
 	/**
@@ -6120,7 +6138,30 @@ export class InteractiveMode implements InteractiveModeContext {
 		void this.#selectorController.showSessionSelector(source);
 	}
 
-	async handleResumeSession(sessionPath: string): Promise<void> {
+	handleResumeSession(sessionPath: string): Promise<void> {
+		return this.#queueSessionNavigation(`resume:${normalizePathForComparison(sessionPath)}`, () =>
+			this.#resumeSessionView(sessionPath),
+		);
+	}
+
+	#queueSessionNavigation(key: string, operation: () => Promise<void>): Promise<void> {
+		if (this.#sessionNavigationIntent?.key === key) return this.#sessionNavigationIntent.promise;
+		const generation = ++this.#sessionNavigationGeneration;
+		const promise = this.#sessionNavigation.run(async () => {
+			try {
+				if (generation !== this.#sessionNavigationGeneration) return;
+				await operation();
+			} finally {
+				if (this.#sessionNavigationIntent?.generation === generation) this.#sessionNavigationIntent = undefined;
+			}
+		});
+		this.#sessionNavigationIntent = { key, generation, promise };
+		return promise;
+	}
+
+	async #resumeSessionView(sessionPath: string): Promise<void> {
+		const current = this.sessionManager.getSessionFile();
+		if (current && normalizePathForComparison(current) === normalizePathForComparison(sessionPath)) return;
 		// Flush pending settings writes *before* disposing controllers or resetting
 		// observers: a save failure must leave the session, process project dir,
 		// and Settings in the source scope with all UI intact.
@@ -6130,16 +6171,25 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.showError(`Failed to save pending settings: ${err instanceof Error ? err.message : String(err)}`);
 			return;
 		}
-		this.#btwController.dispose();
-		this.#omfgController.dispose();
-		this.#cleanseController.dispose();
-		this.resetObserverRegistry();
 		const previousId = this.sessionManager.getSessionId();
 		this.viewStateStore.saveDraft(previousId, this.editor);
 		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
-		await this.#selectorController.handleResumeSession(sessionPath, { settingsFlushed: true });
-		this.composer.resetWorkspaceScroll();
-		this.#restoreSessionView();
+		try {
+			const switched = await this.#selectorController.handleResumeSession(sessionPath, { settingsFlushed: true });
+			if (!switched || this.sessionManager.getSessionId() === previousId) return;
+			this.#btwController.dispose();
+			this.#omfgController.dispose();
+			this.#cleanseController.dispose();
+			this.resetObserverRegistry();
+			this.#restoreSessionView();
+		} catch (error) {
+			this.showError(
+				`Couldn't switch sessions: ${error instanceof Error ? error.message : String(error)}. Retry the tab or use /tab switch <number>.`,
+			);
+			if (this.sessionManager.getSessionId() !== previousId) this.#restoreSessionView();
+		} finally {
+			this.ui.requestRender();
+		}
 	}
 
 	setFullscreen(enabled: boolean): void {

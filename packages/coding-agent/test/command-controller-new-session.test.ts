@@ -138,12 +138,12 @@ describe("CommandController new-session teardown", () => {
 });
 
 describe("CommandController live-tab new session", () => {
-	function makeLiveSession(id: string) {
+	function makeLiveSession(id: string, isStreaming = true) {
 		const abort = vi.fn(async () => {});
 		const dispose = vi.fn(async () => {});
 		const newSession = vi.fn(async () => true);
 		const session = {
-			isStreaming: true,
+			isStreaming,
 			isCompacting: false,
 			newSession,
 			sessionManager: {
@@ -166,8 +166,11 @@ describe("CommandController live-tab new session", () => {
 		return { session, abort, dispose, newSession };
 	}
 
-	function makeLiveHarness(openLiveSession?: (options: Record<string, unknown>) => Promise<AgentSession>) {
-		const current = makeLiveSession("current");
+	function makeLiveHarness(
+		openLiveSession?: (options: Record<string, unknown>) => Promise<AgentSession>,
+		isStreaming = true,
+	) {
+		const current = makeLiveSession("current", isStreaming);
 		const fresh = makeLiveSession("fresh");
 		const seen: Record<string, unknown>[] = [];
 		let presented = 0;
@@ -238,11 +241,33 @@ describe("CommandController live-tab new session", () => {
 	it("falls back to the in-place session when the factory fails", async () => {
 		const harness = makeLiveHarness(async () => {
 			throw new Error("no model resolved");
-		});
+		}, false);
 		await harness.controller.handleClearCommand();
 
 		expect(harness.current.newSession).toHaveBeenCalledTimes(1);
 		expect(harness.errors.join("\n")).toContain("falling back");
 		expect(harness.counts.status()).toBe(1);
+	});
+
+	it("preserves an active run when independent tab creation fails", async () => {
+		const harness = makeLiveHarness(async () => {
+			throw new Error("sidecar startup failed");
+		});
+		await harness.controller.handleClearCommand();
+		expect(harness.current.newSession).not.toHaveBeenCalled();
+		expect(harness.current.abort).not.toHaveBeenCalled();
+		expect(harness.selected).toEqual([]);
+		expect(harness.errors.join(" ")).toContain("still active");
+	});
+
+	it("closes an independent runtime when shutdown wins the race before adoption", async () => {
+		const harness = makeLiveHarness(async () => {
+			await harness.registry.dispose();
+			return harness.fresh.session;
+		});
+		await harness.controller.handleClearCommand();
+		expect(harness.fresh.dispose).toHaveBeenCalledTimes(1);
+		expect(harness.selected).toEqual([]);
+		expect(harness.errors.join(" ")).toContain("closed");
 	});
 });

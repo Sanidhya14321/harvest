@@ -37,6 +37,8 @@ describe("libkitty end-to-end", () => {
 		resetSettingsForTest();
 		tempDir = TempDir.createSync("@pi-libkitty-e2e-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
+		// These contracts exercise native scrollback, rather than the fullscreen workspace.
+		Settings.instance.set("tui.fullscreen", false);
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);
 		const model = modelRegistry.find("anthropic", "claude-sonnet-4-5");

@@ -49,6 +49,8 @@ Cursor behavior uses `CURSOR_MARKER` (not `getCursorPosition`). Focused componen
 
 ## Rendering constraints (terminal safety)
 
+Keyboard feedback keeps the normal frame cadence but can promote a queued background repaint ahead of the adaptive idle time caused by a previous slow frame. This avoids making typing/navigation wait for an animation's recovery window. Background streaming and animation still use adaptive throttling; output-backlog limits and the Ctrl+C/Escape input-drain grace remain in effect. This changes scheduling latency, not the cost of the frame itself.
+
 Your `render(width)` output must be terminal-safe:
 
 1. **Do not intentionally exceed `width` on any line**. The renderer truncates overwide non-image lines as a last-resort guard, but components should still return width-safe output.

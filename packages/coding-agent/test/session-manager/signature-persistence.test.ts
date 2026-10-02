@@ -74,7 +74,7 @@ describe("SessionManager signature persistence", () => {
 		const persistedBlob = await fs.readFile(path.join(getBlobsDir(), expectedBlobHash), "utf8");
 		expect(persistedBlob).toBe(largeImageUrl);
 
-		const reloaded = await SessionManager.open(session.getSessionFile()!);
+		const reloaded = await SessionManager.open(session.getSessionFile()!, undefined, undefined, { readOnly: true });
 		const reloadedUserEntry = reloaded
 			.getEntries()
 			.find(entry => entry.type === "message" && entry.message.role === "user");
@@ -151,7 +151,7 @@ describe("SessionManager signature persistence", () => {
 		await expect(fs.readFile(path.join(getBlobsDir(), contentHash))).resolves.toBeDefined();
 		await expect(fs.readFile(path.join(getBlobsDir(), detailHash))).resolves.toBeDefined();
 
-		const reloaded = await SessionManager.open(sessionFile);
+		const reloaded = await SessionManager.open(sessionFile, undefined, undefined, { readOnly: true });
 		const reloadedToolEntry = reloaded
 			.getEntries()
 			.find(entry => entry.type === "message" && entry.message.role === "toolResult");

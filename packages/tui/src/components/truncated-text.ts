@@ -26,7 +26,8 @@ export class TruncatedText implements Component {
 			textPreview: this.#text.slice(0, 120),
 			textLength: this.#text.length,
 			previewTruncated: this.#text.length > 120,
-			truncated: newlineIndex !== -1 || (this.#cachedWidth >= 0 && visibleWidth(replaceTabs(firstLine)) > availableWidth),
+			truncated:
+				newlineIndex !== -1 || (this.#cachedWidth >= 0 && visibleWidth(replaceTabs(firstLine)) > availableWidth),
 			paddingX: this.#paddingX,
 			paddingY: this.#paddingY,
 		};

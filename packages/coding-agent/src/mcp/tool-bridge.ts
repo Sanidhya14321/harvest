@@ -37,7 +37,7 @@ import type {
 export type MCPReconnect = (options?: { authChallenge?: MCPAuthChallenge }) => Promise<MCPServerConnection | null>;
 
 /**
- * Network-level and stale-session errors that warrant a reconnect + single retry.
+ * Network-level and stale-session errors that warrant connection recovery.
  * Conservative: only catches errors where the server is likely alive but the
  * connection object is stale (dead SSE, expired session, refused after restart).
  */
@@ -69,6 +69,18 @@ export function isRetriableConnectionError(error: unknown): boolean {
 	// Stale session (server restarted, old session ID is gone)
 	if (/^http (404|502|503):/.test(msg)) return true;
 	return RETRIABLE_PATTERNS.some(p => msg.includes(p));
+}
+
+/** Only transport-confirmed failures before dispatch permit automatic tool replay. */
+function canReplayToolCall(error: unknown): boolean {
+	return error instanceof MCPTransportError && error.stage === "connect" && isRetriableConnectionError(error);
+}
+
+function isUnknownToolOutcome(error: unknown): boolean {
+	if (error instanceof MCPTransportError) {
+		return error.stage !== "connect" && error.failure !== "json_rpc";
+	}
+	return isRetriableConnectionError(error);
 }
 
 type MCPToolArgs = NonNullable<MCPToolCallParams["arguments"]>;
@@ -191,6 +203,8 @@ export interface MCPToolDetails {
 	mcpToolName: string;
 	/** Whether the call resulted in an error */
 	isError?: boolean;
+	/** The server may have committed the action before its response was lost. */
+	outcomeUnknown?: boolean;
 	/** Raw content from MCP response */
 	rawContent?: MCPContent[];
 	/** Structured metadata from the MCP response */
@@ -322,11 +336,27 @@ function buildErrorResult(
 	mcpToolName: string,
 	provider?: string,
 	providerName?: string,
+	callWasAttempted = true,
 ): CustomToolResult<MCPToolDetails> {
 	const message = formatMCPToolFailure(error, serverName, mcpToolName);
+	const outcomeUnknown = callWasAttempted && isUnknownToolOutcome(error);
 	return {
-		content: [{ type: "text", text: message }],
-		details: { serverName, mcpToolName, isError: true, provider, providerName },
+		content: [
+			{
+				type: "text",
+				text: outcomeUnknown
+					? `${message}\nOutcome unknown: the server may have completed this action. It was not automatically repeated. Verify the remote state before trying again.`
+					: message,
+			},
+		],
+		details: {
+			serverName,
+			mcpToolName,
+			isError: true,
+			provider,
+			providerName,
+			...(outcomeUnknown ? { outcomeUnknown: true } : {}),
+		},
 		isError: true,
 	};
 }
@@ -616,7 +646,7 @@ export class MCPTool implements CustomTool<TSchema, MCPToolDetails> {
 			);
 		} catch (error) {
 			rethrowIfAborted(error, signal);
-			if (this.reconnect && isRetriableConnectionError(error)) {
+			if (this.reconnect && canReplayToolCall(error)) {
 				const newConn = await reconnectWithAbort(this.reconnect, signal);
 				if (newConn) {
 					// Rebind so subsequent calls on this instance use the fresh connection
@@ -744,7 +774,7 @@ export class DeferredMCPTool implements CustomTool<TSchema, MCPToolDetails> {
 				);
 			} catch (callError) {
 				rethrowIfAborted(callError, signal);
-				if (this.reconnect && isRetriableConnectionError(callError)) {
+				if (this.reconnect && canReplayToolCall(callError)) {
 					const newConn = await reconnectWithAbort(this.reconnect, signal);
 					if (newConn) {
 						const retryProvider = newConn._source?.provider ?? provider;
@@ -789,7 +819,7 @@ export class DeferredMCPTool implements CustomTool<TSchema, MCPToolDetails> {
 					}
 				}
 			}
-			return buildErrorResult(connError, this.serverName, this.tool.name, provider, providerName);
+			return buildErrorResult(connError, this.serverName, this.tool.name, provider, providerName, false);
 		}
 	}
 }

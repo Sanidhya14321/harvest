@@ -147,11 +147,13 @@ export async function globPaths(patterns: string | string[], options: GlobPathsO
 
 	const base = cwd ?? getProjectDir();
 	const allResults: string[] = [];
+	const excludeGlobs = effectiveExclude.map(pattern => new Glob(pattern));
 
 	// Combine timeout and abort signals
 	const timeoutSignal = timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined;
 	const combinedSignal =
 		signal && timeoutSignal ? AbortSignal.any([signal, timeoutSignal]) : (signal ?? timeoutSignal);
+	combinedSignal?.throwIfAborted();
 
 	for (const pattern of patternArray) {
 		const glob = new Glob(pattern);
@@ -172,8 +174,7 @@ export async function globPaths(patterns: string | string[], options: GlobPathsO
 			// Check exclusion patterns
 			const normalized = entry.replace(/\\/g, "/");
 			let excluded = false;
-			for (const excludePattern of effectiveExclude) {
-				const excludeGlob = new Glob(excludePattern);
+			for (const excludeGlob of excludeGlobs) {
 				if (excludeGlob.match(normalized)) {
 					excluded = true;
 					break;

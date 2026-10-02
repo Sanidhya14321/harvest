@@ -1,4 +1,5 @@
 import type { Model } from "@harvest/pi-ai";
+import { logger } from "@harvest/pi-utils";
 import { EventBus } from "../utils/event-bus";
 import type { MCPManager } from "../mcp";
 import type { AgentRegistry } from "../registry/agent-registry";
@@ -63,17 +64,18 @@ export interface LiveSessionSource {
  * when no model resolves so callers fall back to the legacy in-place flow.
  */
 export function liveSessionFactoryOptions(source: LiveSessionSource, sessionPath?: string): LiveSessionFactoryOptions {
-	const model = source.session.model ?? source.session.getAvailableModels()[0];
+	const parent = source.session;
+	const model = parent.model ?? parent.getAvailableModels()[0];
 	if (!model) throw new Error("Cannot open a live tab before a model is resolved");
 	return {
 		cwd: source.sessionManager.getCwd(),
 		sessionDir: source.sessionManager.getSessionDir(),
 		sessionPath,
-		settings: source.session.settings,
-		authStorage: source.session.modelRegistry.authStorage,
-		modelRegistry: source.session.modelRegistry,
+		settings: parent.settings,
+		authStorage: parent.modelRegistry.authStorage,
+		modelRegistry: parent.modelRegistry,
 		model,
-		extensionRoots: () => source.session.effectiveExtensionRoots,
+		extensionRoots: () => parent.effectiveExtensionRoots,
 		mcpManager: source.mcpManager,
 	};
 }
@@ -92,23 +94,32 @@ export async function openLiveAgentSession(options: OpenLiveSessionOptions): Pro
 		? await SessionManager.open(options.sessionPath, options.sessionDir)
 		: SessionManager.create(options.cwd, options.sessionDir);
 	const createSession = options.createSession ?? createAgentSession;
-	const { session } = await createSession({
-		cwd: options.cwd,
-		sessionManager,
-		settings,
-		authStorage: options.authStorage,
-		modelRegistry: options.modelRegistry,
-		model: options.model,
-		rebindModelAfterDiscovery: true,
-		hasUI: true,
-		agentId: options.agentId ?? `tab:${sessionManager.getSessionId()}`,
-		extensionRoots: options.extensionRoots,
-		preloadedExtensionPaths: options.preloadedExtensionPaths,
-		mcpManager: options.mcpManager,
-		enableMCP: options.enableMCP,
-		eventBus: options.eventBus ?? new EventBus(),
-		subagentEventBus: options.subagentEventBus,
-		agentRegistry: options.agentRegistry,
-	});
-	return session;
+	try {
+		const { session } = await createSession({
+			cwd: options.cwd,
+			sessionManager,
+			settings,
+			authStorage: options.authStorage,
+			modelRegistry: options.modelRegistry,
+			model: options.model,
+			rebindModelAfterDiscovery: true,
+			hasUI: true,
+			agentId: options.agentId ?? `tab:${sessionManager.getSessionId()}`,
+			extensionRoots: options.extensionRoots,
+			preloadedExtensionPaths: options.preloadedExtensionPaths,
+			mcpManager: options.mcpManager,
+			enableMCP: options.enableMCP,
+			eventBus: options.eventBus ?? new EventBus(),
+			subagentEventBus: options.subagentEventBus,
+			agentRegistry: options.agentRegistry,
+		});
+		return session;
+	} catch (error) {
+		try {
+			await sessionManager.close();
+		} catch (closeError) {
+			logger.warn("Failed to release unopened live session", { error: String(closeError) });
+		}
+		throw error;
+	}
 }

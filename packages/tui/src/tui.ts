@@ -772,6 +772,7 @@ export class TUI extends Container {
 	/** Longest wait for a CPR reply before the settled repaint falls back. */
 	static readonly #RESIZE_PROBE_TIMEOUT_MS = 200;
 	#inputRenderGraceUntilMs = 0;
+	#inputRenderRequested = false;
 	// A scale-`s` OSC 66 heading reserves `s - 1` rows, and the protocol
 	// caps `s` at 7. This bounds spacer lookups and supplies enough context
 	// above the resize viewport to classify every legal heading exactly.
@@ -1758,6 +1759,7 @@ export class TUI extends Container {
 		if (this.#stopped) return;
 		this.#prepareForcedRender(options?.clearScrollback === true);
 		this.#renderRequested = false;
+		this.#inputRenderRequested = false;
 		const start = this.#renderScheduler.now();
 		this.#lastRenderAt = start;
 		this.#doRender();
@@ -1780,6 +1782,23 @@ export class TUI extends Container {
 		if (this.#renderRequested) return;
 		this.#renderRequested = true;
 		this.#renderScheduler.scheduleImmediate(() => this.#scheduleRender());
+	}
+
+	/** Promote user feedback without dropping cadence, interrupt grace or output backpressure. */
+	#requestInputRender(): void {
+		if (this.#stopped) return;
+		if (!this.#inputRenderRequested) {
+			this.#inputRenderRequested = true;
+			if (this.#renderTimer) {
+				this.#renderTimer.cancel();
+				this.#renderTimer = undefined;
+			}
+			if (this.#renderRequested) {
+				this.#renderScheduler.scheduleImmediate(() => this.#scheduleRender());
+				return;
+			}
+		}
+		this.#requestOrdinaryRender();
 	}
 
 	#maybeDeferGhosttyInitialImagePaint(): boolean {
@@ -1845,7 +1864,10 @@ export class TUI extends Container {
 		// before we allow the follow-up render to fire. Capped so a
 		// pathological one-off spike doesn't lock the UI (#4145).
 		const adaptiveFloor = Math.min(TUI.#MAX_ADAPTIVE_RENDER_MS, this.#lastFrameCostMs * 2);
-		const adaptiveDelay = Math.max(0, adaptiveFloor - elapsed);
+		// A costly animation must not postpone typing/navigation by its full
+		// recovery window. Input still coalesces at the normal cadence; only
+		// background frames pay the adaptive idle time.
+		const adaptiveDelay = this.#inputRenderRequested ? 0 : Math.max(0, adaptiveFloor - elapsed);
 		const inputGraceDelay = Math.max(0, this.#inputRenderGraceUntilMs - now);
 		const delay = Math.max(cadenceDelay, adaptiveDelay, inputGraceDelay);
 		this.#renderTimer = this.#renderScheduler.scheduleRender(this.#runScheduledRender, delay);
@@ -1858,6 +1880,7 @@ export class TUI extends Container {
 	 */
 	#executeRender(): void {
 		if (this.#deferRenderForOutputBacklog()) return;
+		this.#inputRenderRequested = false;
 		const start = this.#renderScheduler.now();
 		this.#lastRenderAt = start;
 		this.#doRender();
@@ -1979,7 +2002,7 @@ export class TUI extends Container {
 				return;
 			}
 			focused.handleInput(data);
-			this.requestRender();
+			this.#requestInputRender();
 		}
 	}
 

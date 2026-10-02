@@ -8,14 +8,16 @@
  * are stubbed. One host/relay boots once and is reused; guest frames ride the
  * in-memory transport, so the suite stays fast and time-independent.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
+import * as path from "node:path";
 import { importRoomKey } from "@harvest/pi-coding-agent/collab/crypto";
 import { CollabHost } from "@harvest/pi-coding-agent/collab/host";
 import { COLLAB_PROTO, type CollabFrame, parseCollabLink } from "@harvest/pi-coding-agent/collab/protocol";
 import { CollabSocket } from "@harvest/pi-coding-agent/collab/relay-client";
 import type { InteractiveModeContext } from "@harvest/pi-coding-agent/modes/types";
-import { AgentRegistry } from "@harvest/pi-coding-agent/registry/agent-registry";
+import { type AgentRef, AgentRegistry } from "@harvest/pi-coding-agent/registry/agent-registry";
 import type { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
+import { TempDir } from "@harvest/pi-utils";
 import { installInMemoryRelay, uninstallInMemoryRelay } from "./helpers/in-memory-relay";
 
 // In-memory transport: FakeWebSocket + InMemoryRelay (see ./helpers/in-memory-relay)
@@ -146,10 +148,17 @@ async function joinAsGuest(link: string, name: string, writeTokenOverride?: stri
 const guestCleanups: (() => void)[] = [];
 let harness: HostHarness;
 let host: CollabHost;
+let sharedRoot: AgentRef;
 
 beforeAll(async () => {
 	installInMemoryRelay();
 	harness = makeHostContext();
+	sharedRoot = AgentRegistry.global().register({
+		id: "collab-shared-root",
+		displayName: "shared root",
+		kind: "main",
+		session: harness.ctx.session,
+	});
 	host = new CollabHost(harness.ctx);
 	// Port is irrelevant: the fake transport routes by the `role` query param.
 	await host.start("ws://localhost:8787");
@@ -166,6 +175,7 @@ afterAll(async () => {
 	// the host's socket holds its own FakeWebSocket/relay refs, so teardown still works.
 	uninstallInMemoryRelay();
 	await host.stop("test done");
+	AgentRegistry.global().unregister(sharedRoot.id, sharedRoot);
 });
 
 describe("collab read-only links", () => {
@@ -230,6 +240,7 @@ describe("collab read-only links", () => {
 		} as unknown as AgentSession;
 		const ref = registry.register({
 			id,
+			parentId: sharedRoot.id,
 			displayName: "remote kill",
 			kind: "sub",
 			session,
@@ -307,5 +318,108 @@ describe("collab read-only links", () => {
 		const reply = await guest.nextFrame();
 		expect(reply.t).toBe("error");
 		expect(prompts).toHaveLength(0);
+	});
+
+	it("isolates nested shared transcripts and controls from other roots, advisors and cyclic ancestry", async () => {
+		using tempDir = TempDir.createSync("harvest-collab-scope-");
+		const registry = AgentRegistry.global();
+		const refs: AgentRef[] = [];
+		let unrelatedActions = 0;
+		const unrelatedSession = {
+			abort: async () => {
+				unrelatedActions++;
+			},
+			prompt: async () => {
+				unrelatedActions++;
+			},
+			dispose: async () => {
+				unrelatedActions++;
+			},
+		} as unknown as AgentSession;
+		const register = async (id: string, kind: "main" | "sub" | "advisor", parentId?: string) => {
+			const sessionFile = path.join(tempDir.path(), `${id}.jsonl`);
+			await Bun.write(sessionFile, `${JSON.stringify({ text: id })}\n`);
+			const ref = registry.register({ id, displayName: id, kind, parentId, session: unrelatedSession, sessionFile });
+			refs.push(ref);
+			return ref;
+		};
+		try {
+			const child = await register("scope-child", "sub", sharedRoot.id);
+			const nested = await register("scope-nested", "sub", child.id);
+			const other = await register("scope-other", "main");
+			const otherChild = await register("scope-other-child", "sub", other.id);
+			const advisor = await register("scope-advisor", "advisor", sharedRoot.id);
+			const advisorChild = await register("scope-advisor-child", "sub", advisor.id);
+			const cycle = await register("scope-cycle", "sub", "scope-cycle");
+			const orphan = await register("scope-orphan", "sub", "missing-root");
+			const guest = await joinAsGuest(host.link, "scope-writer");
+			guestCleanups.push(() => guest.socket.close());
+			const welcome = await guest.nextFrame();
+			if (welcome.t !== "welcome") throw new Error(`expected welcome, got ${welcome.t}`);
+			expect(welcome.agents.map(agent => agent.id).sort()).toEqual([sharedRoot.id, child.id, nested.id].sort());
+			let reqId = 0;
+			for (const denied of [other, otherChild, advisor, advisorChild, cycle, orphan]) {
+				guest.socket.send({ t: "fetch-transcript", reqId: ++reqId, agentId: denied.id, fromByte: 0 });
+				const transcript = await guest.nextFrame();
+				expect(transcript).toMatchObject({
+					t: "transcript",
+					reqId,
+					text: "",
+					error: "transcript unavailable in this shared session",
+				});
+				for (const cmd of ["chat", "kill", "revive"] as const) {
+					guest.socket.send({ t: "agent-cmd", cmd, agentId: denied.id, text: "unauthorized" });
+					expect(await guest.nextFrame()).toMatchObject({
+						t: "error",
+						message: "agent unavailable in this shared session",
+					});
+				}
+			}
+			expect(unrelatedActions).toBe(0);
+			guest.socket.send({ t: "fetch-transcript", reqId: ++reqId, agentId: nested.id, fromByte: 0 });
+			expect(await guest.nextFrame()).toEqual({
+				t: "transcript",
+				reqId,
+				text: `${JSON.stringify({ text: nested.id })}\n`,
+				newSize: await Bun.file(nested.sessionFile!).size,
+			});
+			const viewer = await joinAsGuest(host.viewLink, "scope-viewer");
+			guestCleanups.push(() => viewer.socket.close());
+			await viewer.nextFrame();
+			viewer.socket.send({ t: "fetch-transcript", reqId: ++reqId, agentId: child.id, fromByte: 0 });
+			expect(await viewer.nextFrame()).toMatchObject({
+				t: "transcript",
+				reqId,
+				text: `${JSON.stringify({ text: child.id })}\n`,
+			});
+		} finally {
+			for (const ref of refs) registry.unregister(ref.id, ref);
+		}
+	});
+
+	it("ends sharing before accepting a prompt after the root registration is replaced", async () => {
+		const guest = await joinAsGuest(host.link, "stale-root-writer");
+		guestCleanups.push(() => guest.socket.close());
+		await guest.nextFrame();
+		const registry = AgentRegistry.global();
+		const replacement = registry.register({
+			id: sharedRoot.id,
+			displayName: "replacement",
+			kind: "main",
+			session: harness.ctx.session,
+		});
+		const stopped = Promise.withResolvers<void>();
+		const statusSpy = spyOn(harness.ctx.statusLine, "setCollabStatus").mockImplementation(status => {
+			if (status === null) stopped.resolve();
+		});
+		try {
+			guest.socket.send({ t: "prompt", text: "stale authority" });
+			await stopped.promise;
+			expect(host.participants).toHaveLength(1);
+			expect(harness.prompts).toHaveLength(0);
+		} finally {
+			statusSpy.mockRestore();
+			registry.unregister(replacement.id, replacement);
+		}
 	});
 });

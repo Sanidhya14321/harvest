@@ -42,6 +42,8 @@ The guest's previous session is restored on `/leave` (or when the host stops).
 
 ## Link format
 
+Guests can discover, read transcripts, and control only the shared session and its registered subagent descendants. Other live sessions, advisors, orphaned agents, and agents behind advisor ancestry are not shared. View-only guests retain transcript access within that same scope. A room ends when its session or root registration is replaced; its authority does not transfer to another tab or a reused agent ID. SDK sessions without a registered root can share their own live transcript but do not expose registry agents.
+
 Accepted by `/join <link>` and `harvest join "<link>"`:
 
 ```

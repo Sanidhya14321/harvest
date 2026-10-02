@@ -142,7 +142,7 @@ Server and tool name components are lowercased and sanitized to letters/undersco
 
 - `MCPTool` calls tools through an already connected `MCPServerConnection`.
 - `DeferredMCPTool` waits for `waitForConnection(server)` before calling; this allows cached tools to exist before connection is ready.
-- Both attempt a reconnect + single retry for retriable connection failures.
+- Both attempt a reconnect + single retry only for transport-confirmed failures before dispatch (`MCPTransportError.stage === "connect"`). A lost response, reset during send, timeout, or unclassified network failure can follow a committed action, so the bridge does not replay that call. Results expose `details.outcomeUnknown` when delivery is uncertain and ask the caller to check remote state before repeating it. Server idempotency hints do not establish a safe replay contract.
 - A structured tool-result auth challenge can trigger the configured auth handler, reconnect, and one retry. Interactive mode wires this to the `/mcp` OAuth controller; without a handler the challenge remains an MCP error.
 
 Both return structured tool output and convert remaining transport/tool errors into `MCP error: ...` tool content (abort remains abort).
@@ -185,7 +185,7 @@ Current runtime behavior is connection-event driven:
 - **No autonomous polling health monitor** in manager/client.
 - **Automatic reconnect is wired to `transport.onClose`** for managed connections.
 - Reconnect retries with backoff (`500`, `1000`, `2000`, `4000` ms), reloads tools, and notifies consumers on success. A crash-storm circuit breaker suspends automatic reconnects for a server after more than 5 reconnect attempts within 30s; manual `/mcp reconnect` resets that history.
-- Tool calls that see retriable connection errors also attempt one reconnect + retry.
+- Tool calls retry once only when the transport confirms failure before dispatch. The manager still reconnects dropped transports for future calls; it does not replay actions with unknown outcomes. Deferred tools may recover a connection-resolution failure before their first dispatch.
 - Reconnect is also explicit via `/mcp reconnect <name>` or broader `/mcp reload`.
 
 Operationally:

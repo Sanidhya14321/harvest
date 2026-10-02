@@ -30,7 +30,10 @@ def _make_request(headers=None):
     from starlette.requests import Request
 
     raw = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
-    return Request({"type": "http", "method": "POST", "path": "/v1/decide", "headers": raw})
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    return Request({"type": "http", "method": "POST", "path": "/v1/decide", "headers": raw}, receive)
 
 
 def _load_json(path):
@@ -87,7 +90,9 @@ class ServerGlobalsMixin:
             "log_max": server.LOG_MAX_BYTES,
             "log_backups": server.LOG_BACKUP_COUNT,
             "timeout": server.INFERENCE_TIMEOUT_S,
+            "scheduler": server._inference_scheduler,
         }
+        server._inference_scheduler = None
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
         env_patch = mock.patch.dict(os.environ, {"LAYA_DISABLE_AUTH": "1"})
@@ -102,6 +107,7 @@ class ServerGlobalsMixin:
         server.LOG_MAX_BYTES = self._saved["log_max"]
         server.LOG_BACKUP_COUNT = self._saved["log_backups"]
         server.INFERENCE_TIMEOUT_S = self._saved["timeout"]
+        server._inference_scheduler = self._saved["scheduler"]
         super().tearDown()
 
 

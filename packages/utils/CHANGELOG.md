@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- File locks share ownership across canonical path aliases, including missing files beneath symlinked directories.
+- Cancelled empty glob scans reject, and exclusion patterns are reused throughout each scan.
+
 ## [18.1.13] - 2026-09-07
 
 ### Fixed

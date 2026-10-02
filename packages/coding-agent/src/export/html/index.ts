@@ -295,7 +295,7 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 
 	let sm: SessionManager;
 	try {
-		sm = await SessionManager.open(inputPath, undefined, undefined, { suppressBreadcrumb: true });
+		sm = await SessionManager.open(inputPath, undefined, undefined, { suppressBreadcrumb: true, readOnly: true });
 	} catch (err) {
 		if (isEnoent(err)) throw new Error(`File not found: ${inputPath}`);
 		throw err;

@@ -15,8 +15,11 @@ import {
 	getSessionsDir,
 	isEnoent,
 	logger,
+	resolveEquivalentPath,
+	resolveFileLockIdentity,
 	stringifyJson,
 	toError,
+	tryAcquireFileLock,
 } from "@harvest/pi-utils";
 import type { StructuredSubagentSchemaMode } from "../task/types";
 import { ArtifactManager } from "./artifacts";
@@ -400,6 +403,7 @@ export type ReadonlySessionManager = Pick<
 >;
 
 interface SessionManagerStateSnapshot {
+	fileRevision?: string | null;
 	cwd: string;
 	sessionDir: string;
 	sessionId: string;
@@ -475,6 +479,72 @@ export class SessionPersistenceIndeterminateError extends AggregateError {
  * repointed.
  */
 export class SessionManager {
+	#expectedFileRevision: { path: string; revision: string | null } | undefined;
+	readonly #writeLeases = new Map<string, NonNullable<ReturnType<typeof tryAcquireFileLock>>>();
+	readonly #writeLeasePaths = new Map<string, string>();
+
+	#claimWriteLease(sessionFile: string): void {
+		if (!this.#persist || !(this.#storage instanceof FileSessionStorage)) return;
+		if (this.#released) throw new Error("This session writer is closed. Reopen the saved session before writing.");
+		const absolutePath = path.resolve(sessionFile);
+		if (this.#writeLeasePaths.has(absolutePath)) return;
+		const identity = resolveFileLockIdentity(sessionFile);
+		if (this.#writeLeases.has(identity)) {
+			this.#writeLeasePaths.set(absolutePath, identity);
+			return;
+		}
+		const lease = tryAcquireFileLock(sessionFile);
+		if (!lease)
+			throw new Error(
+				`Session is already open for writing: ${sessionFile}. Close the other writer, open read-only, or fork a read-only snapshot.`,
+			);
+		try {
+			const expected = this.#expectedFileRevision;
+			if (
+				expected &&
+				resolveFileLockIdentity(expected.path) === identity &&
+				this.#fileRevision(sessionFile) !== expected.revision
+			) {
+				throw new Error(
+					"Session changed after its snapshot was captured. Reopen it before writing; the saved history was not modified.",
+				);
+			}
+		} catch (error) {
+			lease.release();
+			throw error;
+		}
+		this.#writeLeases.set(identity, lease);
+		this.#writeLeasePaths.set(absolutePath, identity);
+	}
+
+	#fileRevision(sessionFile: string): string | null {
+		try {
+			const stat = fs.statSync(sessionFile, { bigint: true });
+			return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+		} catch (error) {
+			if (isEnoent(error)) return null;
+			throw error;
+		}
+	}
+
+	#releaseWriteLeases(): void {
+		for (const lease of this.#writeLeases.values()) lease.release();
+		this.#writeLeases.clear();
+		this.#writeLeasePaths.clear();
+	}
+
+	#releaseOtherWriteLeases(sessionFile: string): void {
+		if (this.#writeLeases.size === 0) return;
+		const current = resolveFileLockIdentity(sessionFile);
+		for (const [identity, lease] of this.#writeLeases) {
+			if (identity === current) continue;
+			lease.release();
+			this.#writeLeases.delete(identity);
+		}
+		for (const [filePath, identity] of this.#writeLeasePaths) {
+			if (identity !== current) this.#writeLeasePaths.delete(filePath);
+		}
+	}
 	#cwd: string;
 	/** Additional workspace directories beyond cwd (multi-root). Normalized absolute, deduped, excludes cwd. */
 	#additionalDirectories: string[] = [];
@@ -760,6 +830,7 @@ export class SessionManager {
 				}
 				const body = this.#fileBody();
 				try {
+					this.#claimWriteLease(sessionFile);
 					await this.#storage.writeTextAtomic(sessionFile, body, {
 						commitGuard: () => !this.#released && this.#diskEpoch === epoch,
 					});
@@ -803,6 +874,7 @@ export class SessionManager {
 
 	#appendWriter(): SessionStorageWriter {
 		if (!this.#sessionFile) throw new Error("Cannot open a session writer before a session file exists");
+		this.#claimWriteLease(this.#sessionFile);
 
 		if (this.#writer?.isOpen()) return this.#writer;
 
@@ -871,6 +943,7 @@ export class SessionManager {
 		if (!targetPath) return;
 
 		try {
+			this.#claimWriteLease(targetPath);
 			const body = this.#fileBody();
 			this.#diskEpoch++;
 			this.#diskTail = Promise.resolve();
@@ -944,6 +1017,7 @@ export class SessionManager {
 				const sessionFile = this.#sessionFile;
 				if (!sessionFile) return false;
 				if (this.#diskEpoch !== epoch) return false;
+				this.#claimWriteLease(sessionFile);
 				await this.#storage.writeTextAtomic(sessionFile, this.#fileBody(), {
 					commitGuard: () => !this.#released && this.#diskEpoch === epoch,
 				});
@@ -1106,6 +1180,7 @@ export class SessionManager {
 	}
 
 	#resetToNewSession(options?: NewSessionOptions, forcedSessionFile?: string): string | undefined {
+		this.#expectedFileRevision = undefined;
 		this.#diskTail = Promise.resolve();
 		this.#clearDiskError();
 		this.#reconcileSessionDirForFallback();
@@ -1155,6 +1230,7 @@ export class SessionManager {
 			this.#sessionFile =
 				forcedSessionFile ??
 				path.join(this.#sessionDir, `${fileSafeTimestamp(timestamp)}_${this.#sessionId}.jsonl`);
+			this.#claimWriteLease(this.#sessionFile);
 			this.#rememberBreadcrumb(this.#cwd, this.#sessionFile, true);
 		} else {
 			this.#sessionFile = undefined;
@@ -1302,6 +1378,10 @@ export class SessionManager {
 
 	captureState(): SessionManagerStateSnapshot {
 		return {
+			fileRevision:
+				this.#persist && this.#storage instanceof FileSessionStorage && this.#sessionFile
+					? this.#fileRevision(this.#sessionFile)
+					: undefined,
 			cwd: this.#cwd,
 			sessionDir: this.#sessionDir,
 			sessionId: this.#sessionId,
@@ -1344,6 +1424,19 @@ export class SessionManager {
 	}
 
 	restoreState(snapshot: SessionManagerStateSnapshot): void {
+		if (
+			this.#persist &&
+			this.#storage instanceof FileSessionStorage &&
+			snapshot.sessionFile &&
+			snapshot.fileRevision !== undefined
+		) {
+			this.#expectedFileRevision = { path: snapshot.sessionFile, revision: snapshot.fileRevision };
+			// Clones defer acquisition until their first write, after the source
+			// manager has finished switching. Existing managers claim before rollback.
+			if (this.#sessionFile && this.#sessionFile !== snapshot.sessionFile)
+				this.#claimWriteLease(snapshot.sessionFile);
+		}
+		this.#diskEpoch++;
 		this.#closeWriterEventually();
 		this.#diskTail = Promise.resolve();
 		this.#clearDiskError();
@@ -1366,6 +1459,7 @@ export class SessionManager {
 		this.#artifactManager = null;
 		this.#artifactManagerSessionFile = null;
 		this.#adoptedArtifactManager = null;
+		if (this.#sessionFile) this.#releaseOtherWriteLeases(this.#sessionFile);
 
 		if (this.#sessionFile) this.#rememberBreadcrumb(this.#cwd, this.#sessionFile);
 	}
@@ -1412,18 +1506,29 @@ export class SessionManager {
 		this.#clearDiskError();
 		this.#draftOnlySessionCleanupArmed = false;
 
-		const resolvedSessionFile = path.resolve(sessionFile);
-		const loaded = loadedSession ?? (await loadSessionFile(resolvedSessionFile, this.#storage));
-		if (loaded.invalidHeader) {
-			throw new Error(
-				`Cannot resume session "${resolvedSessionFile}": the session header is missing or malformed. The file was not modified.`,
-			);
+		const resolvedSessionFile =
+			this.#storage instanceof FileSessionStorage ? resolveEquivalentPath(sessionFile) : path.resolve(sessionFile);
+		this.#claimWriteLease(resolvedSessionFile);
+		// open acquires ownership before constructing its preloaded snapshot.
+		let loaded: SessionLoadResult;
+		try {
+			loaded = loadedSession ?? (await loadSessionFile(resolvedSessionFile, this.#storage));
+			if (loaded.invalidHeader) {
+				throw new Error(
+					`Cannot resume session "${resolvedSessionFile}": the session header is missing or malformed. The file was not modified.`,
+				);
+			}
+		} catch (error) {
+			if (this.#sessionFile) this.#releaseOtherWriteLeases(this.#sessionFile);
+			else this.#releaseWriteLeases();
+			throw error;
 		}
 
 		this.#sessionFile = resolvedSessionFile;
 		this.#rememberBreadcrumb(this.#cwd, resolvedSessionFile);
 
 		const { entries: fileEntries, titleSlot } = loaded;
+		this.#expectedFileRevision = undefined;
 		if (fileEntries.length === 0) {
 			// Explicit but empty/missing path (e.g. --session flag): start fresh but
 			// keep the requested path and materialize the header immediately.
@@ -1431,6 +1536,7 @@ export class SessionManager {
 			this.#forceFileCreation = true;
 			await this.#rewriteAtomically();
 			this.#fileIsCurrent = true;
+			this.#releaseOtherWriteLeases(resolvedSessionFile);
 			return;
 		}
 
@@ -1473,6 +1579,7 @@ export class SessionManager {
 		this.#artifactManagerSessionFile = null;
 
 		if (this.sanitizeLoadedOpenAIResponsesReplayMetadata()) this.#rewriteRequired = true;
+		this.#releaseOtherWriteLeases(resolvedSessionFile);
 	}
 
 	/**
@@ -1485,12 +1592,15 @@ export class SessionManager {
 		await this.#drainAndCloseWriter();
 		const sessionFile = this.#resetToNewSession(options);
 		await this.ensureOnDisk();
+		if (sessionFile) this.#releaseOtherWriteLeases(sessionFile);
 		return sessionFile;
 	}
 
 	/** Delete a session file and its artifact directory. ENOENT is treated as success. */
 	async dropSession(sessionPath: string): Promise<void> {
+		if (!this.#persist) throw new Error("Cannot delete a session through a read-only manager.");
 		await this.#drainAndCloseWriter();
+		this.#claimWriteLease(sessionPath);
 		try {
 			await this.#storage.deleteSessionWithArtifacts(sessionPath);
 		} catch (err) {
@@ -1539,6 +1649,7 @@ export class SessionManager {
 		this.#rememberBreadcrumb(this.#cwd, this.#sessionFile);
 
 		await this.#rewriteAtomically();
+		this.#releaseOtherWriteLeases(this.#sessionFile);
 		return { oldSessionFile, newSessionFile: this.#sessionFile };
 	}
 
@@ -1573,6 +1684,14 @@ export class SessionManager {
 		if (this.#persist && this.#sessionFile) {
 			const source = this.#sessionFile;
 			const dest = path.join(nextSessionDir, path.basename(source));
+			this.#storage.ensureDirSync(nextSessionDir);
+			// Explicit relocation may recover a deleted transcript from retained
+			// entries. It still owns both names before creating replacement bytes.
+			if (!this.#storage.existsSync(source) && this.#expectedFileRevision?.path === source) {
+				this.#expectedFileRevision = { path: source, revision: null };
+			}
+			this.#claimWriteLease(source);
+			this.#claimWriteLease(dest);
 			this.#sessionFileRelocating = { source, dest };
 		}
 
@@ -1674,7 +1793,10 @@ export class SessionManager {
 				await this.#rewriteAtomically();
 			}
 
-			if (this.#sessionFile) this.#rememberBreadcrumb(resolvedCwd, this.#sessionFile);
+			if (this.#sessionFile) {
+				this.#rememberBreadcrumb(resolvedCwd, this.#sessionFile);
+				this.#releaseOtherWriteLeases(this.#sessionFile);
+			}
 		} finally {
 			this.#sessionFileRelocating = null;
 		}
@@ -1879,6 +2001,15 @@ export class SessionManager {
 		// tail) to become durable so a graceful shutdown does not exit while
 		// a fire-and-forget publish is still on the wire.
 		await this.#storage.drain();
+		if (this.#storage instanceof FileSessionStorage) {
+			await this.#diskTail;
+			this.#diskEpoch++;
+			this.#closeWriterEventually();
+			if (this.#sessionFile && this.#writeLeases.size > 0) {
+				this.#expectedFileRevision = { path: this.#sessionFile, revision: this.#fileRevision(this.#sessionFile) };
+			}
+			this.#releaseWriteLeases();
+		}
 		if (this.#diskFailure) throw this.#diskFailure;
 	}
 
@@ -2142,6 +2273,7 @@ export class SessionManager {
 	async saveDraft(text: string): Promise<void> {
 		const draftPath = this.#draftPath();
 		if (!draftPath || !this.#persist) return;
+		if (this.#sessionFile) this.#claimWriteLease(this.#sessionFile);
 
 		if (text.length === 0) {
 			try {
@@ -2177,6 +2309,8 @@ export class SessionManager {
 			if (isEnoent(err)) return null;
 			throw err;
 		}
+		if (!this.#persist) return draft;
+		if (this.#sessionFile) this.#claimWriteLease(this.#sessionFile);
 
 		try {
 			await this.#storage.unlink(draftPath);
@@ -2784,6 +2918,7 @@ export class SessionManager {
 
 		this.#sessionFile = newSessionFile;
 		this.#rewriteSynchronously();
+		this.#releaseOtherWriteLeases(newSessionFile);
 		this.#rememberBreadcrumb(this.#cwd, newSessionFile);
 		return newSessionFile;
 	}
@@ -2914,28 +3049,48 @@ export class SessionManager {
 		filePath: string,
 		sessionDir?: string,
 		storage: SessionStorage = new FileSessionStorage(),
-		options?: { initialCwd?: string; suppressBreadcrumb?: boolean },
+		options?: { initialCwd?: string; suppressBreadcrumb?: boolean; readOnly?: boolean },
 	): Promise<SessionManager> {
-		const loaded = await loadSessionFile(filePath, storage);
-		const header = loaded.entries.find(entry => entry.type === "session") as SessionHeader | undefined;
-		// Resume into the session's recorded cwd only when it is verifiably
-		// accessible. A deleted or permission-blocked (macOS TCC denial) project
-		// dir would make the constructor's #cwd — and the `setProjectDir` chdir
-		// interactive mode runs next — fail, so fall back to the launch cwd and
-		// anchor /new and /branch there too, keeping the resumed session where
-		// the user already is.
-		const recordedCwd = header?.cwd;
-		const recordedCwdUsable = !!recordedCwd && (await directoryIsEnterable(recordedCwd));
-		const cwd = recordedCwdUsable ? recordedCwd : (options?.initialCwd ?? getProjectDir());
-		const dir =
-			sessionDir ??
-			(recordedCwd && !recordedCwdUsable
-				? SessionManager.getDefaultSessionDir(cwd, undefined, storage)
-				: path.dirname(path.resolve(filePath)));
-		const manager = new SessionManager(cwd, dir, true, storage);
-		manager.#suppressBreadcrumb = options?.suppressBreadcrumb === true;
-		await manager.#setSessionFile(filePath, loaded);
-		return manager;
+		const writableFile = storage instanceof FileSessionStorage && options?.readOnly !== true;
+		if (writableFile) storage.ensureDirSync(path.dirname(path.resolve(filePath)));
+		const initialLease = writableFile ? tryAcquireFileLock(filePath) : undefined;
+		if (writableFile && !initialLease)
+			throw new Error(`Session is already open for writing: ${filePath}. Close the other writer or open read-only.`);
+		try {
+			const loaded = await loadSessionFile(filePath, storage);
+			const header = loaded.entries.find(entry => entry.type === "session") as SessionHeader | undefined;
+			// Resume into the session's recorded cwd only when it is verifiably
+			// accessible. A deleted or permission-blocked (macOS TCC denial) project
+			// dir would make the constructor's #cwd — and the `setProjectDir` chdir
+			// interactive mode runs next — fail, so fall back to the launch cwd and
+			// anchor /new and /branch there too, keeping the resumed session where
+			// the user already is.
+			const recordedCwd = header?.cwd;
+			const recordedCwdUsable = !!recordedCwd && (await directoryIsEnterable(recordedCwd));
+			const cwd = recordedCwdUsable ? recordedCwd : (options?.initialCwd ?? getProjectDir());
+			const dir =
+				sessionDir ??
+				(recordedCwd && !recordedCwdUsable
+					? SessionManager.getDefaultSessionDir(cwd, undefined, storage)
+					: path.dirname(path.resolve(filePath)));
+			const manager = new SessionManager(cwd, dir, options?.readOnly !== true, storage);
+			if (initialLease) {
+				const identity = resolveFileLockIdentity(filePath);
+				manager.#writeLeases.set(identity, initialLease);
+				manager.#writeLeasePaths.set(path.resolve(filePath), identity);
+			}
+			manager.#suppressBreadcrumb = options?.readOnly === true || options?.suppressBreadcrumb === true;
+			try {
+				await manager.#setSessionFile(filePath, loaded);
+			} catch (error) {
+				manager.#releaseWriteLeases();
+				throw error;
+			}
+			return manager;
+		} catch (error) {
+			initialLease?.release();
+			throw error;
+		}
 	}
 
 	/**

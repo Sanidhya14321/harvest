@@ -66,4 +66,58 @@ describe("Laya tool gating tier eligibility", () => {
 		expect(decide2).not.toHaveBeenCalled();
 		expect(unlisted.reason).toBe("tool_not_in_high_risk_list");
 	});
+
+	it("requires human review without inference when a destructive command tail exceeds the evidence limit", async () => {
+		const { client, decide } = scoredClient();
+		const result = await checkToolCallGating(
+			"bash",
+			{ command: `${"echo harmless; ".repeat(200)}rm -rf /` },
+			{
+				client,
+				settings: enabledSettings(),
+				toolTier: "exec",
+			},
+		);
+		expect(result.requireApproval).toBe(true);
+		expect(result.reason).toBe("fallback_incomplete_gating_evidence");
+		expect(decide).not.toHaveBeenCalled();
+	});
+
+	it("classifies nested permission changes and array entries beyond the old ten-item truncation", async () => {
+		const decide = vi.fn(async (state: Record<string, unknown>) => {
+			const text = JSON.stringify(state);
+			return {
+				success: true,
+				fallback: false,
+				latencyMs: 1,
+				data: {
+					irreversibility: { type: "noul", noul: text.includes("public-write") ? 0.9 : 0.1, confidence: 0.95 },
+				},
+			};
+		});
+		const result = await checkToolCallGating(
+			"permissions",
+			{
+				changes: [
+					...Array.from({ length: 10 }, () => ({ access: "read" })),
+					{ nested: { access: "public-write" } },
+				],
+			},
+			{ client: { decide } as unknown as LayaClient, settings: enabledSettings(), toolTier: "write" },
+		);
+		expect(result.requireApproval).toBe(true);
+		expect(result.reason).toBe("laya_classified_irreversible");
+	});
+
+	it("settles cyclic and excessively wide evidence with approval rather than serialization errors or inference", async () => {
+		const cyclic: Record<string, unknown> = {};
+		cyclic.self = cyclic;
+		for (const args of [cyclic, { targets: Array.from({ length: 300 }, () => "target") }]) {
+			const { client, decide } = scoredClient();
+			const result = await checkToolCallGating("write", args, { client, settings: enabledSettings() });
+			expect(result.requireApproval).toBe(true);
+			expect(result.fallback).toBe(true);
+			expect(decide).not.toHaveBeenCalled();
+		}
+	});
 });

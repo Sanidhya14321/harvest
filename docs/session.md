@@ -511,3 +511,9 @@ Recent/most-recent scans read only a 4 KiB prefix. Full lists read that prefix p
 - Inserts are batched through an async drain queue (~100 ms delay) so prompt capture does not block turn execution
 
 Use session files for conversation graph/state replay; use `HistoryStorage` for prompt history UX.
+
+## Writable file ownership
+
+FileSessionStorage managers acquire a canonical native lease before loading writable history and retain it through append, replacement and relocation. A competing writer must close the other owner or open a read-only snapshot. Process termination releases the lease. `SessionManager.open(path, { readOnly: true })` loads without journal persistence or resume breadcrumbs; consuming a draft in this mode does not delete it. Share and export use this mode.
+
+Closing releases ownership. A later write or restored snapshot must reacquire it and match the captured filesystem revision; changed history requires reopening. Backup recovery skips leased primary paths. These protections apply to manager-owned file journals, not arbitrary external writers or other storage implementations. Directory migrations and hard-link aliases require additional coordination.

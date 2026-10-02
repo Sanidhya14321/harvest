@@ -9,6 +9,8 @@ export class SessionTabStrip implements Component {
 	readonly #bar = new TabBar("Sessions", [], getTabBarTheme());
 	readonly #workspaceBar = new TabBar("", [], getTabBarTheme());
 	#onNew: (() => void) | undefined;
+	#workspaceVisibleRows = 0;
+	#hoveredWorkspaceTab: string | null = null;
 
 	constructor(
 		private readonly tabs: SessionTabs,
@@ -49,7 +51,8 @@ export class SessionTabStrip implements Component {
 		return `${indicator}${truncateToWidth(title, Math.max(1, limit - Bun.stringWidth(indicator)))}`;
 	}
 
-	renderWorkspace(width: number, hasConversation: boolean): readonly string[] {
+	renderWorkspace(width: number, hasConversation: boolean, maxRows = Number.POSITIVE_INFINITY): readonly string[] {
+		this.#workspaceVisibleRows = 0;
 		const paths = this.tabs.paths;
 		if (width < 12 || (paths.length < 2 && !hasConversation)) {
 			this.#workspaceBar.setTabs([]);
@@ -64,8 +67,9 @@ export class SessionTabStrip implements Component {
 			label: this.#label(sessionPath, current, 22),
 			short: `${start + index + 1}`,
 		}));
-		if (start > 0) displayed.unshift({ id: "hidden-before", label: "‹", muted: true });
-		if (paths.length > start + visible.length) displayed.push({ id: "hidden-after", label: "›", muted: true });
+		if (start > 0) displayed.unshift({ id: paths[start - 1], label: "‹", short: "‹" });
+		if (paths.length > start + visible.length)
+			displayed.push({ id: paths[start + visible.length], label: "›", short: "›" });
 		displayed.push({ id: "new-session", label: "+ New session", short: "+" });
 		this.#workspaceBar.setTabs(
 			displayed,
@@ -73,10 +77,22 @@ export class SessionTabStrip implements Component {
 				? visible.find(item => normalizePathForComparison(item) === normalizePathForComparison(current))
 				: undefined,
 		);
-		return this.#workspaceBar.render(width);
+		const rows = this.#workspaceBar.render(width).slice(0, Math.max(0, maxRows));
+		this.#workspaceVisibleRows = rows.length;
+		return rows;
+	}
+
+	hoverWorkspace(row: number, col: number): boolean {
+		const tab = row >= 0 && row < this.#workspaceVisibleRows ? this.#workspaceBar.tabAt(row, col) : undefined;
+		const id = tab && !tab.muted ? tab.id : null;
+		if (id === this.#hoveredWorkspaceTab) return false;
+		this.#hoveredWorkspaceTab = id;
+		this.#workspaceBar.setHoverTab(id);
+		return true;
 	}
 
 	clickWorkspace(row: number, col: number): boolean {
+		if (row < 0 || row >= this.#workspaceVisibleRows) return false;
 		const tab = this.#workspaceBar.tabAt(row, col);
 		if (!tab || tab.muted) return false;
 		if (tab.id === "new-session") this.#onNew?.();

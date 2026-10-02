@@ -26,6 +26,7 @@ async function writeSession(cwd: string, sessionDir: string): Promise<string> {
 	await manager.rewriteEntries();
 	const file = manager.getSessionFile();
 	if (!file) throw new Error("expected a persisted session file");
+	await manager.close();
 	return file;
 }
 

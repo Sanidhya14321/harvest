@@ -1027,6 +1027,10 @@ export class CommandController {
 	}
 
 	async #runNewSessionFlow(options?: NewSessionOptions, label: string = "New session started"): Promise<void> {
+		if (this.ctx.liveSessions && this.ctx.selectMainSession) {
+			await this.#runNewLiveSessionFlow(options);
+			return;
+		}
 		this.ctx.clearTransientSessionUi();
 
 		if (this.ctx.session.isCompacting) {
@@ -1034,10 +1038,6 @@ export class CommandController {
 			while (this.ctx.session.isCompacting) {
 				await Bun.sleep(10);
 			}
-		}
-		if (this.ctx.liveSessions && this.ctx.selectMainSession) {
-			await this.#runNewLiveSessionFlow(options);
-			return;
 		}
 		if (!(await this.ctx.session.newSession(options))) return;
 		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
@@ -1053,13 +1053,27 @@ export class CommandController {
 	 */
 	async #runNewLiveSessionFlow(options?: NewSessionOptions): Promise<void> {
 		const live = this.ctx.liveSessions!;
-		const selectMainSession = this.ctx.selectMainSession!;
-		const openLiveSession = this.ctx.openLiveSession ?? openLiveAgentSession;
 		const previous = this.ctx.session;
 		let fresh: AgentSession;
 		try {
-			fresh = await openLiveSession(liveSessionFactoryOptions(this.ctx));
+			const factoryOptions = liveSessionFactoryOptions(this.ctx);
+			fresh = this.ctx.openLiveSession
+				? await this.ctx.openLiveSession(factoryOptions)
+				: await openLiveAgentSession(factoryOptions);
 		} catch (error) {
+			if (
+				previous.isStreaming ||
+				previous.isCompacting ||
+				previous.isBashRunning ||
+				previous.isEvalRunning ||
+				previous.hasPendingAsyncWork?.() ||
+				live.busySessions.some(snapshot => snapshot.id === previous.sessionManager.getSessionId())
+			) {
+				this.ctx.showError(
+					`Couldn't open a live tab: ${error instanceof Error ? error.message : String(error)}. The current run is still active; retry New session after resolving the error.`,
+				);
+				return;
+			}
 			this.ctx.showError(
 				`Couldn't open a live tab (${error instanceof Error ? error.message : String(error)}); falling back to a fresh in-place session.`,
 			);
@@ -1069,13 +1083,21 @@ export class CommandController {
 			}
 			return;
 		}
-		live.adopt(fresh);
 		try {
-			await selectMainSession(fresh);
+			live.adopt(fresh);
+			await this.ctx.selectMainSession!(fresh);
 		} catch (error) {
 			try {
 				live.selectById(previous.sessionManager.getSessionId());
 			} catch {}
+			if (this.ctx.session !== fresh) {
+				live.detach(fresh.sessionManager.getSessionId());
+				try {
+					await fresh.dispose();
+				} catch (disposeError) {
+					logger.warn("Failed to dispose an unattached new tab", { error: String(disposeError) });
+				}
+			}
 			this.ctx.showError(
 				`Couldn't show the new tab: ${error instanceof Error ? error.message : String(error)}. The previous session was restored; its run never stopped.`,
 			);

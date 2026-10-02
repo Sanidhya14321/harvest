@@ -7,6 +7,7 @@
  */
 
 import type { ToolTier } from "@harvest/pi-agent-core";
+import type { Settings } from "../config/settings";
 import { ExecutionGroundingEngine } from "./harvest/grounding";
 import { PreReadEnforcement, type ToolCallPayload } from "./harvest/loop-policy";
 import { routeRole, type RoleRoutingResult, type SpecialistRole } from "./harvest/roles";
@@ -100,11 +101,6 @@ export function interceptSessionToolCall(
 		if (rawPath) {
 			hooks.groundingEngine.recordFileMutation(rawPath);
 		}
-	} else if (name === "bash" || name === "exec" || name === "command") {
-		const cmd = (args.command || args.cmd || args.CommandLine || "") as string;
-		if (cmd) {
-			hooks.groundingEngine.recordCommandExecution(cmd, 0);
-		}
 	}
 
 	return { allowed: true };
@@ -119,6 +115,12 @@ export async function interceptSessionToolCallLaya(
 	sessionId?: string,
 	signal?: AbortSignal,
 	toolTier?: ToolTier,
+	owningSettings?: Settings,
 ): Promise<ToolGatingDecision> {
-	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, { sessionId, signal, toolTier });
+	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, {
+		sessionId,
+		signal,
+		toolTier,
+		settings: owningSettings,
+	});
 }

@@ -2,6 +2,7 @@ import * as path from "node:path";
 
 const SIDECAR_FILES = [
 	"server.py",
+	"inference_scheduler.py",
 	"hardware.py",
 	"bucketing.py",
 	"calibration.py",

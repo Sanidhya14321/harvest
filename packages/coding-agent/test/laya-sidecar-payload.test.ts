@@ -14,6 +14,7 @@ describe("bundled Laya sidecar", () => {
 			expect(materializeBundledLayaSidecar(payload, agentDir)).toBe(directory);
 			for (const name of [
 				"server.py",
+				"inference_scheduler.py",
 				"hardware.py",
 				"bucketing.py",
 				"calibration.py",

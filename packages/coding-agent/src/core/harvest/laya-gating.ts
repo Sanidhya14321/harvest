@@ -17,6 +17,7 @@
 import type { ToolTier } from "@harvest/pi-agent-core";
 import { logger } from "@harvest/pi-utils";
 import { type Settings, settings } from "../../config/settings";
+import gatingInstructions from "../../prompts/laya/tool-gating.md" with { type: "text" };
 import { getLayaClient, type LayaClient } from "./laya-client";
 
 export const HIGH_RISK_TOOLS: ReadonlySet<string> = new Set([
@@ -121,16 +122,26 @@ export async function checkToolCallGating(
 		};
 	}
 
-	// Format state representation for Laya
+	const evidence = sanitizeGatingArgs(args);
+	if (!evidence) {
+		return {
+			isHighRiskTool: true,
+			requireApproval: true,
+			fallback: true,
+			reason: "fallback_incomplete_gating_evidence",
+			latencyMs: 0,
+		};
+	}
+	// Never let a classification of a truncated command authorize its omitted tail.
 	const state = {
 		tool: normalizedTool,
-		args: sanitizeGatingArgs(args),
+		args: evidence,
 	};
 
 	const questions = {
 		irreversibility: {
 			type: "noul" as const,
-			instructions: "does this call write, delete, publish, or change access irreversibly?",
+			instructions: gatingInstructions.trim(),
 		},
 	};
 
@@ -210,22 +221,52 @@ export async function checkToolCallGating(
 	};
 }
 
-/** Sanitize tool arguments to avoid huge file strings or unbounded payloads in state. */
-function sanitizeGatingArgs(args: Record<string, unknown>): Record<string, unknown> {
-	const sanitized: Record<string, unknown> = {};
-
-	for (const [k, v] of Object.entries(args)) {
-		if (typeof v === "string") {
-			// Truncate long content/files
-			sanitized[k] = v.length > 500 ? `${v.slice(0, 500)}...[truncated]` : v;
-		} else if (Array.isArray(v)) {
-			sanitized[k] = v.slice(0, 10);
-		} else if (typeof v === "object" && v !== null) {
-			sanitized[k] = "[object]";
-		} else {
-			sanitized[k] = v;
+/** Preserve complete JSON evidence within bounded work; otherwise require human review. */
+function sanitizeGatingArgs(args: Record<string, unknown>): Record<string, unknown> | null {
+	let nodes = 0;
+	let characters = 0;
+	const ancestors = new Set<object>();
+	function copy(value: unknown, depth: number): unknown {
+		if (++nodes > 256 || depth > 8) throw new Error("Evidence limit");
+		if (typeof value === "string") {
+			characters += value.length;
+			if (value.length > 2048 || characters > 8192) throw new Error("Evidence limit");
+			return value;
+		}
+		if (value === null || typeof value === "boolean") return value;
+		if (typeof value === "number" && Number.isFinite(value)) return value;
+		if (typeof value !== "object" || value === null || ancestors.has(value)) throw new Error("Non-JSON evidence");
+		ancestors.add(value);
+		try {
+			if (Array.isArray(value)) {
+				if (value.length > 256) throw new Error("Evidence limit");
+				const items: unknown[] = [];
+				for (let index = 0; index < value.length; index++) {
+					const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+					if (!descriptor || !("value" in descriptor)) throw new Error("Non-JSON evidence");
+					items.push(copy(descriptor.value, depth + 1));
+				}
+				return items;
+			}
+			const prototype = Object.getPrototypeOf(value);
+			if (prototype !== Object.prototype && prototype !== null) throw new Error("Non-JSON evidence");
+			const result: Record<string, unknown> = Object.create(null);
+			for (const key in value) {
+				if (!Object.hasOwn(value, key)) continue;
+				characters += key.length;
+				if (characters > 8192) throw new Error("Evidence limit");
+				const descriptor = Object.getOwnPropertyDescriptor(value, key);
+				if (!descriptor || !("value" in descriptor)) throw new Error("Non-JSON evidence");
+				result[key] = copy(descriptor.value, depth + 1);
+			}
+			return result;
+		} finally {
+			ancestors.delete(value);
 		}
 	}
-
-	return sanitized;
+	try {
+		return copy(args, 0) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
 }

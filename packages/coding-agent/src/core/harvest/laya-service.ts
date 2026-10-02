@@ -22,6 +22,7 @@ import { ensureCalibrated, loadCalibration, type CalibrationRecord } from "./lay
 import { getLayaClient } from "./laya-client";
 import {
 	LayaSetupLogger,
+	EXPECTED_LAYA_MODEL_ID,
 	checkAvailableDiskSpace,
 	getMissingPythonInstructions,
 	verifyAndRepairTorchWheel,
@@ -69,11 +70,25 @@ function managedLayaPythonPath(): string {
 /**
  * Execute a probe command to determine if a candidate Python executable is functional and >= 3.9.
  */
-export async function testPythonExecutable(cmd: string, isPyLauncher = false): Promise<{ path: string; version: string } | null> {
+export async function testPythonExecutable(
+	cmd: string,
+	isPyLauncher = false,
+): Promise<{ path: string; version: string } | null> {
 	try {
 		const proc = isPyLauncher
-			? Bun.spawn(["py", "-3", "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}'); print(sys.executable)"], { stdout: "pipe", stderr: "pipe" })
-			: Bun.spawn([cmd, "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}'); print(sys.executable)"], { stdout: "pipe", stderr: "pipe" });
+			? Bun.spawn(
+					[
+						"py",
+						"-3",
+						"-c",
+						"import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}'); print(sys.executable)",
+					],
+					{ stdout: "pipe", stderr: "pipe" },
+				)
+			: Bun.spawn(
+					[cmd, "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}'); print(sys.executable)"],
+					{ stdout: "pipe", stderr: "pipe" },
+				);
 
 		const exitCode = await proc.exited;
 		if (exitCode === 0) {
@@ -108,9 +123,7 @@ export async function findPythonExecutable(): Promise<{ path: string; version: s
 	}
 
 	// 2. Check PATH candidates
-	const candidates = process.platform === "win32"
-		? ["py", "python", "python3"]
-		: ["python3", "python"];
+	const candidates = process.platform === "win32" ? ["py", "python", "python3"] : ["python3", "python"];
 
 	for (const cmd of candidates) {
 		const res = await testPythonExecutable(cmd, cmd === "py");
@@ -165,11 +178,15 @@ export async function streamProcessOutput(
 			if (activityTimeout > 0 && now - lastActivity > activityTimeout) {
 				timedOut = true;
 				timeoutReason = `Process timed out after ${activityTimeout / 1000}s with no output/activity`;
-				try { proc.kill(); } catch {}
+				try {
+					proc.kill();
+				} catch {}
 			} else if (totalTimeout > 0 && now - startTime > totalTimeout) {
 				timedOut = true;
 				timeoutReason = `Process exceeded maximum run time limit of ${totalTimeout / 1000}s`;
-				try { proc.kill(); } catch {}
+				try {
+					proc.kill();
+				} catch {}
 			}
 		}, 1000);
 	}
@@ -268,19 +285,22 @@ export async function bootstrapPythonIfMissing(
 			const checkWinget = Bun.spawnSync(["winget", "--version"]);
 			if (checkWinget.exitCode === 0) {
 				onProgress?.("Installing Python 3.11 via Windows Package Manager (winget, user scope)...");
-				const installProc = Bun.spawn([
-					"winget",
-					"install",
-					"--id",
-					"Python.Python.3.11",
-					"-e",
-					"--silent",
-					"--scope",
-					"user",
-					"--disable-interactivity",
-					"--accept-package-agreements",
-					"--accept-source-agreements",
-				], { stdout: "pipe", stderr: "pipe" });
+				const installProc = Bun.spawn(
+					[
+						"winget",
+						"install",
+						"--id",
+						"Python.Python.3.11",
+						"-e",
+						"--silent",
+						"--scope",
+						"user",
+						"--disable-interactivity",
+						"--accept-package-agreements",
+						"--accept-source-agreements",
+					],
+					{ stdout: "pipe", stderr: "pipe" },
+				);
 				await streamProcessOutput(installProc, line => onProgress?.(`winget: ${line}`), {
 					activityTimeoutMs: 120_000,
 					totalTimeoutMs: 300_000,
@@ -344,7 +364,9 @@ export async function ensureLayaVirtualEnv(
 	} catch (err) {
 		throw new Error(`Failed to create isolated Laya virtualenv at ${venvDir}: ${String(err)}`);
 	}
-	throw new Error(`Failed to create isolated Laya virtualenv at ${venvDir}. Check that Python's venv module is installed.`);
+	throw new Error(
+		`Failed to create isolated Laya virtualenv at ${venvDir}. Check that Python's venv module is installed.`,
+	);
 }
 
 /**
@@ -419,11 +441,10 @@ export async function freePortIfOccupied(
  */
 export async function checkLayaDependencies(pythonPath: string): Promise<boolean> {
 	try {
-		const proc = Bun.spawn([
-			pythonPath,
-			"-c",
-			"import laya, fastapi, uvicorn, torch; print('OK')",
-		], { stdout: "pipe", stderr: "pipe" });
+		const proc = Bun.spawn([pythonPath, "-c", "import laya, fastapi, uvicorn, torch; print('OK')"], {
+			stdout: "pipe",
+			stderr: "pipe",
+		});
 		const exitCode = await proc.exited;
 		if (exitCode !== 0) return false;
 		const text = (await new Response(proc.stdout).text()).trim();
@@ -481,6 +502,7 @@ export function getSidecarDir(): string {
 
 const BUNDLED_SIDECAR_FILES = [
 	"server.py",
+	"inference_scheduler.py",
 	"hardware.py",
 	"bucketing.py",
 	"calibration.py",
@@ -502,13 +524,14 @@ export function materializeBundledLayaSidecar(payload: string, agentDir: string)
 	const digest = Bun.SHA256.hash(raw, "hex").slice(0, 16);
 	const sidecarRoot = path.join(agentDir, "sidecar");
 	const target = path.join(sidecarRoot, digest);
-	const complete = () => BUNDLED_SIDECAR_FILES.every(name => {
-		try {
-			return fs.readFileSync(path.join(target, name), "utf8") === files[name];
-		} catch {
-			return false;
-		}
-	});
+	const complete = () =>
+		BUNDLED_SIDECAR_FILES.every(name => {
+			try {
+				return fs.readFileSync(path.join(target, name), "utf8") === files[name];
+			} catch {
+				return false;
+			}
+		});
 	if (complete()) return target;
 	if (fs.existsSync(target)) throw new Error(`Bundled Laya sidecar directory is incomplete: ${target}`);
 
@@ -546,36 +569,42 @@ export async function installLayaDependencies(
 
 	try {
 		onProgress?.("Upgrading pip and wheel...");
-		const upgradeProc = Bun.spawn([
-			pythonPath,
-			"-m",
-			"pip",
-			"install",
-			"--upgrade",
-			"pip",
-			"setuptools",
-			"wheel",
-			"--no-input",
-			"--prefer-binary",
-			"--retries",
-			"3",
-			"--timeout",
-			"30",
-		], {
-			cwd: sidecarDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
+		const upgradeProc = Bun.spawn(
+			[
+				pythonPath,
+				"-m",
+				"pip",
+				"install",
+				"--upgrade",
+				"pip",
+				"setuptools",
+				"wheel",
+				"--no-input",
+				"--prefer-binary",
+				"--retries",
+				"3",
+				"--timeout",
+				"30",
+			],
+			{
+				cwd: sidecarDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		);
 		await streamProcessOutput(upgradeProc, undefined, { activityTimeoutMs: 60_000, totalTimeoutMs: 120_000 });
 
 		const hasNvidia = await isHostNvidiaGpuPresent();
-		const extraIndexArgs = (!hasNvidia && process.platform !== "darwin")
-			? ["--extra-index-url", "https://download.pytorch.org/whl/cpu"]
-			: [];
+		const extraIndexArgs =
+			!hasNvidia && process.platform !== "darwin"
+				? ["--extra-index-url", "https://download.pytorch.org/whl/cpu"]
+				: [];
 
 		const targetDesc = hasNvidia
 			? "CUDA GPU runtime"
-			: (process.platform === "darwin" ? "Apple Silicon / CPU runtime" : "CPU runtime (~180MB lightweight wheel)");
+			: process.platform === "darwin"
+				? "Apple Silicon / CPU runtime"
+				: "CPU runtime (~180MB lightweight wheel)";
 		onProgress?.(`Installing Python dependencies (laya, fastapi, uvicorn, torch for ${targetDesc})...`);
 
 		const hasReq = Bun.file(reqPath).size > 0;
@@ -591,7 +620,9 @@ export async function installLayaDependencies(
 			"--timeout",
 			"30",
 			...extraIndexArgs,
-			...(hasReq ? ["-r", reqPath] : ["laya>=0.3.5", "fastapi>=0.115.0", "uvicorn>=0.30.0", "torch", "pydantic>=2.0.0"]),
+			...(hasReq
+				? ["-r", reqPath]
+				: ["laya>=0.3.5", "fastapi>=0.115.0", "uvicorn>=0.30.0", "torch", "pydantic>=2.0.0"]),
 		];
 
 		const filterPipProgress = (rawLine: string) => {
@@ -619,7 +650,10 @@ export async function installLayaDependencies(
 		});
 
 		if (res.exitCode !== 0) {
-			return { success: false, error: res.stderr || res.stdout || `pip install failed with exit code ${res.exitCode}` };
+			return {
+				success: false,
+				error: res.stderr || res.stdout || `pip install failed with exit code ${res.exitCode}`,
+			};
 		}
 
 		const verified = await checkLayaDependencies(pythonPath);
@@ -653,7 +687,10 @@ export async function ensureLayaModelCached(
 		// Mode 4: Probe for corrupted model (<800MB or unreadable) and purge if corrupt
 		const corruptCheck = await checkAndRemediateCorruptedModel(pythonPath, setupLogger, onProgress);
 		if (corruptCheck.corrupted && !corruptCheck.remediated) {
-			return { success: false, error: corruptCheck.error ?? "Corrupted checkpoint detected and could not be purged" };
+			return {
+				success: false,
+				error: corruptCheck.error ?? "Corrupted checkpoint detected and could not be purged",
+			};
 		}
 
 		const probeCode = `
@@ -783,7 +820,10 @@ except Exception as e:
 			if (isSymlinkPrivilegeError(res.stderr || res.stdout)) {
 				await applyWindowsSymlinkRemediation(setupLogger, onProgress);
 			}
-			return { success: false, error: res.stderr || res.stdout || `Model loading failed with exit code ${res.exitCode}` };
+			return {
+				success: false,
+				error: res.stderr || res.stdout || `Model loading failed with exit code ${res.exitCode}`,
+			};
 		}
 		return { success: true };
 	} catch (err) {
@@ -921,11 +961,7 @@ async function runSidecarSpawnProcess(
 		const pidPath = getLayaSidecarPidFile(agentDir);
 		fs.mkdirSync(path.dirname(logPath), { recursive: true });
 		const logFd = fs.openSync(logPath, "a");
-		const child = Bun.spawn([
-			pythonPath,
-			"-u",
-			serverPath,
-		], {
+		const child = Bun.spawn([pythonPath, "-u", serverPath], {
 			cwd: sidecarDir,
 			...resolveDaemonSpawnOptions({
 				platform: process.platform,
@@ -955,7 +991,9 @@ async function runSidecarSpawnProcess(
 		let childExited = false;
 		let childExitCode: number | null = null;
 		const closeLog = (): void => {
-			try { fs.closeSync(logFd); } catch {}
+			try {
+				fs.closeSync(logFd);
+			} catch {}
 		};
 		void child.exited.then(code => {
 			childExited = true;
@@ -968,9 +1006,14 @@ async function runSidecarSpawnProcess(
 
 		while (Date.now() - startTime < maxTimeoutMs) {
 			if (childExited) {
-				try { fs.rmSync(pidPath, { force: true }); } catch {}
+				try {
+					fs.rmSync(pidPath, { force: true });
+				} catch {}
 				const tail = tailFileBytes(logPath, 4096).trim().split("\n").slice(-10).join("\n");
-				return { success: false, error: `Laya sidecar exited during startup (code ${childExitCode}) — see ${logPath}${tail ? `: ${tail}` : ""}` };
+				return {
+					success: false,
+					error: `Laya sidecar exited during startup (code ${childExitCode}) — see ${logPath}${tail ? `: ${tail}` : ""}`,
+				};
 			}
 			if (await isLayaSidecarRunning(effectiveBaseUrl)) {
 				return { success: true, actualBaseUrl: effectiveBaseUrl };
@@ -984,9 +1027,13 @@ async function runSidecarSpawnProcess(
 
 		// Probe window exhausted with a live-but-unready child: kill it so a
 		// wedged daemon doesn't linger behind the caller's port.
-		try { child.kill(); } catch {}
+		try {
+			child.kill();
+		} catch {}
 		closeLog();
-		try { fs.rmSync(pidPath, { force: true }); } catch {}
+		try {
+			fs.rmSync(pidPath, { force: true });
+		} catch {}
 		await setupLogger?.log(`[SIDECAR] Killed unready sidecar child after 180s probe at ${effectiveBaseUrl}`);
 		return { success: false, error: `Timed out waiting 180s for Laya sidecar /health at ${effectiveBaseUrl}` };
 	} catch (err) {
@@ -1029,7 +1076,11 @@ export interface ConfigureLayaOptions {
 	settings?: Settings;
 	baseUrl?: string;
 	forceReinstall?: boolean;
-	onStepUpdate?: (stepId: string, status: "pending" | "running" | "done" | "error" | "skipped", message?: string) => void;
+	onStepUpdate?: (
+		stepId: string,
+		status: "pending" | "running" | "done" | "error" | "skipped",
+		message?: string,
+	) => void;
 	onUserConfirmation?: (proposal: EvaluatedDiagnosisProposal) => Promise<boolean>;
 	modelRegistry?: ModelRegistry;
 	disableLlmDiagnosis?: boolean;
@@ -1111,13 +1162,19 @@ export async function runLayaConfiguration(options: ConfigureLayaOptions = {}): 
 		if (smoke.success) {
 			const cached = await loadCalibration(agentDir);
 			const hw = await client.getHardwareInfo();
-			const stale = hw ? await checkCalibrationSignatureMismatch(cached, hw.signature, setupLogger) : { isStale: true };
+			const stale = hw
+				? await checkCalibrationSignatureMismatch(cached, hw.signature, setupLogger)
+				: { isStale: true };
 			if (cached && !stale.isStale) {
 				onUpdate?.("python", "done", "Python runtime verified");
 				onUpdate?.("dependencies", "done", "Laya dependencies verified in running sidecar");
 				onUpdate?.("model", "done", "convaiinnovations/laya-typed-decisions verified");
 				onUpdate?.("sidecar", "done", `Connected to active sidecar at ${baseUrl}`);
-				onUpdate?.("calibrate", "done", `Calibrated for ${cached.hardware.tier} tier (${cached.hardware.signature})`);
+				onUpdate?.(
+					"calibrate",
+					"done",
+					`Calibrated for ${cached.hardware.tier} tier (${cached.hardware.signature})`,
+				);
 				onUpdate?.("smoketest", "done", `Smoke test passed: /health & /v1/decide OK (${smoke.latencyMs}ms)`);
 				onUpdate?.("connect", "done", `Harvest connected to ${baseUrl}`);
 
@@ -1183,27 +1240,50 @@ export async function runLayaConfiguration(options: ConfigureLayaOptions = {}): 
 		if (!depRes.success) {
 			const err = depRes.error ?? "Failed to install dependencies";
 			onUpdate?.("dependencies", "error", err);
-			return handleLayaFailure(err, setupLogger, options.settings, { pythonPath: activePython, hostHasNvidia: hasNvidia }, options);
+			return handleLayaFailure(
+				err,
+				setupLogger,
+				options.settings,
+				{ pythonPath: activePython, hostHasNvidia: hasNvidia },
+				options,
+			);
 		}
-		onUpdate?.("dependencies", "done", depRes.alreadyInstalled ? "All dependencies verified" : "Dependencies installed successfully");
+		onUpdate?.(
+			"dependencies",
+			"done",
+			depRes.alreadyInstalled ? "All dependencies verified" : "Dependencies installed successfully",
+		);
 
 		// 3. Model checkpoint (Mode 4, 6)
 		onUpdate?.("model", "running", "Verifying single-model checkpoint convaiinnovations/laya-typed-decisions...");
-		const modelRes = await ensureLayaModelCached(activePython, msg => {
-			onUpdate?.("model", "running", msg);
-		}, setupLogger);
+		const modelRes = await ensureLayaModelCached(
+			activePython,
+			msg => {
+				onUpdate?.("model", "running", msg);
+			},
+			setupLogger,
+		);
 		if (!modelRes.success) {
 			const err = modelRes.error ?? "Failed to verify model checkpoint";
 			onUpdate?.("model", "error", err);
 			return handleLayaFailure(err, setupLogger, options.settings, { pythonPath: activePython }, options);
 		}
-		onUpdate?.("model", "done", modelRes.alreadyCached ? "Model checkpoint verified in cache" : "Model checkpoint ready in single-model mode");
+		onUpdate?.(
+			"model",
+			"done",
+			modelRes.alreadyCached ? "Model checkpoint verified in cache" : "Model checkpoint ready in single-model mode",
+		);
 
 		// 4. Start sidecar (Mode 3, 5)
 		onUpdate?.("sidecar", "running", `Starting sidecar daemon...`);
-		const startRes = await startLayaSidecarProcess(activePython, baseUrl, msg => {
-			onUpdate?.("sidecar", "running", msg);
-		}, setupLogger);
+		const startRes = await startLayaSidecarProcess(
+			activePython,
+			baseUrl,
+			msg => {
+				onUpdate?.("sidecar", "running", msg);
+			},
+			setupLogger,
+		);
 		if (!startRes.success) {
 			const err = startRes.error ?? "Failed to start sidecar";
 			onUpdate?.("sidecar", "error", err);
@@ -1230,7 +1310,11 @@ export async function runLayaConfiguration(options: ConfigureLayaOptions = {}): 
 				agentDir,
 				force: forceCal,
 			});
-			onUpdate?.("calibrate", "done", `Calibrated for ${calibration.hardware.tier} tier (${calibration.hardware.device_name})`);
+			onUpdate?.(
+				"calibrate",
+				"done",
+				`Calibrated for ${calibration.hardware.tier} tier (${calibration.hardware.device_name})`,
+			);
 		} catch (calErr) {
 			logger.warn("Hardware self-calibration non-fatal fallback", { error: calErr });
 			onUpdate?.("calibrate", "done", "Self-calibration complete with defaults");
@@ -1247,7 +1331,13 @@ export async function runLayaConfiguration(options: ConfigureLayaOptions = {}): 
 			} else {
 				const err = smokeRes.error ?? "End-to-end smoke test failed";
 				onUpdate?.("smoketest", "error", err);
-				return handleLayaFailure(err, setupLogger, options.settings, { activePort: Number(new URL(effectiveUrl).port) || 8177 }, options);
+				return handleLayaFailure(
+					err,
+					setupLogger,
+					options.settings,
+					{ activePort: Number(new URL(effectiveUrl).port) || 8177 },
+					options,
+				);
 			}
 		} else {
 			onUpdate?.("smoketest", "done", `Smoke test passed in ${smokeRes.latencyMs}ms (/health OK, /v1/decide OK)`);
@@ -1289,11 +1379,13 @@ export async function runLayaConfiguration(options: ConfigureLayaOptions = {}): 
 /**
  * Autonomous entry point for agents or programmatic callers to set up Laya.
  */
-export async function setupLayaAutonomously(options: {
-	settings?: Settings;
-	baseUrl?: string;
-	force?: boolean;
-} = {}): Promise<LayaSetupResult> {
+export async function setupLayaAutonomously(
+	options: {
+		settings?: Settings;
+		baseUrl?: string;
+		force?: boolean;
+	} = {},
+): Promise<LayaSetupResult> {
 	return configureLayaLocally({
 		settings: options.settings,
 		baseUrl: options.baseUrl,
@@ -1303,4 +1395,3 @@ export async function setupLayaAutonomously(options: {
 		},
 	});
 }
-

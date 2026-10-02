@@ -17,7 +17,6 @@
  * 6. Never automatically expands the deterministic known-signature table.
  */
 
-import * as path from "node:path";
 import { type Api, completeSimple, type Model } from "@harvest/pi-ai";
 import { prompt, logger } from "@harvest/pi-utils";
 import type { ModelRegistry } from "../../config/model-registry";
@@ -62,15 +61,13 @@ const SYSTEM_PROMPT = prompt.render(promptTemplate);
  * Strict safety evaluator that inspects a proposed action and enforces risk gating.
  * The model's own risk self-assessment is NEVER the sole gate for something destructive.
  */
-export function evaluateRiskClassification(
-	proposal: {
-		actionType: string;
-		suggestedAction?: string | null;
-		modelRiskLevel?: RiskLevel;
-		riskLevel?: RiskLevel;
-		riskReason?: string;
-	},
-): {
+export function evaluateRiskClassification(proposal: {
+	actionType: string;
+	suggestedAction?: string | null;
+	modelRiskLevel?: RiskLevel;
+	riskLevel?: RiskLevel;
+	riskReason?: string;
+}): {
 	effectiveRiskLevel: RiskLevel;
 	isAutoAppliable: boolean;
 	overrideReason?: string;
@@ -81,7 +78,10 @@ export function evaluateRiskClassification(
 	// 1. Unconditionally reject any action that touches ports, kills processes, deletes files, or escalates privileges
 	const destructivePatterns: Array<{ pattern: RegExp; reason: string }> = [
 		{ pattern: /\b(kill|pkill|taskkill|stop-process|killall)\b/, reason: "Action attempts to terminate processes" },
-		{ pattern: /\b(port|bind|listen|netstat|fuser|lsof)\b/, reason: "Action attempts to alter or probe network ports" },
+		{
+			pattern: /\b(port|bind|listen|netstat|fuser|lsof)\b/,
+			reason: "Action attempts to alter or probe network ports",
+		},
 		{ pattern: /\b(rm|rmdir|del|remove-item|erase)\b/, reason: "Action attempts filesystem deletion" },
 		{ pattern: /\b(sudo|runas|chmod|chown)\b/, reason: "Action requires elevated privileges" },
 		{ pattern: /(\|\s*(bash|sh|powershell|iex|cmd))/, reason: "Action pipes content into a shell interpreter" },
@@ -106,7 +106,8 @@ export function evaluateRiskClassification(
 			actionStr.startsWith("python -m pip install ") ||
 			/^[a-z0-9_.-]+$/.test(actionStr); // bare package name
 
-		const hasDangerousFlags = actionStr.includes("--root") || actionStr.includes("--target") || actionStr.includes("--prefix");
+		const hasDangerousFlags =
+			actionStr.includes("--root") || actionStr.includes("--target") || actionStr.includes("--prefix");
 
 		if (isSafePip && !hasDangerousFlags) {
 			return {
@@ -142,9 +143,10 @@ export function evaluateRiskClassification(
 	return {
 		effectiveRiskLevel: "touches-system-state",
 		isAutoAppliable: false,
-		overrideReason: rawRisk !== "touches-system-state"
-			? "Custom action defaulted to touches-system-state for user safety"
-			: undefined,
+		overrideReason:
+			rawRisk !== "touches-system-state"
+				? "Custom action defaulted to touches-system-state for user safety"
+				: undefined,
 	};
 }
 
@@ -321,12 +323,16 @@ export async function queryLlmDiagnosis(
 		}
 
 		const validRisk: RiskLevel =
-			parsed.riskLevel === "low-risk-reversible" || parsed.riskLevel === "informational" || parsed.riskLevel === "touches-system-state"
+			parsed.riskLevel === "low-risk-reversible" ||
+			parsed.riskLevel === "informational" ||
+			parsed.riskLevel === "touches-system-state"
 				? parsed.riskLevel
 				: "touches-system-state";
 
 		const validActionType: DiagnosisActionType =
-			parsed.actionType === "install_dependency" || parsed.actionType === "retry_download" || parsed.actionType === "none"
+			parsed.actionType === "install_dependency" ||
+			parsed.actionType === "retry_download" ||
+			parsed.actionType === "none"
 				? parsed.actionType
 				: "custom";
 
@@ -403,7 +409,11 @@ export async function runLlmAssistedDiagnosis(
 	});
 
 	// Low-risk, clearly reversible auto-application
-	if (evaluated.effectiveRiskLevel === "low-risk-reversible" && evaluated.isAutoAppliable && options.autoApplyLowRisk !== false) {
+	if (
+		evaluated.effectiveRiskLevel === "low-risk-reversible" &&
+		evaluated.isAutoAppliable &&
+		options.autoApplyLowRisk !== false
+	) {
 		const applyRes = await executeAutoAppliedFix(evaluated, {
 			pythonPath: options.pythonPath ?? bundle.pythonPath,
 			setupLogger: options.setupLogger,
@@ -422,9 +432,7 @@ export async function runLlmAssistedDiagnosis(
 					`[LLM_DIAGNOSIS] User explicitly confirmed candidate fix: ${evaluated.suggestedAction}`,
 				);
 			} else {
-				await options.setupLogger?.log(
-					`[LLM_DIAGNOSIS] User declined candidate fix: ${evaluated.suggestedAction}`,
-				);
+				await options.setupLogger?.log(`[LLM_DIAGNOSIS] User declined candidate fix: ${evaluated.suggestedAction}`);
 			}
 		} else {
 			await options.setupLogger?.log(

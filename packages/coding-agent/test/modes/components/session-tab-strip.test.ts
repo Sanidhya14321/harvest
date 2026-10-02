@@ -12,6 +12,51 @@ beforeAll(async () => {
 	await initTheme(false);
 });
 
+it("does not switch hidden or clipped workspace tabs and clears their hover target", () => {
+	const tabs = new SessionTabs();
+	tabs.open("/work/first.jsonl", "First task");
+	tabs.open("/work/second.jsonl", "Second task");
+	let selected = "";
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/first.jsonl",
+		() => "First task",
+		async path => {
+			selected = path;
+		},
+	);
+	const row = Bun.stripANSI(strip.renderWorkspace(100, true)[0]);
+	const col = row.indexOf("Second task");
+	expect(strip.hoverWorkspace(0, col)).toBe(true);
+	expect(strip.hoverWorkspace(0, col)).toBe(false);
+	expect(strip.renderWorkspace(100, true, 0)).toEqual([]);
+	expect(strip.clickWorkspace(0, col)).toBe(false);
+	expect(strip.hoverWorkspace(0, col)).toBe(true);
+	expect(selected).toBe("");
+	strip.renderWorkspace(100, true);
+	expect(strip.clickWorkspace(0, col)).toBe(true);
+	expect(selected).toBe("/work/second.jsonl");
+});
+
+it("uses overflow arrows to reach sessions outside the visible window", () => {
+	const tabs = new SessionTabs();
+	for (let index = 1; index <= 12; index++) tabs.open(`/work/${index}.jsonl`, `Task ${index}`);
+	let selected = "";
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/6.jsonl",
+		() => "Task 6",
+		async path => {
+			selected = path;
+		},
+	);
+	const row = Bun.stripANSI(strip.renderWorkspace(200, true)[0]);
+	expect(strip.clickWorkspace(0, row.indexOf("‹"))).toBe(true);
+	expect(selected).toBe("/work/3.jsonl");
+	expect(strip.clickWorkspace(0, row.indexOf("›"))).toBe(true);
+	expect(selected).toBe("/work/9.jsonl");
+});
+
 it("shows open session titles and keeps control characters out of the tab strip", () => {
 	const tabs = new SessionTabs();
 	tabs.open("/work/first.jsonl", "First task");

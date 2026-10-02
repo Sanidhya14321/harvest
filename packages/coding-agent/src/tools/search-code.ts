@@ -6,17 +6,20 @@
  * - Queries token-efficient section pages with Okapi BM25 ranking.
  */
 
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { type as arkType } from "@harvest/omptype";
-import type { AgentTool, AgentToolContext, AgentToolResult } from "@harvest/pi-agent-core";
+import type { AgentTool, AgentToolContext, AgentToolResult, AgentToolUpdateCallback } from "@harvest/pi-agent-core";
 import { CodeIndex } from "../core/harvest/code-index";
 import { KnowledgeRetriever } from "../core/harvest/retrieval";
 import type { ToolSession } from "./index";
 
 const searchCodeSchema = arkType({
-	query: arkType("string").describe("Search query for symbol names, function signatures, or keywords in documentation"),
-	"mode?": arkType("'symbols' | 'docs' | 'all'").describe("Search mode: 'symbols' for code declarations, 'docs' for section retrieval, or 'all' (default)"),
+	query: arkType("string").describe(
+		"Search query for symbol names, function signatures, or keywords in documentation",
+	),
+	"mode?": arkType("'symbols' | 'docs' | 'all'").describe(
+		"Search mode: 'symbols' for code declarations, 'docs' for section retrieval, or 'all' (default)",
+	),
 	"limit?": arkType("number").describe("Maximum number of results to return (default: 20)"),
 });
 
@@ -30,63 +33,70 @@ export interface SearchCodeDetails {
 export class SearchCodeTool implements AgentTool<typeof searchCodeSchema, SearchCodeDetails> {
 	readonly name = "search_code";
 	readonly label = "Search Code";
-	readonly description = "Search symbol declarations (functions, classes, interfaces) or documentation sections using Harvest's dual-stage retrieval engine.";
+	readonly description =
+		"Search symbol declarations (functions, classes, interfaces) or documentation sections using Harvest's dual-stage retrieval engine.";
 	readonly parameters = searchCodeSchema;
 	readonly concurrency = "shared";
 	readonly strict = true;
 
 	readonly #codeIndex: CodeIndex;
-	readonly #knowledgeRetriever: KnowledgeRetriever;
+	#knowledgeRetriever: KnowledgeRetriever | undefined;
 	readonly #workspaceRoot: string;
 
-	constructor(private readonly session: ToolSession) {
+	constructor(session: Pick<ToolSession, "cwd">) {
 		this.#workspaceRoot = session.cwd;
 		this.#codeIndex = new CodeIndex(this.#workspaceRoot);
-		this.#knowledgeRetriever = new KnowledgeRetriever(this.#workspaceRoot);
 	}
 
 	async execute(
 		_toolCallId: string,
 		params: SearchCodeInput,
-		_signal?: AbortSignal,
-		_onUpdate?: unknown,
+		signal?: AbortSignal,
+		onUpdate?: AgentToolUpdateCallback<SearchCodeDetails>,
 		_context?: AgentToolContext,
 	): Promise<AgentToolResult<SearchCodeDetails>> {
 		const query = params.query.trim();
 		const mode = params.mode ?? "all";
 		const limit = params.limit ?? 20;
+		if (!query || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+			throw new Error("Search requires a non-empty query and an integer limit between 1 and 100.");
+		}
+		signal?.throwIfAborted();
 
 		const outputLines: string[] = [];
 		let totalMatches = 0;
 
 		if (mode === "symbols" || mode === "all") {
-			let symbols = this.#codeIndex.searchSymbols(query, limit);
-			if (symbols.length === 0) {
-				// Scan workspace files on initial query
-				try {
-					const entries = fs.readdirSync(this.#workspaceRoot, { recursive: true }) as string[];
-					this.#codeIndex.updateIndex(entries);
-					symbols = this.#codeIndex.searchSymbols(query, limit);
-				} catch {}
-			}
+			onUpdate?.({
+				content: [{ type: "text", text: "Refreshing source symbol index…" }],
+				details: { query, totalMatches: 0 },
+			});
+			await this.#codeIndex.refreshWorkspace(signal);
+			const symbols = await this.#codeIndex.searchSymbols(query, limit);
 			if (symbols.length > 0) {
 				outputLines.push(`### Code Symbols (${symbols.length} matches):`);
 				for (const sym of symbols.slice(0, limit)) {
-					const relPath = path.relative(this.#workspaceRoot, sym.filePath) || sym.filePath;
-					outputLines.push(`- **${sym.name}** (${sym.kind}) at \`${relPath}:${sym.lineNumber}\`\n  \`${sym.signature}\``);
+					const relPath = sym.filePath;
+					outputLines.push(
+						`- **${sym.name}** (${sym.kind}) at \`${relPath}:${sym.lineNumber}\`\n  \`${sym.signature}\``,
+					);
 				}
 				totalMatches += symbols.length;
 			}
 		}
 
 		if (mode === "docs" || mode === "all") {
+			signal?.throwIfAborted();
+			this.#knowledgeRetriever ??= new KnowledgeRetriever(this.#workspaceRoot);
 			const docs = this.#knowledgeRetriever.search(query, undefined, limit);
 			if (docs.length > 0) {
 				if (outputLines.length > 0) outputLines.push("");
 				outputLines.push(`### Documentation Sections (${docs.length} matches):`);
 				for (const res of docs) {
 					const relPath = path.relative(this.#workspaceRoot, res.page.filePath) || res.page.filePath;
-					outputLines.push(`- **${res.page.title}** (\`${relPath}\`, score: ${res.score.toFixed(2)})\n  ${res.page.heading}\n  > ${res.page.content.slice(0, 150).replace(/\n/g, " ")}...`);
+					outputLines.push(
+						`- **${res.page.title}** (\`${relPath}\`, score: ${res.score.toFixed(2)})\n  ${res.page.heading}\n  > ${res.page.content.slice(0, 150).replace(/\n/g, " ")}...`,
+					);
 				}
 				totalMatches += docs.length;
 			}

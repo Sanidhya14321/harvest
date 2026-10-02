@@ -52,8 +52,11 @@ describe("SessionManager workspace directories", () => {
 		const session = SessionManager.inMemory();
 		await session.setAdditionalDirectories(["/some/other", session.getCwd()]);
 		// cwd is filtered out of the additional set.
-		expect(session.getAdditionalDirectories()).toEqual(["/some/other"]);
-		expect([session.getCwd(), ...session.getAdditionalDirectories()]).toEqual([session.getCwd(), "/some/other"]);
+		expect(session.getAdditionalDirectories()).toEqual([path.resolve("/some/other")]);
+		expect([session.getCwd(), ...session.getAdditionalDirectories()]).toEqual([
+			session.getCwd(),
+			path.resolve("/some/other"),
+		]);
 	});
 
 	it("addWorkspaceDirectory rejects the cwd itself", async () => {
@@ -112,7 +115,7 @@ describe("SessionManager workspace directories", () => {
 
 		const file = session.getSessionFile();
 		expect(file).toBeDefined();
-		const reopened = await SessionManager.open(file!);
+		const reopened = await SessionManager.open(file!, undefined, undefined, { readOnly: true });
 		expect(reopened.getAdditionalDirectories()).toEqual([path.join(tempDir.path(), "sibling")]);
 		expect([reopened.getCwd(), ...reopened.getAdditionalDirectories()]).toEqual([
 			tempDir.path(),
@@ -176,7 +179,7 @@ describe("SessionManager workspace directories", () => {
 		// Once the session produces durable output, the header carries the roots.
 		session.appendMessage(makeAssistantMessage());
 		await session.flush();
-		const reopened = await SessionManager.open(session.getSessionFile()!);
+		const reopened = await SessionManager.open(session.getSessionFile()!, undefined, undefined, { readOnly: true });
 		expect(reopened.getAdditionalDirectories()).toEqual([
 			path.join(tempDir.path(), "extra"),
 			path.join(tempDir.path(), "extra2"),

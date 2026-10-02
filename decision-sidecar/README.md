@@ -53,7 +53,15 @@ TS client treats as fallback (tool gating fails CLOSED on fallback).
 Request limits (enforced before tokenization): 64 questions max, 500k state
 chars aggregate, 100k chars per question chunk, 16k chars per question
 definition, 4k chars instructions, ~70k estimated input tokens aggregate.
-Inference runs at most 2 concurrent (`LAYA_INFERENCE_TIMEOUT_S`, default 120s).
+Inference runs at most 2 concurrent (`LAYA_INFERENCE_TIMEOUT_S`, default 120s),
+with at most 8 requests waiting for capacity. A full queue returns 503. Clients
+may send positive `metadata.request_timeout_ms` up to the configured server limit;
+this budget includes waiting and inference. Harvest sends its remaining client
+budget. Expired queued requests never begin inference, and disconnected callers
+are checked before dispatch. A timed-out or cancelled running request retains
+its slot until synchronous prediction actually finishes: Torch threads cannot be
+stopped by cancelling an HTTP waiter. A permanently stuck prediction requires
+sidecar restart; it cannot silently oversubscribe inference capacity.
 
 **Request Body:**
 ```json

@@ -230,7 +230,11 @@ describe("Laya Bounded Self-Healing Framework", () => {
 					signature: "signature_cpu_i7_8cores",
 				},
 			};
-			const res = await layaSelfHealing.checkCalibrationSignatureMismatch(cached, "signature_cpu_i7_8cores", setupLogger);
+			const res = await layaSelfHealing.checkCalibrationSignatureMismatch(
+				cached,
+				"signature_cpu_i7_8cores",
+				setupLogger,
+			);
 			expect(res.isStale).toBe(false);
 		});
 	});
@@ -257,7 +261,9 @@ describe("Laya Bounded Self-Healing Framework", () => {
 
 	describe("Failure Mode 2: Windows HF Symlink Restriction", () => {
 		it("identifies WinError 1314 as symlink privilege error", () => {
-			const error = new Error("OSError: [WinError 1314] A required privilege is not held by the client: 'model.safetensors'");
+			const error = new Error(
+				"OSError: [WinError 1314] A required privilege is not held by the client: 'model.safetensors'",
+			);
 			expect(layaSelfHealing.isSymlinkPrivilegeError(error)).toBe(true);
 		});
 
@@ -298,7 +304,9 @@ describe("Laya Bounded Self-Healing Framework", () => {
 			const mockClient = {
 				baseUrl: "http://127.0.0.1:8177",
 				isHealthy: async () => false,
-				decide: async () => { throw new Error("Connection refused"); },
+				decide: async () => {
+					throw new Error("Connection refused");
+				},
 			};
 
 			const res = await layaSelfHealing.runLayaSmokeTest(mockClient, setupLogger);
@@ -388,7 +396,10 @@ describe("Laya Bounded Self-Healing Framework", () => {
 			vi.spyOn(layaService, "isLayaSidecarRunning").mockResolvedValue(false);
 			vi.spyOn(layaService, "checkLayaDependencies").mockResolvedValue(true);
 			vi.spyOn(layaService, "installLayaDependencies").mockResolvedValue({ success: true });
-			vi.spyOn(layaSelfHealing, "verifyAndRepairTorchWheel").mockResolvedValue({ repaired: false, cudaAvailable: false });
+			vi.spyOn(layaSelfHealing, "verifyAndRepairTorchWheel").mockResolvedValue({
+				repaired: false,
+				cudaAvailable: false,
+			});
 			vi.spyOn(layaService, "ensureLayaModelCached").mockResolvedValue({ success: true, alreadyCached: true });
 			vi.spyOn(layaService, "startLayaSidecarProcess").mockResolvedValue({
 				success: false,
@@ -435,5 +446,107 @@ describe("Laya Bounded Self-Healing Framework", () => {
 			expect(parsed.bunVersion).toBe(Bun.version);
 			expect(parsed.pythonPath).toBe("/opt/custom/python");
 		});
+	});
+});
+
+describe("Managed sidecar identity verification (P1-11)", () => {
+	const servers: Array<{ stop: (closeActiveConnections?: boolean) => void }> = [];
+	afterEach(() => {
+		for (const server of servers.splice(0)) {
+			try {
+				server.stop(true);
+			} catch {}
+		}
+	});
+
+	function startFake(handler: (req: Request) => Response | Promise<Response>): string {
+		const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: handler });
+		servers.push(server);
+		return `http://127.0.0.1:${server.port}`;
+	}
+
+	const faithfulHealth = { ready: true, status: "ok", model: layaSelfHealing.EXPECTED_LAYA_MODEL_ID };
+	const faithfulDecide = {
+		answers: { probe: { type: "noul", confidence: 0.9, noul: 0.1 } },
+		model: layaSelfHealing.EXPECTED_LAYA_MODEL_ID,
+		latency_ms: 1,
+	};
+
+	function decideHandler(mode: "ok" | "unauthorized"): (req: Request) => Promise<Response> {
+		return async (req: Request) => {
+			const url = new URL(req.url);
+			if (url.pathname === "/health") return Response.json(faithfulHealth);
+			if (url.pathname === "/v1/decide") {
+				if (mode === "unauthorized") return new Response("Missing or invalid sidecar auth token", { status: 401 });
+				return Response.json(faithfulDecide);
+			}
+			return new Response("Not Found", { status: 404 });
+		};
+	}
+
+	it("rejects a healthy-looking listener with the wrong model id", async () => {
+		const url = startFake(async req => {
+			if (new URL(req.url).pathname === "/health") {
+				return Response.json({ ready: true, status: "ok", model: "other/fake-model" });
+			}
+			return Response.json(faithfulDecide);
+		});
+		const result = await layaSelfHealing.verifyManagedSidecarIdentity(url);
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("unexpected model");
+	});
+
+	it("rejects a healthy-looking listener with no model identity", async () => {
+		const url = startFake(async req => {
+			if (new URL(req.url).pathname === "/health") {
+				return Response.json({ ready: true, status: "ok" });
+			}
+			return Response.json(faithfulDecide);
+		});
+		const result = await layaSelfHealing.verifyManagedSidecarIdentity(url);
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("no model identity");
+	});
+
+	it("rejects when the decide probe is unauthorized even with the right model", async () => {
+		const url = startFake(decideHandler("unauthorized"));
+		const result = await layaSelfHealing.verifyManagedSidecarIdentity(url);
+		expect(result.ok).toBe(false);
+	});
+
+	it("accepts a faithful managed sidecar (model identity + working decide)", async () => {
+		const url = startFake(decideHandler("ok"));
+		const result = await layaSelfHealing.verifyManagedSidecarIdentity(url);
+		expect(result).toEqual({ ok: true });
+	});
+
+	it("does not reuse a wrong-model occupant and keeps it alive on an alternate port", async () => {
+		const occupiedPort = 8191;
+		const occupant = Bun.serve({
+			port: occupiedPort,
+			hostname: "127.0.0.1",
+			fetch: async req => {
+				if (new URL(req.url).pathname === "/health") {
+					return Response.json({ ready: true, status: "ok", model: "other/fake-model" });
+				}
+				return Response.json(faithfulDecide);
+			},
+		});
+		servers.push(occupant);
+		try {
+			const portRes = await layaSelfHealing.resolvePortConflict(occupiedPort, `http://127.0.0.1:${occupiedPort}`);
+			expect(portRes.reusedExistingSidecar).toBe(false);
+			expect(portRes.foreignProcessDetected).toBe(true);
+			expect(portRes.port).toBeGreaterThanOrEqual(occupiedPort + 1);
+			expect(portRes.port).toBeLessThanOrEqual(occupiedPort + 8);
+			// The foreign occupant was never terminated.
+			const stillThere = await fetch(`http://127.0.0.1:${occupiedPort}/health`).then(
+				async res => (await res.json()) as { model?: string },
+			);
+			expect(stillThere.model).toBe("other/fake-model");
+		} finally {
+			occupant.stop(true);
+			servers.splice(servers.indexOf(occupant), 1);
+		}
 	});
 });

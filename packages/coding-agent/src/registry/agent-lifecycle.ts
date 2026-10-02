@@ -314,7 +314,10 @@ export class AgentLifecycleManager {
 	 * Never returns a session that is mid-dispose: an in-flight park is either
 	 * cancelled (session still live) or awaited to completion before revive.
 	 */
-	async ensureLive(id: string): Promise<AgentSession> {
+	async ensureLive(id: string, expected?: AgentRef): Promise<AgentSession> {
+		if (expected && this.#registry.get(id) !== expected) {
+			throw new Error(`Agent "${id}" changed before revival.`);
+		}
 		const park = this.#parks.get(id);
 		if (park) {
 			const parked = this.#registry.get(id);
@@ -323,6 +326,9 @@ export class AgentLifecycleManager {
 			if (parked?.session && !park.detached && park.cancel()) {
 				await park.promise;
 				const kept = this.#registry.get(id)?.session;
+				if (expected && this.#registry.get(id) !== expected) {
+					throw new Error(`Agent "${id}" changed while parking.`);
+				}
 				if (kept) {
 					// Park cleared the idle timer; re-arm so TTL park still works.
 					const adopted = this.#adopted.get(id);
@@ -337,6 +343,9 @@ export class AgentLifecycleManager {
 		}
 
 		const ref = this.#registry.get(id);
+		if (expected && ref !== expected) {
+			throw new Error(`Agent "${id}" changed before revival.`);
+		}
 		if (!ref) {
 			throw new Error(
 				`Unknown agent "${id}" — it was never registered or has been released. If a transcript exists, read history://${id}.`,
