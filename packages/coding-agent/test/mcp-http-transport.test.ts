@@ -763,4 +763,34 @@ describe("MCP HTTP response byte limits", () => {
 		expect(posts).toBe(1);
 		await transport.close();
 	});
+
+	it("surfaces a bounded error when one listener event exceeds the event cap", async () => {
+		const padding = "z".repeat(5 * 1024 * 1024);
+		server = Bun.serve({
+			port: 0,
+			fetch(req) {
+				if (req.method !== "GET") {
+					return Response.json({ jsonrpc: "2.0", id: 1, result: {} });
+				}
+				return new Response(`data: {"jsonrpc":"2.0","method":"notifications/big"}\ndata: "${padding}"\n\n`, {
+					headers: { "Content-Type": "text/event-stream" },
+				});
+			},
+		});
+		const transport = await connectedTransport(0);
+		const failure = Promise.withResolvers<Error>();
+		const guard = setTimeout(() => failure.resolve(new Error("timed out waiting for the oversized-event error")), 5000);
+		transport.onError = error => {
+			clearTimeout(guard);
+			failure.resolve(error instanceof Error ? error : new Error(String(error)));
+		};
+		try {
+			await transport.startSSEListener();
+			const error = await failure.promise;
+			expect(error.message).toContain("exceeded");
+		} finally {
+			clearTimeout(guard);
+			await transport.close();
+		}
+	});
 });

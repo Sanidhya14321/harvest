@@ -22,10 +22,12 @@
 
 import type { ToolResultMessage, TextContent } from "@harvest/pi-ai";
 import type { AgentMessage } from "@harvest/pi-agent-core";
-import { isRecord, logger } from "@harvest/pi-utils";
+import { isRecord, logger, prompt } from "@harvest/pi-utils";
 import { type Settings, settings as globalSettings, type SettingPath } from "../../config/settings";
 import { getLayaClient, type LayaAnswerResult, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
 import { getDerivedPruningEnabledSync, getExplicitSetting } from "./laya-calibration";
+import pruningRelevanceTemplate from "../../prompts/laya/pruning-relevance.md" with { type: "text" };
+import pruningCriteriaDoc from "../../prompts/laya/pruning-criteria.md" with { type: "text" };
 
 function safeGetSetting<T>(settings: Settings | undefined, key: SettingPath): T | undefined {
 	if (!settings) return undefined;
@@ -44,12 +46,45 @@ export const MAX_SCORING_CHUNK_TOKENS = 800; // ~3200 characters
 /** Maximum score questions per sidecar call: the server rejects larger batches. */
 export const MAX_PRUNING_QUESTIONS_PER_REQUEST = 64;
 
-export const RELEVANCE_CRITERIA: readonly string[] = [
-	"irrelevant to current task",
-	"low relevance",
-	"moderately relevant",
-	"highly relevant to current task",
-] as const;
+export const RELEVANCE_CRITERIA: readonly string[] = parseRelevanceCriteria(pruningCriteriaDoc);
+
+/**
+ * Relevance levels parsed from the versioned prompt asset, so calibration
+ * data stays tied to an exact prompt revision. Throws at import time on a
+ * malformed asset rather than sending a degraded question.
+ */
+function parseRelevanceCriteria(doc: string): readonly string[] {
+	const levels = doc
+		.split("\n")
+		.map(line => line.trim())
+		.filter(line => line.length > 0);
+	if (levels.length !== 4) {
+		throw new Error(`pruning-criteria.md must define exactly 4 relevance levels, found ${levels.length}`);
+	}
+	return levels;
+}
+
+/** Render the versioned relevance question for one chunk label. */
+export function renderRelevanceInstructions(label: string): string {
+	return prompt.render(pruningRelevanceTemplate, { label }).trim();
+}
+
+type ContentBlockShape = { type?: string; [key: string]: unknown };
+
+/**
+ * Rebuild a message with its text replaced by a pruning placeholder,
+ * preserving non-text blocks (thinking signatures, tool calls, images).
+ * Typed generically so no `any` crosses the transcript-rewrite boundary.
+ */
+function withPlaceholderContent<T extends AgentMessage>(message: T, placeholder: string): T {
+	const content = (message as { content?: unknown }).content;
+	const blocks: ContentBlockShape[] = Array.isArray(content) ? (content as ContentBlockShape[]) : [];
+	const nonTextBlocks = blocks.filter(block => block && block.type !== "text");
+	return {
+		...message,
+		content: [{ type: "text", text: placeholder }, ...nonTextBlocks],
+	} as T;
+}
 
 export interface PruningCandidateChunk {
 	readonly id: string;
@@ -527,7 +562,7 @@ export async function pruneContextWithLaya(
 			const label = c.toolName ? `Tool '${c.toolName}' result` : `${c.role} response`;
 			questions[c.id] = {
 				type: "score",
-				instructions: `Rate how relevant this ${label} is to the current task/goal`,
+				instructions: renderRelevanceInstructions(label),
 				criteria: RELEVANCE_CRITERIA,
 			};
 			statePerChunk[c.id] = `Current Task/Goal:\n${taskGoal}\n\nCandidate Chunk (${label}):\n${c.scoringExcerpt}`;
@@ -709,16 +744,7 @@ export async function pruneContextWithLaya(
 					prunedAt: preLocked.timestamp,
 				});
 			} else if (original.role === "assistant") {
-				const nonTextBlocks = Array.isArray(original.content)
-					? (original.content as Array<{ type?: string }>).filter(b => b && b.type !== "text")
-					: [];
-				clonedMessages.push({
-					...original,
-					content: [
-						{ type: "text", text: preLocked.placeholder ?? "" } as TextContent,
-						...(nonTextBlocks as any[]),
-					],
-				});
+				clonedMessages.push(withPlaceholderContent(original, preLocked.placeholder ?? ""));
 			} else {
 				clonedMessages.push(original);
 			}
@@ -749,13 +775,7 @@ export async function pruneContextWithLaya(
 				});
 			} else if (original.role === "assistant") {
 				const placeholder = `[Earlier assistant output omitted for relevance (Laya score: ${(candidate.normalizedScore ?? 0).toFixed(2)})]`;
-				const nonTextBlocks = Array.isArray(original.content)
-					? (original.content as Array<{ type?: string }>).filter(b => b && b.type !== "text")
-					: [];
-				clonedMessages.push({
-					...original,
-					content: [{ type: "text", text: placeholder } as TextContent, ...(nonTextBlocks as any[])],
-				});
+				clonedMessages.push(withPlaceholderContent(original, placeholder));
 			} else {
 				clonedMessages.push(original);
 			}

@@ -30,6 +30,10 @@ interface IndexedDocument {
 export interface BrainRetrievalOptions {
 	readonly client?: LayaClient;
 	readonly rerank?: boolean;
+	/** Per-round-trip latency budget for reranking; falls back to lexical order on timeout. */
+	readonly rerankTimeoutMs?: number;
+	/** Knowledge scopes eligible for retrieval; omitted means project + user. */
+	readonly scopes?: readonly BrainRoot["scope"][];
 	readonly signal?: AbortSignal;
 	readonly sessionId?: string;
 	readonly maxChars?: number;
@@ -41,6 +45,10 @@ const MAX_FILE_BYTES = 256 * 1024;
 const MAX_PAGES = 4096;
 const MAX_CANDIDATES = 8;
 const MAX_CONTEXT_CHARS = 8000;
+/** Default rerank budget: one sidecar round trip on the shared decision timescale. */
+export const DEFAULT_BRAIN_RERANK_TIMEOUT_MS = 300;
+/** Bounded rerank-result cache: unchanged query/pages reuse ranking without another round trip. */
+const MAX_RERANK_CACHE_ENTRIES = 32;
 
 /** Markdown remains authoritative; the page/postings/edge index is disposable session state. */
 export class MarkdownBrain {
@@ -52,6 +60,8 @@ export class MarkdownBrain {
 	#edges: GraphEdge[] = [];
 	#refreshing?: Promise<void>;
 	#refreshedAt = 0;
+	/** Rerank cache keyed by normalized query + candidate content signatures. */
+	readonly #rerankCache = new Map<string, readonly string[]>();
 
 	constructor(roots: readonly BrainRoot[]) {
 		this.#roots = roots;
@@ -174,6 +184,73 @@ export class MarkdownBrain {
 		this.#refreshedAt = Date.now();
 	}
 
+	/**
+	 * Cache key binding a ranking to its exact inputs: normalized query plus
+	 * the candidate set's content signatures (order-independent, so retrieval
+	 * order never affects hits). Edits, deletions, and task changes all miss
+	 * naturally; scope is enforced before reranking so excluded knowledge
+	 * never enters the key.
+	 */
+	#rerankCacheKey(query: string, pages: readonly BrainPage[]): string {
+		const normalizedQuery = query.trim().replace(/\s+/g, " ").toLowerCase();
+		const signatures = pages
+			.map(page => `${page.id}:${Bun.hash(`${page.title}\n${page.heading}\n${page.content}`).toString(36)}`)
+			.sort();
+		return `${normalizedQuery}\n${signatures.join("\n")}`;
+	}
+
+	#cachedRerankOrder(query: string, pages: readonly BrainPage[]): readonly string[] | undefined {
+		return this.#rerankCache.get(this.#rerankCacheKey(query, pages));
+	}
+
+	#storeRerankOrder(query: string, pages: readonly BrainPage[], order: readonly string[]): void {
+		if (this.#rerankCache.size >= MAX_RERANK_CACHE_ENTRIES) {
+			const oldest = this.#rerankCache.keys().next();
+			if (!oldest.done) this.#rerankCache.delete(oldest.value);
+		}
+		this.#rerankCache.set(this.#rerankCacheKey(query, pages), order);
+	}
+
+	async #rerankPages(query: string, pages: BrainPage[], options: BrainRetrievalOptions): Promise<void> {
+		const questions: Record<string, LayaQuestionDefinition> = {};
+		const state: Record<string, unknown> = {};
+		pages.forEach((page, index) => {
+			const key = `brain_${index}`;
+			questions[key] = { type: "score", instructions: relevanceInstructions, criteria: RELEVANCE_CRITERIA };
+			const sanitize = options.sanitize ?? (text => text);
+			state[key] = {
+				query: sanitize(query.slice(0, 2000)),
+				scope: page.scope,
+				title: sanitize(page.title),
+				content: sanitize(createScoringExcerpt(page.content)),
+			};
+		});
+		try {
+			const result = await (options.client ?? getLayaClient()).decide(state, questions, {
+				callSite: "brain_retrieval",
+				signal: options.signal,
+				sessionId: options.sessionId,
+				timeoutMs: options.rerankTimeoutMs ?? DEFAULT_BRAIN_RERANK_TIMEOUT_MS,
+			});
+			const scores = pages.map((_page, index) => result.data?.[`brain_${index}`]?.score);
+			// Incomplete/malformed decisions keep the deterministic BM25/graph ordering.
+			if (
+				!result.fallback &&
+				scores.every(score => typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 3)
+			) {
+				const order = new Map(pages.map((page, index) => [page.id, scores[index]!]));
+				pages.sort((a, b) => order.get(b.id)! - order.get(a.id)!);
+				this.#storeRerankOrder(
+					query,
+					pages,
+					pages.map(page => page.id),
+				);
+			}
+		} catch (error) {
+			logger.debug("Brain reranking failed open", { error: String(error) });
+		}
+	}
+
 	async retrieve(query: string, options: BrainRetrievalOptions = {}): Promise<BrainPage[]> {
 		if (options.signal?.aborted || !query.trim()) return [];
 		if (Date.now() - this.#refreshedAt > 2000) await this.refresh();
@@ -182,7 +259,11 @@ export class MarkdownBrain {
 		for (const token of tokenize(query)) for (const id of this.#postings.get(token) ?? []) ids.add(id);
 		const candidates = Array.from(ids, id => this.#pages.get(id)!).filter(Boolean);
 		const ranked = this.#retriever.searchPages(candidates, query, MAX_CANDIDATES / 2, Number.MAX_SAFE_INTEGER);
-		const pages = ranked.map(result => this.#pages.get(result.page.id)!);
+		const unscoped = ranked.map(result => this.#pages.get(result.page.id)!);
+		// Scope exclusion is user policy, not relevance: drop out-of-scope
+		// pages before graph expansion and reranking so excluded knowledge
+		// can never leak back in through neighbors or model scores.
+		const pages = options.scopes ? unscoped.filter(page => options.scopes!.includes(page.scope)) : unscoped;
 		// Expand only positive graph relationships, one hop, with bounded fan-out.
 		const documents = new Set(pages.map(page => page.documentId));
 		const neighbors = new Set(
@@ -197,36 +278,12 @@ export class MarkdownBrain {
 			if (neighbors.has(page.documentId) && !pages.some(candidate => candidate.id === page.id)) pages.push(page);
 		}
 		if (options.rerank && pages.length > 1 && !options.signal?.aborted) {
-			const questions: Record<string, LayaQuestionDefinition> = {};
-			const state: Record<string, unknown> = {};
-			pages.forEach((page, index) => {
-				const key = `brain_${index}`;
-				questions[key] = { type: "score", instructions: relevanceInstructions, criteria: RELEVANCE_CRITERIA };
-				const sanitize = options.sanitize ?? (text => text);
-				state[key] = {
-					query: sanitize(query.slice(0, 2000)),
-					scope: page.scope,
-					title: sanitize(page.title),
-					content: sanitize(createScoringExcerpt(page.content)),
-				};
-			});
-			try {
-				const result = await (options.client ?? getLayaClient()).decide(state, questions, {
-					callSite: "brain_retrieval",
-					signal: options.signal,
-					sessionId: options.sessionId,
-				});
-				const scores = pages.map((_page, index) => result.data?.[`brain_${index}`]?.score);
-				// Incomplete/malformed decisions keep the deterministic BM25/graph ordering.
-				if (
-					!result.fallback &&
-					scores.every(score => typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 3)
-				) {
-					const order = new Map(pages.map((page, index) => [page.id, scores[index]!]));
-					pages.sort((a, b) => order.get(b.id)! - order.get(a.id)!);
-				}
-			} catch (error) {
-				logger.debug("Brain reranking failed open", { error: String(error) });
+			const cachedOrder = this.#cachedRerankOrder(query, pages);
+			if (cachedOrder) {
+				const rank = new Map(cachedOrder.map((id, index) => [id, index]));
+				pages.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+			} else {
+				await this.#rerankPages(query, pages, options);
 			}
 		}
 		if (options.signal?.aborted) return [];

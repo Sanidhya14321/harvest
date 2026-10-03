@@ -45,7 +45,6 @@ jobs:
       - name: Build release binary
         run: bun scripts/ci-release-build-binaries.ts --targets ${{ matrix.target }}
       - name: Check binary on its target host
-        if: ${{ matrix.native == 'host' || matrix.target == 'linux-x64' || matrix.target == 'darwin-x64' }}
         shell: bash
         run: |
           binary="packages/coding-agent/binaries/omp-${{ matrix.target }}"
@@ -59,8 +58,30 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  sidecar-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, cache: ~/.cache/huggingface }
+          - { runner: windows-2022, cache: ~\.cache\huggingface }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache the pinned checkpoint
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.cache }}
+          key: laya-typed-decisions-${{ hashFiles('decision-sidecar/requirements.txt') }}
+      - name: CPU sidecar smoke (health, decide, token rotation, teardown)
+        shell: bash
+        run: bash scripts/ci-sidecar-smoke.sh
+
   publish:
-    needs: binaries
+    needs: [binaries, sidecar-smoke]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

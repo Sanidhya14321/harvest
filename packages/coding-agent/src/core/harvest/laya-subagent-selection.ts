@@ -133,7 +133,14 @@ export interface SubagentSelectionAuditRecord {
 	readonly layaPick?: string;
 	readonly confidence?: number;
 	readonly selectedAgent: string;
+	/**
+	 * Correctness label from blind-reviewed task outcomes ONLY. Never
+	 * populated from the caller/default pick: the caller's choice is a
+	 * baseline for disagreement analysis, not ground truth.
+	 */
 	readonly groundTruth?: string;
+	/** Caller/default pick at dispatch time: the disagreement baseline. */
+	readonly callerBaseline?: string;
 	readonly decisionType: "auto_pick" | "escalation" | "fallback" | "shadow";
 	readonly latencyMs: number;
 	outcome?: SubagentOutcome;
@@ -344,7 +351,7 @@ export async function selectSubagentWithLaya(
 			layaPick: validPick,
 			confidence,
 			selectedAgent: defaultAgent,
-			groundTruth: defaultAgent,
+			callerBaseline: defaultAgent,
 			decisionType: "shadow",
 			latencyMs,
 		}, options.agentDir);
@@ -532,6 +539,7 @@ export async function loadAuditRecords(agentDir?: string): Promise<SubagentSelec
 					confidence: entry.confidence,
 					selectedAgent: entry.selectedAgent,
 					groundTruth: entry.groundTruth,
+					callerBaseline: entry.callerBaseline,
 					decisionType: entry.decisionType,
 					latencyMs: entry.latencyMs ?? 0,
 					outcome: entry.outcome,

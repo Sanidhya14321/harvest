@@ -15,6 +15,8 @@
 import { logger } from "@harvest/pi-utils";
 import { type Settings, settings } from "../../config/settings";
 import { getLayaClient, type LayaClient } from "./laya-client";
+import stepSuccessInstructions from "../../prompts/laya/completion-step-success.md" with { type: "text" };
+import unexpectedStopInstructions from "../../prompts/laya/completion-unexpected-stop.md" with { type: "text" };
 
 export interface StepCompletionState {
 	readonly command?: string;
@@ -99,14 +101,13 @@ export async function checkCompletionWithLaya(
 	if (checks.includes("success")) {
 		questions.step_success = {
 			type: "noul" as const,
-			instructions: "did this execution complete successfully with zero unhandled errors or test failures?",
+			instructions: stepSuccessInstructions.trim(),
 		};
 	}
 	if (checks.includes("unexpected_stop")) {
 		questions.unexpected_stop = {
 			type: "noul" as const,
-			instructions:
-				"does this message indicate an unexpected premature stop where the agent promised more actions but ended?",
+			instructions: unexpectedStopInstructions.trim(),
 		};
 	}
 

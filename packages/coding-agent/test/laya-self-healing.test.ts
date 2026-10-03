@@ -285,8 +285,9 @@ describe("Laya Bounded Self-Healing Framework", () => {
 				isHealthy: async () => true,
 				decide: async () => ({
 					success: true,
-					answers: { ping: { type: "noul", noul: 1.0, answer: "yes", confidence: 0.99 } },
-					latency_ms: 25,
+					fallback: false,
+					latencyMs: 25,
+					data: { ping: { type: "noul", noul: 1.0, answer: "yes", confidence: 0.99 } },
 				}),
 			};
 

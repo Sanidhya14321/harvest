@@ -56,6 +56,8 @@
 - Unknown RPC commands now reject with their request id preserved, so newer clients get an immediate correlated error instead of a timeout.
 - Over-limit RPC input lines are skipped with an error while the next valid frame still processes, serial command floods fail fast with a correlated overload error, and abort commands overtake stalled work instead of queueing behind it.
 - Oversized MCP HTTP response bodies now fail closed with a bounded non-retryable error instead of buffering unboundedly, and never trigger a replay of the request.
+- SSE event accumulation is bounded on MCP streams: one runaway event fails with an attributable error instead of growing memory, while normal multi-event streams flow untouched.
+- The sidecar inference scheduler retains capacity until timed-out workers actually finish, bounds its waiting queue, skips disconnected callers before dispatch, and reports capacity counters in `/health`.
 - RPC wait helpers are request-correlated: local-only prompts resolve via their prompt_result instead of timing out, already-idle waits resolve at once, rejections clean up their waiter, and disconnects settle pending waits.
 - The Laya sidecar client now follows runtime URL changes instead of pinning the first resolved port.
 - Laya context pruning skips its inference round trip when all candidate tokens already fit the budget, and scores large sessions in server-sized chunks instead of failing open wholesale.
@@ -65,6 +67,15 @@
 - Pruning relevance now scores against the latest user request with the original task kept as context, instead of always using the first message.
 - Hardware calibration is no longer masked by schema defaults: unset pruning/timeout settings derive from calibration, explicit overrides stay explicit, and `/laya status` shows configured, calibrated, and effective values.
 - Tool gating eligibility now follows each call's structured approval tier, so MCP and extension writes are classified even though their wire names are not listed; read-tier tools bypass without a sidecar call.
+- Laya decision wording now lives in versioned `.md` prompt assets (routing, completion, pruning) instead of inline strings, so calibration data stays tied to an exact prompt revision.
+- Shadow subagent telemetry records the caller pick as a disagreement baseline instead of mislabeling it as ground truth, and the confidence threshold is described as provisional pending held-out validation.
+- The sidecar pins its laya dependency to the tested range and fails fast at startup with a clear error when installed internals drift, instead of failing obscurely on first inference.
+- Loose `any` boundaries are gone from the Laya pruning, calibration, and setup paths: transcript rewrites keep their message types, benchmark payloads match the client contract, and the setup smoke test speaks the real decision shape.
+- Oversized sidecar requests are rejected with 413 on raw byte count before JSON parsing instead of growing memory unboundedly.
+- Sidecar decision logs default to the private user-data directory (git-ignored) instead of the repo checkout, with an explicit sanitized export for review and calibration.
+- Shipped calibration params are provenance-stamped as synthetic bootstrap (verified reproducible), and calibration supports deterministic held-out evaluation plus an acceptance gate that keeps autonomous approval clears off until measured.
+- Brain reranking reuses a bounded cache for unchanged queries and pages, runs under its own latency budget, honors `brain.rerank`/`brain.scopes` controls, and keeps lexical order when the sidecar fails or reranking is off.
+- Optional Laya decisions fail fast through a circuit breaker after repeated sidecar failures instead of timing out every turn; gating always attempts and still fails closed to approval.
 - Sidecar reuse now verifies the occupant's model identity plus an authenticated decide probe before reusing a port, so a foreign healthy-looking listener is never mistaken for the managed sidecar.
 - Background approvals queue under their session with an attention badge and present in order when their tab becomes active; stopping or quitting denies whatever is still parked.
 - `/diagnostics` and the run record now include the last tool-gating verdict with its local sidecar latency, separating gating delay from model and tool time.

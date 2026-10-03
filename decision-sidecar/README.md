@@ -88,10 +88,10 @@ sidecar restart; it cannot silently oversubscribe inference capacity.
 |---|---|---|
 | `noul` | `{ noul: float, confidence: float }` | Binary risk / irreversibility gating ($0.0$ to $1.0$). |
 | `choice` | `{ answer: string, confidence: float, probabilities: {...} }` | Selecting among model tiers (`smol`, `slow`, `default`) or roles. |
-| `score` | `{ score: float, confidence: float }` | Continuous ratings (0 to 10) for completion quality. |
+| `score` | `{ score: float, confidence: float }` | Relevance ratings on 4 levels (0 to 3) for pruning/brain retrieval; see `packages/coding-agent/src/prompts/laya/pruning-criteria.md`. |
 
 **Audit Logging:**
-Every request and computed decision is appended to `decision-sidecar/decisions.jsonl` for continuous observability and offline calibration.
+Every request and computed decision is appended to `~/.harvest/agent/logs/decisions.jsonl` by default (a private user-data directory; override with `LAYA_LOG_DIR` or `LAYA_LOG_FILE`) for continuous observability and offline calibration. The log is git-ignored — never commit it; the historical `decision-sidecar/decisions.jsonl` in this repo is a frozen artifact, not live data.
 Logged fields are length-capped (state kept to a 200-char snippet, instructions to 500 chars) and the log rotates size-based (`decisions.jsonl.1..N`).
 Requests may pass optional per-question `ground_truth` labels (`question_id -> 0/1`) which are stored in the log record (default `null`) for later calibration.
 
@@ -117,6 +117,7 @@ python server.py --host 127.0.0.1 --port 8177
 - `LAYA_PORT` (default: `8177`) — Port binding.
 - `LAYA_DEVICE` — Optional PyTorch device override (`cpu`, `cuda`, `mps`); invalid values fall back to auto-detection with a warning.
 - `LAYA_LOG_DIR` — Custom directory for `decisions.jsonl`.
+- `LAYA_LOG_FILE` — Exact custom path for `decisions.jsonl` (overrides `LAYA_LOG_DIR`).
 - `LAYA_TOKEN` — Fixed sidecar secret (otherwise generated per-process). TS client sends it as `x-laya-token`.
 - `LAYA_TOKEN_FILE` (default: `~/.harvest/laya-token`) — Where the generated secret is persisted (0600).
 - `LAYA_DISABLE_AUTH=1` — Disable `/v1/decide` auth (tests only).
@@ -135,6 +136,8 @@ python calibration.py --decisions decisions.jsonl --out calibration_params.json
 python calibration.py --synthetic
 # Overwrite an existing params file (previous content kept as .bak):
 python calibration.py --decisions decisions.jsonl --out calibration_params.json --force
+# Shareable review copy with free-text state/instructions removed:
+python calibration.py --decisions decisions.jsonl --export-sanitized /tmp/decisions.sanitized.jsonl
 ```
 
 **Calibration Pipeline:**
@@ -151,3 +154,17 @@ are never mistaken for measured calibrations. `--synthetic` writes to
 file requires `--force` (previous content kept as `<file>.bak`). Note: the
 shipped `calibration_params.json` is a synthetic bootstrap (150 samples/site,
 seed 42) until real `ground_truth`-labelled logs are collected.
+
+**Acceptance gate for autonomous clears:** the shipped temperatures and the
+`noul >= 0.35` / confidence `< 0.75` gating thresholds must NOT be treated as
+measured safety evidence, and autonomous approval clears stay OFF until all
+of the following hold:
+1. A labeled coding-tool dataset from real, consented traces covers
+   read-only, reversible-write, destructive, network/publish, and
+   permission-change classes (labels arrive as per-question `ground_truth`).
+2. False clears, false escalations, timeout rate, and decision latency are
+   measured per tool class and hardware on a held-out split.
+3. Destructive-class false clears are zero with a non-trivial sample, and
+   overall calibrated ECE improves on the held-out set.
+4. The resulting params are version-stamped (`_provenance.synthetic: false`)
+   and reviewed before replacing the bootstrap.

@@ -16,5 +16,19 @@
     "uncalibrated_ece": 0.1842,
     "calibrated_ece": 0.175,
     "sample_count": 150
+  },
+  "_provenance": {
+    "synthetic": true,
+    "record_count": 450,
+    "sites": [
+      "completion_check",
+      "model_routing",
+      "tool_gating"
+    ],
+    "sample_counts": {
+      "tool_gating": 150,
+      "model_routing": 150,
+      "completion_check": 150
+    }
   }
 }

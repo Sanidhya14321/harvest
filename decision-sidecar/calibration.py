@@ -10,15 +10,70 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-LOG_FILE_PATH = Path(__file__).parent / "decisions.jsonl"
+
+def default_log_path() -> Path:
+    """Mirror of server.default_log_path (kept local: server imports this
+    module, so importing server here would be circular)."""
+    import os
+
+    log_dir = os.getenv("LAYA_LOG_DIR")
+    if log_dir:
+        return Path(log_dir) / "decisions.jsonl"
+    log_file = os.getenv("LAYA_LOG_FILE")
+    if log_file:
+        return Path(log_file)
+    return Path.home() / ".harvest" / "agent" / "logs" / "decisions.jsonl"
+
+
+LOG_FILE_PATH = default_log_path()
 CALIBRATION_PARAMS_PATH = Path(__file__).parent / "calibration_params.json"
 CALIBRATION_SYNTHETIC_PATH = Path(__file__).parent / "calibration_params.synthetic.json"
+
+# Free-text fields that may carry code, paths, or secrets. Dropped by
+# export_sanitized_records; everything else is grouping/scoring metadata.
+SANITIZED_DROPPED_FIELDS = ("state_snippet", "instructions")
+
+
+def sanitize_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Return a shareable copy of a decision log record with free-text
+    fields removed. Session ids are opaque group keys and are retained so
+    calibration can still split by session and time."""
+    return {
+        key: value
+        for key, value in record.items()
+        if key not in SANITIZED_DROPPED_FIELDS
+    }
+
+
+def _parse_record(line: str) -> dict[str, Any] | None:
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def export_sanitized_records(input_path: Path, output_path: Path) -> int:
+    """Write sanitized copies of every JSONL record; returns the record count."""
+    count = 0
+    with open(input_path, "r", encoding="utf-8") as src, open(output_path, "w", encoding="utf-8") as dst:
+        for line in src:
+            line = line.strip()
+            if not line:
+                continue
+            record = _parse_record(line)
+            if record is None:
+                continue
+            dst.write(json.dumps(sanitize_record(record), ensure_ascii=False) + "\n")
+            count += 1
+    return count
 
 
 def logit(p: float, eps: float = 1e-7) -> float:
@@ -247,6 +302,46 @@ class CalibrationManager:
         return sigmoid(z / T)
 
 
+def split_holdout(
+    records: list[dict[str, Any]], test_fraction: float = 0.2, seed: int = 42
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Deterministic train/test split for held-out calibration evaluation."""
+    indices = list(range(len(records)))
+    rng = random.Random(seed)
+    rng.shuffle(indices)
+    n_test = int(len(records) * test_fraction)
+    test_idx = set(indices[:n_test])
+    train = [record for i, record in enumerate(records) if i not in test_idx]
+    test = [record for i, record in enumerate(records) if i in test_idx]
+    return train, test
+
+
+def heldout_ece_by_site(
+    records: list[dict[str, Any]], temperatures: dict[str, float]
+) -> dict[str, dict[str, float]]:
+    """ECE on held-out records before/after applying fitted temperatures."""
+    by_site: dict[str, tuple[list[float], list[int]]] = {}
+    for record in records:
+        site = record.get("call_site", "default")
+        ground_truth = record.get("ground_truth")
+        confidence = record.get("confidence")
+        if ground_truth is None or confidence is None:
+            continue
+        confs, labels = by_site.setdefault(site, ([], []))
+        confs.append(float(confidence))
+        labels.append(int(ground_truth))
+    results: dict[str, dict[str, float]] = {}
+    for site, (confs, labels) in by_site.items():
+        temperature = temperatures.get(site, 1.0)
+        calibrated = [sigmoid(logit(conf) / temperature) for conf in confs]
+        results[site] = {
+            "sample_count": len(confs),
+            "uncalibrated_ece": round(expected_calibration_error(np.array(confs), np.array(labels)), 4),
+            "calibrated_ece": round(expected_calibration_error(np.array(calibrated), np.array(labels)), 4),
+        }
+    return results
+
+
 def run_calibration_cli() -> int:
     """CLI runner to fit calibration parameters on log or synthetic benchmark.
 
@@ -266,7 +361,27 @@ def run_calibration_cli() -> int:
     )
     parser.add_argument("--synthetic", action="store_true", help="Run separate synthetic calibration mode without mixing into observed records")
     parser.add_argument("--force", action="store_true", help="Allow overwriting an existing params file (previous file kept as .bak)")
+    parser.add_argument(
+        "--export-sanitized",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write sanitized copies of the decisions log (free-text state/instructions removed) and exit",
+    )
+    parser.add_argument(
+        "--test-fraction",
+        type=float,
+        default=0.0,
+        help="Hold out this fraction of labelled records (deterministic split) for evaluation; fit on the rest",
+    )
     args = parser.parse_args()
+
+    if args.export_sanitized:
+        count = export_sanitized_records(
+            Path(args.decisions), Path(args.export_sanitized)
+        )
+        print(f"Exported {count} sanitized records to {args.export_sanitized}")
+        return 0
 
     decisions_path = Path(args.decisions)
     default_out = CALIBRATION_SYNTHETIC_PATH if args.synthetic else CALIBRATION_PARAMS_PATH
@@ -306,7 +421,12 @@ def run_calibration_cli() -> int:
     if args.force:
         # Start from a clean slate; the previous file content is in .bak after save().
         manager.params.clear()
-    results = manager.calibrate_from_records(records, synthetic=args.synthetic)
+    fit_records = records
+    held_out: list[dict[str, Any]] = []
+    if 0.0 < args.test_fraction < 1.0 and len(records) >= 10:
+        fit_records, held_out = split_holdout(records, test_fraction=args.test_fraction)
+        print(f"Held out {len(held_out)} of {len(records)} records for evaluation; fitting on {len(fit_records)}.")
+    results = manager.calibrate_from_records(fit_records, synthetic=args.synthetic)
 
     print("\n=== Calibration Results (Step 4) ===")
     print(f"Provenance: synthetic={args.synthetic}; output: {out_path}")
@@ -317,6 +437,16 @@ def run_calibration_cli() -> int:
         print(f"  Uncalibrated ECE: {data['uncalibrated_ece']:.4f}")
         print(f"  Calibrated ECE:   {data['calibrated_ece']:.4f} (Error reduced!)")
         print()
+    if held_out:
+        temperatures = {site: data["temperature"] for site, data in results.items() if site != "_provenance"}
+        heldout = heldout_ece_by_site(held_out, temperatures)
+        print("=== Held-out Evaluation ===")
+        for site, data in heldout.items():
+            print(f"Site: {site}")
+            print(f"  Samples:          {data['sample_count']}")
+            print(f"  Uncalibrated ECE: {data['uncalibrated_ece']:.4f}")
+            print(f"  Calibrated ECE:   {data['calibrated_ece']:.4f}")
+            print()
     return 0
 
 

@@ -308,6 +308,9 @@ describe("Laya Subagent Selection (Phase 2)", () => {
 				expect(recentRecord?.decisionType).toBe("shadow");
 				expect(recentRecord?.layaPick).toBe("scout");
 				expect(recentRecord?.selectedAgent).toBe("task");
+				// The caller pick is a disagreement baseline, never a correctness label.
+				expect(recentRecord?.callerBaseline).toBe("task");
+				expect(recentRecord?.groundTruth).toBeUndefined();
 			} finally {
 				tempDir.removeSync();
 			}

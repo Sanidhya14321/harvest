@@ -77,11 +77,26 @@ logger = logging.getLogger("laya-sidecar")
 MODEL_ID = "convaiinnovations/laya-typed-decisions"
 DEFAULT_HOST = os.getenv("LAYA_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("LAYA_PORT", "8177"))
-log_dir = os.getenv("LAYA_LOG_DIR")
-if log_dir:
-    LOG_FILE_PATH = Path(log_dir) / "decisions.jsonl"
-else:
-    LOG_FILE_PATH = Path(os.getenv("LAYA_LOG_FILE", Path(__file__).parent / "decisions.jsonl"))
+
+
+def default_log_path() -> Path:
+    """User-data home for operational decision logs.
+
+    Operational logs (state snippets, session ids) live under the private
+    user-data directory — never beside the source checkout — so routine runs
+    cannot leak snippets or secrets into the repository. LAYA_LOG_DIR (a
+    directory) and LAYA_LOG_FILE (an exact file) still override.
+    """
+    log_dir = os.getenv("LAYA_LOG_DIR")
+    if log_dir:
+        return Path(log_dir) / "decisions.jsonl"
+    log_file = os.getenv("LAYA_LOG_FILE")
+    if log_file:
+        return Path(log_file)
+    return Path.home() / ".harvest" / "agent" / "logs" / "decisions.jsonl"
+
+
+LOG_FILE_PATH = default_log_path()
 
 MAX_QUESTIONS = 64
 MAX_STATE_CHARS = 500_000
@@ -204,6 +219,81 @@ def get_agent() -> laya.agent.Agent:
     return _agent
 
 
+# Private laya.agent surface the batched inference path depends on. Pinned
+# laya versions are verified against this list at startup by
+# assert_laya_internals_compatible; a new laya release that renames any of
+# these must be adopted deliberately, not picked up floating.
+REQUIRED_LAYA_AGENT_ATTRS = (
+    "_to_internal",
+    "cfg",
+    "tok",
+    "device",
+    "dtype",
+    "model",
+    "temperature_by_options",
+    "temperature",
+)
+REQUIRED_LAYA_AGENT_IMPORTS = (
+    "QTYPES",
+    "build_sequence",
+    "collate_items",
+    "render_options",
+    "temp_bucket",
+    "confidence_from_probs",
+)
+# Subset of the imports above that must be callable (QTYPES is data).
+REQUIRED_LAYA_AGENT_FUNCTIONS = (
+    "build_sequence",
+    "collate_items",
+    "render_options",
+    "temp_bucket",
+    "confidence_from_probs",
+)
+
+
+def assert_laya_internals_compatible(agent: Any) -> None:
+    """Startup compatibility probe for the private laya.agent surface.
+
+    Raises RuntimeError with an actionable message when the installed laya
+    release no longer provides the internals server.py depends on, instead
+    of failing obscurely on the first inference request.
+    """
+    missing: list[str] = []
+    try:
+        import laya.agent as laya_agent_module
+
+        for name in REQUIRED_LAYA_AGENT_IMPORTS:
+            value = getattr(laya_agent_module, name, None)
+            if value is None or (name in REQUIRED_LAYA_AGENT_FUNCTIONS and not callable(value)):
+                missing.append(f"laya.agent.{name}")
+    except Exception as e:
+        raise RuntimeError(
+            f"Incompatible laya release: cannot import private laya.agent internals ({e}). "
+            "Pin a tested laya version in requirements.txt."
+        ) from e
+    for attr in REQUIRED_LAYA_AGENT_ATTRS:
+        if not hasattr(agent, attr):
+            missing.append(f"agent.{attr}")
+    cfg = getattr(agent, "cfg", None)
+    if cfg is not None and not hasattr(cfg, "get"):
+        missing.append("agent.cfg.get")
+    tok = getattr(agent, "tok", None)
+    if tok is not None and not hasattr(tok, "pad_token_id"):
+        missing.append("agent.tok.pad_token_id")
+    if missing:
+        installed = "unknown"
+        try:
+            from importlib.metadata import version
+
+            installed = version("laya")
+        except ImportError:
+            installed = "unknown"
+        raise RuntimeError(
+            f"Incompatible laya release (installed: {installed}): missing {', '.join(missing)}. "
+            "Pin a tested laya version in requirements.txt."
+        )
+
+
 def _rotate_log_if_needed() -> None:
     """Size-based rotation: decisions.jsonl -> .1 -> .2 ... keeping LOG_BACKUP_COUNT."""
     try:
@@ -284,6 +374,7 @@ async def lifespan(app: FastAPI):
         # Strictly load the single checkpoint, avoiding Router which pulls laya-multilingual
         _agent = laya.load(MODEL_ID, device=_device)
         _agent.model.eval()
+        assert_laya_internals_compatible(_agent)
         _model_ready = True
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.info(f"Loaded {MODEL_ID} successfully in {elapsed:.1f}ms (eval_mode={not _agent.model.training})")
@@ -303,6 +394,77 @@ app = FastAPI(
     description="Local typed decision microservice for Harvest agent harness",
     lifespan=lifespan,
 )
+
+# Transport memory bound for inference requests: enforced on raw body bytes
+# BEFORE FastAPI/Pydantic parses JSON, so the 500k-char inference caps below
+# are tokenization bounds, not transport memory bounds. Sized above the worst
+# legitimate payload (500k multibyte state chars + 64x16KB question defs).
+MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024
+
+
+class _RequestBodyTooLarge(Exception):
+    pass
+
+
+async def _send_413_too_large(send: Any, detail: str) -> None:
+    body = json.dumps({"detail": detail}).encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+        }
+    )
+    await send({"type": "http.response.body", "body": body, "more_body": False})
+
+
+class BodySizeLimitMiddleware:
+    """Reject oversized /v1/decide bodies on raw byte count pre-parse.
+
+    Fast-path: an explicit Content-Length over the cap is rejected without
+    reading the body. Chunked bodies without a length are counted while
+    streaming and cut off at the cap, so framing always recovers on the
+    next request. Only inference routes are bounded; diagnostics stay open.
+    """
+
+    def __init__(self, app: Any, max_bytes: int = MAX_REQUEST_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or scope.get("path") != "/v1/decide":
+            await self.app(scope, receive, send)
+            return
+        declared = None
+        for name, value in scope.get("headers", []):
+            if name.lower() == b"content-length":
+                try:
+                    declared = int(value.decode("latin-1"))
+                except ValueError:
+                    declared = None
+                break
+        if declared is not None and declared > self.max_bytes:
+            await _send_413_too_large(send, f"Request body exceeds {self.max_bytes} bytes")
+            return
+
+        received = 0
+
+        async def bounded_receive() -> Any:
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise _RequestBodyTooLarge()
+            return message
+
+        try:
+            await self.app(scope, bounded_receive, send)
+        except _RequestBodyTooLarge:
+            await _send_413_too_large(send, f"Request body exceeds {self.max_bytes} bytes")
+
+
+app.add_middleware(BodySizeLimitMiddleware)
 
 
 class DecideRequest(BaseModel):
@@ -341,6 +503,7 @@ async def health_check() -> Dict[str, Any]:
         "hardware_tier": _hardware_info.get("tier", "unknown"),
         "hardware_signature": _hardware_info.get("signature", "unknown"),
         "port": DEFAULT_PORT,
+        "scheduler": get_inference_scheduler().snapshot(),
     }
 
 

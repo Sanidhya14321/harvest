@@ -770,7 +770,7 @@ export async function checkCalibrationSignatureMismatch(
  * End-to-end smoke test: hit /health, then a trivial /v1/decide call with a throwaway question.
  */
 export async function runLayaSmokeTest(
-	client: { baseUrl: string; isHealthy: () => Promise<boolean>; decide: (...args: any[]) => Promise<any> },
+	client: Pick<LayaClient, "baseUrl" | "isHealthy" | "decide">,
 	setupLogger?: LayaSetupLogger,
 ): Promise<{
 	success: boolean;
@@ -799,7 +799,7 @@ export async function runLayaSmokeTest(
 			{ callSite: "smoke_test", timeoutMs: 15_000 },
 		);
 
-		const answerObj = decideRes.data ?? (decideRes as any).answers ?? (decideRes as any).allAnswers;
+		const answerObj = decideRes.data ?? decideRes.allAnswers;
 		const decideOk = decideRes.success === true && Boolean(answerObj?.ping);
 		const latencyMs = Date.now() - startTime;
 

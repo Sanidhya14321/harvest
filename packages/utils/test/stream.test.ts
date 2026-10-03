@@ -480,4 +480,30 @@ describe("readSseEvents", () => {
 		// Generous bound: the previous quadratic implementation needed >5s here.
 		expect(elapsed).toBeLessThan(2000);
 	});
+
+	it("rejects one unterminated event past the byte cap instead of growing forever", async () => {
+		const stream = bytesStreamFromChunks([
+			encoder.encode("data: "),
+			encoder.encode("x".repeat(100)),
+			encoder.encode("y".repeat(100)),
+		]);
+		await expect(collectAsync(readSseEvents(stream, undefined, { maxEventBytes: 100 }))).rejects.toThrow(
+			"SSE event exceeded 100 bytes",
+		);
+	});
+
+	it("counts per-event accumulation, not the whole stream, against the cap", async () => {
+		const chunks = [];
+		for (let i = 0; i < 10; i++) chunks.push(encoder.encode(`event: e${i}\ndata: ${"x".repeat(20)}\n\n`));
+		const stream = bytesStreamFromChunks(chunks);
+		const events = await collectAsync(readSseEvents(stream, undefined, { maxEventBytes: 100 }));
+		expect(events).toHaveLength(10);
+	});
+
+	it("stays unbounded by default for existing consumers", async () => {
+		const stream = bytesStreamFromChunks([encoder.encode(`data: ${"x".repeat(5000)}\n\n`)]);
+		const events = await collectAsync(readSseEvents(stream));
+		expect(events).toHaveLength(1);
+		expect(events[0].data).toHaveLength(5000);
+	});
 });

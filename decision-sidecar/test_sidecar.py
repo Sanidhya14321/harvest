@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 try:
@@ -413,6 +414,210 @@ class TestCalibrationProvenance(unittest.TestCase):
         saved = _load_json(out_path)
         self.assertIn("tool_gating", saved)
         self.assertFalse(saved["_provenance"]["synthetic"])
+
+
+class TestLayaInternalsProbe(unittest.TestCase):
+    """P2-4: startup probe fails fast on drifted private laya internals."""
+
+    def _good_agent(self):
+        agent = mock.Mock()
+        agent.cfg.get.return_value = 1024
+        agent.tok.pad_token_id = 0
+        return agent
+
+    def test_compatible_surface_passes(self):
+        server.assert_laya_internals_compatible(self._good_agent())
+
+    def test_real_laya_agent_module_provides_required_imports(self):
+        import laya.agent as laya_agent_module
+
+        for name in server.REQUIRED_LAYA_AGENT_IMPORTS:
+            value = getattr(laya_agent_module, name, None)
+            self.assertIsNotNone(value, name)
+            if name in server.REQUIRED_LAYA_AGENT_FUNCTIONS:
+                self.assertTrue(callable(value), name)
+
+    def test_missing_agent_attr_fails_fast(self):
+        agent = self._good_agent()
+        del agent.model
+        with self.assertRaisesRegex(RuntimeError, "agent.model"):
+            server.assert_laya_internals_compatible(agent)
+
+    def test_missing_tokenizer_shape_fails_fast(self):
+        agent = self._good_agent()
+        del agent.tok.pad_token_id
+        with self.assertRaisesRegex(RuntimeError, "pad_token_id"):
+            server.assert_laya_internals_compatible(agent)
+
+    def test_bare_object_fails_fast(self):
+        with self.assertRaisesRegex(RuntimeError, "Incompatible laya release"):
+            server.assert_laya_internals_compatible(object())
+
+
+class TestBodySizeLimitMiddleware(unittest.TestCase):
+    """P2-2: raw body-byte limits apply before FastAPI parses JSON."""
+
+    def _run(self, path, chunks, content_length=True, cap=16):
+        seen = []
+        downstream_calls = []
+
+        async def downstream(scope, receive, send):
+            downstream_calls.append(scope["path"])
+            total = 0
+            while True:
+                message = await receive()
+                if message.get("type") != "http.request":
+                    continue
+                total += len(message.get("body", b""))
+                if not message.get("more_body"):
+                    break
+            seen.append(total)
+            body = b'{"ok": true}'
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send({"type": "http.response.body", "body": body, "more_body": False})
+
+        headers = []
+        if content_length:
+            headers = [(b"content-length", str(sum(len(c) for c in chunks)).encode())]
+        scope = {"type": "http", "path": path, "headers": headers}
+        messages = [
+            {"type": "http.request", "body": chunk, "more_body": i < len(chunks) - 1} for i, chunk in enumerate(chunks)
+        ]
+
+        async def receive():
+            if messages:
+                return messages.pop(0)
+            await asyncio.sleep(3600)
+            return {"type": "http.disconnect"}
+
+        sent = []
+
+        async def send(message):
+            sent.append(message)
+
+        middleware = server.BodySizeLimitMiddleware(downstream, max_bytes=cap)
+        asyncio.run(middleware(scope, receive, send))
+        statuses = [m["status"] for m in sent if m["type"] == "http.response.start"]
+        return statuses, seen, downstream_calls
+
+    def test_declared_oversize_rejected_before_auth_or_parse(self):
+        # No auth header: enforcement happens before authentication.
+        statuses, seen, downstream_calls = self._run("/v1/decide", [b"x" * 32])
+        self.assertEqual(statuses, [413])
+        self.assertEqual(seen, [])
+        self.assertEqual(downstream_calls, [])
+
+    def test_chunked_oversize_cut_off_mid_stream(self):
+        statuses, _seen, downstream_calls = self._run("/v1/decide", [b"x" * 8, b"y" * 8, b"z" * 8], content_length=False)
+        self.assertEqual(statuses, [413])
+        self.assertEqual(downstream_calls, ["/v1/decide"])
+
+    def test_small_body_passes_through_intact(self):
+        statuses, seen, _downstream_calls = self._run("/v1/decide", [b'{"a":', b"1}"])
+        self.assertEqual(statuses, [200])
+        self.assertEqual(seen, [7])
+
+    def test_non_decide_paths_are_unbounded(self):
+        statuses, seen, _downstream_calls = self._run("/health", [b"x" * 64])
+        self.assertEqual(statuses, [200])
+        self.assertEqual(seen, [64])
+
+
+class TestDecisionLogLocation(unittest.TestCase):
+    """P2-3: operational logs default to user-data, with sanitized export."""
+
+    def test_default_log_path_is_user_data_not_repo(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            env = {k: v for k, v in os.environ.items() if k not in ("LAYA_LOG_DIR", "LAYA_LOG_FILE")}
+            with mock.patch.dict(os.environ, env, clear=True):
+                path = server.default_log_path()
+        self.assertTrue(str(path).endswith(os.path.join("agent", "logs", "decisions.jsonl")), path)
+        self.assertNotIn("decision-sidecar", str(path))
+
+    def test_log_dir_and_file_overrides(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"LAYA_LOG_DIR": tmp}):
+                self.assertEqual(server.default_log_path(), Path(tmp) / "decisions.jsonl")
+            custom = os.path.join(tmp, "custom.jsonl")
+            with mock.patch.dict(os.environ, {"LAYA_LOG_FILE": custom}):
+                self.assertEqual(server.default_log_path(), Path(custom))
+
+    def test_sanitized_export_drops_free_text_but_keeps_grouping(self):
+        import calibration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "in.jsonl"
+            dst = Path(tmp) / "out.jsonl"
+            secret = "sk-live-topsecret-123"
+            src.write_text(
+                json.dumps(
+                    {
+                        "timestamp": 1.0,
+                        "session_id": "sess-1",
+                        "call_site": "tool_gating",
+                        "question_id": "q",
+                        "instructions": "does this call exfiltrate data?",
+                        "state_snippet": f"token={secret}",
+                        "answer": 0.9,
+                        "confidence": 0.8,
+                        "ground_truth": 1,
+                    }
+                )
+                + "\nnot json\n",
+                encoding="utf-8",
+            )
+            count = calibration.export_sanitized_records(src, dst)
+            self.assertEqual(count, 1)
+            exported = json.loads(dst.read_text(encoding="utf-8"))
+            dumped = json.dumps(exported)
+            self.assertNotIn(secret, dumped)
+            self.assertNotIn("instructions", exported)
+            self.assertNotIn("state_snippet", exported)
+            self.assertEqual(exported["session_id"], "sess-1")
+            self.assertEqual(exported["ground_truth"], 1)
+
+    def test_shipped_params_carry_synthetic_provenance(self):
+        """P0-1: the bundled params must never masquerade as measured data."""
+        shipped = json.loads((Path(__file__).parent / "calibration_params.json").read_text(encoding="utf-8"))
+        provenance = shipped.get("_provenance")
+        self.assertIsNotNone(provenance)
+        self.assertTrue(provenance.get("synthetic"), provenance)
+        self.assertEqual(provenance.get("record_count"), 450)
+        self.assertEqual(sorted(provenance.get("sites", [])), ["completion_check", "model_routing", "tool_gating"])
+
+    def test_holdout_split_is_deterministic_and_disjoint(self):
+        import calibration
+
+        records = [{"i": i} for i in range(100)]
+        train_a, test_a = calibration.split_holdout(records, test_fraction=0.2)
+        train_b, test_b = calibration.split_holdout(records, test_fraction=0.2)
+        self.assertEqual(len(test_a), 20)
+        self.assertEqual(test_a, test_b)
+        self.assertEqual(train_a, train_b)
+        self.assertEqual(len(train_a), 80)
+        self.assertEqual({r["i"] for r in train_a} | {r["i"] for r in test_a}, set(range(100)))
+
+    def test_heldout_ece_uses_fitted_temperatures(self):
+        import calibration
+
+        records = calibration.generate_synthetic_calibration_dataset(count_per_site=40)
+        train, test = calibration.split_holdout(records, test_fraction=0.25)
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = calibration.CalibrationManager(params_path=Path(tmp) / "params.json")
+            manager.calibrate_from_records(train, synthetic=True)
+            temperatures = {site: data["temperature"] for site, data in manager.params.items() if site != "_provenance"}
+        heldout = calibration.heldout_ece_by_site(test, temperatures)
+        self.assertEqual(set(heldout), {"tool_gating", "model_routing", "completion_check"})
+        for site, data in heldout.items():
+            self.assertGreater(data["sample_count"], 0)
+            self.assertGreaterEqual(data["uncalibrated_ece"], 0.0)
+            self.assertGreaterEqual(data["calibrated_ece"], 0.0)
 
 
 if __name__ == "__main__":

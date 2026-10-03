@@ -6,7 +6,7 @@ Harvest integrates [Laya](https://github.com/convaiinnovations/laya) and the fin
 
 ## 1. Architectural Role & Decision Points
 
-The decision layer operates at three critical interception points in the agent loop:
+The decision layer operates at two wired interception points in the agent loop, plus one available helper:
 
 ```
                                   [Agent Loop Turn]
@@ -14,35 +14,44 @@ The decision layer operates at three critical interception points in the agent l
     ┌─────────────────────────────────────┼─────────────────────────────────────┐
     │                                     │                                     │
     ▼                                     ▼                                     ▼
-[1. Tool Gating]                   [2. Model Routing]                 [3. Completion Check]
-• High-risk tools:                 • Evaluates prompt                 • Evaluates command output
-  bash, write, edit, ast-edit        complexity & domain                and stop conditions
-• Question: noul (irreversible?)   • Question: choice (tier/role)     • Question: noul (done/clean?)
+[1. Tool Gating]              [2. Model Routing — helper]          [3. Completion Check]
+• High-risk tools:            • NOT in the turn loop;              • Unexpected-stop only
+  bash, write, edit, ast-edit   opt-in helper, fail-open             • Question: noul (premature stop?)
+• Question: noul (irreversible?)   • Question: choice (tier/role)     • See §1.3 for the live contract
 • Timeout: ~300ms                  • Timeout: ~300ms                  • Timeout: ~300ms
 • Contract: FAIL CLOSED            • Contract: FAIL OPEN              • Contract: FAIL OPEN
   (requires human approval)          (falls back to default tier)       (falls back to full LLM)
 ```
 
 ### 1.1 Tool-Call Gating (`laya-gating.ts`)
-Before dispatching any mutation command from the high-risk tool set (`bash`, `exec`, `write`, `edit`, `ast-edit`, `patch`), Harvest constructs a `noul` query:
-> *"Does this call write, delete, publish, or change access irreversibly?"*
+Before dispatching any mutation command from the high-risk tool set (`bash`, `exec`, `write`, `edit`, `ast-edit`, `patch`), Harvest constructs a `noul` query with the versioned instructions in `packages/coding-agent/src/prompts/laya/tool-gating.md`.
 
 - If the computed irreversibility score exceeds `0.35`, or model confidence is below `0.75`, the call is tagged with `providerMetadata.layaGatingRequired = true`.
 - Harvest's tool wrapper immediately stops execution and prompts the user for manual confirmation in the TUI.
 - **Fail-Closed Guarantee**: If the local sidecar service is offline, unresponsive, or times out (300ms), the tool call fails **CLOSED** and prompts the user for confirmation. Read-only tools (`read`, `grep`, `glob`) bypass gating checks with zero overhead.
 
 ### 1.2 Model Tier Routing (`laya-routing.ts`)
-During session initialization or turn transitions, user prompts are evaluated against the available model tiers:
+Status: available as tested, fail-open helpers — NOT wired into automatic
+per-turn model selection. Harvest never silently switches your explicitly
+chosen model; routing stays out of the loop until a product-approved
+single selection boundary lands with user-model precedence proven.
+When invoked directly, user prompts are evaluated against the available model tiers
+(tier descriptions in `packages/coding-agent/src/prompts/laya/model-routing-criteria.md`):
 - `smol`: Simple syntax fixes, localized queries, single-file edits.
 - `slow`: Multi-file architecture, deep algorithmic reasoning, complex refactoring.
 - `default`: General software engineering workflows.
 
-- Uses a `choice` question to classify the prompt in under 400ms.
+- Uses a `choice` question to classify the prompt in ~300ms (the client default decision budget).
 - **Fail-Open Guarantee**: If the sidecar is unreachable or confidence is low, routing immediately falls **OPEN** to the user's configured default model tier.
 
 ### 1.3 Step & Task Completion Evaluation (`laya-completion.ts`)
-Replaces speculative sub-queries to cloud models when verifying whether a command completed cleanly or whether an unexpected stop occurred.
-- Evaluates recent diagnostic output tails using batched `noul` queries.
+Classifies unexpected assistant stops; it does not replace general
+step-result evaluation. In production only the `unexpected_stop` question
+(`packages/coding-agent/src/prompts/laya/completion-unexpected-stop.md`) is
+sent, with the turn's abort signal propagated — the `step_success` question
+(`completion-step-success.md`) exists for the general step-evaluation
+contract, which has no production caller yet.
+- Evaluates the terminal message text using a single `noul` query.
 - **Fail-Open Guarantee**: If unclassified or low-confidence, falls **OPEN** to standard full-LLM evaluation.
 
 ---
@@ -59,6 +68,10 @@ Replaces speculative sub-queries to cloud models when verifying whether a comman
    - The sidecar binds strictly to `127.0.0.1:8177`. No external network interfaces are exposed.
 4. **Preserved Cloud Fallbacks**:
    - The primary cloud LLM is never removed from any call site. Laya acts purely as an acceleration and safety layer.
+5. **Circuit Breaker & Decision Statistics** (`laya-circuit.ts`):
+   - After 5 consecutive sidecar failures, optional decision points (pruning, reranking, subagent selection, routing, completion) fail fast for a 30s cooldown instead of spending more timed-out round trips.
+   - Tool gating always attempts: its fallback requires human approval, so the breaker can never turn an unavailable sidecar into permission.
+   - Per-call-site calls, fallbacks, timeouts, and p50/p95 latencies are queryable; detail already flows into the decision logs.
 
 ---
 

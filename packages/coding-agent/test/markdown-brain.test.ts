@@ -97,8 +97,11 @@ describe("Markdown brains", () => {
 		});
 		expect((await brain.retrieve("database", { client, rerank: true }))[0].id).toBe(lexical[1].id);
 		expect(decide).toHaveBeenCalledTimes(1);
+		// Fallback and malformed paths keep lexical order when nothing is
+		// cached: a fresh brain has no ranking to replay.
+		const fresh = new MarkdownBrain([{ scope: "project", directory: root }]);
 		decide.mockResolvedValue({ success: false, fallback: true, fallbackReason: "timeout", latencyMs: 1 });
-		expect((await brain.retrieve("database", { client, rerank: true })).map(page => page.id)).toEqual(
+		expect((await fresh.retrieve("database", { client, rerank: true })).map(page => page.id)).toEqual(
 			lexical.map(page => page.id),
 		);
 		decide.mockResolvedValue({
@@ -107,9 +110,102 @@ describe("Markdown brains", () => {
 			latencyMs: 1,
 			data: { brain_0: { type: "score", score: Number.NaN, confidence: 1 } },
 		});
-		expect((await brain.retrieve("database", { client, rerank: true })).map(page => page.id)).toEqual(
+		expect((await fresh.retrieve("database", { client, rerank: true })).map(page => page.id)).toEqual(
 			lexical.map(page => page.id),
 		);
+	});
+
+	it("reuses a cached ranking for an unchanged query without another sidecar call", async () => {
+		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
+		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const client = new LayaClient();
+		const decide = vi.spyOn(client, "decide").mockResolvedValue({
+			success: true,
+			fallback: false,
+			latencyMs: 1,
+			data: {
+				brain_0: { type: "score", score: 0, confidence: 1 },
+				brain_1: { type: "score", score: 3, confidence: 1 },
+			},
+		});
+		const lexical = await brain.retrieve("database");
+		const first = await brain.retrieve("database", { client, rerank: true });
+		expect(first[0].id).toBe(lexical[1].id);
+		expect(decide).toHaveBeenCalledTimes(1);
+		// Identical query and unchanged pages: ranking replays from cache.
+		const second = await brain.retrieve("database", { client, rerank: true });
+		expect(second.map(page => page.id)).toEqual(first.map(page => page.id));
+		expect(decide).toHaveBeenCalledTimes(1);
+	});
+
+	it("invalidates the cached ranking when a page is edited", async () => {
+		const file = path.join(root, "a.md");
+		await Bun.write(file, "## Database\nDatabase database database transactions.");
+		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const client = new LayaClient();
+		const decide = vi.spyOn(client, "decide").mockResolvedValue({
+			success: true,
+			fallback: false,
+			latencyMs: 1,
+			data: {
+				brain_0: { type: "score", score: 0, confidence: 1 },
+				brain_1: { type: "score", score: 3, confidence: 1 },
+			},
+		});
+		await brain.retrieve("database", { client, rerank: true });
+		expect(decide).toHaveBeenCalledTimes(1);
+		await Bun.write(file, "## Database\nDatabase database database completely rewritten content here.");
+		await brain.refresh();
+		await brain.retrieve("database", { client, rerank: true });
+		expect(decide).toHaveBeenCalledTimes(2);
+	});
+
+	it("keeps lexical retrieval without a sidecar call when reranking is off", async () => {
+		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
+		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const lexical = await brain.retrieve("database");
+		const client = new LayaClient();
+		const decide = vi.spyOn(client, "decide");
+		expect((await brain.retrieve("database", { client })).map(page => page.id)).toEqual(lexical.map(page => page.id));
+		expect(decide).not.toHaveBeenCalled();
+	});
+
+	it("excludes out-of-scope knowledge when scopes are restricted", async () => {
+		await Bun.write(
+			path.join(root, "project", "deploy.md"),
+			"## Deployment\nDeploy releases through the staging cluster.",
+		);
+		await Bun.write(path.join(root, "user", "deploy.md"), "## Deployment\nDeploy personal apps using containers.");
+		const brain = new MarkdownBrain([
+			{ scope: "project", directory: path.join(root, "project") },
+			{ scope: "user", directory: path.join(root, "user") },
+		]);
+		expect((await brain.retrieve("deploy")).map(page => page.scope).sort()).toEqual(["project", "user"]);
+		const projectOnly = await brain.retrieve("deploy", { scopes: ["project"] });
+		expect(projectOnly.length).toBeGreaterThan(0);
+		expect(projectOnly.every(page => page.scope === "project")).toBe(true);
+	});
+
+	it("passes the rerank latency budget through to the sidecar call", async () => {
+		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
+		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const client = new LayaClient();
+		const decide = vi.spyOn(client, "decide").mockResolvedValue({
+			success: true,
+			fallback: false,
+			latencyMs: 1,
+			data: {
+				brain_0: { type: "score", score: 3, confidence: 1 },
+				brain_1: { type: "score", score: 0, confidence: 1 },
+			},
+		});
+		await brain.retrieve("database", { client, rerank: true, rerankTimeoutMs: 137 });
+		expect(decide).toHaveBeenCalledTimes(1);
+		expect((decide.mock.calls[0][2] as { timeoutMs?: number }).timeoutMs).toBe(137);
 	});
 
 	it("bounds injected context and preserves user images and tool protocol without modifying the transcript", async () => {

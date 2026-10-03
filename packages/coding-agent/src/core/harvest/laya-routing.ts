@@ -13,6 +13,9 @@
 import { logger } from "@harvest/pi-utils";
 import { type Settings, settings } from "../../config/settings";
 import { getLayaClient, type LayaClient } from "./laya-client";
+import modelRoutingInstructions from "../../prompts/laya/model-routing.md" with { type: "text" };
+import modelRoutingCriteriaDoc from "../../prompts/laya/model-routing-criteria.md" with { type: "text" };
+import specialistRoutingInstructions from "../../prompts/laya/specialist-routing.md" with { type: "text" };
 
 export type ModelTierRole = "smol" | "slow" | "default";
 
@@ -24,11 +27,33 @@ export interface ModelRoutingDecision {
 	readonly latencyMs: number;
 }
 
-export const MODEL_ROUTING_CRITERIA: Record<ModelTierRole, string> = {
-	smol: "Simple, repetitive, local syntax fixes, small queries, single-file edits, non-architectural changes",
-	slow: "Complex multi-file architecture, deep algorithmic reasoning, difficult debugging, high-context planning",
-	default: "Balanced standard software engineering tasks, moderate refactoring, component implementations",
-};
+/**
+ * Tier choice descriptions parsed from the versioned prompt asset, so
+ * calibration data stays tied to an exact prompt revision. Throws at import
+ * time on a malformed asset rather than sending a degraded question.
+ */
+function parseTierCriteria(doc: string): Record<ModelTierRole, string> {
+	const criteria = {} as Record<ModelTierRole, string>;
+	for (const line of doc.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const colon = trimmed.indexOf(":");
+		if (colon === -1) {
+			throw new Error(`model-routing-criteria.md: expected "tier: description", got ${JSON.stringify(trimmed)}`);
+		}
+		const tier = trimmed.slice(0, colon).trim();
+		if (tier !== "smol" && tier !== "slow" && tier !== "default") {
+			throw new Error(`model-routing-criteria.md: unknown tier ${JSON.stringify(tier)}`);
+		}
+		criteria[tier] = trimmed.slice(colon + 1).trim();
+	}
+	if (!criteria.smol || !criteria.slow || !criteria.default) {
+		throw new Error("model-routing-criteria.md: must define smol, slow, and default tiers");
+	}
+	return criteria;
+}
+
+export const MODEL_ROUTING_CRITERIA: Record<ModelTierRole, string> = parseTierCriteria(modelRoutingCriteriaDoc);
 
 export async function routeModelWithLaya(
 	prompt: string,
@@ -72,7 +97,7 @@ export async function routeModelWithLaya(
 	const questions = {
 		model_tier: {
 			type: "choice" as const,
-			instructions: "Which model capability tier is required to solve this coding task accurately?",
+			instructions: modelRoutingInstructions.trim(),
 			criteria: MODEL_ROUTING_CRITERIA,
 		},
 	};
@@ -149,7 +174,7 @@ export async function routeSpecialistRoleWithLaya(
 	const questions = {
 		specialist_role: {
 			type: "choice" as const,
-			instructions: "Which engineering specialist role is best suited to lead this task?",
+			instructions: specialistRoutingInstructions.trim(),
 			criteria,
 		},
 	};

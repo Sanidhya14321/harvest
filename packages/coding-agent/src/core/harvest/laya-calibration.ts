@@ -192,18 +192,18 @@ function calculateMedian(values: number[]): number {
  */
 export async function measureBenchmarkShape(
 	client: LayaClient,
-	payload: { state: unknown; questions: Record<string, LayaQuestionDefinition> },
+	payload: { state: string | Record<string, unknown> | unknown[]; questions: Record<string, LayaQuestionDefinition> },
 	iterations = 3,
 ): Promise<BenchmarkMeasurement> {
 	// Warmup run (discarded to avoid counting one-time JIT/cold-path overhead)
-	await client.decide(payload.state as any, payload.questions, {
+	await client.decide(payload.state, payload.questions, {
 		callSite: "calibration_warmup",
 		timeoutMs: 180000,
 	});
 
 	const samples: number[] = [];
 	for (let i = 0; i < iterations; i++) {
-		const res = await client.decide(payload.state as any, payload.questions, {
+		const res = await client.decide(payload.state, payload.questions, {
 			callSite: `calibration_run_${i + 1}`,
 			timeoutMs: 180000,
 		});

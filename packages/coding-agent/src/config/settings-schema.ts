@@ -646,7 +646,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Local Decisions",
 			label: "Subagent Selection Confidence Threshold",
 			description:
-				"Minimum Laya confidence required to auto-pick a subagent without escalating to the main LLM. Calibrated to 0.010 for Format C criteria, which maximizes correct auto-picks while avoiding false positives.",
+				"Minimum Laya confidence required to auto-pick a subagent without escalating to the main LLM. Provisional default of 0.010 pending validation on held-out real assignments; raise it if auto-picks misfire.",
 		},
 	},
 	"laya.subagentSelectionTimeoutMs": {
@@ -5378,6 +5378,42 @@ export const SETTINGS_SCHEMA = {
 	"skills.ignoredSkills": { type: "array", default: [] as string[] },
 
 	"skills.includeSkills": { type: "array", default: [] as string[] },
+
+	// Brain retrieval
+	"brain.rerank": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "tasks",
+			group: "Memory & Knowledge",
+			label: "Brain Reranking",
+			description:
+				"Let the local Laya sidecar rerank retrieved knowledge pages. Off preserves the deterministic lexical/graph order.",
+		},
+	},
+
+	"brain.rerankTimeoutMs": {
+		type: "number",
+		default: 300,
+		ui: {
+			tab: "tasks",
+			group: "Memory & Knowledge",
+			label: "Brain Rerank Timeout (ms)",
+			description: "Maximum latency budget for one brain rerank round trip before falling back to lexical order.",
+		},
+	},
+
+	"brain.scopes": {
+		type: "array",
+		default: ["project", "user"],
+		ui: {
+			tab: "tasks",
+			group: "Memory & Knowledge",
+			label: "Brain Scopes",
+			description:
+				"Knowledge scopes eligible for retrieval. Remove a scope to exclude its pages (e.g. user). Empty means all scopes.",
+		},
+	},
 
 	// Commands
 	"commands.enableClaudeUser": {

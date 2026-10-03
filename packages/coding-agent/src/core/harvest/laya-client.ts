@@ -11,6 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isRecord, logger } from "@harvest/pi-utils";
 import { settings } from "../../config/settings";
+import { isBreakerOpen, recordDecisionOutcome } from "./laya-circuit";
 
 export interface LayaQuestionDefinition {
 	readonly type: "noul" | "choice" | "score";
@@ -235,6 +236,10 @@ export class LayaClient {
 
 	/**
 	 * Send batch of typed decision questions against state.
+	 *
+	 * Optional decision points fail fast while the circuit breaker is open
+	 * (no HTTP round trip); required gating and infrastructure calls always
+	 * attempt. Every settled outcome feeds per-call-site statistics.
 	 */
 	async decide(
 		state: string | Record<string, unknown> | unknown[],
@@ -246,6 +251,34 @@ export class LayaClient {
 			signal?: AbortSignal;
 			authToken?: string;
 		} = { callSite: "unknown" },
+	): Promise<DecisionResult<Record<string, LayaAnswerResult>>> {
+		if (isBreakerOpen(metadata.callSite)) {
+			return {
+				success: false,
+				fallback: true,
+				fallbackReason: "breaker_open_sidecar_overloaded",
+				latencyMs: 0,
+			};
+		}
+		const result = await this.#decideInner(state, questions, metadata);
+		recordDecisionOutcome(metadata.callSite, {
+			success: result.success,
+			fallbackReason: result.fallbackReason,
+			latencyMs: result.latencyMs,
+		});
+		return result;
+	}
+
+	async #decideInner(
+		state: string | Record<string, unknown> | unknown[],
+		questions: Record<string, LayaQuestionDefinition>,
+		metadata: {
+			callSite: string;
+			sessionId?: string;
+			timeoutMs?: number;
+			signal?: AbortSignal;
+			authToken?: string;
+		},
 	): Promise<DecisionResult<Record<string, LayaAnswerResult>>> {
 		const startTime = performance.now();
 

@@ -32,6 +32,13 @@ const HTTP_SSE_CONNECT_TIMEOUT_MS = 1_000;
 const DEFAULT_SSE_RETRY_MS = 3_000;
 
 /**
+ * Maximum bytes accumulated toward one undispatched SSE event on the
+ * long-lived listener and per-request drain paths. Discrete notification
+ * events are kilobytes; anything larger is a runaway stream, not data.
+ */
+export const MAX_MCP_SSE_EVENT_BYTES = 4 * 1024 * 1024;
+
+/**
  * Maximum bytes read from one MCP HTTP response body (error text, JSON, or
  * one SSE resume leg). Bodies are counted post-decompression while reading,
  * so a compromised or buggy server cannot exhaust process memory before
@@ -404,7 +411,9 @@ export class HttpTransport implements MCPTransport {
 	}
 	async #readSSEStream(body: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<void> {
 		try {
-			for await (const message of readSseJson<JsonRpcMessage>(body, signal)) {
+			for await (const message of readSseJson<JsonRpcMessage>(body, signal, undefined, {
+				maxEventBytes: MAX_MCP_SSE_EVENT_BYTES,
+			})) {
 				if (!this.#connected) break;
 				this.#dispatchSSEMessage(message);
 			}
@@ -430,7 +439,7 @@ export class HttpTransport implements MCPTransport {
 		let progressed = true;
 		for (;;) {
 			try {
-				for await (const event of readSseEvents(body, signal)) {
+				for await (const event of readSseEvents(body, signal, { maxEventBytes: MAX_MCP_SSE_EVENT_BYTES })) {
 					progressed = true;
 					if (event.id !== undefined) resume.lastEventId = event.id || null;
 					if (event.retry !== undefined) resume.retryMs = event.retry;
@@ -707,9 +716,10 @@ export class HttpTransport implements MCPTransport {
 			try {
 				for (;;) {
 					if (!current.body) throw new Error("SSE response did not include a body");
-					const sseBody = boundSSEResponseBody(current.body, MAX_MCP_HTTP_BODY_BYTES, traceId, signal);
-					try {
-						for await (const event of readSseEvents(sseBody, signal)) {
+					const sseBody = boundSSEResponseBody(current.body, MAX_MCP_HTTP_BODY_BYTES, traceId, signal);					try {
+						for await (const event of readSseEvents(sseBody, signal, {
+							maxEventBytes: MAX_MCP_SSE_EVENT_BYTES,
+						})) {
 							if (event.id !== undefined) resume.lastEventId = event.id || null;
 							if (event.retry !== undefined) resume.retryMs = event.retry;
 							if (event.data === "") continue;

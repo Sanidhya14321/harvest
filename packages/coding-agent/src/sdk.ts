@@ -3433,8 +3433,14 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				brain = createMarkdownBrain(brainCwd, agentDir, brainSkillsEnabled);
 			}
 			try {
+				const scopes = settings
+					.get("brain.scopes")
+					.filter((scope): scope is "project" | "user" => scope === "project" || scope === "user");
 				return await brain.transform(result.messages, {
-					rerank: settings.get("laya.enabled") && process.env.LAYA_ENABLED !== "false",
+					rerank:
+						settings.get("laya.enabled") && settings.get("brain.rerank") && process.env.LAYA_ENABLED !== "false",
+					rerankTimeoutMs: settings.get("brain.rerankTimeoutMs"),
+					scopes: scopes.length > 0 ? scopes : undefined,
 					signal: _signal,
 					sessionId: sessionManager.getSessionId(),
 					sanitize: obfuscator ? text => obfuscator.obfuscate(text) : undefined,

@@ -240,8 +240,9 @@ export async function* readSseJson<T>(
 	stream: ReadableStream<Uint8Array>,
 	signal?: AbortSignal,
 	onEvent?: SseEventObserver,
+	options: { maxEventBytes?: number } = {},
 ): AsyncGenerator<T> {
-	for await (const sse of readSseEvents(stream, signal)) {
+	for await (const sse of readSseEvents(stream, signal, options)) {
 		const isTrailing = trailingEvents.has(sse);
 		notifySseEventObserver(onEvent, sse);
 		const data = sse.data;
@@ -388,19 +389,41 @@ function pushSseLine(line: string, state: SseEventState): ServerSentEvent | null
 export async function* readSseEvents(
 	stream: ReadableStream<Uint8Array>,
 	signal?: AbortSignal,
+	options: { maxEventBytes?: number } = {},
 ): AsyncGenerator<ServerSentEvent> {
 	const lineBuffer = new ConcatSink();
 	const state: SseEventState = { event: null, data: null, raw: [] };
 	const source = abortableSource(stream, signal);
+	// Bytes accumulated toward the current undispatched event. A stream that
+	// never terminates an event with a blank line would otherwise grow the
+	// line buffer and event state without bound. Counts decoded characters
+	// plus bytes parked between newlines: an approximate guard, not an exact
+	// byte meter. Unset means unbounded (existing behavior).
+	let pendingBytes = 0;
+	const checkEventBudget = (): void => {
+		if (options.maxEventBytes !== undefined && pendingBytes > options.maxEventBytes) {
+			throw new Error(`SSE event exceeded ${options.maxEventBytes} bytes without dispatching`);
+		}
+	};
 	try {
 		for await (const chunk of source) {
 			const text = lineBuffer.appendAndFlushText(chunk, SSE_DECODER);
-			if (text === undefined) continue;
+			if (text === undefined) {
+				pendingBytes += chunk.length;
+				checkEventBudget();
+				continue;
+			}
+			pendingBytes = 0;
 			let start = 0;
 			while (start < text.length) {
 				const newline = text.indexOf("\n", start);
+				pendingBytes += newline - start + 1;
+				checkEventBudget();
 				const event = pushSseLine(text.slice(start, newline), state);
-				if (event) yield event;
+				if (event) {
+					pendingBytes = 0;
+					yield event;
+				}
 				start = newline + 1;
 			}
 		}
@@ -409,6 +432,8 @@ export async function* readSseEvents(
 			const tail = lineBuffer.flush();
 			if (tail) {
 				lineBuffer.clear();
+				pendingBytes += tail.length;
+				checkEventBudget();
 				const event = pushSseLine(SSE_DECODER.decode(tail), state);
 				if (event) {
 					trailingEvents.add(event);
