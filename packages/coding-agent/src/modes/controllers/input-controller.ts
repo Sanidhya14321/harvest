@@ -596,6 +596,21 @@ export class InputController {
 			...this.ctx.keybindings.getKeys("app.agents.hub"),
 			...this.ctx.keybindings.getKeys("app.session.observe"),
 		]);
+		// Palette/sidebar toggles respect user remaps via KeybindingsManager.
+		// While the palette overlay holds focus it owns its own keys: typing
+		// filters, Up/Down (remap-aware `tui.select.*`) moves, Enter dispatches
+		// the highlighted item through `executeBuiltinSlashCommand` via the
+		// palette `onSelect` callback, and Escape settles once through `onClose`
+		// (owner hides the handle, restores the pre-open draft, and refocuses
+		// via `focusActiveEditorArea`). These editor bindings stay inert until
+		// focus returns, so Alt+K cannot double-open and Alt+B keeps its
+		// editor word-left meaning everywhere else.
+		for (const key of this.ctx.keybindings.getKeys("app.commands.open")) {
+			this.ctx.editor.setCustomKeyHandler(key, () => void this.ctx.openCommandPalette());
+		}
+		for (const key of this.ctx.keybindings.getKeys("app.sidebar.toggle")) {
+			this.ctx.editor.setCustomKeyHandler(key, () => this.ctx.toggleSidebar());
+		}
 		for (const key of hubKeys) {
 			this.ctx.editor.setCustomKeyHandler(key, () => this.ctx.showAgentHub());
 		}

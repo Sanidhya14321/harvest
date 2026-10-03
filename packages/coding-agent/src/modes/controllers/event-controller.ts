@@ -21,7 +21,7 @@ import {
 	toolRenderName,
 } from "../../modes/components/tool-execution";
 import { TtsrNotificationComponent } from "../../modes/components/ttsr-notification";
-import { createUsageRowBlock, turnElapsedMs } from "../../modes/components/usage-row";
+import { createCompletionEndcapBlock, createUsageRowBlock, turnElapsedMs } from "../../modes/components/usage-row";
 import { getSymbolTheme, theme } from "../../modes/theme/theme";
 import type { InteractiveModeContext, TodoPhase } from "../../modes/types";
 import idleRecapPrompt from "../../prompts/system/recap-user.md" with { type: "text" };
@@ -106,6 +106,14 @@ export class EventController {
 	#renderedCustomMessages = new Set<string>();
 	#lastIntent: string | undefined = undefined;
 	#backgroundTaskCallIds = new Set<string>();
+	/**
+	 * Deferred completion endcaps queued at `message_end` and flushed once at the
+	 * turn boundary (`#finishAgentEnd`), after tools/post-tool prose have landed.
+	 * Each entry corresponds to one displayed billed completion; late tool results
+	 * never queue a second entry. `mode` is omitted (no reliable source) — the
+	 * row shows model and/or prompt→yield elapsed, whichever is available.
+	 */
+	#pendingCompletionEndcaps: Array<{ model?: string; elapsedMs?: number }> = [];
 	/** Tool calls whose approval prompt drove the title into `attention`; cleared
 	 *  at their tool_execution_end so the title returns to `working`. */
 	#approvalAttentionToolCallIds = new Set<string>();
@@ -737,6 +745,7 @@ export class EventController {
 		this.#orphanedToolCompletions.clear();
 		this.#postToolAssistantComponents.clear();
 		this.#backgroundTaskCallIds.clear();
+		this.#pendingCompletionEndcaps = [];
 		this.#approvalAttentionToolCallIds.clear();
 		this.#readToolCallArgs.clear();
 		this.#readToolCallAssistantComponents.clear();
@@ -852,6 +861,7 @@ export class EventController {
 		this.#syntheticFailureCards.clear();
 		this.#orphanedToolCompletions.clear();
 		this.#postToolAssistantComponents.clear();
+		this.#pendingCompletionEndcaps = [];
 		this.#lastIntent = undefined;
 		this.#readToolCallArgs.clear();
 		this.#readToolCallAssistantComponents.clear();
@@ -1505,6 +1515,24 @@ export class EventController {
 					);
 				}
 			}
+			// Defer the small mode/model/elapsed endcap to the turn boundary
+			// (#finishAgentEnd): it aggregates once after tools/post-tool prose
+			// instead of repeating per AssistantMessageComponent. Late tool
+			// results never queue a second entry. Unavailable values are omitted;
+			// the row is gated by the same display settings as the usage row.
+			if (assistantUsageIsBilled(event.message.usage)) {
+				const model =
+					typeof event.message.model === "string" && event.message.model.trim()
+						? event.message.model.trim()
+						: undefined;
+				const elapsedMs = settings.get("display.showTurnTime")
+					? turnElapsedMs(this.#turnStartedAt, event.message)
+					: undefined;
+				const gatedModel = settings.get("display.showTokenUsage") ? model : undefined;
+				if (gatedModel !== undefined || elapsedMs !== undefined) {
+					this.#pendingCompletionEndcaps.push({ model: gatedModel, elapsedMs });
+				}
+			}
 			if (displayMessage === event.message) {
 				this.ctx.transcriptMessageComponents.set(event.message, this.ctx.streamingComponent);
 			}
@@ -1964,6 +1992,15 @@ export class EventController {
 		// final history — seal it instead of letting its spinner tick while idle.
 		this.#resolveDisplaceablePoll();
 		this.#resolveDisplaceableTodo();
+		// Flush deferred completion endcaps once, after tools/post-tool prose.
+		// Each queued entry is one displayed billed completion; a late result
+		// arriving after this point queues nothing, so no second completion row
+		// can appear.
+		for (const endcap of this.#pendingCompletionEndcaps) {
+			const block = createCompletionEndcapBlock(endcap);
+			if (block) this.ctx.chatContainer.addChild(block);
+		}
+		this.#pendingCompletionEndcaps = [];
 		this.ctx.flushPendingCommandOutput();
 		this.#lastAssistantComponent = undefined;
 		// When the interrupted/failed turn died on a tool call, this replaces the

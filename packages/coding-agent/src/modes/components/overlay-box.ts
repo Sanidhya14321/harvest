@@ -110,6 +110,25 @@ export function splitRow(sidebar: string, body: string, width: number, sidebarWi
 	return `${bar} ${fit(sidebar, sidebarWidth)} ${bar} ${fit(body, bodyWidth)} ${bar}`;
 }
 
+/** Clamp a dialog width to the viewport using the shared 60/88/116 caps. */
+export function clampDialogWidth(columns: number, preferred: 60 | 88 | 116): number {
+	const safe = Math.max(1, Math.floor(columns));
+	return Math.max(1, Math.min(preferred, Math.max(1, safe - 2)));
+}
+
+/** Pick the largest dialog cap that fits the viewport. */
+export function pickDialogCap(columns: number): 60 | 88 | 116 {
+	if (columns >= 118) return 116;
+	if (columns >= 90) return 88;
+	return 60;
+}
+
+/** Standard dialog chrome: titled top border, padded body rows, bottom border. */
+export function dialogChrome(title: string, body: readonly string[], width: number, color?: ThemeColor): string[] {
+	const w = clampDialogWidth(width, pickDialogCap(width));
+	return [topBorder(w, title, color), ...body.map(line => row(line, w, color)), bottomBorder(w, color)];
+}
+
 /** Sentinel child rendered by {@link OverlayPanel} as a `├───┤` section rule. */
 export class PanelDivider implements Component {
 	render(): readonly string[] {

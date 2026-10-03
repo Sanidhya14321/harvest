@@ -33,7 +33,7 @@
 		},
 		"colors": {
 			"type": "object",
-			"description": "Theme color definitions (all required except thinkingMax)",
+			"description": "Theme color definitions (all required except thinkingMax and screenBg/panelBg/raisedBg/composerBg/modalBg)",
 			"required": [
 				"accent",
 				"border",
@@ -318,6 +318,26 @@
 				"statusLineBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Status line background"
+				},
+				"screenBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Base screen background (optional; falls back to terminal default)"
+				},
+				"panelBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Panel surface background (optional; falls back to toolSuccessBg)"
+				},
+				"raisedBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Raised surface background (optional; falls back to selectedBg)"
+				},
+				"composerBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Composer input surface background (optional; falls back to raisedBg)"
+				},
+				"modalBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Modal dialog background (optional; falls back to panelBg)"
 				},
 				"statusLineSep": {
 					"$ref": "#/$defs/colorValue",

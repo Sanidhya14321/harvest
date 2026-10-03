@@ -7,7 +7,7 @@ import type { ComposerPreferences, ComposerStatusSnapshot } from "./composer";
 import type { SymbolPreset } from "./theme/theme";
 
 const CACHE_VERSION = 1;
-const STATUS_CACHE_VERSION = 3;
+const STATUS_CACHE_VERSION = 4;
 /** Theme inputs cached from the last resolved settings load for stable prepaint colors. */
 export interface ComposerThemePreferences {
 	readonly symbolPreset?: SymbolPreset;
@@ -185,6 +185,7 @@ function readUiState(file: string): { preferences: ComposerPreferences; theme: C
 	const quiet = field(rawPreferences, "quiet");
 	const fullscreen = field(rawPreferences, "fullscreen");
 	const composerShape = field(rawPreferences, "composerShape");
+	const sidebar = field(rawPreferences, "sidebar");
 	const showHardwareCursor = field(rawPreferences, "showHardwareCursor");
 	const maxInlineImages = field(rawPreferences, "maxInlineImages");
 	const resizeScrollback = field(rawPreferences, "resizeScrollback");
@@ -197,6 +198,7 @@ function readUiState(file: string): { preferences: ComposerPreferences; theme: C
 		typeof quiet !== "boolean" ||
 		(fullscreen !== undefined && typeof fullscreen !== "boolean") ||
 		typeof composerShape !== "string" ||
+		(sidebar !== undefined && sidebar !== "auto" && sidebar !== "show" && sidebar !== "hide") ||
 		typeof showHardwareCursor !== "boolean" ||
 		typeof maxInlineImages !== "number" ||
 		(resizeScrollback !== undefined &&
@@ -231,6 +233,7 @@ function readUiState(file: string): { preferences: ComposerPreferences; theme: C
 			quiet,
 			fullscreen: typeof fullscreen === "boolean" ? fullscreen : true,
 			composerShape,
+			sidebar: sidebar === "show" || sidebar === "hide" || sidebar === "auto" ? sidebar : "auto",
 			showHardwareCursor,
 			maxInlineImages,
 			resizeScrollback:

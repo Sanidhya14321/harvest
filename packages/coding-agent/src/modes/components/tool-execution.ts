@@ -21,7 +21,8 @@ import { BASH_DEFAULT_PREVIEW_LINES } from "../../tools/bash";
 import { formatDefaultToolExecution } from "../../tools/default-renderer";
 import { EVAL_DEFAULT_PREVIEW_LINES } from "../../tools/eval";
 import { isWaitingPollDetails } from "../../tools/hub";
-import { formatStatusIcon, replaceTabs, resolveImageOptions } from "../../tools/render-utils";
+import { formatStatusIcon, PREVIEW_LIMITS, replaceTabs, resolveImageOptions } from "../../tools/render-utils";
+import { renderInlineActivity, renderOutputBlock } from "../../tui/output-block";
 import {
 	type FirstResultViewportRepaint,
 	type ToolActivitySummary,
@@ -846,6 +847,13 @@ export class ToolExecutionComponent extends Container {
 
 	override render(width: number): readonly string[] {
 		if (!this.#toolActivityVisible || this.#allocation === 0) return [];
+		// Generic fallback (no bespoke/built-in/custom renderer) settles quietly:
+		// a muted inline row when there is no output to preserve, otherwise a
+		// frameless rail panel capped by PREVIEW_LIMITS. Running, errors, denials,
+		// benign skips, expanded detail, and image-bearing results keep their
+		// purposeful chrome. Same-name extension tools own their renderer through
+		// the custom branch (#usesContentBox) and never reach this path.
+		if (this.#isQuietGenericSuccess()) return this.#renderQuietGenericSuccess(width);
 		let lines = super.render(width);
 		if (this.#allocation < 3) {
 			// A squeezed allocation degrades only blocks that genuinely overflow it.
@@ -864,7 +872,17 @@ export class ToolExecutionComponent extends Container {
 
 	#renderCompact(width: number): readonly string[] {
 		const summary = this.#activitySummary();
-		const detail = summary.detail ? theme.fg("muted", ` · ${summary.detail.replace(/\s+/g, " ")}`) : "";
+		const detail = summary.detail ? summary.detail.replace(/\s+/g, " ") : undefined;
+		// Settled successful activity collapses to one muted inline row without
+		// a rounded frame per operation. Running, errors, denials, and expanded
+		// detail keep purposeful chrome.
+		const settledSuccess = !this.#isRunning() && !this.#result?.isError && !this.#expanded;
+		if (settledSuccess) {
+			return renderInlineActivity(theme, summary.label, detail, "success", width);
+		}
+		if (!this.#isRunning() && this.#result?.isError) {
+			return renderInlineActivity(theme, summary.label, detail ?? "failed", "error", width);
+		}
 		// Elapsed ticks only while the call is genuinely running; a settled
 		// placeholder row must not read as live ("Todo · running 0s").
 		const elapsed =
@@ -874,8 +892,9 @@ export class ToolExecutionComponent extends Container {
 						` ${Math.max(0, Math.floor((this.#presentationFrame.now - this.#executionStartedAtNow) / 1000))}s`,
 					)
 				: "";
+		const styledDetail = detail ? theme.fg("muted", ` · ${detail}`) : "";
 		const text = truncateToWidth(
-			`${theme.fg("toolTitle", theme.bold(summary.label))}${detail}${elapsed}`,
+			`${theme.fg("toolTitle", theme.bold(summary.label))}${styledDetail}${elapsed}`,
 			Math.max(1, width - 4),
 		);
 		if (this.#allocation === 1) {
@@ -883,7 +902,56 @@ export class ToolExecutionComponent extends Container {
 			const styledGlyph = theme.fg(this.#spinnerFrame === undefined ? "dim" : "muted", glyph);
 			return [truncateToWidth(`${styledGlyph} ${text}`, width)];
 		}
+		if (theme.getSymbolPreset() === "ascii") {
+			return [truncateToWidth(`|-- ${text}`, width), theme.fg("dim", "|")];
+		}
 		return [truncateToWidth(`${theme.fg("dim", "╭─")} ${text}`, width), theme.fg("dim", "╰")];
+	}
+
+	/**
+	 * Generic fallback (no bespoke/built-in/custom renderer) with a settled
+	 * successful result, collapsed, and no images to preserve. Custom tools —
+	 * including same-name extension overrides — route through the content-box
+	 * branch and never reach here, so their ownership is preserved.
+	 */
+	#isQuietGenericSuccess(): boolean {
+		if (this.#usesContentBox) return false;
+		if (this.#expanded || this.#isPartial || !this.#result || this.#result.isError) return false;
+		if (this.#isRunning()) return false;
+		if (this.#isBenignSkip()) return false;
+		if (this.#imageComponents.length > 0) return false;
+		return true;
+	}
+
+	/**
+	 * Quiet settled-success render for the generic fallback: a single muted
+	 * inline row when there is no output, otherwise a frameless rail panel with
+	 * the output preview capped by PREVIEW_LIMITS. Every line is tab-sanitized;
+	 * the rail wraps at the content width so no row overflows.
+	 */
+	#renderQuietGenericSuccess(width: number): readonly string[] {
+		const summary = this.#activitySummary();
+		const argsDetail = summary.detail ? summary.detail.replace(/\s+/g, " ") : undefined;
+		const output = this.#getTextOutput().trimEnd();
+		if (!output) return renderInlineActivity(theme, summary.label, argsDetail, "success", width);
+		const previewLines = output
+			.split("\n")
+			.slice(0, PREVIEW_LIMITS.OUTPUT_COLLAPSED)
+			.map(line => replaceTabs(line));
+		const remaining = output.split("\n").length - previewLines.length;
+		const lines = [...previewLines];
+		if (remaining > 0) lines.push(theme.fg("dim", `… ${remaining} more lines`));
+		return renderOutputBlock(
+			{
+				header: summary.label,
+				headerMeta: argsDetail,
+				state: "success",
+				sections: [{ lines }],
+				width,
+				variant: "rail",
+			},
+			theme,
+		);
 	}
 
 	#activitySummary(): ToolActivitySummary {

@@ -96,15 +96,22 @@ export class UserMessageComponent extends Container implements ReactionTarget {
 	}
 
 	override render(width: number): readonly string[] {
-		const lines = super.render(width);
+		const safeWidth = Math.max(1, Math.floor(width));
+		const railGlyph = theme.getSymbolPreset() === "ascii" ? "|" : "▎";
+		const rail = theme.fg("accent", railGlyph);
+		// Quiet panel with accent rail: render the bubble inset so the rail
+		// owns two columns without breaking wrapping or hyperlinks.
+		const innerWidth = Math.max(1, safeWidth - 2);
+		const lines = super.render(innerWidth);
 		if (lines.length === 0) {
 			return lines;
 		}
+		const railed = lines.map(line => `${rail} ${line}`);
 		if (this.#zoneSource === lines && this.#zoneLines !== undefined) {
 			return this.#zoneLines;
 		}
-		const wrapped = lines.slice();
-		if (this.#reaction !== undefined) wrapped[0] = this.#reactionRow(width);
+		const wrapped = railed.slice();
+		if (this.#reaction !== undefined) wrapped[0] = this.#reactionRow(safeWidth);
 		wrapped[0] = OSC133_ZONE_START + wrapped[0];
 		wrapped[wrapped.length - 1] = wrapped[wrapped.length - 1] + OSC133_ZONE_CLOSE;
 		this.#zoneSource = lines;

@@ -783,10 +783,10 @@ function renderTaskItemLines(tasks: TaskItem[] | undefined, theme: Theme): strin
 type TaskRenderSection = { label?: string; lines: readonly string[]; separator?: boolean };
 type AssignmentSectionRenderer = (width: number) => TaskRenderSection;
 
-// Default output-block layout is: left border + one-cell content inset + right
-// border. Render markdown at that inner width so the output block does not need
-// to rewrap already-rendered assignment lines.
-const ASSIGNMENT_FRAME_INSET = 3;
+// Default output-block layout is: left border + symmetric one-cell content
+// padding + right border. Render markdown at that inner width so the output
+// block does not need to rewrap already-rendered assignment lines.
+const ASSIGNMENT_FRAME_INSET = 4;
 
 /**
  * Build the assignment section (the markdown brief handed to the subagent).

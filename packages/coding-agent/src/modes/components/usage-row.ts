@@ -79,6 +79,42 @@ export function isUsageRowBlock(component: object): boolean {
 	return usageRowBlocks.has(component as Container);
 }
 
+/**
+ * Small mode/model/elapsed endcap once per displayed completion. Aggregated
+ * once after tools/post-tool prose (the deferred usage/turn boundary), never
+ * per `AssistantMessageComponent` constructor — `splitAssistantMessageToolTimeline`
+ * clones messages/usage and stamps text segments as stopped, so constructor
+ * endcaps would repeat after every segment. Omit unavailable values; never
+ * append a second completion when a late result arrives.
+ */
+export function formatCompletionEndcap(options: {
+	mode?: string;
+	model?: string;
+	elapsedMs?: number;
+}): string | undefined {
+	const parts: string[] = [];
+	if (options.mode) parts.push(options.mode);
+	if (options.model) parts.push(options.model);
+	if (options.elapsedMs !== undefined && Number.isFinite(options.elapsedMs) && options.elapsedMs > 0) {
+		parts.push(`${theme.icon.time}${formatDuration(Math.round(options.elapsedMs))}`);
+	}
+	if (parts.length === 0) return undefined;
+	return theme.fg("dim", parts.join(` ${theme.sep.dot} `));
+}
+
+export function createCompletionEndcapBlock(options: {
+	mode?: string;
+	model?: string;
+	elapsedMs?: number;
+}): Container | undefined {
+	const line = formatCompletionEndcap(options);
+	if (!line) return undefined;
+	const block = new Container();
+	block.addChild(new Text(line, 1, 0));
+	usageRowBlocks.add(block);
+	return block;
+}
+
 // `timestamp` and `turnElapsedMs` are optional and trail the throughput args to
 // preserve the existing (usage, durationMs, ttftMs) call contract — this
 // function is part of the package's public export surface (./modes/components/*).

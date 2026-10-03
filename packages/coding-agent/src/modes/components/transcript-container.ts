@@ -23,6 +23,18 @@ export interface TranscriptStableRow {
 }
 
 /**
+ * Serializable reading position: the viewed block in transcript order plus the
+ * intra-block row (blank-trimmed block coordinates) at the viewport top. The
+ * owner persists one per displayed session through the existing view-state
+ * mechanisms and restores it on tab switches; `undefined` means the session
+ * follows the live tail.
+ */
+export interface TranscriptReadingAnchor {
+	readonly block: number;
+	readonly row: number;
+}
+
+/**
  * Explicit semantic-row contract for a block whose stable head may enter native
  * history before finalization. Every later array must extend the prior keys
  * exactly; each row renderer is deterministic for its width.
@@ -146,6 +158,9 @@ export class TranscriptContainer extends Container {
 	#lastFrame: AnimationFrame = { tick: 0, now: 0 };
 	// Start rows from the last full render(), keyed by child component (transcript deep-links).
 	#childStartRows = new Map<Component, number>();
+	// Pinned reading position while scrolled back; undefined follows the live
+	// tail. Streaming appends below the anchor without moving it.
+	#readingAnchor: { entry: Component; row: number } | undefined;
 	// Watchdog for the wedge where an unfinalized frontier block pins pressure
 	// retirement: everything behind it stays live and degrades to one-line
 	// allocations. Logs once per pinned episode after a grace period.
@@ -173,6 +188,7 @@ export class TranscriptContainer extends Container {
 		this.#syncedChildrenRevision = this.childrenRevision;
 		this.#frontier = Math.min(this.#frontier, this.#entries.length);
 		this.#childStartRows.delete(component);
+		if (this.#readingAnchor?.entry === component) this.#readingAnchor = undefined;
 	}
 
 	override clear(): void {
@@ -182,6 +198,7 @@ export class TranscriptContainer extends Container {
 		this.#frontier = 0;
 		this.#offered = undefined;
 		this.#childStartRows.clear();
+		this.#readingAnchor = undefined;
 		this.#pinnedFrontier = undefined;
 		this.#replayPending = false;
 		this.#replayRequested = false;
@@ -551,6 +568,130 @@ export class TranscriptContainer extends Container {
 	/** Rendered row where a child's block begins in the last full render() (transcript deep-links). */
 	getChildStartRow(child: Component): number | undefined {
 		return this.#childStartRows.get(child);
+	}
+
+	/**
+	 * Pin the reading position while scrolled back: the viewed block plus its
+	 * intra-block row, in blank-trimmed block coordinates (the same frame
+	 * `renderTail` slices). Appended rows below the anchor — live-tail
+	 * streaming, new blocks — never move it; every anchored read re-renders
+	 * at the current width, so rewrap and sidebar resize recompute the window
+	 * from the same anchor instead of drifting a bottom-relative offset.
+	 * Out-of-range pins clamp to the block; pins name entries, so a removed
+	 * block releases back to the live tail.
+	 */
+	pinReadingAnchor(blockIndex: number, rowFromBlockTop: number): void {
+		this.#syncEntries();
+		const entry = this.#entries[Math.trunc(blockIndex)];
+		if (entry === undefined) {
+			this.#readingAnchor = undefined;
+			return;
+		}
+		this.#readingAnchor = { entry: entry.component, row: Math.max(0, Math.trunc(rowFromBlockTop)) };
+	}
+
+	/** Return to the live tail, releasing any pinned reading position. */
+	followLiveTail(): void {
+		this.#readingAnchor = undefined;
+	}
+
+	/** Whether the view tracks the live tail (no pinned reading position). */
+	isFollowingTail(): boolean {
+		this.#syncEntries();
+		if (this.#readingAnchor === undefined) return true;
+		if (!this.#entries.some(entry => entry.component === this.#readingAnchor?.entry)) {
+			this.#readingAnchor = undefined;
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Serializable reading position for the per-session view state: alongside
+	 * the row scroll offset, the owner saves this under the displayed session
+	 * id (see `SessionViewStateStore`) on tab switches and restores it with
+	 * {@link restoreReadingAnchor}. Undefined means "following the tail".
+	 */
+	readingAnchorSnapshot(): TranscriptReadingAnchor | undefined {
+		this.#syncEntries();
+		const anchor = this.#readingAnchor;
+		if (anchor === undefined) return undefined;
+		const block = this.#entries.findIndex(entry => entry.component === anchor.entry);
+		if (block < 0) {
+			this.#readingAnchor = undefined;
+			return undefined;
+		}
+		return { block, row: anchor.row };
+	}
+
+	/** Restore a snapshot saved by {@link readingAnchorSnapshot}; unknown blocks fall to the tail. */
+	restoreReadingAnchor(snapshot: TranscriptReadingAnchor | undefined): void {
+		if (snapshot === undefined) {
+			this.#readingAnchor = undefined;
+			return;
+		}
+		this.pinReadingAnchor(snapshot.block, snapshot.row);
+	}
+
+	/**
+	 * Render `viewportRows` rows forward from the pinned anchor. Only blocks
+	 * overlapping the window render — the live tail beyond it is never walked,
+	 * so a streaming tail cannot cost more than the visible window per frame.
+	 * Returns an empty array while following the tail (use
+	 * `renderTail`/`renderViewport` for the live view).
+	 */
+	renderAnchoredViewport(width: number, viewportRows: number): readonly string[] {
+		this.#syncEntries();
+		const anchor = this.#readingAnchor;
+		if (anchor === undefined) return EMPTY_ROWS;
+		const cap = Math.max(0, Math.trunc(viewportRows));
+		if (cap === 0) return EMPTY_ROWS;
+		const startIndex = this.#entries.findIndex(entry => entry.component === anchor.entry);
+		if (startIndex < 0) {
+			this.#readingAnchor = undefined;
+			return EMPTY_ROWS;
+		}
+		const rows: string[] = [];
+		for (let index = startIndex; index < this.#entries.length && rows.length < cap; index++) {
+			const entry = this.#entries[index]!;
+			this.#setAllocation(entry.component, Number.MAX_SAFE_INTEGER, this.#lastFrame);
+			const block = trimBlankEdges(entry.component.render(width));
+			if (block.length === 0) continue;
+			const from = index === startIndex ? Math.min(Math.max(0, anchor.row), block.length) : 0;
+			if (rows.length > 0) rows.push("");
+			for (let r = from; r < block.length && rows.length < cap; r++) rows.push(block[r]!);
+		}
+		return rows;
+	}
+
+	/**
+	 * Whether the anchored window already reaches the live end (its rows fill
+	 * fewer than `viewportRows`, or end exactly at the last block). The owner
+	 * calls `followLiveTail()` when this turns true — scrolling or streaming
+	 * back to the tail resets follow mode. Bounded like
+	 * {@link renderAnchoredViewport}: blocks past the window never render.
+	 */
+	isAnchorAtTail(width: number, viewportRows: number): boolean {
+		this.#syncEntries();
+		const anchor = this.#readingAnchor;
+		if (anchor === undefined) return true;
+		const cap = Math.max(0, Math.trunc(viewportRows));
+		const startIndex = this.#entries.findIndex(entry => entry.component === anchor.entry);
+		if (startIndex < 0) {
+			this.#readingAnchor = undefined;
+			return true;
+		}
+		let rows = 0;
+		for (let index = startIndex; index < this.#entries.length; index++) {
+			const entry = this.#entries[index]!;
+			this.#setAllocation(entry.component, Number.MAX_SAFE_INTEGER, this.#lastFrame);
+			const block = trimBlankEdges(entry.component.render(width));
+			if (block.length === 0) continue;
+			const from = index === startIndex ? Math.min(Math.max(0, anchor.row), block.length) : 0;
+			rows += block.length - from + (rows > 0 ? 1 : 0);
+			if (rows >= cap) return false;
+		}
+		return true;
 	}
 
 	#renderEntry(entry: TranscriptEntry, width: number): readonly string[] {

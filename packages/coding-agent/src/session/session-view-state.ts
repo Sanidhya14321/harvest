@@ -1,4 +1,5 @@
 import type { ImageContent } from "@harvest/pi-ai";
+import type { TranscriptReadingAnchor } from "../modes/components/transcript-container";
 
 /** Unsent composer text plus its image attachments for one session. */
 export interface ComposerDraftState {
@@ -27,6 +28,7 @@ export interface DraftEditor {
 export class SessionViewStateStore {
 	readonly #drafts = new Map<string, ComposerDraftState>();
 	readonly #scrollOffsets = new Map<string, number>();
+	readonly #readingAnchors = new Map<string, TranscriptReadingAnchor>();
 	/** Bounds the scroll-offset index; drafts are already bounded by tab counts. */
 	static readonly maxScrollEntries = 20;
 

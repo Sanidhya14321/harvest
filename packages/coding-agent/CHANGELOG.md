@@ -84,6 +84,8 @@
 
 ### Added
 
+- OpenCode-like workspace shell: responsive right sidebar (session title, context/cost, MCP/LSP, Todo/Agents, Workspace Changes, version footer) with docked (>120 cols) and overlay modes, `tui.sidebar: auto | show | hide`, `Alt+Shift+B` / `/sidebar`, and a registry-backed command palette (`Alt+K` / `/commands`).
+- Harvest `harvest` (dark) and `harvest-light` palettes with screen/panel/raised/composer/modal surfaces and central fallbacks for legacy themes.
 - Project and user Markdown brains retrieve cited knowledge and skill sections using cached page indexing, graph links, and optional Laya reranking.
 
 - Interactive sessions now open in a full-screen workspace with clickable session tabs, a centered new-session composer, and mouse or Page Up/Down transcript navigation.

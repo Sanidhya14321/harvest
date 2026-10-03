@@ -21,6 +21,12 @@ export interface OutputBlockOptions {
 	/** Override the state-derived border color. Used for muted "legacy" tool
 	 * frames that should not visually compete with framed-output tools. */
 	borderColor?: ThemeColor;
+	/**
+	 * Visual variant: `frame` keeps the rounded output box; `rail` renders a
+	 * quiet panel with a left accent rail (OpenCode-like inline activity);
+	 * `plain` renders inset content on the screen background without chrome.
+	 */
+	variant?: "frame" | "rail" | "plain";
 }
 
 const FRAMED_BLOCK_COMPONENT = Symbol("framedBlockComponent");
@@ -64,6 +70,7 @@ export function outputBlockContentWidth(
 }
 
 export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): string[] {
+	if (options.variant === "rail" || options.variant === "plain") return renderRailPanel(options, theme);
 	const { header, headerMeta, state, sections = [], width, applyBg = true } = options;
 	const h = theme.boxRound.horizontal;
 	const v = theme.boxRound.vertical;
@@ -200,6 +207,75 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 }
 
 /**
+ * Quiet rail/panel variant: one accent rail on the left, content inset on a
+ * panel surface, no enclosing rounded box. Successful simple tools occupy one
+ * or two activity rows; output/diff/code panels keep the framed variant.
+ * Resolves the rail glyph through the active symbol preset (ASCII-safe).
+ */
+export function renderRailPanel(options: OutputBlockOptions, theme: Theme): string[] {
+	const { header, headerMeta, state, sections = [], width } = options;
+	const lineWidth = Math.max(1, width);
+	const accent: ThemeColor =
+		options.borderColor ??
+		(state === "error"
+			? "error"
+			: state === "warning"
+				? "warning"
+				: state === "running" || state === "pending"
+					? "accent"
+					: "borderMuted");
+	const railGlyph = theme.getSymbolPreset() === "ascii" ? "|" : "▎";
+	const rail = theme.fg(accent, railGlyph);
+	const contentWidth = Math.max(1, lineWidth - 2);
+	const out: string[] = [];
+	const title = [header, headerMeta].filter(Boolean).join(" · ");
+	if (title) {
+		for (const wrapped of wrapTextWithAnsi(title, contentWidth)) {
+			out.push(`${rail} ${theme.fg("toolTitle", truncateToWidth(wrapped, contentWidth))}`);
+		}
+	}
+	for (const section of sections) {
+		if (section.label) out.push(`${rail} ${theme.fg("muted", truncateToWidth(section.label, contentWidth))}`);
+		for (const line of section.lines.flatMap(l => l.split("\n"))) {
+			for (const wrapped of wrapTextWithAnsi(line.trimEnd(), contentWidth)) {
+				const inner = wrapped + padding(Math.max(0, contentWidth - visibleWidth(wrapped)));
+				out.push(options.variant === "plain" ? `  ${inner}` : `${rail} ${inner}`);
+			}
+		}
+	}
+	if (out.length === 0) out.push(`${rail} `);
+	return out.map(l => padToWidth(l, lineWidth));
+}
+
+/**
+ * Compact inline activity row: `› label · detail` with state color, used for
+ * successful simple tools (read/glob/grep/search) that should not each claim
+ * a rounded frame. Expanded detail uses the rail/panel or framed variant.
+ */
+export function renderInlineActivity(
+	theme: Theme,
+	label: string,
+	detail: string | undefined,
+	state: State | undefined,
+	width: number,
+): string[] {
+	const lineWidth = Math.max(1, width);
+	const color: ThemeColor =
+		state === "error"
+			? "error"
+			: state === "warning"
+				? "warning"
+				: state === "running" || state === "pending"
+					? "accent"
+					: "muted";
+	const glyph =
+		state === "error" ? theme.status.error : state === "running" || state === "pending" ? theme.status.running : "›";
+	const text = detail ? `${label} · ${detail}` : label;
+	const rowText = `${theme.fg(color, glyph)} ${theme.fg("muted", truncateToWidth(text, Math.max(1, lineWidth - 3)))}`;
+	return [padToWidth(rowText, lineWidth)];
+}
+
+/**
  * Cached wrapper around `renderOutputBlock`.
  *
  * Since output blocks are re-rendered on every frame (via `render(width)` closures),
@@ -236,6 +312,7 @@ export class CachedOutputBlock {
 		h.optional(options.headerMeta);
 		h.optional(options.state);
 		h.optional(options.borderColor);
+		h.optional(options.variant);
 		h.bool(options.applyBg ?? true);
 		if (options.sections) {
 			for (const s of options.sections) {

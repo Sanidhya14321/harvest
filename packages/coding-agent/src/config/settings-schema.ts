@@ -1285,6 +1285,18 @@ export const SETTINGS_SCHEMA = {
 			description: "Show sessions across the top and keep the prompt at the bottom",
 		},
 	},
+	"tui.sidebar": {
+		type: "enum",
+		values: ["auto", "show", "hide"] as const,
+		default: "auto",
+		ui: {
+			tab: "appearance",
+			group: "Display",
+			label: "Sidebar",
+			description:
+				"Session sidebar visibility: auto docks it when the terminal is wider than 120 columns, show requests an overlay on narrow screens, hide turns it off",
+		},
+	},
 	"tui.resizeScrollback": {
 		type: "enum",
 		values: ["append", "rebuild", "preserve"] as const,

@@ -5,6 +5,8 @@ import { adjustHsv, getCustomThemesDir, isEnoent } from "@harvest/pi-utils";
 import { detectColorMode, resolveThemeColors } from "./color";
 import darkThemeJson from "./dark.json" with { type: "json" };
 import { defaultThemes } from "./defaults";
+import harvestThemeJson from "./harvest.json" with { type: "json" };
+import harvestLightThemeJson from "./harvest-light.json" with { type: "json" };
 import lightThemeJson from "./light.json" with { type: "json" };
 import { type ColorMode, type ThemeBg, type ThemeColor, type ThemeJson, themeJsonSchema } from "./schema";
 import { normalizeSpinnerFramesOverride, type SymbolPreset } from "./symbols";
@@ -17,6 +19,8 @@ import { Theme } from "./theme-class";
 const BUILTIN_THEMES: Record<string, ThemeJson> = {
 	dark: darkThemeJson as ThemeJson,
 	light: lightThemeJson as ThemeJson,
+	harvest: harvestThemeJson as ThemeJson,
+	"harvest-light": harvestLightThemeJson as ThemeJson,
 	...(defaultThemes as Record<string, ThemeJson>),
 };
 
@@ -166,6 +170,11 @@ export function createTheme(themeJson: ThemeJson, options: CreateThemeOptions = 
 		"toolSuccessBg",
 		"toolErrorBg",
 		"statusLineBg",
+		"screenBg",
+		"panelBg",
+		"raisedBg",
+		"composerBg",
+		"modalBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {
@@ -174,6 +183,21 @@ export function createTheme(themeJson: ThemeJson, options: CreateThemeOptions = 
 			fgColors[key as ThemeColor] = value;
 		}
 	}
+	// Central fallbacks for surface tokens so legacy custom themes without them
+	// still load. New Harvest palettes provide explicit values.
+	const surfaceFallback = (
+		primary: string | number | undefined,
+		...alts: (string | number | undefined)[]
+	): string | number => {
+		if (primary !== undefined) return primary;
+		for (const alt of alts) if (alt !== undefined) return alt;
+		return "";
+	};
+	bgColors.screenBg = surfaceFallback(bgColors.screenBg, "");
+	bgColors.panelBg = surfaceFallback(bgColors.panelBg, bgColors.toolSuccessBg, bgColors.statusLineBg, "");
+	bgColors.raisedBg = surfaceFallback(bgColors.raisedBg, bgColors.selectedBg, bgColors.toolPendingBg, "");
+	bgColors.composerBg = surfaceFallback(bgColors.composerBg, bgColors.raisedBg, bgColors.toolPendingBg, "");
+	bgColors.modalBg = surfaceFallback(bgColors.modalBg, bgColors.panelBg, bgColors.toolSuccessBg, "");
 	// Extract symbol configuration - settings override takes precedence over theme
 	const symbolPreset: SymbolPreset = symbolPresetOverride ?? themeJson.symbols?.preset ?? "unicode";
 	const symbolOverrides = themeJson.symbols?.overrides ?? {};

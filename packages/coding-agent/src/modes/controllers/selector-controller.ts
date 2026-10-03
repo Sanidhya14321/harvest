@@ -333,14 +333,41 @@ export class SelectorController {
 	}
 
 	/**
+	 * Hide an overlay and restore keyboard focus to whatever currently owns
+	 * the editor slot. The slot can hold the editor itself or a hook
+	 * selector/input/editor pushed in by `ExtensionUiController` — e.g. an
+	 * approval prompt that fired while a fullscreen overlay was up.
+	 * `overlayHandle.hide()` restores focus to the component focused when the
+	 * overlay opened, which is stale in that case (the editor was swapped
+	 * out): keys land on a hidden editor and the visible prompt receives
+	 * nothing. Prefer this over raw `setFocus(editor)` on every overlay,
+	 * sidebar, and palette close path.
+	 *
+	 * Owner wiring (main thread): the command-palette `onClose("escape")`
+	 * callback hides the palette handle through this helper after restoring
+	 * the pre-open draft, and the narrow-sidebar close path calls it instead
+	 * of focusing the editor directly — both keep hook-slot focus intact.
+	 */
+	closeOverlayToEditorArea(overlayHandle: OverlayHandle | undefined): void {
+		overlayHandle?.hide();
+		this.focusActiveEditorArea();
+		this.ctx.ui.requestRender();
+	}
+
+	/**
 	 * Shows a selector component in place of the editor.
 	 * @param create Factory that receives a `done` callback and returns the component and focus target
 	 */
 	showSelector(create: (done: () => void) => { component: Component; focus: Component }): void {
 		const done = () => {
-			this.ctx.editorContainer.clear();
-			this.ctx.editorContainer.addChild(this.ctx.editor);
-			this.ctx.ui.setFocus(this.ctx.editor);
+			// Restore the editor only while the selector still owns the slot:
+			// an approval or hook widget mounted meanwhile keeps its place,
+			// and focus retargets to that visible owner below.
+			if (this.ctx.editorContainer.children.includes(component)) {
+				this.ctx.editorContainer.clear();
+				this.ctx.editorContainer.addChild(this.ctx.editor);
+			}
+			this.focusActiveEditorArea();
 		};
 		const { component, focus } = create(done);
 		this.ctx.editorContainer.clear();
@@ -828,6 +855,9 @@ export class SelectorController {
 				break;
 			case "tui.fullscreen":
 				this.ctx.setFullscreen(value as boolean);
+				break;
+			case "tui.sidebar":
+				this.ctx.syncComposerShape();
 				break;
 
 			case "tui.renderMermaid":
@@ -2280,9 +2310,14 @@ export class SelectorController {
 		const restoreEditor = () => {
 			if (restored) return;
 			restored = true;
-			this.ctx.editorContainer.clear();
-			this.ctx.editorContainer.addChild(this.ctx.editor);
-			this.ctx.ui.setFocus(this.ctx.editor);
+			// Same slot contract as `showSelector`: only evict the dialog when
+			// it still owns the slot, then focus the visible slot owner so a
+			// hook widget mounted meanwhile keeps keyboard focus.
+			if (this.ctx.editorContainer.children.includes(dialog)) {
+				this.ctx.editorContainer.clear();
+				this.ctx.editorContainer.addChild(this.ctx.editor);
+			}
+			this.focusActiveEditorArea();
 			this.ctx.ui.requestRender();
 		};
 		const dialog = new LoginDialogComponent(this.ctx.ui, providerId, (_success, message) => {

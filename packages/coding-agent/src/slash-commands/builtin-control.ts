@@ -79,4 +79,22 @@ export const BUILTIN_CONTROL_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 		description: "Quit the application",
 		handleTui: shutdownHandlerTui,
 	},
+	{
+		name: "commands",
+		icon: "keyboard",
+		description: "Open command palette",
+		handleTui: async (_command, runtime) => {
+			runtime.ctx.editor.setText("");
+			await runtime.ctx.openCommandPalette();
+		},
+	},
+	{
+		name: "sidebar",
+		icon: "action",
+		description: "Toggle session sidebar",
+		handleTui: (_command, runtime) => {
+			runtime.ctx.editor.setText("");
+			runtime.ctx.toggleSidebar();
+		},
+	},
 ];

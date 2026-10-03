@@ -879,3 +879,5 @@ Some settings (model roles, eval backends, tiny-model device/precision, auth bro
 ### `harvest config set <key>` says "Unknown setting"
 
 Keys must match a schema path exactly, with no shorthand. Use `theme.dark`, not `theme`. Run `harvest config list` to see every valid key.
+
+- `tui.sidebar: auto | show | hide` (default `auto`): dock the session sidebar when wide, overlay on narrow `show`, off on `hide`.

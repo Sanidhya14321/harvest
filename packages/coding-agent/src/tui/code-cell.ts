@@ -197,7 +197,13 @@ export function renderCodeCell(options: CodeCellOptions, theme: Theme): string[]
 		sections.push({ label: theme.fg("toolTitle", "Output"), lines: outputLines });
 	}
 
-	return renderOutputBlock({ header: title, headerMeta: meta, state, sections, width }, theme);
+	// Compact successful activity uses the quiet rail panel; expanded detail,
+	// running/pending, warnings, and errors keep the purposeful framed panel.
+	const quietSuccess = state === "success" && !expanded;
+	return renderOutputBlock(
+		{ header: title, headerMeta: meta, state, sections, width, variant: quietSuccess ? "rail" : "frame" },
+		theme,
+	);
 }
 
 export interface MarkdownCellOptions {
@@ -264,5 +270,9 @@ export function renderMarkdownCell(options: MarkdownCellOptions, theme: Theme): 
 		sections.push({ label: theme.fg("toolTitle", "Output"), lines: outputLines });
 	}
 
-	return renderOutputBlock({ header: title, headerMeta: meta, state, sections, width }, theme);
+	const quietSuccess = state === "success" && !expanded;
+	return renderOutputBlock(
+		{ header: title, headerMeta: meta, state, sections, width, variant: quietSuccess ? "rail" : "frame" },
+		theme,
+	);
 }

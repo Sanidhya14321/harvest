@@ -62,6 +62,11 @@ const themeColorsSchema = type({
 	bashMode: "string | number",
 	pythonMode: "string | number",
 	statusLineBg: "string | number",
+	"screenBg?": "string | number",
+	"panelBg?": "string | number",
+	"raisedBg?": "string | number",
+	"composerBg?": "string | number",
+	"modalBg?": "string | number",
 	statusLineSep: "string | number",
 	statusLineModel: "string | number",
 	statusLinePath: "string | number",
@@ -258,6 +263,11 @@ export type ThemeBg =
 	| "toolPendingBg"
 	| "toolSuccessBg"
 	| "toolErrorBg"
-	| "statusLineBg";
+	| "statusLineBg"
+	| "screenBg"
+	| "panelBg"
+	| "raisedBg"
+	| "composerBg"
+	| "modalBg";
 
 export type ColorMode = "truecolor" | "256color";

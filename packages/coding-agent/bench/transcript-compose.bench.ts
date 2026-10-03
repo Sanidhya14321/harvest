@@ -2,19 +2,23 @@
  * Benchmark: transcript compose cost vs session depth
  * (perf/transcript-compose-flat-after-commit)
  *
- * A long interactive session finalizes assistant blocks and emits their rows
+ * A long interactive session finalizes assistant blocks and retires their rows
  * into native terminal scrollback. Once committed, those rows are immutable
- * history the terminal owns; the local {@link TranscriptContainer} should drop
+ * history the terminal owns; the local {@link TranscriptContainer} must drop
  * them from its frame so a live tail mutation does not re-walk sealed history.
  *
  * This bench builds N finalized assistant blocks (prose + closed code fences),
- * commits every finalized row into native scrollback, then times one pure
- * `TranscriptContainer.render(width)` per streaming tick of a single live tail
- * block. Depth-linear cost (ms rising with N) means sealed history is still
- * walked and re-assembled each tick; flat cost means the committed prefix was
- * compacted and only the live tail composes.
+ * drives the real pressure-retirement pipeline (`peekFinalizedBatch` /
+ * `acknowledgeFinalizedBatch`) until the settled prefix is committed — the
+ * step the previous revision skipped, which left history live and measured
+ * the pre-fix walk — then times one fullscreen windowed
+ * `TranscriptContainer.renderViewport(width, rows, frame)` per streaming tick
+ * of a single live tail block. Depth-linear cost (ms rising with N) means
+ * sealed history is still walked and re-assembled each tick; flat cost means
+ * the committed prefix was compacted and only the live tail composes.
  *
- * Target after the fix: ratio(N5000/N500) <= 1.3, N5000 p95 < 10 ms.
+ * Target after the fix: ratio(N5000/N500) <= 1.3, N5000 p95 < 10 ms, and a
+ * windowed byte ratio near 1.0 (visible-window work stays bounded).
  */
 
 import type { AssistantMessage } from "@harvest/pi-ai";
@@ -24,9 +28,13 @@ import { TranscriptContainer } from "../src/modes/components/transcript-containe
 import { initTheme } from "../src/modes/theme/theme";
 
 const WIDTH = 100;
+/** Fullscreen transcript window: the bounded rows the composer paints per frame. */
+const VIEWPORT_ROWS = 40;
 const SIZES = [500, 5000];
 const WARMUP = 20;
 const SAMPLES = 200;
+
+const encoder = new TextEncoder();
 
 function makeMarkdownCorpus(targetGraphemes: number): string {
 	const para =
@@ -68,8 +76,24 @@ function percentile(sorted: number[], p: number): number {
 	return sorted[idx]!;
 }
 
-/** Build N committed finalized blocks + a live tail, return per-tick render medians/p95. */
-function measure(n: number): { median: number; p95: number } {
+function renderedBytes(rows: readonly string[]): number {
+	let total = 0;
+	for (const row of rows) total += encoder.encode(row).length;
+	return total;
+}
+
+/** Retire the settled history prefix through the real pipeline, as viewport pressure would. */
+function commitHistory(container: TranscriptContainer): void {
+	for (let i = 0; i < 100_000; i++) {
+		const batch = container.peekFinalizedBatch(WIDTH, 0);
+		if (!batch) return;
+		container.acknowledgeFinalizedBatch(batch.id);
+	}
+	throw new Error("history commit did not converge");
+}
+
+/** Build N committed finalized blocks + a live tail, return per-tick windowed render medians/p95/bytes. */
+function measure(n: number): { median: number; p95: number; bytes: number } {
 	const histText = makeMarkdownCorpus(240);
 	const tailCorpus = makeMarkdownCorpus(1200);
 	const container = new TranscriptContainer();
@@ -84,42 +108,51 @@ function measure(n: number): { median: number; p95: number } {
 	let revealed = Math.floor(tailCorpus.length * 0.5);
 	tail.updateContent(makeTextMessage(tailCorpus.slice(0, revealed)), { transient: true });
 
-	// Warm every block's markdown L1 cache and establish the assembled frame,
-	container.render(WIDTH);
+	// Retire sealed history into (discarded) native scrollback first: without
+	// this the windowed tick below would still walk N live blocks.
+	commitHistory(container);
 
-	const tick = () => {
+	let tickNo = 0;
+	const tick = (): readonly string[] => {
 		revealed += 20;
 		if (revealed > tailCorpus.length) revealed = Math.floor(tailCorpus.length * 0.5);
 		tail.updateContent(makeTextMessage(tailCorpus.slice(0, revealed)), { transient: true });
-		container.render(WIDTH);
+		tickNo += 1;
+		return container.renderViewport(WIDTH, VIEWPORT_ROWS, { tick: tickNo, now: performance.now() });
 	};
 
 	for (let i = 0; i < WARMUP; i++) tick();
 	const samples: number[] = [];
+	let bytes = 0;
 	for (let i = 0; i < SAMPLES; i++) {
 		const start = Bun.nanoseconds();
-		tick();
+		const rows = tick();
 		samples.push((Bun.nanoseconds() - start) / 1e6);
+		bytes = renderedBytes(rows);
 	}
 	samples.sort((a, b) => a - b);
-	return { median: percentile(samples, 50), p95: percentile(samples, 95) };
+	return { median: percentile(samples, 50), p95: percentile(samples, 95), bytes };
 }
 
 await Settings.init({ inMemory: true });
 await initTheme("dark");
 
-console.log(`\nBenchmark: transcript-compose (live tail tick after committed finalized history, width ${WIDTH})\n`);
+console.log(
+	`\nBenchmark: transcript-compose (windowed live-tail tick after committed finalized history, width ${WIDTH} x ${VIEWPORT_ROWS} rows)\n`,
+);
 
 const results = SIZES.map(n => {
 	const r = measure(n);
-	console.log(`  N=${n}: median ${r.median.toFixed(4)}ms  p95 ${r.p95.toFixed(4)}ms`);
+	console.log(`  N=${n}: median ${r.median.toFixed(4)}ms  p95 ${r.p95.toFixed(4)}ms  bytes ${r.bytes}`);
 	return r;
 });
 
 const small = results[0]!;
 const large = results[results.length - 1]!;
 const ratio = large.median / small.median;
+const bytesRatio = large.bytes / Math.max(1, small.bytes);
 console.log(
 	`\n  ratio(N${SIZES[SIZES.length - 1]}/N${SIZES[0]}) median = ${ratio.toFixed(3)}  ` +
-		`(target <= 1.3; N${SIZES[SIZES.length - 1]} p95 = ${large.p95.toFixed(4)}ms, target < 10ms)\n`,
+		`(target <= 1.3; N${SIZES[SIZES.length - 1]} p95 = ${large.p95.toFixed(4)}ms, target < 10ms; ` +
+		`bytes ratio = ${bytesRatio.toFixed(3)}, target ~= 1.0)\n`,
 );

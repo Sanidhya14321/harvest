@@ -2,6 +2,7 @@
 
 Prepared: 2026-10-03. Repository: `C:\Users\sanid\Desktop\harvest-2.0\harvest`.
 Baseline HEAD: `db336df501d6f36dddf0aa6f30544b6c3d1e3387`; the working tree already contains unrelated uncommitted work.
+Concurrent repository activity advanced HEAD to `cca60c0a08244318056d195305784a51c8498a95` during planning. Recheck the current checkout and source before execution; preserve changes made by other work.
 
 ## 1. Execution brief
 
@@ -97,6 +98,7 @@ SESSION, NARROW
 - Home prompt maximum width is 75 columns, clamped to available width. Conversation prompt fills the main column. Main transcript is not capped to 75 columns; it uses the space left by the sidebar.
 - Display the session title in the wide sidebar. When sidebar is hidden, show it in a compact top context row. Keep multi-session tabs but suppress a redundant tab strip for a single session. Preserve session-picker/new-session access through the palette and existing commands/bindings.
 - A sidebar overlay has width `min(42, columns - 2)` at normal narrow sizes; the smallest screens use a full-width bounded panel. Escape closes it and restores the prior focus. Closing must not change the user's stored automatic/docked preference accidentally.
+- Keep persisted visibility separate from ephemeral overlay-open/focus state. The layout must not reopen a dismissed narrow overlay on every render; entering narrow `show` requests it once, and subsequent reopening requires an explicit toggle/focus action. In narrow mode the shortcut toggles the temporary overlay; in wide mode it toggles docked visibility through the persisted preference.
 - Define all dimensions, breakpoints, and spacing once as named layout constants. Do not spread arithmetic and magic numbers through components.
 
 ### 4.2 Height pressure and attention priority
@@ -121,6 +123,7 @@ Target dark palette: screen `#0a0a0a`, panel `#141414`, input/raised surface `#1
 - Use `theme.bgFill()` and `theme.fgOnBg()` for padded surfaces and nested ANSI content. Preserve 256-color fallback, colorblind diffs, theme changes, and custom terminal backgrounds.
 - Use an original Harvest wordmark, not OpenCode's logo. Prefer static text/vector-like terminal glyphs over bitmap assets. Keep home modest; no new splash delays or animations.
 - Default interface must work with ordinary monospace fonts. Use existing Unicode/ASCII symbol presets and textual state labels; Nerd glyphs remain optional. Rasterizer font gaps must be distinguished from VT/layout failures.
+- The current rail/field primitives contain hard-coded block rail/cap glyphs (`▎`, `▐`, `▌`). Resolve these through the existing symbol presets or provide width-safe ASCII rails/caps. Qualify both runtime and composer preview in ASCII; merely setting `symbolPreset` does not prove these styles obey it.
 
 ### 4.4 Composer and status hierarchy
 
@@ -148,16 +151,19 @@ Define one visual grammar shared across all transcript construction paths:
 | Bash/eval | Command/code with bounded live output on a quiet panel | Full permitted output/artifact information |
 | MCP/custom/unknown tools | Human label, primary arguments, accurate state; consistent fallback | Existing renderer output or generic structured detail |
 | Task/hub/subagent activity | Name/task/state and concise progress | Existing nested details and Agent Hub |
-| Error/denial/interruption/unknown outcome | Always visible, distinguishable state and useful explanation | Bounded full diagnostic details and available actions |
+| Error/denial/interruption/unknown outcome | Distinguishable state and useful explanation when activity is shown; required active failure/approval attention stays visible | Bounded full diagnostic details and available actions |
 | Completion metadata | Small mode/model/elapsed endcap once per displayed completion | Existing detailed usage available on demand |
 
 - Successful simple tools should normally occupy one or two activity rows, without a rounded frame per operation. Use output/diff/code panels when their content matters. Do not force every specialized renderer into identical rows.
 - Reuse and extend `tui/output-block.ts`, `tui/code-cell.ts`, `tools/render-utils.ts`, and existing width helpers. Add a rail/panel variant to the central block abstraction; preserve default behavior for unrelated callers until deliberately migrated.
 - Surface result semantics, not transport internals. Move token timings, timeout/artifact metadata, provider/auth/search diagnostics to expanded details where they do not affect an immediate decision. Preserve source URLs, citations, errors, output truncation warnings, and ambiguous-effect warnings.
+- Preserve web search's existing complete answer in its collapsed default; simplify its chrome/metadata without silently truncating the answer. Historical tool cards/errors respect tool-activity visibility preferences and remain recoverable by showing activity; required current approval/failure attention uses the independent attention slot.
 - Preserve `read.toolResultPreview`, tool visibility/expansion preferences, and per-tool custom renderers. A same-name extension tool must not accidentally receive the built-in tool's summary. Keep generic structured details as fallback.
 - Keep reasoning visibility separate from actual model thinking configuration. Avoid model/provider name matching in UI policy; structured facts/catalog policy remain authoritative.
 - Preserve chronological order, optimistic submit exactly once, tool-result ownership, mixed assistant text around tools, late result updates, hidden images, attachment links, and protocol blocks.
 - Completion endcaps must not make an unfinished block eligible for history retirement, introduce a duplicate final answer, or become stale after an asynchronous tool update.
+- Completion ownership is the existing deferred usage/turn boundary, **not each `AssistantMessageComponent` constructor**. `splitAssistantMessageToolTimeline()` clones messages/usage and stamps text segments as stopped, so constructor-based endcaps would repeat after every segment. Aggregate once after tools/post-tool prose; use known `completedAt`/`turnElapsedMs`, omit unavailable values, and do not append a second completion when a late result arrives.
+- Newly styled identity/reasoning/cache-marker rows must not mutate above an already published/accepted stable prefix. Preserve `isTranscriptBlockFinalized()` / `getTranscriptBlockVersion()`, immutable render arrays, and frozen task time (`frozen`/`nowMs`) across settlement, backscroll, and history acceptance.
 
 ### 4.6 Sidebar data and truthfulness
 
@@ -171,18 +177,24 @@ Sidebar order: session title; context/cost; MCP; LSP; active Todo; Agents when p
 - Native `VcsRepo` already exposes `changedFiles`, `numstat`, `statusPorcelain`, `statusSummary`, and `diffText`. Verify option types/working-copy semantics in `packages/natives/native/index.d.ts` and existing consumers. Merge staged/unstaged/renamed/untracked states accurately, with capped lists and timeouts.
 - Label the list **Workspace Changes**. It represents repository changes, including pre-existing user work; do not claim all changes were made by this session. Binary/untracked files must not get invented line counts. Non-repository, JJ, disconnected and error states remain usable.
 - Stale asynchronous results cannot overwrite the newly focused session/worktree. Cancel or generation-check pending refreshes; dispose timers/watchers/subscriptions when ownership ends.
-- Sidebar sections can collapse and scroll independently. All information/actions remain accessible by keyboard. Mouse reporting must not be the only way to inspect a long sidebar.
+- Use one sidebar scroll viewport independent of the transcript, with collapsible sections. Separate scroll areas for every section are unnecessary. All information/actions remain accessible by keyboard; mouse reporting must not be the only way to inspect a long sidebar.
+- Add a palette **Focus sidebar** action: arrows/PageUp/PageDown navigate/scroll, section controls collapse/expand, and Escape restores active input. Reuse `ScrollView`/mouse routing helpers where suitable; translate zero-based `parseSgrMouse()` screen coordinates through final rectangles. Sidebar wheel must not move the transcript, and tabs no longer assume row zero after new header content.
+- Use `viewSession`/`focusedAgentId` for focused-agent accounting, `getTodoPhases()` for Todo, and `runDiagnostics.snapshot(sessionId)` for run state. Do not accidentally show the parent session's cost while viewing a child.
+- MCP state must update even when `startup.quiet=true`: `#handleMcpConnectionStatusEvent()` currently returns before updating its display sets in quiet mode. Separate state mutation from notification gating or seed from `MCPManager.getAllServerNames()`, `getConnectedServers()`, and `getConnectionStatus(name)`. Retain failure detail from events, and unsubscribe `addConnectionStatusListener()` when disposed. LSP snapshots must likewise update independently of welcome visibility.
+- `getCachedContextBreakdown()` alone cannot establish known usage: it currently substitutes zero for unavailable tokens. Carry an explicit known/unknown flag from session accounting with cached totals. Native `vcs.watch()` observes repository-head changes; working-file lists also need mutation/completion invalidation and a bounded shared refresh/manual refresh seam for external edits, rather than assuming head events see every edit.
 
 ### 4.7 Dialogs, palette, and navigation
 
-Build common dialog presentation on existing `TUI.showOverlay()`/`OverlayHandle`, preserving settlement and cancellation behavior. Use 60/88/116-column caps where appropriate and clamp to screen dimensions. Opaque styled surfaces are acceptable; do not emulate transparency with unsupported terminal control tricks.
+Build common dialog presentation by extending **`modes/components/overlay-box.ts` / `OverlayPanel`** and existing `TUI.showOverlay()`/`OverlayHandle`, preserving settlement and cancellation behavior. Use 60/88/116-column caps where appropriate and clamp to screen dimensions. Opaque styled surfaces are acceptable; do not emulate transparency with unsupported terminal control tricks.
 
 - Model/theme/session/settings/action selectors should share title, search, selected row, body padding, and key-help conventions. Genuine explorers such as Agent Hub/transcript rewind may stay fullscreen.
 - Approval/question/plan-review dialogs retain existing policy and ownership. Escape must continue to mean the existing cancellation/close action; redesign must not silently approve or force-kill anything.
-- Add a general palette action `app.commands.open` with default **Alt+K**, plus `/commands`; add `app.sidebar.toggle` with default **Alt+B**, plus `/sidebar`. Verify current registries and user-remap precedence before wiring them; if an extension owns a colliding command, use existing builtin-resolution rules and document the outcome.
-- Palette enumerates existing built-in, extension, and file commands using current discovery/registry helpers. Do not duplicate a manual list or execute a string through the shell. Actions with arguments should insert/prepare the draft or open the appropriate existing selector, not execute an incomplete command.
+- Add a general palette action `app.commands.open` with default **Alt+K**, plus `/commands`; add `app.sidebar.toggle` with default **Alt+Shift+B**, plus `/sidebar`. These have no current default collision in the app/core definitions inspected. **Alt+B is already word-left in the editor and must remain so.** Verify registries and user-remap precedence before wiring new actions; reserve command names through the existing builtin-resolution rules.
+- Populate the palette from the **TUI** state assembled by `buildTuiBuiltinSlashCommands()` and `InteractiveMode.refreshSlashCommandState()`, including extensions, custom/MCP prompts, enabled skills, file commands, and templates. `buildAvailableSlashCommands()` in `available-commands.ts` is ACP-filtered and omits TUI-only commands; it cannot be the sole palette source. Do not duplicate a manual list or execute strings through the shell. Actions with arguments should prepare the draft or open the existing selector, not execute an incomplete command.
 - Preserve **Ctrl+P** model cycling, **Ctrl+T** reasoning visibility, **Shift+Tab** mode cycling, **Ctrl+L** live voice, **Ctrl+Q/Ctrl+Enter** follow-up, **F5/Alt+R** retry, session-tab bindings, and user remaps. Do not copy OpenCode chords wholesale.
 - Derive displayed key hints from the active `KeybindingsManager`. Modal closure restores the correct previous focus and draft. Invisible or clipped tabs/items must have no mouse targets.
+- Preserve `SelectorController.focusActiveEditorArea()` behavior: an approval/question may occupy `editorContainer` even when `ui.hasOverlay()` is false. Palette/sidebar actions must not dispatch behind that surface, and closure must focus the currently mounted input rather than a stale base editor. Keep nested extension asks and collaboration first-answer-wins settlement intact.
+- Remove height-overflow assumptions in Settings/ModelHub/AgentsHub (current minimum heights/content rows can exceed a short terminal). Supply the actual viewport budget, preserve selected-row visibility, and collapse internal sidebars before clipping required controls.
 
 ## 5. Architecture and implementation boundaries
 
@@ -203,7 +215,7 @@ Build common dialog presentation on existing `TUI.showOverlay()`/`OverlayHandle`
 
 ### Minimal new product abstractions
 
-Proposed **new** modules: `modes/workspace-layout.ts` for geometry and clipping; `modes/components/workspace-sidebar.ts` for sidebar rendering/navigation; `modes/components/command-palette.ts` for palette presentation. Add a shared dialog chrome or presentation helper only if the existing dialog/list components cannot be extended cleanly. Keep theme values and layout constants centralized.
+Proposed **new** modules: `modes/workspace-layout.ts` for geometry and clipping; `modes/components/workspace-sidebar.ts` for sidebar rendering/navigation; `modes/components/command-palette.ts` for palette presentation. Extend `overlay-box.ts` for dialog chrome; do not add a parallel border system. Keep theme values and layout constants centralized.
 
 Replace the fullscreen layout's inference from anonymous runtime children with a typed named-slot contract: transcript, tabs, attention/notices, above/below-editor widgets, composer, metadata/hints, sidebar, focused replacement UI. Retain compatible existing mounts for inline mode and extension APIs. `Container` is vertical concatenation, not a split-pane engine.
 
@@ -239,12 +251,14 @@ Scrollback needs a stable reading anchor: when streaming while scrolled up, pres
 3. Add responsive session composition, single/multi-session title placement, clamped composer growth, metadata, hints, and required attention placement.
 4. Render configuration warnings/changelog/notices intentionally in fullscreen. Preserve their quiet-startup/settings semantics; warnings must not vanish just because the view is home.
 5. Centralize effective composer-shape resolution for first paint, adoption, previews, runtime changes, and cache serialization. Version obsolete cached chrome and accept missing new preference fields safely.
+6. Keep startup caches limited to valid UI preferences/placeholders; do not persist sidebar accounting, active run status, or transient errors. Preserve setup splash skip/disposal and one-time `ComposerLease` adoption.
 
 **Exit:** first paint and session-adopted view match; no draft loss/flicker/remount; notices are reachable; short-screen input remains usable; inline history tests remain green.
 
 ### M3 — Shared snapshots and sidebar
 
 1. Expose a typed status snapshot from existing cached state; supply session/MCP/LSP/todo/agent/extension snapshots through existing owners.
+   Refactor quiet-startup MCP state acquisition before using it as sidebar input, and qualify quiet mode explicitly.
 2. Implement docked and overlay sidebar, collapsible sections, independent scrolling, keyboard navigation, and context/cost truthfulness.
 3. Add Workspace Changes using the native VCS boundary and existing lifecycle patterns; cap work/output, reject stale generations, dispose resources.
 4. Wire `tui.sidebar` settings and startup cache compatibility. Narrow overlay closure must restore focus.
@@ -255,9 +269,11 @@ Scrollback needs a stable reading anchor: when streaming while scrolled up, pres
 
 1. Introduce central inline activity and rail/panel variants by extending existing render helpers. Preserve frame markers/inline flags so custom outputs do not get double backgrounds/padding.
 2. Migrate user/assistant/reasoning/completion metadata and usage-row presentation, preserving images/chips/copy/OSC133 zones.
-3. Migrate grouped reads and specialized tool families in batches: filesystem/search; shell/eval; edit/diffs; MCP/custom/generic; task/hub; LSP/debug; web/GitHub/memory/todo/ask/resolve/other renderers.
+3. Review grouped reads and specialized tool families in batches: filesystem/search; shell/eval; edit/diffs; MCP/custom/generic; task/hub; LSP/debug; web/GitHub/memory/todo/ask/resolve/other renderers. Prefer shared wrapper/panel changes; edit a specialized renderer only where its actual output conflicts with the grammar. Do not mechanically rewrite every tool or erase useful specialized presentation.
 4. For each batch verify pending partial args, executing, success, error, denied/interrupted, collapsed/expanded, and narrow rendering through the existing gallery fixtures and real component paths.
 5. Apply the same display decisions to `EventController`, `UiHelpers`, and `ChatTranscriptBuilder`. Preserve the full semantic transcript used by exports/`harvest render`.
+6. Recompute affected geometry budgets centrally: `outputBlockContentWidth`, edit header fitting, Eval preview windows, and task assignment frame inset. Keep edit-preview spinners on the mutable trailing rows and task elapsed values frozen after settlement/history acceptance.
+7. Migrate manual `!`/`!!` Bash and Eval executions through `execution-shared.ts`, including PTY viewport insets. Migrate custom/hook/skill/collab/summary/diagnostic message surfaces outside `ToolExecutionComponent`; preserve custom-renderer priority, author attribution, visibility, and expansion.
 
 **Exit:** compact tools and purposeful output panels are consistent; partial streamed arguments remain visible; live/restored/parked paths match semantically and visually; no output/order/ownership regression.
 
@@ -294,17 +310,18 @@ This map records the UI paths reviewed during planning. Large tool/controller mo
 
 ### Product shell and UI lifecycle
 
-- `src/main.ts`, `src/cli.ts`, `src/modes/composer.ts`, `composer-cache.ts`, `interactive-mode.ts`, `types.ts`, `shared.ts`, `agent-mode.ts`, `run-diagnostics.ts`, `queue-input.ts` under `packages/coding-agent/`.
+- Under `packages/coding-agent/`: `src/main.ts`, `src/cli.ts`, `src/modes/composer.ts`, `src/modes/startup-composer.ts`, `src/modes/composer-cache.ts`, `src/modes/interactive-mode.ts`, `src/modes/types.ts`, `src/modes/shared.ts`, `src/modes/agent-mode.ts`, `src/modes/run-diagnostics.ts`, `src/modes/queue-input.ts`.
 - `src/modes/controllers/input-controller.ts`, `selector-controller.ts`, `extension-ui-controller.ts`, event/args/reveal controllers; session-tab methods and the live-session/view-state owners referenced by these controllers.
-- `src/modes/components/custom-editor.ts`, `welcome.ts`, `footer.ts`, `session-tab-strip.ts`, model/theme/settings/session/tree/copy/history/hook selectors, ask and plan-review dialogs, editor replacements, queued-message/status/HUD components, Agent Hub/dashboard/transcript viewers.
+- `src/modes/components/custom-editor.ts`, `welcome.ts`, `footer.ts`, `overlay-box.ts`, `session-tab-strip.ts`, `keybinding-hints.ts`, `editor-top-gap.ts`, model/theme/settings/session/tree/copy/history/hook selectors, ask and plan-review dialogs, editor replacements, queued-message/status/HUD components, Agent Hub/dashboard/transcript viewers. `footer.ts` is legacy and is not the live mounted status owner.
 - `src/modes/components/status-line/`: `component.ts`, `types.ts`, `presets.ts`, `segments.ts`, `separators.ts`, `git-utils.ts`, and barrel.
-- `src/modes/setup-wizard/` UI scenes and `src/modes/components/composer-shape-preview.ts`; same-style previews must stay in sync.
+- Setup splash (`src/modes/setup-wizard/startup-splash.ts`) and composer/theme scene integration (`src/modes/setup-wizard/scenes/composer.ts`, `scenes/theme.ts`); `src/modes/components/composer-shape-preview.ts` and `composer-shape-registry.ts`. Same-style previews must stay in sync.
 - `src/config/settings-schema.ts` UI groups and `src/config/keybindings.ts`; `src/slash-commands/types.ts`, `builtin-registry.ts`, `available-commands.ts`, and UI command/action integration branches.
 - `src/session/session-tabs.ts`, `session-view-state.ts`, `live-session-registry.ts`, `session-manager.ts` public title/state APIs, and `src/utils/active-repo-context.ts`.
 
 ### Transcript and specialized rendering
 
 - `src/modes/components/user-message.ts`, `assistant-message.ts`, `tool-execution.ts`, `read-tool-group.ts`, `usage-row.ts`, `transcript-container.ts`, `chat-transcript-builder.ts`, `transcript-outline.ts`, `visual-truncate.ts`, and relevant bash/eval/custom/artifact message components.
+- Other independent transcript surfaces under `src/modes/components/`: `custom-message.ts`, `hook-message.ts`, `message-frame.ts`, `skill-message.ts`, `compaction-summary-message.ts`, `collab-prompt-message.ts`, `late-diagnostics-message.ts`, `background-tan-message.ts`, `advisor-message.ts`, `execution-shared.ts`, `bash-execution.ts`, `eval-execution.ts`. These must not retain conflicting chrome merely because they bypass the agent-tool renderer.
 - `src/modes/controllers/event-controller.ts`, `tool-args-reveal.ts`, `streaming-reveal.ts`; `src/modes/utils/ui-helpers.ts`, `transcript-render-helpers.ts`, `interactive-context-helpers.ts`.
 - `src/tools/renderers.ts`, `render-utils.ts`, `default-renderer.ts`, `read-renderer.ts`, `eval-render.ts`, `gh-renderer.ts`, `memory-render.ts`, and renderer branches in bash/write/glob/grep/AST/todo/ask/resolve/hub/vibe/think/other registered tools.
 - `src/edit/renderer.ts`, `src/task/render.ts`, `renderer.ts`, `src/mcp/render.ts`, `src/lsp/render.ts`, `src/web/search/render.ts`, and debug/execution renderer helpers referenced by the registry.
@@ -342,6 +359,7 @@ Do not assume prose is up to date: executable source already contradicts older d
 | Resize / sidebar show-hide | No duplicated blocks, stale targets, broken wrapping, displaced cursor, or draft loss |
 | Session switch, including failed/rapid loads | Per-session draft/scroll/state retained; old async refresh cannot repaint new session |
 | Model/theme/settings/palette/approval/ask/plan UI | Search/navigation work; cancel/close settles once and restores correct focus/draft |
+| Approval arrives while palette/sidebar owns focus | Close temporary UI and answer the currently mounted approval; no dispatch into a stale editor |
 | Multiline/large paste + completion menu | Editable text/cursor/menu stay inside available space; attachment expansion survives submission |
 | Extensions/MCP/custom renderer | Existing replacement/overlay/widget/status contracts and same-name ownership preserved |
 | CJK/combining text/tabs/ANSI/long paths | Width-safe lines, sanitized content, shortened home paths, valid hyperlinks |
@@ -349,8 +367,21 @@ Do not assume prose is up to date: executable source already contradicts older d
 | Base fullscreen → overlay → close → exit | Alternate buffer/protocol/cursor restored correctly; no fullscreen native-history output |
 | `tui.fullscreen=false` | Existing scrollback retirement, resize replay, shell return behavior still passes |
 | Dirty Git/JJ/non-repository/offline services | Truthful bounded sidebar; UI stays interactive |
+| Quiet startup with MCP/LSP transitions | Connection/failure state updates without welcome/status chatter |
 
-Required screenshot sizes: `160×45` wide, `121×32` and `120×32` around the breakpoint, `100×30`, `80×24`, `60×16`, and `24×4`. Add `20×4` safety checks. Capture light/dark, ASCII/Unicode, and one older custom theme. Include home, idle session, streaming reasoning/tools, expanded diff/shell, palette/model/settings, question/approval, narrow sidebar overlay, multiple sessions, and an error/retry state. Use fixtures rather than paid provider calls.
+Use this representative screenshot matrix, **not a Cartesian product** of every size/state/theme. Add cases only when a distinct branch or discovered failure needs evidence. Use fixtures rather than paid provider calls.
+
+| Viewport / appearance | Required capture coverage |
+| --- | --- |
+| `100×30`, dark/Unicode | Home, idle session, streaming reasoning/tools, expanded diff/shell, palette/model/settings, question/approval, multiple sessions, error/retry |
+| `160×45`, dark/Unicode | Docked sidebar with populated context/integration/Todo/changes and a long transcript |
+| `121×32` and `120×32`, dark/Unicode | Same session across dock/hidden breakpoint; no content/cursor/hit-target corruption |
+| `80×24`, dark/Unicode | Narrow transcript, sidebar overlay open and closed |
+| `60×16`, dark/Unicode | Multiline composer/autocomplete and a short selector with visible active controls |
+| `24×4`, dark/ASCII | Minimal editable composer and required-attention flow; also test `20×4` bounds without requiring another redundant screenshot |
+| `100×30`, light/Unicode | Session with tools/sidebar and a dialog, proving surface contrast |
+| `80×24`, dark/ASCII | Home/composer and inline/block tool output, proving rail/cap fallback |
+| `100×30`, older custom theme | Session and dialog proving missing-surface-token fallback |
 
 ### Existing tests to extend or preserve
 
@@ -358,6 +389,8 @@ Required screenshot sizes: `160×45` wide, `121×32` and `120×32` around the br
 - Input/state: input-controller keybindings/focused-submit/large-paste/image/compaction/escape/suspend families; interactive mode editor/status/plan-review/mode/model/working-accent tests.
 - Transcript: `event-controller-mixed-assistant-render.test.ts`; `modes/controllers/event-controller-read-grouping.test.ts`, `event-controller-args-reveal.test.ts`; `modes/utils/render-initial-messages.test.ts`; transcript-container/version/late-tool/rebuild/ordering regressions.
 - Tools: `modes/components/tool-execution.test.ts`; memoization/args/preview/custom/write repaint tests; `tools/edit-renderer.test.ts`, `tools/read-renderer.test.ts`, `mcp-render-status.test.ts`, task nested-live/render-call and specialized renderer contracts.
+- Streaming/late settlement: `streaming-preview-height.test.ts`, `tool-execution-write-repaint.test.ts`, `modes/components/tool-execution-background-task.test.ts`. Qualify final VT output for long-preview-to-result repaint, absence of preview spray, and background completion while a tool is historical/offscreen.
+- Task/default-density changes: `task/render-call.test.ts` currently requires the full brief even collapsed. If adopting a concise default, replace that visual expectation with proof that the complete assignment remains accessible expanded and that call/progress/result ordering and single-card result suppression still hold. Preserve Ask timeout auto-choice disclosure, Resolve apply/reject/failure distinctions, and nested-task cycle/depth bounds.
 - Theme/status: old custom-theme parsing, live epoch/contrast/256-color, symbol presets, overflow, usage/cache/disposal/VCS-generation tests.
 - Core: `packages/tui/test/history-frame-plan.test.ts` already checks base fullscreen entry/exit and changed-row painting; preserve overlay focus, restoration, editor/IME, input priority, image clipping, tight layout, width and scheduler/backpressure tests.
 
@@ -388,7 +421,7 @@ bun packages/coding-agent/src/cli.ts gallery --tool bash --state streaming --sta
 bun packages/coding-agent/src/cli.ts gallery --tool edit --expanded --width 100
 ```
 
-The gallery catches renderer errors and can print `render failed` while completing the command. Inspect returned sections/output; exit code alone proves nothing. `gallery --screenshot` uses VHS and an installed font, and may be unavailable on Windows. Reuse real VT-cell captures for screen composition; these test actual painted cells and already rasterize on this host.
+The gallery catches renderer errors and can print `render failed` while completing the command. Inspect returned sections/output; exit code alone proves nothing. `gallery --screenshot` uses VHS and an installed font, and may be unavailable on Windows. Reuse real VT-cell captures for screen composition; these test actual painted cells and already rasterize on this host. Resolve the bundled Python/Pillow executable through `load_workspace_dependencies` when available, or verify a suitable local Python/Pillow installation; the `python` example below stands for that verified executable.
 
 Example baseline capture workflow; replace directory with a task-owned path and restore any pre-existing environment value in a long-lived shell:
 

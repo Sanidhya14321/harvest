@@ -18,6 +18,12 @@ const STREAMING_STRING_KEYS_BY_TOOL: Record<string, readonly string[]> = {
 	write: ["content"],
 	edit: ["input", "_input"],
 	eval: ["code"],
+	// Flat-form `task`/`context` briefs stream as top-level strings; decoding
+	// them incrementally keeps the call preview live between throttled
+	// full-JSON parses. Batch `tasks[]` items stay on the throttled parse —
+	// nested-array element growth is not a top-level string capture — while
+	// `renderTaskCallLines` stays defensive for partially parsed items.
+	task: ["task", "context"],
 };
 
 /** String fields the streamed-args decode reads incrementally for `toolName`. */

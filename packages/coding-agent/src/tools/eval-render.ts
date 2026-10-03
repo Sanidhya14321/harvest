@@ -10,7 +10,7 @@
  * initialization`.
  */
 import type { Component } from "@harvest/pi-tui";
-import { Markdown, Text } from "@harvest/pi-tui";
+import { Markdown, Text, visibleWidth } from "@harvest/pi-tui";
 import { formatNumber } from "@harvest/pi-utils";
 import { settings } from "../config/settings";
 import type { EvalCellResult, EvalLanguage, EvalStatusEvent, EvalToolDetails } from "../eval/types";
@@ -756,9 +756,16 @@ export const evalToolRenderer = {
 					options.renderContext?.previewLines ?? EVAL_DEFAULT_PREVIEW_LINES,
 					previewWindowRows(),
 				);
+				// Plain-text fallback renders inside the tool block's content inset,
+				// so bound every truncation to the framed content width — a full-width
+				// truncation would wrap into an extra visual row per long line.
+				const contentWidth = outputBlockContentWidth(width);
 				if (cachedLines === undefined || cachedWidth !== width || cachedPreviewLines !== previewLines) {
-					const result = truncateToVisualLines(textContent, previewLines, width);
-					cachedLines = result.visualLines;
+					const result = truncateToVisualLines(textContent, previewLines, contentWidth);
+					// Hard-cap unbroken long lines (no spaces) that Text wrapping leaves intact.
+					cachedLines = result.visualLines.map(line =>
+						visibleWidth(line) > contentWidth ? truncateToWidth(line, contentWidth) : line,
+					);
 					cachedSkipped = result.skippedCount;
 					cachedWidth = width;
 					cachedPreviewLines = previewLines;
@@ -770,26 +777,26 @@ export const evalToolRenderer = {
 						"dim",
 						`… (${cachedSkipped} earlier lines, showing ${cachedLines.length} of ${cachedSkipped + cachedLines.length}) (ctrl+o to expand)`,
 					);
-					outputLines.push(truncateToWidth(skippedLine, width));
+					outputLines.push(truncateToWidth(skippedLine, contentWidth));
 				}
 				outputLines.push(...cachedLines);
 				if (statusLines.length > 0) {
-					outputLines.push(truncateToWidth(uiTheme.fg("dim", "Status"), width));
+					outputLines.push(truncateToWidth(uiTheme.fg("dim", "Status"), contentWidth));
 					for (const statusLine of statusLines) {
-						outputLines.push(truncateToWidth(statusLine, width));
+						outputLines.push(truncateToWidth(statusLine, contentWidth));
 					}
 				}
 				if (timeoutLine) {
-					outputLines.push(truncateToWidth(timeoutLine, width));
+					outputLines.push(truncateToWidth(timeoutLine, contentWidth));
 				}
 				if (noticeLine) {
-					outputLines.push(truncateToWidth(noticeLine, width));
+					outputLines.push(truncateToWidth(noticeLine, contentWidth));
 				}
 				if (asyncLine) {
-					outputLines.push(truncateToWidth(asyncLine, width));
+					outputLines.push(truncateToWidth(asyncLine, contentWidth));
 				}
 				if (warningLine) {
-					outputLines.push(truncateToWidth(warningLine, width));
+					outputLines.push(truncateToWidth(warningLine, contentWidth));
 				}
 				return outputLines;
 			},

@@ -58,7 +58,7 @@ import { groupedReadUsageCallIds, ReadToolGroupComponent, readArgsCollapseIntoGr
 import { SkillMessageComponent } from "./skill-message";
 import { ToolExecutionComponent } from "./tool-execution";
 import { TranscriptContainer } from "./transcript-container";
-import { createUsageRowBlock, turnElapsedMs } from "./usage-row";
+import { createCompletionEndcapBlock, createUsageRowBlock, turnElapsedMs } from "./usage-row";
 import { CollapsedSyntheticMessageComponent, UserMessageComponent } from "./user-message";
 
 export interface ChatTranscriptBuilderDeps {
@@ -95,10 +95,25 @@ export class ChatTranscriptBuilder {
 	#pendingUsageTimestamp: number | undefined;
 	#pendingReadUsageCallIds: string[] | undefined;
 	#pendingUsageElapsedMs: number | undefined;
+	/**
+	 * Small mode/model/elapsed endcap for the same completion, flushed once
+	 * alongside the usage row — after the turn's tool results have materialized —
+	 * so it never repeats per assistant segment and a late tool result cannot
+	 * append a second row.
+	 */
+	#pendingEndcapModel: string | undefined;
+	#pendingEndcapElapsedMs: number | undefined;
 	#turnStartedAt: number | undefined;
 	#lastAssistantUsage: Usage | undefined;
 	#waitingPoll: ToolExecutionComponent | null = null;
 	#todoSnapshot: ToolExecutionComponent | null = null;
+	/**
+	 * Detached task calls whose persisted result is only the initial
+	 * `async.state === "running"` snapshot. Their cards stay parked (finalized,
+	 * so they never pin history retirement) and retained in `#pendingTools` so
+	 * replayed and later-appended job frames still route to the card.
+	 */
+	#backgroundTaskCallIds = new Set<string>();
 	#expandables: Array<{ setExpanded(expanded: boolean): void }> = [];
 	#expanded = false;
 	#entryComponents = new Map<string, Component[]>();
@@ -116,16 +131,49 @@ export class ChatTranscriptBuilder {
 	rebuild(entries: SessionMessageEntry[]): void {
 		this.reset();
 		for (const entry of entries) this.#appendEntry(entry);
+		// Trailing dangling calls (toolCall persisted without any result) can never
+		// complete in a parked rebuild: seal them so they retire as history instead
+		// of pinning retirement forever. Parked background tasks stay retained.
+		for (const [toolCallId, component] of this.#pendingTools) {
+			if (this.#backgroundTaskCallIds.has(toolCallId)) continue;
+			component.seal();
+			this.#pendingTools.delete(toolCallId);
+		}
+		this.#backgroundTaskCallIds = new Set(
+			[...this.#backgroundTaskCallIds].filter(id => this.#pendingTools.has(id)),
+		);
+		// A trailing waiting poll / todo snapshot is final history in a parked
+		// rebuild: seal it instead of letting its spinner tick while idle.
+		this.#resolveWaitingPoll();
+		this.#resolveTodoSnapshot();
 		// Flush the trailing turn's usage row only once its tools are materialized
 		// (a read whose result has not arrived stays pending); otherwise the row
-		// would sit above its tools. The drain happens here at the end of the pass.
-		if (this.#readArgs.size === 0 && this.#pendingTools.size === 0) this.#flushPendingUsage();
+		// would sit above its tools. Parked background retention does not block it.
+		if (this.#readArgs.size === 0 && !this.#hasUnsettledPending()) this.#flushPendingUsage();
 	}
 
 	/** Append newly persisted entries without rebuilding already rendered rows. */
 	append(entries: SessionMessageEntry[]): void {
 		for (const entry of entries) this.#appendEntry(entry);
-		if (this.#readArgs.size === 0 && this.#pendingTools.size === 0) this.#flushPendingUsage();
+		if (this.#readArgs.size === 0 && !this.#hasUnsettledPending()) this.#flushPendingUsage();
+	}
+
+	/** Pending tool calls excluding parked background tasks (which never block a flush). */
+	#hasUnsettledPending(): boolean {
+		if (this.#pendingTools.size === 0) return false;
+		for (const toolCallId of this.#pendingTools.keys()) {
+			if (!this.#backgroundTaskCallIds.has(toolCallId)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Adopt a rebuilt-tail todo snapshot as the tracked live snapshot, mirroring
+	 * the event controller's displacement continuity across rebuilds. Drops the
+	 * candidate when it is no longer a displaceable todo.
+	 */
+	inheritDisplaceableTodo(component: ToolExecutionComponent | null | undefined): void {
+		this.#todoSnapshot = component?.canBeDisplacedBy("todo") ? component : null;
 	}
 
 	/** Toggle tool-output expansion across every expandable component. */
@@ -151,6 +199,7 @@ export class ChatTranscriptBuilder {
 	reset(): void {
 		for (const pending of this.#pendingTools.values()) pending.seal();
 		this.#pendingTools.clear();
+		this.#backgroundTaskCallIds.clear();
 		this.#readArgs.clear();
 		this.#readGroup = null;
 		this.#pendingUsage = undefined;
@@ -159,9 +208,13 @@ export class ChatTranscriptBuilder {
 		this.#pendingUsageTimestamp = undefined;
 		this.#pendingReadUsageCallIds = undefined;
 		this.#pendingUsageElapsedMs = undefined;
+		this.#pendingEndcapModel = undefined;
+		this.#pendingEndcapElapsedMs = undefined;
 		this.#turnStartedAt = undefined;
 		this.#lastAssistantUsage = undefined;
+		this.#waitingPoll?.seal();
 		this.#waitingPoll = null;
+		this.#todoSnapshot?.seal();
 		this.#todoSnapshot = null;
 		this.#expandables = [];
 		this.#entryComponents.clear();
@@ -230,31 +283,44 @@ export class ChatTranscriptBuilder {
 	// Defer per-turn metrics until the turn's tool results have materialized.
 	// Read-only invisible turns attach the metrics to their shared compact
 	// group; every other turn keeps the standalone row below its tool blocks.
+	// The completion endcap rides the same flush so it lands once, after
+	// tools/post-tool prose, never per assistant segment.
 	#flushPendingUsage(): void {
-		if (!this.#pendingUsage) return;
-		const usageAttached =
-			this.#pendingReadUsageCallIds !== undefined &&
-			(this.#readGroup?.attachUsage(
-				this.#pendingReadUsageCallIds,
-				this.#pendingUsage,
-				this.#pendingUsageDuration,
-				this.#pendingUsageTtft,
-				this.#pendingUsageTimestamp,
-				this.#pendingUsageElapsedMs,
-			) ??
-				false);
-		if (!usageAttached) {
-			this.#readGroup?.seal();
-			this.#readGroup = null;
-			this.container.addChild(
-				createUsageRowBlock(
+		if (!this.#pendingUsage && this.#pendingEndcapModel === undefined && this.#pendingEndcapElapsedMs === undefined) {
+			return;
+		}
+		if (this.#pendingUsage) {
+			const usageAttached =
+				this.#pendingReadUsageCallIds !== undefined &&
+				(this.#readGroup?.attachUsage(
+					this.#pendingReadUsageCallIds,
 					this.#pendingUsage,
 					this.#pendingUsageDuration,
 					this.#pendingUsageTtft,
 					this.#pendingUsageTimestamp,
 					this.#pendingUsageElapsedMs,
-				),
-			);
+				) ??
+					false);
+			if (!usageAttached) {
+				this.#readGroup?.seal();
+				this.#readGroup = null;
+				this.container.addChild(
+					createUsageRowBlock(
+						this.#pendingUsage,
+						this.#pendingUsageDuration,
+						this.#pendingUsageTtft,
+						this.#pendingUsageTimestamp,
+						this.#pendingUsageElapsedMs,
+					),
+				);
+			}
+		}
+		if (this.#pendingEndcapModel !== undefined || this.#pendingEndcapElapsedMs !== undefined) {
+			const endcap = createCompletionEndcapBlock({
+				model: this.#pendingEndcapModel,
+				elapsedMs: this.#pendingEndcapElapsedMs,
+			});
+			if (endcap) this.container.addChild(endcap);
 		}
 		this.#pendingUsage = undefined;
 		this.#pendingUsageDuration = undefined;
@@ -262,6 +328,8 @@ export class ChatTranscriptBuilder {
 		this.#pendingUsageTimestamp = undefined;
 		this.#pendingReadUsageCallIds = undefined;
 		this.#pendingUsageElapsedMs = undefined;
+		this.#pendingEndcapModel = undefined;
+		this.#pendingEndcapElapsedMs = undefined;
 	}
 
 	#appendChatMessage(message: AgentMessage): void {
@@ -492,6 +560,19 @@ export class ChatTranscriptBuilder {
 		this.#pendingReadUsageCallIds = this.#pendingUsage ? groupedReadUsageCallIds(message) : undefined;
 		this.#pendingUsageElapsedMs =
 			this.#pendingUsage && settings.get("display.showTurnTime") ? this.#turnElapsedMs(message) : undefined;
+		if (assistantUsageIsBilled(message.usage)) {
+			const messageModel = (message as { model?: unknown }).model;
+			this.#pendingEndcapModel =
+				settings.get("display.showTokenUsage") && typeof messageModel === "string" && messageModel.trim()
+					? messageModel.trim()
+					: undefined;
+			this.#pendingEndcapElapsedMs = settings.get("display.showTurnTime")
+				? this.#turnElapsedMs(message)
+				: undefined;
+		} else {
+			this.#pendingEndcapModel = undefined;
+			this.#pendingEndcapElapsedMs = undefined;
+		}
 	}
 
 	#appendToolResult(message: Extract<AgentMessage, { role: "toolResult" }>): void {
@@ -511,8 +592,20 @@ export class ChatTranscriptBuilder {
 			return;
 		}
 		if (!pending) return;
-		pending.updateResult(message, false, message.toolCallId);
+		const asyncState = (message.details as { async?: { state?: string } } | undefined)?.async?.state;
+		const isBackgroundTask = message.toolName === "task" && asyncState === "running";
+		// A detached task's persisted result is only its "still running" snapshot.
+		// Keep the card parked (finalized, so it never pins history retirement)
+		// and retained in `pendingTools` so later-appended job frames route to it
+		// instead of hitting the no-pending early return.
+		pending.updateResult(message, isBackgroundTask, message.toolCallId);
+		if (isBackgroundTask) {
+			pending.parkAsBackground();
+			this.#backgroundTaskCallIds.add(message.toolCallId);
+			return;
+		}
 		this.#pendingTools.delete(message.toolCallId);
+		this.#backgroundTaskCallIds.delete(message.toolCallId);
 		if (message.toolName === "hub" && pending instanceof ToolExecutionComponent && pending.isDisplaceableBlock()) {
 			this.#waitingPoll = pending;
 		} else if (

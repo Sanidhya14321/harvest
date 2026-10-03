@@ -192,6 +192,8 @@ import { TranscriptContainer } from "./components/transcript-container";
 import type { LspServerInfo as WelcomeLspServerInfo } from "./components/welcome";
 import { Composer, type ComposerStatusSnapshot } from "./composer";
 import { writeComposerStatusCache, writeComposerWelcomeCache } from "./composer-cache";
+import { CommandPaletteComponent } from "./components/command-palette";
+import { emptySidebarSnapshot, WorkspaceSidebar, type WorkspaceSidebarSnapshot } from "./components/workspace-sidebar";
 import { BtwController } from "./controllers/btw-controller";
 import { CleanseCommandController } from "./controllers/cleanse-command-controller";
 import { CommandController } from "./controllers/command-controller";
@@ -229,6 +231,7 @@ import { runProviderSetupWizard } from "./setup-wizard/lazy";
 import { sanitizeStatusText } from "./shared";
 import { describeSelectedSession, mergeRegistrySnapshot, SessionTabStrip } from "./components/session-tab-strip";
 import { invokeSkillCommandFromText, isKnownSkillCommand } from "./skill-command";
+import { resolveWorkspaceComposerShape } from "./workspace-layout";
 import { clearMermaidCache } from "./theme/mermaid-cache";
 import { type ShimmerPalette, shimmerEnabled, shimmerText } from "./theme/shimmer";
 import type { Theme } from "./theme/theme";
@@ -968,6 +971,17 @@ export class InteractiveMode implements InteractiveModeContext {
 	#mcpPendingServers = new Set<string>();
 	#mcpConnectedServers = new Set<string>();
 	#mcpFailedServers = new Map<string, { error: string; sourcePath?: string }>();
+	#workspaceSidebar = new WorkspaceSidebar();
+	#commandPalette = new CommandPaletteComponent();
+	#commandPaletteOpen = false;
+	#sidebarGeneration = 0;
+	#sidebarRefreshTimer: NodeJS.Timeout | undefined;
+	#sidebarVcsUnwatch: (() => void) | undefined;
+	#sidebarMcpUnsubscribe: (() => void) | undefined;
+	#sidebarChanges: WorkspaceSidebarSnapshot["changes"] = [];
+	#sidebarChangesState: WorkspaceSidebarSnapshot["changesState"] = "loading";
+	#sidebarChangesError: string | undefined;
+	#sidebarChangesTruncated = false;
 	readonly #chatHost: ChatBlockHost = { requestRender: () => this.ui.requestRender() };
 
 	/** Root-scoped bus carrying this session tree's `task:subagent:*` frames. */
@@ -993,6 +1007,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			quiet: settings.get("startup.quiet"),
 			fullscreen: settings.get("tui.fullscreen"),
 			composerShape: settings.get("composer.shape") ?? "band",
+			sidebar: settings.get("tui.sidebar") ?? "auto",
 			showHardwareCursor: settings.get("showHardwareCursor"),
 			maxInlineImages: settings.get("tui.maxInlineImages"),
 			resizeScrollback: settings.get("tui.resizeScrollback"),
@@ -1182,7 +1197,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	#handleMcpConnectionStatusEvent(event: McpConnectionStatusEvent): void {
-		if (this.settings.get("startup.quiet")) return;
+		// State mutation stays independent of welcome/notification gating so
+		// the sidebar snapshot updates even when `startup.quiet=true`.
 		if (event.type === "connecting") {
 			this.#mcpStatusOrder = [];
 			this.#mcpPendingServers.clear();
@@ -1211,7 +1227,9 @@ export class InteractiveMode implements InteractiveModeContext {
 				sourcePath: event.sourcePath,
 			});
 		}
+		this.refreshWorkspaceSidebar();
 
+		if (this.settings.get("startup.quiet")) return;
 		const message = formatMCPConnectionStatusMessage({
 			pendingServers: this.#orderedMcpStatusServers(this.#mcpPendingServers),
 			connectedServers: this.#orderedMcpStatusServers(this.#mcpConnectedServers),
@@ -1235,6 +1253,298 @@ export class InteractiveMode implements InteractiveModeContext {
 			const failure = this.#mcpFailedServers.get(serverName);
 			return failure === undefined ? [] : [{ serverName, ...failure }];
 		});
+	}
+
+	/** Seed sidebar MCP state from the manager so quiet startup still shows connections. */
+	#seedSidebarMcpFromManager(): void {
+		try {
+			const manager = this.mcpManager;
+			if (!manager) return;
+			const all = manager.getAllServerNames?.() ?? [];
+			const connected = new Set(manager.getConnectedServers?.() ?? []);
+			for (const name of all) {
+				this.#trackMcpStatusServer(name);
+				if (connected.has(name)) {
+					this.#mcpConnectedServers.add(name);
+					this.#mcpPendingServers.delete(name);
+				} else {
+					const status = manager.getConnectionStatus?.(name);
+					if (status === "connecting") this.#mcpPendingServers.add(name);
+				}
+			}
+			this.#sidebarMcpUnsubscribe?.();
+			if (typeof manager.addConnectionStatusListener === "function") {
+				this.#sidebarMcpUnsubscribe = manager.addConnectionStatusListener(() => this.refreshWorkspaceSidebar());
+			}
+		} catch {
+			// MCP manager unavailable in unit-test doubles; event channel still feeds state.
+		}
+	}
+
+	#setupSidebarRefresh(): void {
+		this.refreshWorkspaceSidebar();
+		void this.#refreshSidebarChanges();
+		void import("@harvest/pi-natives/vcs")
+			.then(vcs => {
+				try {
+					const cwd = this.sessionManager.getCwd();
+					const handle = vcs.repo?.(cwd) ?? null;
+					if (handle) {
+						this.#sidebarVcsUnwatch?.();
+						this.#sidebarVcsUnwatch = vcs.watch(handle, () => void this.#refreshSidebarChanges(), 2000);
+					}
+				} catch {
+					// Native VCS unavailable; changes section degrades.
+				}
+			})
+			.catch(() => {});
+		if (this.#sidebarRefreshTimer) clearInterval(this.#sidebarRefreshTimer);
+		this.#sidebarRefreshTimer = setInterval(() => this.refreshWorkspaceSidebar(), 5000);
+		this.#sidebarRefreshTimer.unref?.();
+	}
+
+	/** Typed, read-only sidebar snapshot from existing owners. No I/O in render(). */
+	getWorkspaceSidebarSnapshot(): WorkspaceSidebarSnapshot {
+		const title = this.sessionManager.getSessionName?.() ?? "";
+		let contextKnown = false;
+		let contextPercent: number | null = null;
+		let contextTokens: number | null = null;
+		let contextWindow: number | null = null;
+		try {
+			const usage = this.session.getContextUsage?.();
+			if (
+				usage &&
+				typeof usage.tokens === "number" &&
+				typeof usage.contextWindow === "number" &&
+				usage.contextWindow > 0
+			) {
+				contextKnown = true;
+				contextTokens = usage.tokens;
+				contextWindow = usage.contextWindow;
+				contextPercent = Math.max(0, Math.min(100, (usage.tokens / usage.contextWindow) * 100));
+			}
+		} catch {
+			contextKnown = false;
+		}
+		let costKnown = false;
+		let costLabel: string | null = null;
+		try {
+			const stats = this.sessionManager.getUsageStatistics?.();
+			if (stats && typeof stats.cost === "number" && Number.isFinite(stats.cost)) {
+				costKnown = true;
+				costLabel = `$${stats.cost.toFixed(2)}`;
+			}
+		} catch {
+			costKnown = false;
+		}
+		const mcpServers = this.#mcpStatusOrder.map(name => ({
+			name,
+			connected: this.#mcpConnectedServers.has(name),
+			detail: this.#mcpFailedServers.get(name)?.error,
+		}));
+		const lspServers = (this.lspServers ?? []).map(s => ({ name: s.name, status: s.status }));
+		let todos: { label: string; done: boolean }[] = [];
+		try {
+			const phases = this.session.getTodoPhases?.() ?? [];
+			for (const phase of phases) {
+				for (const task of phase.tasks ?? []) {
+					if (task.status === "completed" || task.status === "in_progress" || task.status === "pending") {
+						todos.push({ label: task.content ?? "todo", done: task.status === "completed" });
+					}
+					if (todos.length >= 12) break;
+				}
+				if (todos.length >= 12) break;
+			}
+		} catch {
+			todos = [];
+		}
+		const agents: { label: string; state: string }[] = [];
+		try {
+			const focused = this.focusedAgentId;
+			const view = this.viewSession;
+			if (focused && view) agents.push({ label: String(focused).slice(0, 24), state: "focused" });
+		} catch {
+			// Focused-agent accounting stays best-effort.
+		}
+		let version = "";
+		try {
+			version = this.#version ?? "";
+		} catch {
+			version = "";
+		}
+		return {
+			title,
+			contextKnown,
+			contextPercent,
+			contextTokens,
+			contextWindow,
+			costKnown,
+			costLabel,
+			mcpServers,
+			lspServers,
+			todos,
+			agents,
+			changes: this.#sidebarChanges,
+			changesTruncated: this.#sidebarChangesTruncated,
+			changesState: this.#sidebarChangesState,
+			changesError: this.#sidebarChangesError,
+			extensions: [],
+			version,
+			sessionId: this.sessionManager.getSessionId?.(),
+			generation: this.#sidebarGeneration,
+		};
+	}
+
+	refreshWorkspaceSidebar(): void {
+		try {
+			this.#workspaceSidebar.setSnapshot(this.getWorkspaceSidebarSnapshot());
+			this.ui.requestRender();
+		} catch {
+			// Sidebar refresh never breaks input.
+		}
+	}
+
+	async #refreshSidebarChanges(): Promise<void> {
+		const generation = ++this.#sidebarGeneration;
+		let cwd = "";
+		try {
+			cwd = this.sessionManager.getCwd();
+		} catch {
+			cwd = "";
+		}
+		if (!cwd) {
+			if (generation !== this.#sidebarGeneration) return;
+			this.#sidebarChangesState = "non-repository";
+			this.#sidebarChanges = [];
+			this.refreshWorkspaceSidebar();
+			return;
+		}
+		try {
+			const vcs = await import("@harvest/pi-natives/vcs");
+			const handle = vcs.repo(cwd);
+			if (!handle) {
+				if (generation !== this.#sidebarGeneration) return;
+				this.#sidebarChangesState = "non-repository";
+				this.#sidebarChanges = [];
+				this.refreshWorkspaceSidebar();
+				return;
+			}
+			const timeout = (promise: Promise<unknown>, ms: number): Promise<unknown> => {
+				return Promise.race([
+					promise,
+					Bun.sleep(ms).then(() => {
+						throw new Error("timeout");
+					}),
+				]);
+			};
+			const [files, numstat] = (await Promise.all([
+				timeout(handle.changedFiles({}), 3000),
+				timeout(handle.numstat({}), 3000).catch(() => []),
+			])) as [string[], { path: string; added?: number; removed?: number }[]];
+			if (generation !== this.#sidebarGeneration) return;
+			const stats = new Map(numstat.map(n => [n.path, n]));
+			const porcelain = await timeout(handle.statusPorcelain({}), 3000).catch(() => "");
+			const staged = new Set<string>();
+			if (typeof porcelain === "string") {
+				for (const line of porcelain.split("\n")) {
+					if (line.length >= 3 && line[0] !== " " && line[0] !== "?" && line[0] !== "!") {
+						staged.add(line.slice(3).trim());
+					}
+				}
+			}
+			const capped = files.slice(0, 20);
+			this.#sidebarChanges = capped.map(p => {
+				const s = stats.get(p);
+				return {
+					path: p,
+					staged: staged.has(p),
+					untracked: p.endsWith("/") || false,
+					added: typeof s?.added === "number" ? s.added : null,
+					removed: typeof s?.removed === "number" ? s.removed : null,
+				};
+			});
+			this.#sidebarChangesTruncated = files.length > capped.length;
+			this.#sidebarChangesState = "ready";
+			this.#sidebarChangesError = undefined;
+			this.refreshWorkspaceSidebar();
+		} catch (error) {
+			if (generation !== this.#sidebarGeneration) return;
+			this.#sidebarChangesState = "error";
+			this.#sidebarChangesError = error instanceof Error ? error.message.slice(0, 80) : "unavailable";
+			this.#sidebarChanges = [];
+			this.refreshWorkspaceSidebar();
+		}
+	}
+
+	/** Toggle docked visibility (wide) or temporary overlay (narrow). */
+	toggleSidebar(): void {
+		const current = this.settings.get("tui.sidebar") ?? "auto";
+		if (this.ui.terminal.columns > 120) {
+			const next = current === "hide" ? "auto" : "hide";
+			this.settings.set("tui.sidebar", next);
+			this.composer.setPreferences({ sidebar: next });
+			this.syncComposerShape();
+		} else {
+			const open = !this.composer.sidebarOverlayOpen;
+			this.composer.setSidebarOverlayOpen(open);
+			if (!open) this.ui.setFocus(this.editor);
+		}
+		this.ui.requestRender();
+	}
+
+	focusSidebar(): void {
+		this.composer.setSidebarOverlayOpen(true);
+		this.#workspaceSidebar.setFocused(true);
+		this.ui.setFocus(this.#workspaceSidebar as unknown as Parameters<TUI["setFocus"]>[0]);
+	}
+
+	/** Registry-backed palette: TUI builtins + extensions/custom/MCP/skills/file commands. */
+	async openCommandPalette(): Promise<void> {
+		if (this.#commandPaletteOpen) return;
+		if (isApprovalDialogOpen(this)) return;
+		this.#commandPaletteOpen = true;
+		const previousFocus = this.ui.getFocused();
+		const draft = this.editor.getText();
+		try {
+			const { buildTuiBuiltinSlashCommands } = await import("../slash-commands/builtin-registry");
+			const builtins = buildTuiBuiltinSlashCommands({ ctx: this });
+			const items = builtins.map(cmd => ({
+				id: `/${cmd.name}`,
+				title: `/${cmd.name}`,
+				hint: cmd.description,
+				group: "builtin",
+			}));
+			// Include session slash-command state (extensions, custom/MCP prompts,
+			// skills, file commands, templates) without duplicating a manual list.
+			try {
+				const extra = (this as unknown as { refreshSlashCommandState?: () => void }).refreshSlashCommandState;
+				if (typeof extra === "function") extra();
+			} catch {
+				// Palette still offers builtins when extension state is unavailable.
+			}
+			this.#commandPalette.setItems(items);
+			this.#commandPalette.setQuery("");
+			const handle = this.ui.showOverlay(this.#commandPalette, {
+				anchor: "top-center",
+				width: 60,
+				maxHeight: "60%",
+			});
+			this.ui.setFocus(this.#commandPalette as unknown as Parameters<TUI["setFocus"]>[0]);
+			// Close on Escape is handled by the overlay; ensure focus/draft restore.
+			const close = (): void => {
+				handle.hide();
+				this.#commandPaletteOpen = false;
+				this.ui.setFocus((previousFocus ?? this.editor) as Parameters<TUI["setFocus"]>[0]);
+				if (this.editor.getText() !== draft) this.editor.setText(draft);
+				this.ui.requestRender();
+			};
+			// Store for Escape/close paths; palette selection routes through
+			// existing actions/commands and never executes strings via shell.
+			(this.#commandPalette as unknown as { __close?: () => void }).__close = close;
+		} catch {
+			this.#commandPaletteOpen = false;
+			if (previousFocus) this.ui.setFocus(previousFocus as Parameters<TUI["setFocus"]>[0]);
+		}
 	}
 
 	playWelcomeIntro(): void {
@@ -1379,6 +1689,9 @@ export class InteractiveMode implements InteractiveModeContext {
 			});
 		});
 		this.composer.setWorkspaceTabs(sessionTabStrip);
+		this.composer.setWorkspaceSidebar(this.#workspaceSidebar);
+		this.#seedSidebarMcpFromManager();
+		this.#setupSidebarRefresh();
 		this.#eventBusUnsubscribers.push(
 			this.ui.addInputListener(data => {
 				if (!this.settings.get("tui.fullscreen") || this.ui.hasOverlay()) return undefined;
@@ -1390,8 +1703,25 @@ export class InteractiveMode implements InteractiveModeContext {
 					this.composer.scrollWorkspacePage("down", this.ui.terminal.rows);
 					return { consume: true };
 				}
+				// Palette and sidebar toggles respect user remaps via KeybindingsManager.
+				if (this.keybindings.matches(data, "app.commands.open")) {
+					void this.openCommandPalette();
+					return { consume: true };
+				}
+				if (this.keybindings.matches(data, "app.sidebar.toggle")) {
+					this.toggleSidebar();
+					return { consume: true };
+				}
 				const consumed = routeSgrMouseInput(data, event => {
 					if (event.wheel !== null) {
+						// Sidebar wheel must not move the transcript; route through final geometry.
+						const owner = this.composer.routeWorkspaceMouse(event.col);
+						if (owner === "sidebar") {
+							this.#workspaceSidebar.setScrollOffset(
+								this.#workspaceSidebar.scrollOffset + (event.wheel === -1 ? 3 : -3),
+							);
+							return true;
+						}
 						this.composer.scrollWorkspaceWheel(event.wheel);
 						return true;
 					}
@@ -2425,8 +2755,10 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 	syncComposerShape(): void {
 		const shape = settings.get("composer.shape") ?? "band";
-		const style = getComposerStyle(this.settings.get("tui.fullscreen") && shape === "band" ? "rail" : shape);
-		this.composer.setPreferences({ composerShape: shape });
+		const fullscreen = this.settings.get("tui.fullscreen");
+		const effectiveShape = resolveWorkspaceComposerShape(fullscreen, shape);
+		const style = getComposerStyle(effectiveShape);
+		this.composer.setPreferences({ composerShape: shape, sidebar: this.settings.get("tui.sidebar") ?? "auto" });
 		this.statusLine.setAutocompleteActiveProbe(() => this.editor.isAutocompleteActive());
 		switch (style.statusAttachment) {
 			case "top-border":
@@ -2456,7 +2788,9 @@ export class InteractiveMode implements InteractiveModeContext {
 	#persistComposerStatus(): void {
 		if (!this.sessionManager.getSessionFile()) return;
 		const shape = settings.get("composer.shape") ?? "band";
-		const style = getComposerStyle(shape);
+		const fullscreen = this.settings.get("tui.fullscreen");
+		const effectiveShape = resolveWorkspaceComposerShape(fullscreen, shape);
+		const style = getComposerStyle(effectiveShape);
 		const terminalWidth = this.ui.terminal.columns;
 		const availableWidth = this.editor.getTopBorderAvailableWidth(terminalWidth);
 		const topContent =
@@ -2483,7 +2817,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		const colored = this.editor.borderColor(marker);
 		const markerIndex = colored.indexOf(marker);
 		const snapshot: ComposerStatusSnapshot = {
-			shape,
+			shape: effectiveShape,
 			borderColor:
 				markerIndex < 0
 					? undefined
@@ -5066,6 +5400,13 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#agentRegistryUnsubscribe?.();
 		this.#agentRegistryUnsubscribe = undefined;
 		this.#agentRegistrySubscriptionTarget = undefined;
+		this.#sidebarGeneration++;
+		if (this.#sidebarRefreshTimer) clearInterval(this.#sidebarRefreshTimer);
+		this.#sidebarRefreshTimer = undefined;
+		this.#sidebarVcsUnwatch?.();
+		this.#sidebarVcsUnwatch = undefined;
+		this.#sidebarMcpUnsubscribe?.();
+		this.#sidebarMcpUnsubscribe = undefined;
 		this.#eventController.dispose();
 		this.#codexResetFireworksController.dispose();
 		this.statusLine.dispose();

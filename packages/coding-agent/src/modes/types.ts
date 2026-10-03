@@ -488,6 +488,9 @@ export interface InteractiveModeContext {
 	showDebugSelector(): Promise<void>;
 	showAgentHub(options?: AgentHubOpenOptions): void;
 	resetObserverRegistry(): void;
+	openCommandPalette(): Promise<void>;
+	toggleSidebar(): void;
+	focusSidebar(): void;
 
 	// Input handling
 	handleCtrlC(): void;

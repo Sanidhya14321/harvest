@@ -41,6 +41,9 @@ interface AppKeybindings {
 	"app.clipboard.copyLine": true;
 	"app.clipboard.copyPrompt": true;
 	"app.agents.hub": true;
+	"app.commands.open": true;
+	"app.sidebar.toggle": true;
+	"app.sidebar.focus": true;
 	"app.session.new": true;
 	"app.session.tree": true;
 	"app.session.fork": true;
@@ -209,6 +212,18 @@ export const KEYBINDINGS = {
 	"app.agents.hub": {
 		defaultKeys: "alt+a",
 		description: "Open the agent hub",
+	},
+	"app.commands.open": {
+		defaultKeys: "alt+k",
+		description: "Open command palette",
+	},
+	"app.sidebar.toggle": {
+		defaultKeys: "alt+shift+b",
+		description: "Toggle session sidebar",
+	},
+	"app.sidebar.focus": {
+		defaultKeys: [],
+		description: "Focus session sidebar",
 	},
 	"app.session.observe": {
 		defaultKeys: "ctrl+s",

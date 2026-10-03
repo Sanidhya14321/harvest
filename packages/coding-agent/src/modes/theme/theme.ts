@@ -102,8 +102,8 @@ var themeWatcher: fs.FSWatcher | undefined;
 var themeReloadTimer: NodeJS.Timeout | undefined;
 var sigwinchHandler: (() => void) | undefined;
 var autoDetectedTheme: boolean = false;
-var autoDarkTheme: string = "dark";
-var autoLightTheme: string = "light";
+var autoDarkTheme: string = "harvest";
+var autoLightTheme: string = "harvest-light";
 var onThemeChangeCallback: ((event: ThemeChangeEvent) => void) | undefined;
 var themeLoadRequestId: number = 0;
 let themeEpoch = 0;
@@ -121,8 +121,8 @@ function configureTheme(
 	lightTheme?: string,
 ): string {
 	autoDetectedTheme = true;
-	autoDarkTheme = darkTheme ?? "dark";
-	autoLightTheme = lightTheme ?? "light";
+	autoDarkTheme = darkTheme ?? "harvest";
+	autoLightTheme = lightTheme ?? "harvest-light";
 	currentSymbolPresetOverride = symbolPreset;
 	currentColorBlindMode = colorBlindMode ?? false;
 	const name = getDefaultTheme();
@@ -367,7 +367,14 @@ async function startThemeWatcher(): Promise<void> {
 	stopThemeWatcher();
 
 	// Only watch if it's a custom theme (not built-in)
-	if (!currentThemeName || currentThemeName === "dark" || currentThemeName === "light") {
+	if (
+		!currentThemeName ||
+		currentThemeName === "dark" ||
+		currentThemeName === "light" ||
+		currentThemeName === "harvest" ||
+		currentThemeName === "harvest-light" ||
+		currentThemeName in getBuiltinThemes()
+	) {
 		return;
 	}
 

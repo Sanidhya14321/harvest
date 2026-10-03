@@ -312,6 +312,216 @@ function capPerFileSnapshots(entries: EditToolPerFileResult[]): EditToolPerFileR
 	});
 }
 
+function isEditInspection(value: unknown): value is EditInspection {
+	if (typeof value !== "object" || value === null) return false;
+	const candidate = value as Record<string, unknown>;
+	return Array.isArray(candidate.paths) && Array.isArray(candidate.entries) && Array.isArray(candidate.fileOps);
+}
+
+const SLOPPY_OPEN_RE = /^<SM:EDIT\b([^>\n]*?)\/?>$/i;
+const SLOPPY_PATH_ATTR_RE = /(?:^|\s)(?:path|file)\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^\s"'>]+))/i;
+const HASHLINE_HEADER_RE = /^\s*\[([^\]\r\n]+)\]\s*$/gm;
+const APPLY_PATCH_PATH_RE = /^\s*\*{3}\s+(?:Add|Update|Delete)\s+File\s*:\s*(\S.*?)\s*$/gim;
+
+/**
+ * Header-only fallback for sloppy payloads when the native addon is
+ * unavailable (fallback bindings return `{ valid, errors }` without `paths`).
+ * Mirrors `split_sloppy_sections` header semantics: only `<SM:EDIT path=...>`
+ * openers contribute; bodies (e.g. `[local://notes]` inside FIND) never do.
+ */
+function extractSloppyHeaderPaths(input: string): string[] {
+	const lines = input.split("\n");
+	const first = lines.find(line => line.trim().length > 0);
+	if (first === undefined) return [];
+	const firstMatch = SLOPPY_OPEN_RE.exec(first.trim());
+	const firstPath = firstMatch?.[1] !== undefined ? SLOPPY_PATH_ATTR_RE.exec(firstMatch[1]) : null;
+	const firstValue = firstPath?.[1] ?? firstPath?.[2] ?? firstPath?.[3];
+	if (firstValue === undefined || firstValue.trim().length === 0) return [];
+	const seen = new Set<string>();
+	const ordered: string[] = [];
+	for (const line of lines) {
+		const open = SLOPPY_OPEN_RE.exec(line.trim());
+		if (!open) continue;
+		const attr = SLOPPY_PATH_ATTR_RE.exec(open[1] ?? "");
+		const value = attr?.[1] ?? attr?.[2] ?? attr?.[3];
+		if (value === undefined) continue;
+		const trimmed = value.trim();
+		if (trimmed.length === 0 || seen.has(trimmed)) continue;
+		seen.add(trimmed);
+		ordered.push(trimmed);
+	}
+	return ordered;
+}
+
+function extractHashlineHeaderPaths(input: string): string[] {
+	const seen = new Set<string>();
+	const ordered: string[] = [];
+	for (const match of input.matchAll(HASHLINE_HEADER_RE)) {
+		let inner = match[1]?.trim() ?? "";
+		if (inner.length >= 5 && inner[inner.length - 5] === "#" && /^[0-9a-fA-F]{4}$/.test(inner.slice(-4))) {
+			inner = inner.slice(0, -5);
+		}
+		inner = inner
+			.replace(/^\s*\*{3}\s*(?:Add|Update|Delete)\s+File\s*:\s*/i, "")
+			.replace(/^\s*\*{3}\s*Move\s+to\s*:\s*/i, "")
+			.trim();
+		if (inner.length === 0 || seen.has(inner)) continue;
+		seen.add(inner);
+		ordered.push(inner);
+	}
+	return ordered;
+}
+
+function extractApplyPatchHeaderPaths(input: string): string[] {
+	const seen = new Set<string>();
+	const ordered: string[] = [];
+	for (const match of input.matchAll(APPLY_PATCH_PATH_RE)) {
+		const trimmed = (match[1] ?? "").trim();
+		if (trimmed.length === 0 || seen.has(trimmed)) continue;
+		seen.add(trimmed);
+		ordered.push(trimmed);
+	}
+	return ordered;
+}
+
+function trimBlankLines(lines: string[]): string[] {
+	let start = 0;
+	while (start < lines.length && lines[start]?.trim().length === 0) start++;
+	let end = lines.length;
+	while (end > start && lines[end - 1]?.trim().length === 0) end--;
+	return lines.slice(start, end);
+}
+
+const SLOPPY_FIND_BLOCK_RE = /<SM:FIND>([\s\S]*?)<\/SM:FIND>/gi;
+const SLOPPY_PUT_BLOCK_RE = /<SM:PUT>([\s\S]*?)<\/SM:PUT>/gi;
+
+function sloppyBodyToDigest(body: string): string {
+	const finds: string[][] = [];
+	const puts: string[][] = [];
+	for (const match of body.matchAll(SLOPPY_FIND_BLOCK_RE)) {
+		finds.push(trimBlankLines((match[1] ?? "").split("\n")));
+	}
+	for (const match of body.matchAll(SLOPPY_PUT_BLOCK_RE)) {
+		puts.push(trimBlankLines((match[1] ?? "").split("\n")));
+	}
+	const pairs = Math.max(finds.length, puts.length);
+	if (pairs === 0) return "";
+	const ir: string[] = [];
+	for (let i = 0; i < pairs; i++) {
+		ir.push("«");
+		ir.push(...(finds[i] ?? finds[finds.length - 1] ?? []));
+		ir.push("»");
+		ir.push(...(puts[i] ?? puts[puts.length - 1] ?? []));
+	}
+	return ir.join("\n");
+}
+
+function splitSloppySectionsFallback(input: string): Array<{ path: string; body: string }> {
+	const lines = input.split("\n");
+	const sections: Array<{ path: string; bodyLines: string[] }> = [];
+	let current: { path: string; bodyLines: string[] } | undefined;
+	for (const line of lines) {
+		const open = SLOPPY_OPEN_RE.exec(line.trim());
+		if (open) {
+			const attr = SLOPPY_PATH_ATTR_RE.exec(open[1] ?? "");
+			const value = (attr?.[1] ?? attr?.[2] ?? attr?.[3])?.trim() ?? "";
+			if (value.length > 0) {
+				current = { path: value, bodyLines: [] };
+				sections.push(current);
+			}
+			continue;
+		}
+		if (/^<\/SM:EDIT>\s*$/i.test(line.trim())) continue;
+		current?.bodyLines.push(line);
+	}
+	const bodies = new Map<string, string[]>();
+	const ordered: string[] = [];
+	for (const section of sections) {
+		if (section.path.length === 0) continue;
+		const digest = sloppyBodyToDigest(section.bodyLines.join("\n"));
+		if (digest.length === 0) continue;
+		if (!bodies.has(section.path)) ordered.push(section.path);
+		const existing = bodies.get(section.path);
+		if (existing) existing.push(digest);
+		else bodies.set(section.path, [digest]);
+	}
+	return ordered.map(path => ({ path, body: (bodies.get(path) ?? []).join("\n") }));
+}
+
+function extractAddedLines(text: string): string {
+	return text
+		.split("\n")
+		.filter(line => line.startsWith("+") && !line.startsWith("+++ "))
+		.map(line => line.slice(1))
+		.join("\n");
+}
+
+/**
+ * Best-effort TypeScript inspection when `editInspect` is unavailable or
+ * returns a shape without `paths`/`entries`/`fileOps` (fallback bindings).
+ * Approval tiering only needs `paths`; digests stay best-effort.
+ */
+function fallbackInspect(mode: EditMode, args: unknown): EditInspection {
+	const empty: EditInspection = { paths: [], entries: [], fileOps: [] };
+	if (typeof args !== "object" || args === null) return empty;
+	const record = args as Record<string, unknown>;
+	if (mode === "replace" || mode === "patch") {
+		const filePath = record.path;
+		if (typeof filePath !== "string" || filePath.length === 0) return empty;
+		if (mode === "replace") {
+			const digest = record.new_string;
+			return {
+				paths: [filePath],
+				entries: typeof digest === "string" && digest.length > 0 ? [{ path: filePath, digest }] : [],
+				fileOps: [],
+			};
+		}
+		const edits = record.edits;
+		const digests: string[] = [];
+		if (Array.isArray(edits)) {
+			for (const entry of edits) {
+				if (typeof entry !== "object" || entry === null) continue;
+				const diff = (entry as Record<string, unknown>).diff;
+				if (typeof diff !== "string") continue;
+				const added = extractAddedLines(diff);
+				if (added.length > 0) digests.push(added);
+			}
+		}
+		const digest = digests.join("\n");
+		return {
+			paths: [filePath],
+			entries: digest.length > 0 ? [{ path: filePath, digest }] : [],
+			fileOps: [],
+		};
+	}
+	const input = record.input;
+	if (typeof input !== "string") return empty;
+	if (mode === "sloppy") {
+		const sections = splitSloppySectionsFallback(input);
+		// Approval tiering uses header paths even when a section body is empty;
+		// matcher entries need non-empty IR digests, so keep both views.
+		const headerPaths = extractSloppyHeaderPaths(input);
+		const paths = headerPaths.length > 0 ? headerPaths : sections.map(section => section.path);
+		const entries = sections.map(section => ({ path: section.path, digest: section.body }));
+		return { paths, entries, fileOps: [] };
+	}
+	if (mode === "hashline") {
+		const paths = extractHashlineHeaderPaths(input);
+		const digest = extractAddedLines(input);
+		const entries =
+			digest.length > 0 && paths.length === 1 && paths[0] !== undefined ? [{ path: paths[0], digest }] : [];
+		return { paths, entries, fileOps: [] };
+	}
+	if (mode === "apply_patch") {
+		const paths = extractApplyPatchHeaderPaths(input);
+		const digest = extractAddedLines(input);
+		const entries =
+			digest.length > 0 && paths.length === 1 && paths[0] !== undefined ? [{ path: paths[0], digest }] : [];
+		return { paths, entries, fileOps: [] };
+	}
+	return empty;
+}
+
 async function mkdirAllowingFallback(directory: string): Promise<void> {
 	try {
 		await mkdir(directory, { recursive: true });
@@ -555,10 +765,12 @@ export class EditTool implements AgentTool<TInput> {
 
 	#inspect(args: unknown): EditInspection {
 		try {
-			return editInspect(this.mode, JSON.stringify(args ?? {}));
+			const inspection = editInspect(this.mode, JSON.stringify(args ?? {})) as unknown;
+			if (isEditInspection(inspection)) return inspection;
 		} catch {
-			return { paths: [], entries: [], fileOps: [] };
+			// Fall through to the TypeScript fallback below.
 		}
+		return fallbackInspect(this.mode, args);
 	}
 
 	#policy(rawInput: boolean): EditPolicy {

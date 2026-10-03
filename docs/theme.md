@@ -356,3 +356,5 @@ Use this workflow:
 - `$schema` in theme JSON is informational; runtime validation is enforced by the ArkType-compatible schema in code (`themeJsonSchema` in `src/modes/theme/schema.ts`).
 - `setTheme` failure falls back to `dark`; `previewTheme` failure does not replace current theme.
 - File watcher reload errors or temporary missing files keep the current loaded theme until a successful reload or explicit theme switch.
+
+Defaults are harvest (dark) and harvest-light (light) with restrained surfaces: screen #0a0a0a, panel #141414, input #1e1e1e, accent #fab283. Optional surface tokens screenBg/panelBg/raisedBg/composerBg/modalBg fall back centrally so legacy custom themes still load.

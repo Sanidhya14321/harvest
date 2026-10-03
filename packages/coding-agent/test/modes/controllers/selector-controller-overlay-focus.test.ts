@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import type { Component } from "@harvest/pi-tui";
 import type { SessionSelectorComponent } from "@harvest/pi-coding-agent/modes/components/session-selector";
 import { SelectorController } from "@harvest/pi-coding-agent/modes/controllers/selector-controller";
 import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
@@ -89,6 +90,73 @@ describe("SelectorController.focusActiveEditorArea", () => {
 
 		expect(setFocus).toHaveBeenCalledTimes(1);
 		expect(setFocus).toHaveBeenCalledWith(editor);
+	});
+});
+
+describe("SelectorController editor-slot close paths", () => {
+	// `showSelector` done and `closeOverlayToEditorArea` (the palette/sidebar
+	// close wiring) must never evict a hook selector/input/editor mounted
+	// while the selector or overlay was up: restore the editor only when it
+	// still owns the slot, then focus the visible slot owner.
+
+	it("showSelector done restores the editor in the common case", () => {
+		const editor = { id: "editor" };
+		const selectorView = { id: "selector" } as unknown as Component;
+		const focusTarget = { id: "selector-focus" } as unknown as Component;
+		const slot = createEditorSlot(editor);
+		const { ctx, setFocus } = createCtx(slot, editor);
+
+		let done!: () => void;
+		new SelectorController(ctx).showSelector(release => {
+			done = release;
+			return { component: selectorView, focus: focusTarget };
+		});
+		expect(slot.children).toEqual([selectorView]);
+		expect(setFocus).toHaveBeenLastCalledWith(focusTarget);
+
+		done();
+		expect(slot.children).toEqual([editor]);
+		expect(setFocus).toHaveBeenLastCalledWith(editor);
+	});
+
+	it("showSelector done keeps a hook widget mounted meanwhile and focuses it", () => {
+		const editor = { id: "editor" };
+		const hookPrompt = { id: "hook-prompt" };
+		const selectorView = { id: "selector" } as unknown as Component;
+		const focusTarget = { id: "selector-focus" } as unknown as Component;
+		const slot = createEditorSlot(editor);
+		const { ctx, setFocus } = createCtx(slot, editor);
+
+		let done!: () => void;
+		new SelectorController(ctx).showSelector(release => {
+			done = release;
+			return { component: selectorView, focus: focusTarget };
+		});
+		// An approval prompt replaces the selector before done runs.
+		slot.clear();
+		slot.addChild(hookPrompt);
+		done();
+		expect(slot.children).toEqual([hookPrompt]);
+		expect(setFocus).toHaveBeenLastCalledWith(hookPrompt);
+		expect(setFocus).not.toHaveBeenLastCalledWith(editor);
+	});
+
+	it("closeOverlayToEditorArea hides and refocuses the slot owner", () => {
+		const editor = { id: "editor" };
+		const approvalPrompt = { id: "approval-prompt" };
+		const slot = createEditorSlot(approvalPrompt);
+		const { ctx, setFocus } = createCtx(slot, editor);
+		const hide = vi.fn();
+
+		new SelectorController(ctx).closeOverlayToEditorArea({
+			hide,
+			setHidden: vi.fn(),
+			isHidden: () => false,
+		});
+
+		expect(hide).toHaveBeenCalledTimes(1);
+		expect(setFocus).toHaveBeenCalledWith(approvalPrompt);
+		expect(ctx.ui.requestRender).toHaveBeenCalled();
 	});
 });
 

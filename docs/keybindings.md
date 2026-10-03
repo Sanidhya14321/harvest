@@ -55,3 +55,6 @@ On Windows Terminal, `Ctrl+V` may be handled by the terminal paste command befor
 Terminals that implement OSC 5522 enhanced paste can send clipboard MIME data directly to `harvest`; image pastes are attached as `[Image #N]`, while text/plain paste events keep normal paste behavior. When OSC 5522 is unavailable, bracketed paste still handles text, and a pasted single image-file path is loaded as an image when the file is readable from the `harvest` host.
 
 Older unqualified action names are migrated when `keybindings.yml` is loaded, but new docs and new configs should use the namespaced action IDs above. Existing `keybindings.json` files are still accepted and migrated to `keybindings.yml`; `keybindings.yaml` is also accepted.
+
+- `app.commands.open` (default `Alt+K`, `/commands`): registry-backed command palette. Item hints show the active chord from `KeybindingsManager`, so remaps stay visible; `Escape` closes once and restores the pre-open draft and editor-slot focus.
+- `app.sidebar.toggle` (default `Alt+Shift+B`, `/sidebar`): dock/overlay sidebar. `Alt+B` stays word-left in the editor.

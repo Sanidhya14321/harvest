@@ -1,6 +1,7 @@
 import {
 	type Component,
 	Container,
+	CURSOR_MARKER,
 	type EditorTopBorder,
 	isInsideTerminalMultiplexer,
 	ProcessTerminal,
@@ -19,8 +20,17 @@ import {
 import { CustomEditor } from "./components/custom-editor";
 import type { SessionTabStrip } from "./components/session-tab-strip";
 import { type AnimationFrame, TranscriptContainer } from "./components/transcript-container";
+import type { WorkspaceSidebar } from "./components/workspace-sidebar";
 import { type LspServerInfo, type RecentSession, WelcomeComponent } from "./components/welcome";
 import { getEditorTheme, initThemeSync, theme } from "./theme/theme";
+import {
+	composerMaxHeight,
+	computeWorkspaceLayout,
+	resolveWorkspaceComposerShape,
+	sidebarOverlayWidth,
+	WORKSPACE_LAYOUT,
+	type SidebarPreference,
+} from "./workspace-layout";
 
 const DOUBLE_INTERRUPT_MS = 500;
 
@@ -29,6 +39,7 @@ export interface ComposerPreferences {
 	readonly quiet: boolean;
 	readonly fullscreen: boolean;
 	readonly composerShape: string;
+	readonly sidebar?: string;
 	readonly showHardwareCursor: boolean;
 	readonly maxInlineImages: number;
 	readonly resizeScrollback: ResizeScrollbackMode;
@@ -44,6 +55,7 @@ export const COMPOSER_DEFAULTS: ComposerPreferences = {
 	quiet: false,
 	fullscreen: true,
 	composerShape: "band",
+	sidebar: "auto",
 	showHardwareCursor: true,
 	maxInlineImages: 8,
 	resizeScrollback: "rebuild",
@@ -160,6 +172,9 @@ export class Composer implements TerminalFrameProvider {
 	#headerAfter: readonly Component[] = [];
 	#runtimeChildren: readonly Component[] = [];
 	#workspaceTabs: SessionTabStrip | undefined;
+	#workspaceSidebar: WorkspaceSidebar | undefined;
+	#sidebarOverlayOpen = false;
+	#sidebarOverlayRequestedOnce = false;
 	#workspaceScrollOffset = 0;
 	#statusSnapshot: ComposerStatusSnapshot | undefined;
 	#runtimeMounted = false;
@@ -477,9 +492,52 @@ export class Composer implements TerminalFrameProvider {
 	}
 
 	#workspaceComposerShape(): string {
-		return this.#preferences.fullscreen && this.#preferences.composerShape === "band"
-			? "rail"
-			: this.#preferences.composerShape;
+		return resolveWorkspaceComposerShape(this.#preferences.fullscreen, this.#preferences.composerShape);
+	}
+
+	/** Persisted sidebar preference: auto docks when wide, show requests overlay on narrow. */
+	get sidebarPreference(): SidebarPreference {
+		const raw = this.#preferences.sidebar;
+		if (raw === "show" || raw === "hide" || raw === "auto") return raw;
+		return "auto";
+	}
+
+	setWorkspaceSidebar(sidebar: WorkspaceSidebar | undefined): void {
+		this.#workspaceSidebar = sidebar;
+		this.ui.requestRender();
+	}
+
+	setSidebarOverlayOpen(open: boolean): void {
+		if (this.#sidebarOverlayOpen === open) return;
+		this.#sidebarOverlayOpen = open;
+		this.ui.requestRender();
+	}
+
+	get sidebarOverlayOpen(): boolean {
+		return this.#sidebarOverlayOpen;
+	}
+
+	/** Screen-space mouse routing through final clipped rectangles. */
+	routeWorkspaceMouse(column: number): "main" | "sidebar" | "outside" {
+		const columns = this.ui.terminal.columns ?? 80;
+		const rows = this.ui.terminal.rows ?? 24;
+		const transcript = this.#findTranscript();
+		const geometry = computeWorkspaceLayout(
+			{ columns, rows },
+			{
+				hasConversation: Boolean(transcript?.children.length),
+				sidebarPreference: this.sidebarPreference,
+				sidebarOverlayOpen: this.#sidebarOverlayOpen,
+			},
+		);
+		return geometry.hitTest(column);
+	}
+
+	#findTranscript(): TranscriptContainer | undefined {
+		for (const child of this.#runtimeChildren) {
+			if (child instanceof TranscriptContainer) return child;
+		}
+		return undefined;
 	}
 
 	setWorkspaceTabs(tabs: SessionTabStrip): void {
@@ -526,44 +584,206 @@ export class Composer implements TerminalFrameProvider {
 	}
 
 	#renderWorkspace(width: number, rows: number): readonly string[] {
+		const safeWidth = Math.max(1, Math.floor(width));
+		const safeRows = Math.max(0, Math.floor(rows));
+		if (safeRows === 0) return [];
 		const roots = this.#runtimeMounted
 			? [...this.#runtimeChildren, this.#statusHost]
 			: [this.#bootstrapInputGap, this.editor, this.#statusHost];
 		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
 		const transcript = transcriptIndex >= 0 ? (roots[transcriptIndex] as TranscriptContainer) : undefined;
-		const empty = !transcript || transcript.children.length === 0;
-		const contentWidth = empty ? Math.min(width, 76) : width;
-		const contentInset = empty ? Math.floor((width - contentWidth) / 2) : 0;
+		const hasConversation = Boolean(transcript?.children.length);
+		// Entering narrow `show` requests the overlay once; dismissal sticks
+		// until an explicit toggle/focus action. Do not reopen on every render.
+		const preference = this.sidebarPreference;
+		if (
+			preference === "show" &&
+			safeWidth <= WORKSPACE_LAYOUT.sidebarDockBreakpoint &&
+			!this.#sidebarOverlayRequestedOnce
+		) {
+			this.#sidebarOverlayRequestedOnce = true;
+			this.#sidebarOverlayOpen = true;
+		}
+		if (preference !== "show") this.#sidebarOverlayRequestedOnce = false;
+		if (safeWidth > WORKSPACE_LAYOUT.sidebarDockBreakpoint) this.#sidebarOverlayOpen = false;
+		const geometry = computeWorkspaceLayout(
+			{ columns: safeWidth, rows: safeRows },
+			{ hasConversation, sidebarPreference: preference, sidebarOverlayOpen: this.#sidebarOverlayOpen },
+		);
+		const mainWidth = geometry.main.width;
+		const sidebarDocked = geometry.sidebarDocked && this.#workspaceSidebar !== undefined;
+		const overlayActive =
+			!sidebarDocked &&
+			this.#workspaceSidebar !== undefined &&
+			geometry.sidebarOverlayRequested &&
+			this.#sidebarOverlayOpen;
+		const contentWidth = hasConversation
+			? Math.max(1, mainWidth)
+			: Math.min(mainWidth, WORKSPACE_LAYOUT.homeCenterCap);
+		const contentInset = hasConversation ? 0 : Math.max(0, Math.floor((mainWidth - contentWidth) / 2));
+		// Clamp multiline input growth to ~1/3 of the screen; reserve metadata.
+		try {
+			this.editor.setMaxHeight(composerMaxHeight(safeRows, 4));
+		} catch {
+			// Editor without max-height support keeps its internal budget.
+		}
+		const chromeWidth = hasConversation
+			? Math.max(1, mainWidth - (safeWidth >= 40 ? WORKSPACE_LAYOUT.mainPaddingX * 2 : 0))
+			: Math.min(geometry.homePromptWidth, Math.max(1, mainWidth - 2));
 		const afterContent = this.#renderRoots(
 			roots.filter(root => root !== transcript && root !== this.#workspaceTabs),
-			contentWidth,
+			chromeWidth,
 		);
-		const after = contentInset > 0 ? afterContent.map(row => `${" ".repeat(contentInset)}${row}`) : afterContent;
-		const tabRows =
-			this.#workspaceTabs?.renderWorkspace(
-				width,
-				Boolean(transcript?.children.length),
-				Math.max(0, rows - after.length),
-			) ?? [];
-		const tabs = tabRows.length > 0 ? [...tabRows, ""] : [];
-		if (after.length >= rows) return after.slice(-rows);
-		if (tabs.length + after.length > rows) return [...tabs.slice(0, rows - after.length), ...after];
-		const available = Math.max(0, rows - tabs.length - after.length);
+		const padRow = (row: string): string => {
+			if (contentInset <= 0) return row;
+			return `${" ".repeat(contentInset)}${row}`;
+		};
+		const after = afterContent.map(padRow);
+		// Header extras (config warnings, changelog, notices) are independent
+		// attention content, not conversation-state detectors. The welcome scene
+		// stays inline-mode only; fullscreen home uses the intentional wordmark
+		// below so non-conversation notices never change the layout detection.
+		const headerRows =
+			this.#headerBefore.length > 0 || this.#headerAfter.length > 0
+				? this.#renderRoots([...this.#headerBefore, ...this.#headerAfter], mainWidth)
+				: [];
+		const centeredHeader = headerRows.map(padRow);
+		const tabBudget = Math.max(0, safeRows - after.length - centeredHeader.length);
+		const tabRows = this.#workspaceTabs?.renderWorkspace(mainWidth, hasConversation, tabBudget) ?? [];
+		const tabs = tabRows.length > 0 ? [...tabRows.map(padRow), padRow("")] : [];
 		const blank = (count: number): string[] => Array.from({ length: Math.max(0, count) }, () => "");
-		if (empty) {
-			const word = "harvest";
-			const logo = `${" ".repeat(Math.max(0, Math.floor((width - visibleWidth(word)) / 2)))}${theme.bold(theme.fg("accent", word))}`;
-			const intro = this.#preferences.quiet ? after : [logo, "", ...after];
-			const before = Math.max(0, Math.floor((rows - tabs.length - intro.length) / 2));
-			return [...tabs, ...blank(before), ...intro, ...blank(rows - tabs.length - before - intro.length)].slice(
+		// Height pressure priority: editable composer/cursor + attention first,
+		// then conversation rows, then optional header/tabs, then decoration.
+		// Never blind-slice the active input away.
+		if (after.length >= safeRows) {
+			// Tiny viewport: keep one attention row (warnings/tabs) alongside
+			// the editable tail instead of dropping header/tabs entirely.
+			const attention = [...centeredHeader, ...tabs].slice(0, 1);
+			const tinyRows =
+				attention.length > 0 && safeRows >= 2
+					? [...attention, ...after.slice(-(safeRows - 1))]
+					: after.slice(-safeRows);
+			const mainOnly = this.#composeMainWithSidebar(
+				tinyRows,
+				[],
+				mainWidth,
+				safeWidth,
+				safeRows,
+				sidebarDocked,
+				overlayActive,
+			);
+			return mainOnly;
+		}
+		if (hasConversation && transcript) {
+			let headerTabs = [...centeredHeader, ...tabs];
+			// Cap attention rows so the transcript keeps >= 1 row when rows >= 6.
+			if (safeRows >= 6) {
+				const maxHeaderTabs = Math.max(
+					headerTabs.length > 0 ? 1 : 0,
+					safeRows - after.length - 1,
+				);
+				if (headerTabs.length > maxHeaderTabs) headerTabs = headerTabs.slice(0, Math.max(0, maxHeaderTabs));
+			}
+			const available = Math.max(0, safeRows - headerTabs.length - after.length);
+			const tail = transcript.renderTail(mainWidth, available + this.#workspaceScrollOffset);
+			this.#workspaceScrollOffset = Math.min(this.#workspaceScrollOffset, Math.max(0, tail.length - available));
+			const visible = this.#workspaceScrollOffset > 0 ? tail.slice(0, Math.max(0, available)) : tail;
+			const paddedVisible = visible.map(row => {
+				if (contentInset > 0) return `${" ".repeat(contentInset)}${row}`;
+				if (safeWidth >= 40 && mainWidth > chromeWidth) return `  ${row}`;
+				return row;
+			});
+			const mainRows = [...headerTabs, ...paddedVisible, ...blank(available - paddedVisible.length), ...after].slice(
 				0,
-				rows,
+				safeRows,
+			);
+			return this.#composeMainWithSidebar(
+				mainRows,
+				centeredHeader,
+				mainWidth,
+				safeWidth,
+				safeRows,
+				sidebarDocked,
+				overlayActive,
 			);
 		}
-		const tail = transcript.renderTail(width, available + this.#workspaceScrollOffset);
-		this.#workspaceScrollOffset = Math.min(this.#workspaceScrollOffset, Math.max(0, tail.length - available));
-		const visible = this.#workspaceScrollOffset > 0 ? tail.slice(0, available) : tail;
-		return [...tabs, ...visible, ...blank(available - visible.length), ...after].slice(0, rows);
+		// HOME: intentional wordmark, centered prompt, shortcuts, footer.
+		const wordmark = "HARVEST";
+		const logoRow = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth(wordmark)) / 2)))}${theme.bold(theme.fg("accent", wordmark))}`;
+		const harvestMark = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth("harvest")) / 2)))}${theme.bold(theme.fg("accent", "harvest"))}`;
+		const hints = this.#preferences.quiet
+			? []
+			: [
+					`${" ".repeat(Math.max(0, Math.floor((safeWidth - 44) / 2)))}${theme.fg("muted", "send ⏎ · newline ⌃J · commands ⌥K")}`,
+				];
+		const intro = this.#preferences.quiet
+			? [...centeredHeader, ...tabs, ...after]
+			: [logoRow, harvestMark, "", ...tabs, ...after.slice(0, Math.max(0, safeRows - 4)), ...hints];
+		// Vertically center the bounded home group when space allows.
+		const before = Math.max(0, Math.floor((safeRows - centeredHeader.length - intro.length) / 2));
+		const homeRows = [
+			...blank(before),
+			...centeredHeader,
+			...intro,
+			...blank(safeRows - before - centeredHeader.length - intro.length),
+		].slice(0, safeRows);
+		return this.#composeMainWithSidebar(homeRows, centeredHeader, mainWidth, safeWidth, safeRows, sidebarDocked, overlayActive);
+	}
+
+	#composeMainWithSidebar(
+		mainRows: readonly string[],
+		_header: readonly string[],
+		mainWidth: number,
+		totalWidth: number,
+		safeRows: number,
+		sidebarDocked: boolean,
+		overlayActive: boolean,
+	): readonly string[] {
+		const fitRow = (row: string, width: number): string => {
+			const w = visibleWidth(row);
+			if (w === width) return row;
+			if (w > width) return truncateToWidth(row, Math.max(0, width));
+			return row + " ".repeat(Math.max(0, width - w));
+		};
+		// The focused editor emits CURSOR_MARKER (a private APC sentinel the
+		// TUI strips after the frame). Width helpers bail on that sequence,
+		// so measure/truncate the marker-free text and re-insert the marker
+		// at its painted column when it survives the fit.
+		const fitRowWithMarker = (row: string, width: number): string => {
+			const markerAt = row.indexOf(CURSOR_MARKER);
+			if (markerAt === -1) return fitRow(row, width);
+			const markerCol = visibleWidth(row.slice(0, markerAt).split(CURSOR_MARKER).join(""));
+			const fitted = fitRow(row.split(CURSOR_MARKER).join(""), width);
+			if (markerCol >= width) return fitted;
+			const before = sliceWithWidth(fitted, 0, markerCol).text;
+			const after = sliceWithWidth(fitted, markerCol, Math.max(0, width - markerCol)).text;
+			return `${before}${CURSOR_MARKER}${after}`;
+		};
+		if (sidebarDocked && this.#workspaceSidebar !== undefined) {
+			const sidebarWidth = Math.max(1, totalWidth - mainWidth);
+			const sidebarRows = this.#workspaceSidebar.render(sidebarWidth, safeRows);
+			const height = Math.min(safeRows, Math.max(mainRows.length, sidebarRows.length));
+			const out: string[] = [];
+			for (let i = 0; i < height; i++) {
+				const left = fitRowWithMarker(mainRows[i] ?? "", mainWidth);
+				const right = fitRow(sidebarRows[i] ?? "", sidebarWidth);
+				out.push(`${left}${right}`);
+			}
+			return out;
+		}
+		if (overlayActive && this.#workspaceSidebar !== undefined) {
+			const overlayWidth = sidebarOverlayWidth(totalWidth);
+			const sidebarRows = this.#workspaceSidebar.render(overlayWidth, safeRows);
+			const out = [...mainRows];
+			for (let i = 0; i < Math.min(out.length, sidebarRows.length); i++) {
+				const base = out[i] ?? "";
+				const overlay = sidebarRows[i] ?? "";
+				const start = Math.max(0, totalWidth - overlayWidth);
+				out[i] = `${fitRowWithMarker(base, start)}${fitRow(overlay, overlayWidth)}`;
+			}
+			return out;
+		}
+		return mainRows;
 	}
 	/**
 	 * Mounted-runtime rows for the transient resize buffer. Only the trailing

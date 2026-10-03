@@ -272,3 +272,7 @@ export default function extension(pi: ExtensionAPI): void {
 - `packages/coding-agent/src/extensibility/custom-tools/types.ts` — custom tool execute/render contracts.
 - `packages/coding-agent/src/modes/components/tool-execution.ts` — mounting `renderCall`/`renderResult` components and partial-state options.
 - `packages/coding-agent/src/tools/context.ts` — tool UI context propagation (`hasUI`, `ui`).
+
+## Workspace shell (fullscreen)
+
+Fullscreen keeps the prompt anchored with tabs on top, a main conversation column (2-col outer padding), and a responsive 42-col right sidebar docked when width >120. Narrow `tui.sidebar: show` requests an overlay (`min(42, cols-2)`) closed by Escape. Home centers `HARVEST` with a 75-col filled prompt, mode/model/effort metadata, and send/newline/commands hints. Dialogs use 60/88/116-col caps via `overlay-box.ts`. Geometry lives in `modes/workspace-layout.ts`.

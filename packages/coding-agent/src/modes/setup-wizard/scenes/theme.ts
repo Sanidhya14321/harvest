@@ -1,11 +1,8 @@
 import {
-	padding,
 	routeSelectListMouse,
 	type SelectItem,
 	SelectList,
 	type SgrMouseEvent,
-	truncateToWidth,
-	visibleWidth,
 } from "@harvest/pi-tui";
 import {
 	enableAutoTheme,
@@ -20,6 +17,7 @@ import {
 	theme,
 } from "../../theme/theme";
 import type { SetupScene, SetupSceneController, SetupSceneHost } from "./types";
+import { renderComposerShapePreview } from "../../components/composer-shape-preview";
 
 type ThemeMode = "curated" | "all";
 
@@ -31,62 +29,6 @@ const CURATED_ITEMS: readonly SelectItem[] = [
 	{ value: "ansi", label: "ANSI-safe", description: "ASCII glyphs with the dark terminal theme" },
 	{ value: "browse", label: "Browse all…", description: "Show every built-in and custom theme" },
 ];
-
-function fitLine(line: string, width: number): string {
-	const truncated = truncateToWidth(line, width);
-	return truncated + padding(Math.max(0, width - visibleWidth(truncated)));
-}
-
-function fillStyledLine(content: string, width: number): string {
-	return content + padding(Math.max(0, width - visibleWidth(content)));
-}
-
-function renderMockStatusLine(width: number): string {
-	const sep = theme.fg("statusLineSep", ` ${theme.sep.pipe} `);
-	const left = [
-		theme.fg("statusLineModel", `${theme.icon.model} sonnet`),
-		theme.fg("statusLinePath", "~/project"),
-		theme.fg("statusLineGitDirty", `${theme.icon.git} main +2`),
-	].join(sep);
-	const right = [
-		theme.fg("statusLineContext", `${theme.icon.context} 42%`),
-		theme.fg("statusLineCost", `${theme.icon.cost} 0.18`),
-	].join(sep);
-	const innerWidth = Math.max(1, width - 2);
-	const leftWidth = visibleWidth(left);
-	const rightWidth = visibleWidth(right);
-	const gap = padding(Math.max(1, innerWidth - leftWidth - rightWidth - 2));
-	return theme.bg("statusLineBg", fitLine(` ${left}${gap}${right} `, width));
-}
-
-function renderMockEditor(width: number): string[] {
-	const box = theme.boxRound;
-	const innerWidth = Math.max(1, width - 2);
-	const horizontal = box.horizontal.repeat(innerWidth);
-	const top = theme.fg("borderAccent", `${box.topLeft}${horizontal}${box.topRight}`);
-	const bottom = theme.fg("borderMuted", `${box.bottomLeft}${horizontal}${box.bottomRight}`);
-	const prompt = `${theme.fg("accent", ">")} ${theme.fg("text", "Ask anything, edit files, run tools")}${theme.inverse(" ")}`;
-	const hint = theme.fg("dim", "enter send · shift+enter newline · / commands");
-	return [
-		top,
-		`${theme.fg("borderAccent", box.vertical)}${fitLine(prompt, innerWidth)}${theme.fg("borderAccent", box.vertical)}`,
-		`${theme.fg("borderMuted", box.vertical)}${fillStyledLine(hint, innerWidth)}${theme.fg("borderMuted", box.vertical)}`,
-		bottom,
-	];
-}
-
-function renderThemePreview(width: number): string[] {
-	const previewWidth = Math.max(24, Math.min(width, 88));
-	return [
-		theme.bold("Preview"),
-		`${theme.fg("success", `${theme.status.success} success`)}  ${theme.fg("warning", `${theme.status.warning} warning`)}  ${theme.fg("error", `${theme.status.error} error`)}  ${theme.fg("accent", "accent")}`,
-		"",
-		theme.fg("muted", "Status line"),
-		renderMockStatusLine(previewWidth),
-		theme.fg("muted", "Editor"),
-		...renderMockEditor(previewWidth),
-	];
-}
 
 class ThemeSceneController implements SetupSceneController {
 	title = "Pick a theme";
@@ -145,11 +87,12 @@ class ThemeSceneController implements SetupSceneController {
 				: theme.fg("dim", "Esc skips this step"),
 			"",
 		];
-		// The mock status-line/editor block is decorative — the wizard itself
-		// re-renders in the highlighted theme — so it yields to the list when
-		// it would squeeze the window below the six curated rows (+1 for the
-		// list's own search-status row).
-		const preview = renderThemePreview(width);
+		// The live status-line/composer block below renders through the same
+		// real pipeline as runtime (the wizard itself also re-renders in the
+		// highlighted theme) — so it yields to the list when it would squeeze
+		// the window below the six curated rows (+1 for the list's own
+		// search-status row).
+		const preview = this.#renderThemePreview(width);
 		if (budget - lines.length - (preview.length + 1) - 1 >= CURATED_ITEMS.length) {
 			lines.push(...preview, "");
 		}
@@ -196,6 +139,27 @@ class ThemeSceneController implements SetupSceneController {
 		if (current === "titanium") return 1;
 		if (current === "light") return 2;
 		return 0;
+	}
+
+	/**
+	 * Live theme preview through the real runtime pipeline — the status rows
+	 * come from the session's `StatusLineComponent` and the editor block from
+	 * `renderComposerShapePreview` (the same `getComposerStyle` path the
+	 * composer scene and the live editor use). Nothing here is a mock: the
+	 * highlighted theme applies to these rows exactly as it does at runtime.
+	 */
+	#renderThemePreview(width: number): string[] {
+		const previewWidth = Math.max(24, Math.min(width, 88));
+		const shape = this.host.ctx.settings.get("composer.shape") ?? "band";
+		return [
+			theme.bold("Preview"),
+			`${theme.fg("success", `${theme.status.success} success`)}  ${theme.fg("warning", `${theme.status.warning} warning`)}  ${theme.fg("error", `${theme.status.error} error`)}  ${theme.fg("accent", "accent")}`,
+			"",
+			theme.fg("muted", "Status line"),
+			...this.host.ctx.statusLine.getPreviewLines(previewWidth),
+			theme.fg("muted", "Editor"),
+			...renderComposerShapePreview(shape, width, this.host.ctx.statusLine),
+		];
 	}
 
 	#previewByIndex(index: number): void {

@@ -191,7 +191,7 @@ describe("readToolRenderer markdown content", () => {
 });
 
 describe("read ToolExecutionComponent framing", () => {
-	it("renders framed read results inside the standard tool container padding", () => {
+	it("renders collapsed read results as quiet rail activity and expanded results framed", () => {
 		const uiStub = { requestRender() {}, requestComponentRender() {} } as unknown as TUI;
 		const component = new ToolExecutionComponent("read", { path: "src/example.ts" }, {}, undefined, uiStub);
 		component.updateResult(
@@ -207,16 +207,18 @@ describe("read ToolExecutionComponent framing", () => {
 
 		try {
 			const lines = component.render(80).map(line => Bun.stripANSI(line));
-			const topBorderIndex = lines.findIndex(
+			const joined = lines.join("\n");
+			// Collapsed success is quiet rail activity, not a rounded frame per operation.
+			expect(joined).toContain("Read");
+			expect(joined).toContain("export const x = 1;");
+			expect(joined).not.toContain(activeTheme.boxRound.topLeft);
+			component.setExpanded(true);
+			const expanded = component.render(80).map(line => Bun.stripANSI(line));
+			const topBorderIndex = expanded.findIndex(
 				line => line.includes(activeTheme.boxRound.topLeft) && line.includes("Read"),
 			);
-			const bottomBorderIndex = lines.findIndex(
-				(line, index) => index > topBorderIndex && line.includes(activeTheme.boxRound.bottomLeft),
-			);
-
 			expect(topBorderIndex).toBeGreaterThanOrEqual(0);
-			expect(lines[topBorderIndex + 1]).toContain("export const x = 1;");
-			expect(bottomBorderIndex).toBeGreaterThan(topBorderIndex);
+			expect(expanded.slice(topBorderIndex).join("\n")).toContain("export const x = 1;");
 		} finally {
 			component.stopAnimation();
 		}

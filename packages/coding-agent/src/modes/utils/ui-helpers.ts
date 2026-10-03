@@ -38,7 +38,7 @@ import {
 	toolRenderName,
 } from "../../modes/components/tool-execution";
 import { TranscriptBlock, TranscriptContainer } from "../../modes/components/transcript-container";
-import { createUsageRowBlock, turnElapsedMs } from "../../modes/components/usage-row";
+import { createCompletionEndcapBlock, createUsageRowBlock, turnElapsedMs } from "../../modes/components/usage-row";
 import { UserMessageComponent } from "../../modes/components/user-message";
 import { decodeStreamedToolArgs, streamingStringKeysForTool } from "../../modes/controllers/tool-args-reveal";
 import { materializeImageReferenceLinksSync } from "../../modes/image-references";
@@ -398,32 +398,47 @@ export class UiHelpers {
 		let pendingUsageTimestamp: number | undefined;
 		let pendingReadUsageCallIds: string[] | undefined;
 		let pendingUsageTurnElapsed: number | undefined;
+		// Small mode/model/elapsed endcap for the same completion, flushed once
+		// alongside the usage row above — after the turn's tool results have
+		// materialized — so it never repeats per assistant segment and a late
+		// tool result cannot append a second row.
+		let pendingEndcapModel: string | undefined;
+		let pendingEndcapElapsedMs: number | undefined;
 		let turnStartedAt: number | undefined;
 		const flushPendingUsage = () => {
-			if (!pendingUsage) return;
-			const usageAttached =
-				pendingReadUsageCallIds !== undefined &&
-				(readGroup?.attachUsage(
-					pendingReadUsageCallIds,
-					pendingUsage,
-					pendingUsageDuration,
-					pendingUsageTtft,
-					pendingUsageTimestamp,
-					pendingUsageTurnElapsed,
-				) ??
-					false);
-			if (!usageAttached) {
-				readGroup?.seal();
-				readGroup = null;
-				this.ctx.chatContainer.addChild(
-					createUsageRowBlock(
+			if (!pendingUsage && pendingEndcapModel === undefined && pendingEndcapElapsedMs === undefined) return;
+			if (pendingUsage) {
+				const usageAttached =
+					pendingReadUsageCallIds !== undefined &&
+					(readGroup?.attachUsage(
+						pendingReadUsageCallIds,
 						pendingUsage,
 						pendingUsageDuration,
 						pendingUsageTtft,
 						pendingUsageTimestamp,
 						pendingUsageTurnElapsed,
-					),
-				);
+					) ??
+						false);
+				if (!usageAttached) {
+					readGroup?.seal();
+					readGroup = null;
+					this.ctx.chatContainer.addChild(
+						createUsageRowBlock(
+							pendingUsage,
+							pendingUsageDuration,
+							pendingUsageTtft,
+							pendingUsageTimestamp,
+							pendingUsageTurnElapsed,
+						),
+					);
+				}
+			}
+			if (pendingEndcapModel !== undefined || pendingEndcapElapsedMs !== undefined) {
+				const endcap = createCompletionEndcapBlock({
+					model: pendingEndcapModel,
+					elapsedMs: pendingEndcapElapsedMs,
+				});
+				if (endcap) this.ctx.chatContainer.addChild(endcap);
 			}
 			pendingUsage = undefined;
 			pendingUsageDuration = undefined;
@@ -431,6 +446,8 @@ export class UiHelpers {
 			pendingUsageTimestamp = undefined;
 			pendingReadUsageCallIds = undefined;
 			pendingUsageTurnElapsed = undefined;
+			pendingEndcapModel = undefined;
+			pendingEndcapElapsedMs = undefined;
 		};
 		// Rebuild-time mirror of the event controller's displaceable-poll
 		// bookkeeping: a `hub` wait that found every watched job still running is
@@ -644,6 +661,21 @@ export class UiHelpers {
 				pendingUsageTurnElapsed = this.ctx.settings.get("display.showTurnTime")
 					? turnElapsedMs(turnStartedAt, message)
 					: undefined;
+				if (assistantUsageIsBilled(message.usage)) {
+					const messageModel = (message as { model?: unknown }).model;
+					pendingEndcapModel =
+						this.ctx.settings.get("display.showTokenUsage") &&
+						typeof messageModel === "string" &&
+						messageModel.trim()
+							? messageModel.trim()
+							: undefined;
+					pendingEndcapElapsedMs = this.ctx.settings.get("display.showTurnTime")
+						? turnElapsedMs(turnStartedAt, message)
+						: undefined;
+				} else {
+					pendingEndcapModel = undefined;
+					pendingEndcapElapsedMs = undefined;
+				}
 			} else if (message.role === "toolResult") {
 				if (options.preservedLiveToolCallIds?.has(message.toolCallId)) continue;
 				const pendingReadComponent = this.ctx.pendingTools.get(message.toolCallId);

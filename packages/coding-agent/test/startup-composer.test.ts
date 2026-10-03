@@ -404,6 +404,7 @@ describe("Composer prepaint", () => {
 			quiet: getDefault("startup.quiet"),
 			fullscreen: getDefault("tui.fullscreen"),
 			composerShape: getDefault("composer.shape") ?? "box",
+			sidebar: getDefault("tui.sidebar") ?? "auto",
 			showHardwareCursor: getDefault("showHardwareCursor"),
 			maxInlineImages: getDefault("tui.maxInlineImages"),
 			resizeScrollback: getDefault("tui.resizeScrollback"),

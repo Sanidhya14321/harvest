@@ -196,3 +196,59 @@ Status: DONE (gates) + manual gates DOCUMENTED below. No behavior changed.
   unsupported hardware degrades with a precise message (device-override
   fallback, calibration-derived effective settings) rather than a silent
   skip.
+
+## F1 — Project trust gate proposal (OPEN, docs only 2026-10-03)
+
+- Problem: executable discovery (MCP servers, project hooks) runs under committed-config-is-trusted; flipping to default-distrust silently would break configured contracts.
+- UX flow: first-open per-project prompt (Trust once / Trust always / Distrust) before any executable loads, with per-server allow/deny listed and a "view definitions" affordance; choice persisted in project trust store, reversible in settings.
+- Headless policy: `--trust <project|always|never>` flag plus `HARVEST_TRUST` env; absent flag in non-TTY fails closed (no executables loaded) with an actionable error.
+- Acceptance: no executable spawns before verdict; verdict + scope logged; `tools.approval` deny still wins over trust-allow.
+- Half-implementation risk: prompting on some entrypoints but not others trains click-through while leaving a bypass; a trust bit without per-server scoping becomes all-or-nothing over-trust.
+
+## F3 — Spend kill-switch proposal (OPEN, docs only 2026-10-03)
+
+- Problem: spend is reported (stats, goal budgets) but no hard stop exists; provider usage/pricing is delayed/estimated, so exact enforcement cannot be promised and hard-stopping mid-run risks corrupting state.
+- UX flow: per-session/task budget setter with live estimate bar (committed + projected), soft warn at 80%, and ask-before-raise dialog (raise / pause / abort) instead of silent kill; estimate basis labeled (actual vs priced-estimate).
+- Headless policy: `--budget <amount>` + `--budget-action <pause|abort|ask>` (non-TTY defaults to `pause`); exceeding budget pauses the run and checkpoints, never deletes work.
+- Acceptance: pause preserves resumable checkpoint; ledger distinguishes metered-actual vs estimated; no replay of uncertain-billing writes on resume.
+- Half-implementation risk: a dollar gate on estimated pricing either false-trips (blocking valid work) or false-passes (promising a guarantee metering cannot keep); auto-kill without checkpoint corrupts runs.
+
+## F6 — Unified health view proposal (OPEN, docs only 2026-10-03)
+
+- Problem: MCP statuses, `/laya` diagnostics, backend statuses, and smoke probes each report correctly but separately; users must correlate four surfaces to answer "what is broken".
+- UX flow: single `/health` (TUI) panel aggregating per-integration row (ok/degraded/down + last-check + one-line cause + deep-link to source view), with copyable diagnostic bundle action; read-only rollup, sources stay authoritative.
+- Headless policy: `harvest --health --json` emits the same rollup schema for scripts/CI; exit code reflects worst status without changing runtime behavior.
+- Acceptance: every row links to its source probe; rollup never masks a failing source as healthy; no new background polling (reuse existing checks).
+- Half-implementation risk: a merged view with stale/cached rows misattributes outages; duplicating check logic per view causes divergent statuses worse than separate views.
+
+## F10 — Cancellation/recovery UI proposal (OPEN, docs only 2026-10-03)
+
+- Problem: protocol cancellation is done (abort lane, per-session ownership, guest settlement, owner-aware Stop) but the UI lacks second-Stop force semantics and per-operation owner display, so users cannot tell what Stop will do.
+- UX flow: first Stop = graceful abort with pending-ops list + owner labels; second Stop within N seconds = explicit force option with state-loss warning and confirm; post-abort panel offers resume/discard with outcome (`committed`/`unknown`/`rolled-back`) per op.
+- Headless policy: SIGINT/SIGTERM map to graceful abort; `HARVEST_STOP=force` or second signal forces; force path always checkpoints what is recoverable and marks the rest `outcomeUnknown`, never silent.
+- Acceptance: owner shown per cancellable op; force never replays uncertain writes; guest requests settle (not orphan) on host abort.
+- Half-implementation risk: inventing force-kill without settlement orphans guest sessions and corrupts shared state; owner-blind Stop lets one session kill another's work.
+
+## F4 — Per-channel share preview proposal (OPEN, docs only 2026-10-03)
+
+- Problem: redaction seams exist per channel (share snapshot typed walk + obfuscator in `export/share.ts`; raw live transcript for `/collab`; provider/advisor obfuscator; raw-by-design local `/export`/`/dump`) but upload is immediate with no pre-send preview, so users cannot verify what leaves the machine; image-embedded secrets stay uninspectable (text-only obfuscation).
+- UX flow: per-channel dry-run preview (e.g. `/share preview`) rendering a read-only summary — channel, redaction on/off + reason (setting off / secrets off / N secrets configured), estimated sealed bytes vs cap, trim prediction (images-first, then long strings, then oldest entries), per-section inclusion list, dropped-opaque list (`providerPayload`, `redactedThinking`, `preserveData`, extension `details`/`data`), and the image-limitation warning; collab preview lists guest-visible scope (raw back-transcript + descendant sessions) before hosting starts; local channels keep the on-screen warning, no preview needed.
+- Headless policy: `--dry-run` prints the same summary as text/JSON and never touches the network; exit code unaffected; preview output contains counts/labels only, never raw secret values.
+- Acceptance: preview runs the real path (`buildShareSnapshot` + `sealToFit` budget logic, minus upload) so its bytes/structure match the actual send; redaction verdict stated explicitly (redacted N fields vs shipped unredacted + why); oversized sessions show the same "trimmed to fit" outcome before committing.
+- Half-implementation risk: a preview that re-implements redaction separately from `buildShareSnapshot` diverges and gives false assurance; echoing raw values into the preview leaks to screen/scrollback; an image thumbnail in preview implies inspectability text-only obfuscation cannot deliver.
+
+## F7 — Retrieval provenance view proposal (OPEN, docs only 2026-10-03)
+
+- Problem: citations exist (brain pages carry `scope`/`title`/`Source: <filePath>`/`Page: <id>` via `prompts/brain/context.md`; mnemopi rows render `id`/`source`/`date`/`c:<score>`) but there is no per-injection "why" (lexical vs rerank score/reason), no conflict display, and correction requires knowing the `memory_edit` bank-order APIs.
+- UX flow: per-injection card listing source file, scope, candidate rank (lexical vs reranked, cache hit/miss), one-hop neighbor expansion note (`depends_on`/`relates_to` only), and recorded-but-unexpanded conflict links (`contradicts`/`supersedes`); actions: open cited file, exclude scope/doc, correct via existing `memory_edit` update/forget/invalidate (same first-hit bank order, latest-correction-wins), with the `brain.scopes` vs `mnemopi.*` distinct-switches note.
+- Headless policy: `/memory view` already dumps the payload; proposal adds `--explain` emitting the same per-item provenance as JSON for scripts; no new correction endpoint (existing APIs only, no second store).
+- Acceptance: every injected page/fact traces to a source file + bank; scope exclusion shown as enforced-before-expansion (the existing guarantee, surfaced — not new); facts-table `not_editable` vs `not_found`-with-context states explained, never silent.
+- Half-implementation risk: ambient score text without open/exclude/correct actions is noise users learn to ignore; a parallel correction store diverges from first-hit bank order; presenting 0–3 rerank heuristics as ground truth overstates a bounded model judgment.
+
+## F8 — Unified context-pipeline view proposal (PARTIAL, docs only 2026-10-03)
+
+- Problem: `/diagnostics` (`modes/run-diagnostics.ts`, `formatRunDiagnostic`) covers run stage, gating verdicts, and failures, and each transform is measured where it runs (prune `tokensSaved`, rerank cache hit/miss + latency, shared prune+rerank budget remainder, snapcompact savings journal), but no unified per-transform provenance view answers "what changed my context, in what order, at what cost".
+- UX flow: pipeline section (e.g. `/diagnostics --pipeline`) listing transforms in `sdk.ts transformContext` order — extension context → steering → prune (tokens in/out, latency, budget consumed) → brain retrieve (candidates, scope filter, rerank hit/miss + latency) → provider-context transforms (obfuscate → snapcompact savings → clamp/normalize/decorate) → dispatch (first-token latency, turns, tools, gates) — each row with input→output size, latency, and fail-open/skip labeling; read-only rollup, transforms unchanged.
+- Headless policy: `--diagnostics-pipeline --json` emits the same row schema for scripts/CI; exit code unaffected; skipped transforms labeled `skipped (fail-open)` with reason, never rendered as zero-cost.
+- Acceptance: every row names its code seam (file/function); numbers are plumbed from already-measured values, not re-measured by the view; the view never perturbs the hot path (no new shared mutable state, no extra inference).
+- Half-implementation risk: threading measurements through new shared state couples the hot path and risks TOCTOU numbers sampled mid-run presented as final; duplicating measurement logic inside the view diverges from the authoritative per-transform counters.
