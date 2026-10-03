@@ -3,7 +3,7 @@ import type { AgentMessage } from "@harvest/pi-agent-core";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createMarkdownBrain, MarkdownBrain } from "../src/core/harvest/brain";
+import { createMarkdownBrain, MarkdownBrain, BRAIN_RERANK_PROMPT_REVISION } from "../src/core/harvest/brain";
 import { LayaClient } from "../src/core/harvest/laya-client";
 
 let root: string;
@@ -276,5 +276,90 @@ describe("Markdown brains", () => {
 		});
 		expect(JSON.stringify(decide.mock.calls[0][0])).not.toContain("secret-value");
 		expect(JSON.stringify(decide.mock.calls[0][0])).toContain("redacted");
+	});
+
+	it("misses the cached ranking when the prompt revision changes", async () => {
+		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
+		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const client = new LayaClient();
+		const decide = vi.spyOn(client, "decide").mockResolvedValue({
+			success: true,
+			fallback: false,
+			latencyMs: 1,
+			data: {
+				brain_0: { type: "score", score: 0, confidence: 1 },
+				brain_1: { type: "score", score: 3, confidence: 1 },
+			},
+		});
+		await brain.retrieve("database", { client, rerank: true, promptRevision: "rev-a" });
+		expect(decide).toHaveBeenCalledTimes(1);
+		// Same revision replays from cache.
+		await brain.retrieve("database", { client, rerank: true, promptRevision: "rev-a" });
+		expect(decide).toHaveBeenCalledTimes(1);
+		// New prompt revision misses and scores afresh, even for identical
+		// query and page content.
+		await brain.retrieve("database", { client, rerank: true, promptRevision: "rev-b" });
+		expect(decide).toHaveBeenCalledTimes(2);
+		expect(BRAIN_RERANK_PROMPT_REVISION.length).toBeGreaterThan(0);
+	});
+
+	it("caps the rerank round trip at the shared budget remainder and skips when exhausted", async () => {
+		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
+		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const client = new LayaClient();
+		const decide = vi.spyOn(client, "decide").mockResolvedValue({
+			success: true,
+			fallback: false,
+			latencyMs: 1,
+			data: {
+				brain_0: { type: "score", score: 3, confidence: 1 },
+				brain_1: { type: "score", score: 0, confidence: 1 },
+			},
+		});
+		// Generous remainder: the explicit timeout wins, sidecar is consulted.
+		const lexical = await brain.retrieve("database");
+		const fresh = new MarkdownBrain([{ scope: "project", directory: root }]);
+		await fresh.retrieve("database", {
+			client,
+			rerank: true,
+			rerankTimeoutMs: 300,
+			contextBudget: { totalMs: 600, deadline: performance.now() + 600, remainingMs: () => 137 },
+		});
+		expect(decide).toHaveBeenCalledTimes(1);
+		expect((decide.mock.calls[0][2] as { timeoutMs?: number }).timeoutMs).toBe(137);
+
+		// Exhausted budget: no round trip, lexical order preserved (fail-open).
+		const exhausted = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const callsBefore = decide.mock.calls.length;
+		const result = await exhausted.retrieve("database", {
+			client,
+			rerank: true,
+			contextBudget: { totalMs: 600, deadline: 0, remainingMs: () => 0 },
+		});
+		expect(decide.mock.calls.length).toBe(callsBefore);
+		expect(result.map(page => page.id)).toEqual(lexical.map(page => page.id));
+	});
+
+	it("drops cached rankings on history-rewrite invalidation", async () => {
+		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
+		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const client = new LayaClient();
+		const decide = vi.spyOn(client, "decide").mockResolvedValue({
+			success: true,
+			fallback: false,
+			latencyMs: 1,
+			data: {
+				brain_0: { type: "score", score: 0, confidence: 1 },
+				brain_1: { type: "score", score: 3, confidence: 1 },
+			},
+		});
+		await brain.retrieve("database", { client, rerank: true });
+		expect(decide).toHaveBeenCalledTimes(1);
+		brain.clearRerankCache();
+		await brain.retrieve("database", { client, rerank: true });
+		expect(decide).toHaveBeenCalledTimes(2);
 	});
 });

@@ -12,9 +12,11 @@ import { Settings, settings } from "../config/settings";
 import {
 	DEFAULT_MAX_ACCEPTABLE_TURN_LATENCY_MS,
 	ensureCalibrated,
+	getExplicitSetting,
 	loadCalibration,
 	saveCalibration,
 	type CalibrationRecord,
+	type DerivedLayaSettings,
 } from "../core/harvest/laya-calibration";
 import { getLayaClient } from "../core/harvest/laya-client";
 import { configureLayaLocally } from "../core/harvest/laya-service";
@@ -49,6 +51,71 @@ export interface LayaCommandArgs {
 
 function writeLine(text = ""): void {
 	process.stdout.write(`${text}\n`);
+}
+
+/** Where an effective status value came from. Never report an unset key as a user override. */
+export type LayaSettingProvenance = "user-configured" | "calibrated" | "schema-default";
+
+export interface LayaResolvedSetting<T> {
+	readonly value: T;
+	readonly provenance: LayaSettingProvenance;
+}
+
+export interface LayaExplicitOverrides {
+	readonly pruning?: boolean;
+	readonly subagentSelection?: boolean;
+	readonly subagentSelectionTimeoutMs?: number;
+}
+
+export interface LayaStatusSchemaDefaults {
+	readonly pruning: boolean;
+	readonly subagentSelection: boolean;
+	readonly subagentSelectionTimeoutMs: number;
+}
+
+export interface LayaResolvedStatusSettings {
+	readonly pruning: LayaResolvedSetting<boolean>;
+	readonly subagentSelection: LayaResolvedSetting<boolean>;
+	readonly subagentSelectionTimeoutMs: LayaResolvedSetting<number>;
+}
+
+/**
+ * Resolve configured vs calibrated vs effective Laya settings for status display.
+ *
+ * Precedence is explicit user configuration, then hardware-calibrated
+ * recommendation, then the schema default. A key the user never configured
+ * resolves to `calibrated`/`schema-default` provenance — never
+ * `user-configured` — so `settings.get()` schema defaults can no longer be
+ * misreported as overrides.
+ */
+export function resolveLayaStatusSettings(
+	explicit: LayaExplicitOverrides,
+	derived: DerivedLayaSettings | null | undefined,
+	schemaDefaults: LayaStatusSchemaDefaults,
+): LayaResolvedStatusSettings {
+	const pruningCalibrated = derived?.pruningRecommendEnabled;
+	const subagentCalibrated = derived?.subagentSelectionRecommendEnabled;
+	const timeoutCalibrated = derived?.subagentSelectionTimeoutMs;
+	return {
+		pruning:
+			explicit.pruning !== undefined
+				? { value: explicit.pruning, provenance: "user-configured" }
+				: pruningCalibrated !== undefined
+					? { value: pruningCalibrated, provenance: "calibrated" }
+					: { value: schemaDefaults.pruning, provenance: "schema-default" },
+		subagentSelection:
+			explicit.subagentSelection !== undefined
+				? { value: explicit.subagentSelection, provenance: "user-configured" }
+				: subagentCalibrated !== undefined
+					? { value: subagentCalibrated, provenance: "calibrated" }
+					: { value: schemaDefaults.subagentSelection, provenance: "schema-default" },
+		subagentSelectionTimeoutMs:
+			explicit.subagentSelectionTimeoutMs !== undefined
+				? { value: explicit.subagentSelectionTimeoutMs, provenance: "user-configured" }
+				: timeoutCalibrated !== undefined
+					? { value: timeoutCalibrated, provenance: "calibrated" }
+					: { value: schemaDefaults.subagentSelectionTimeoutMs, provenance: "schema-default" },
+	};
 }
 
 function formatStatus(cal: CalibrationRecord | null, isOnline: boolean): void {
@@ -117,51 +184,77 @@ function formatStatus(cal: CalibrationRecord | null, isOnline: boolean): void {
 		writeLine(`  Confidence Thresh:  ${chalk.bold(derived.subagentSelectionConfidenceThreshold.toFixed(3))} (owned by shadow-mode review)`);
 	}
 
-	// Check explicit user overrides in settings
-	writeLine(`\n${chalk.cyan("Active User Overrides & Configuration:")}`);
-	let userPruning: boolean | undefined;
-	let userSubagent: boolean | undefined;
-	let userTimeout: number | undefined;
+	// Explicit user overrides (never fall back to schema defaults here: an
+	// unset key must be reported as calibrated/schema-default, not as an override)
+	writeLine(`\n${chalk.cyan("Active Configuration (effective ← user override wins over calibration):")}`);
+	const explicit: LayaExplicitOverrides = {
+		pruning: getExplicitSetting<boolean>(settings, "laya.pruning"),
+		subagentSelection: getExplicitSetting<boolean>(settings, "laya.subagentSelection"),
+		subagentSelectionTimeoutMs: getExplicitSetting<number>(settings, "laya.subagentSelectionTimeoutMs"),
+	};
 
+	let schemaDefaults: LayaStatusSchemaDefaults = {
+		pruning: true,
+		subagentSelection: false,
+		subagentSelectionTimeoutMs: 300,
+	};
 	try {
-		userPruning = settings.get("laya.pruning");
-		userSubagent = settings.get("laya.subagentSelection");
-		userTimeout = settings.get("laya.subagentSelectionTimeoutMs");
+		const isolated = Settings.isolated({});
+		schemaDefaults = {
+			pruning: isolated.get("laya.pruning"),
+			subagentSelection: isolated.get("laya.subagentSelection"),
+			subagentSelectionTimeoutMs: isolated.get("laya.subagentSelectionTimeoutMs"),
+		};
 	} catch {
-		// Isolated environment
+		// Isolated environment: keep compiled fallbacks above
 	}
 
-	const pruningStatus =
-		userPruning !== undefined
-			? userPruning
-				? chalk.bold.green("ENABLED (User Override)")
-				: chalk.bold.red("DISABLED (User Override)")
-			: derived.pruningRecommendEnabled
-				? chalk.green("ENABLED (Derived Default)")
-				: chalk.yellow("DISABLED (Derived Default)");
+	const resolved = resolveLayaStatusSettings(explicit, derived, schemaDefaults);
 
-	const subagentStatus =
-		userSubagent !== undefined
-			? userSubagent
-				? chalk.bold.green("ENABLED (User Override)")
-				: chalk.bold.red("DISABLED (User Override)")
-			: derived.subagentSelectionRecommendEnabled
-				? chalk.green("ENABLED (Derived Default)")
-				: chalk.yellow("DISABLED (Derived Default)");
+	const onOff = (value: boolean | undefined): string => (value === undefined ? "—" : value ? "on" : "off");
+	const msOrDash = (value: number | undefined): string => (value === undefined ? "—" : `${value}ms`);
+	const provenanceTag = (provenance: LayaSettingProvenance): string =>
+		provenance === "user-configured"
+			? chalk.bold("user override")
+			: provenance === "calibrated"
+				? chalk.green("calibrated")
+				: chalk.dim("schema default");
 
-	writeLine(`  laya.pruning:           ${pruningStatus}`);
-	writeLine(`  laya.subagentSelection: ${subagentStatus}`);
-	writeLine(`  laya.timeout:           ${userTimeout ?? derived.subagentSelectionTimeoutMs}ms`);
+	const pruningState = resolved.pruning.value ? chalk.bold.green("ENABLED") : chalk.bold.red("DISABLED");
+	const subagentState = resolved.subagentSelection.value ? chalk.bold.green("ENABLED") : chalk.bold.red("DISABLED");
 
-	// Warnings on overrides contradicting calibration
-	if (userPruning === true && !derived.pruningRecommendEnabled) {
+	writeLine(
+		`  laya.pruning:            ${pruningState} (${provenanceTag(resolved.pruning.provenance)}) ` +
+			chalk.dim(
+				`[configured: ${onOff(explicit.pruning)} | calibrated: ${derived.pruningRecommendEnabled ? "recommended" : "not recommended"} | schema default: ${onOff(schemaDefaults.pruning)}]`,
+			),
+	);
+	writeLine(
+		`  laya.subagentSelection:  ${subagentState} (${provenanceTag(resolved.subagentSelection.provenance)}) ` +
+			chalk.dim(
+				`[configured: ${onOff(explicit.subagentSelection)} | calibrated: ${derived.subagentSelectionRecommendEnabled ? "recommended" : "not recommended"} | schema default: ${onOff(schemaDefaults.subagentSelection)}]`,
+			),
+	);
+	writeLine(
+		`  laya.timeout:            ${chalk.bold(`${resolved.subagentSelectionTimeoutMs.value}ms`)} (${provenanceTag(resolved.subagentSelectionTimeoutMs.provenance)}) ` +
+			chalk.dim(
+				`[configured: ${msOrDash(explicit.subagentSelectionTimeoutMs)} | calibrated: ${derived.subagentSelectionTimeoutMs}ms | schema default: ${schemaDefaults.subagentSelectionTimeoutMs}ms]`,
+			),
+	);
+
+	// Warnings on explicit overrides contradicting calibration
+	if (resolved.pruning.provenance === "user-configured" && resolved.pruning.value && !derived.pruningRecommendEnabled) {
 		writeLine(
 			`\n${chalk.yellow("WARNING:")} Pruning is explicitly enabled in user settings, but estimated turn latency ` +
 				`(~${derived.estimatedAddedLatencyPerTurnMs.toFixed(0)}ms) exceeds the turn budget (${derived.maxAcceptableLatencyPerTurnMs}ms). ` +
 				`This may add noticeable delay to interactive turns.`,
 		);
 	}
-	if (userSubagent === true && !derived.subagentSelectionRecommendEnabled) {
+	if (
+		resolved.subagentSelection.provenance === "user-configured" &&
+		resolved.subagentSelection.value &&
+		!derived.subagentSelectionRecommendEnabled
+	) {
 		writeLine(
 			`\n${chalk.yellow("WARNING:")} Subagent selection is explicitly enabled in user settings, but single-choice latency ` +
 				`(${b.singleChoice.medianMs.toFixed(0)}ms) is high on this hardware tier.`,

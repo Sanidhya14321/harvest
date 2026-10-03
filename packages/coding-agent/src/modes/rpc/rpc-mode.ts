@@ -13,7 +13,7 @@
 import { once } from "node:events";
 import { getOAuthProviders } from "@harvest/pi-ai/oauth";
 import { toolWireSchema } from "@harvest/pi-ai/utils/schema";
-import { $env, isRecord, Snowflake } from "@harvest/pi-utils";
+import { $env, isRecord, logger, Snowflake } from "@harvest/pi-utils";
 import { reset as resetCapabilities } from "../../capability";
 import { clearPluginRootsAndCaches, resolveActiveProjectRegistryPath } from "../../discovery/helpers";
 import {
@@ -42,7 +42,7 @@ import { initializeExtensions } from "../runtime-init";
 import { isRpcHostToolResult, isRpcHostToolUpdate, RpcHostToolBridge } from "./host-tools";
 import { isRpcHostUriResult, RpcHostUriBridge } from "./host-uris";
 import { correlationIdForCommand, MAX_RPC_FRAME_BYTES, MAX_RPC_REASSEMBLED_BYTES, RpcFrameEncoder } from "./rpc-frame";
-import { claimRpcInput, readRpcInputFrames } from "./rpc-input";
+import { claimRpcInput, readRpcInputFramesWithBackpressure } from "./rpc-input";
 import { pageRpcMessages, RPC_MESSAGES_PAGE_BUSY_ERROR, RpcMessagesPageError } from "./rpc-messages";
 import { RpcSubagentRegistry, readRpcSubagentTranscript } from "./rpc-subagents";
 import type {
@@ -335,6 +335,46 @@ export interface RpcInputFrameDeps {
 	onHostToolResult: (frame: RpcHostToolResult) => void;
 	onHostToolUpdate: (frame: RpcHostToolUpdate) => void;
 	onHostUriResult: (frame: RpcHostUriResult) => void;
+	/**
+	 * Run/generation binding for immediate `abort` frames. Captured at
+	 * dispatch and re-checked at execution: an abort that arrives for run N
+	 * but executes after run N+1 started is stale and must not cancel the
+	 * new run. Absent in unit tests that drive frames without runs.
+	 */
+	runBinding?: RpcRunBinding;
+}
+
+/**
+ * Binds immediate `abort` frames to the agent run (generation) they target.
+ *
+ * Each command that starts (or resets) agent work advances the generation;
+ * an `abort` that names a `runGeneration` acts only while that run is live.
+ * A Stop dispatched for run N but arriving after run N+1 began — a retried,
+ * double-pressed, or queue-delayed Stop — is stale and must not cancel the
+ * new run. Aborts without a generation (older clients) always proceed.
+ */
+export class RpcRunBinding {
+	#generation = 0;
+
+	/** Generation of the currently live run (0 before the first run). */
+	get current(): number {
+		return this.#generation;
+	}
+
+	/**
+	 * Begin a new run, invalidating aborts captured for older runs.
+	 * Called at dispatch (stdin order), so capture and invalidation share
+	 * one total order with the abort frames they gate.
+	 */
+	beginRun(): number {
+		this.#generation += 1;
+		return this.#generation;
+	}
+
+	/** True when `captured` no longer names the live run. */
+	isStale(captured: number): boolean {
+		return captured !== this.#generation;
+	}
 }
 
 /**
@@ -356,6 +396,20 @@ const RPC_IMMEDIATE_COMMANDS: ReadonlySet<string> = new Set(["bash", "abort", "a
 
 /** Maximum running-plus-waiting serialized RPC commands before overload rejection. */
 export const MAX_RPC_SERIAL_QUEUE = 64;
+
+/**
+ * Serialized commands that start (or reset) agent work. Each accepted frame
+ * advances the {@link RpcRunBinding} generation so a stale immediate `abort`
+ * cannot cancel the run that follows it. `abort_and_prompt` both ends the
+ * current run and starts the next; the rest reset session state the same way.
+ */
+const RPC_RUN_STARTING_COMMANDS: ReadonlySet<string> = new Set([
+	"prompt",
+	"abort_and_prompt",
+	"new_session",
+	"switch_session",
+	"branch",
+]);
 
 /** Dispatch side-channel frames that must overtake the serialized command queue. */
 export function dispatchRpcControlFrame(parsed: unknown, deps: RpcInputFrameDeps): boolean {
@@ -394,6 +448,11 @@ export function dispatchRpcControlFrame(parsed: unknown, deps: RpcInputFrameDeps
  * each command's `id`; ordering across concurrent commands is not guaranteed
  * and clients MUST match on `id`.
  *
+ * Run-starting commands advance `deps.runBinding` (stdin order). An `abort`
+ * that names a `runGeneration` is bound to that run: when a newer run began
+ * first, the abort is stale and answered with success without touching the
+ * live run. Unbound aborts (older clients) keep the previous behavior.
+ *
  * @returns `undefined` when the frame was routed to a side-channel handler
  *   (extension UI response, host tool/URI frames) or dispatched in the
  *   background (`bash`, `abort`, `abort_retry`, `abort_bash`). Otherwise a
@@ -416,6 +475,16 @@ export function dispatchRpcInputFrame(parsed: unknown, deps: RpcInputFrameDeps):
 	// is stalled ahead of it. The response is emitted when `handleCommand`
 	// resolves; clients correlate via `command.id`.
 	if (RPC_IMMEDIATE_COMMANDS.has(command.type)) {
+		// Bind `abort` to its target run. The generation named by the client
+		// is compared against the live run at dispatch (stdin order): a
+		// Stop for an already-superseded run is stale and still owes the
+		// client its correlated response, so answer success without calling
+		// into the session. `abort_retry`/`abort_bash` target sibling loops
+		// with no run tracking and stay unbound.
+		if (command.type === "abort" && isStaleBoundAbort(command, deps.runBinding)) {
+			deps.output({ id: command.id, type: "response", command: "abort", success: true });
+			return undefined;
+		}
 		const task = (async () => {
 			try {
 				deps.output(await deps.handleCommand(command));
@@ -428,21 +497,79 @@ export function dispatchRpcInputFrame(parsed: unknown, deps: RpcInputFrameDeps):
 		return undefined;
 	}
 
+	if (RPC_RUN_STARTING_COMMANDS.has(command.type)) {
+		deps.runBinding?.beginRun();
+	}
 	return (async () => {
 		deps.output(await deps.handleCommand(command));
 	})();
+}
+
+/**
+ * Target run named by an `abort` frame. Malformed values are treated as
+ * unbound (previous behavior) — only a well-formed integer generation binds.
+ */
+function abortTargetGeneration(command: RpcCommand): number | undefined {
+	if (command.type !== "abort") return undefined;
+	const generation = (command as { runGeneration?: unknown }).runGeneration;
+	if (typeof generation !== "number" || !Number.isInteger(generation) || generation < 0) return undefined;
+	return generation;
+}
+
+/**
+ * True when a generation-bound `abort` names a run that is no longer live.
+ * Unbound aborts and frames dispatched without a binding always proceed.
+ */
+function isStaleBoundAbort(command: RpcCommand, binding: RpcRunBinding | undefined): boolean {
+	const target = abortTargetGeneration(command);
+	if (target === undefined || binding === undefined) return false;
+	return binding.isStale(target);
 }
 
 /** Serializes ordinary RPC commands while allowing control frames to dispatch immediately. */
 export class RpcInputDispatcher {
 	#tail: Promise<void> = Promise.resolve();
 	#tasks = new Set<Promise<void>>();
+	#drainListeners = new Set<() => void>();
 	readonly #deps: RpcInputFrameDeps;
 	readonly #afterSerialCommand: (() => Promise<void>) | undefined;
 
 	constructor(options: { deps: RpcInputFrameDeps; afterSerialCommand?: () => Promise<void> }) {
 		this.#deps = options.deps;
 		this.#afterSerialCommand = options.afterSerialCommand;
+	}
+
+	/**
+	 * Running-plus-waiting serialized commands. The stdin reader pauses on
+	 * this depth (see `readRpcInputFramesWithBackpressure`) so a flood
+	 * blocks at the OS pipe instead of growing process memory.
+	 */
+	get queuedSerialCount(): number {
+		return this.#tasks.size;
+	}
+
+	/**
+	 * Resolve once the serial queue depth drops below `limit`. Lets the
+	 * stdin reader sleep while the queue is full and resume on drain.
+	 */
+	awaitQueueBelow(limit: number): Promise<void> {
+		if (this.#tasks.size < limit) return Promise.resolve();
+		const { promise, resolve } = Promise.withResolvers<void>();
+		const check = (): void => {
+			if (this.#tasks.size < limit) {
+				this.#drainListeners.delete(check);
+				resolve();
+			}
+		};
+		this.#drainListeners.add(check);
+		// A task may have settled between the fast path and subscribe.
+		check();
+		return promise;
+	}
+
+	#notifyDrained(): void {
+		if (this.#drainListeners.size === 0) return;
+		for (const listener of Array.from(this.#drainListeners)) listener();
 	}
 
 	/** Accept a parsed input frame without blocking the stdin reader. */
@@ -481,6 +608,7 @@ export class RpcInputDispatcher {
 			this.#tasks.add(task);
 			void task.finally(() => {
 				this.#tasks.delete(task);
+				this.#notifyDrained();
 			});
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -869,6 +997,12 @@ export async function runRpcMode(
 	// Shutdown request flag (wrapped in object to allow mutation with const)
 	const shutdownState = { requested: false };
 
+	// Run/generation binding for immediate aborts (U5): run-starting
+	// commands advance this in stdin order; a generation-bound abort for a
+	// superseded run is answered without touching the live run. Owned here
+	// so both the dispatcher (advance/check) and get_state (report) share it.
+	const runBinding = new RpcRunBinding();
+
 	/**
 	 * Extension UI context that uses the RPC protocol.
 	 */
@@ -1235,6 +1369,7 @@ export async function runRpcMode(
 					autoCompactionEnabled: session.autoCompactionEnabled,
 					queuedMessageCount: session.queuedMessageCount,
 					todoPhases: session.getTodoPhases(),
+					runGeneration: runBinding.current,
 					fastModeEnabled: session.isFastModeEnabled(),
 					tokensPerSecond: calculateTokensPerSecond(session.messages, session.isStreaming),
 					fastModeActive: session.isFastModeActive(),
@@ -1626,6 +1761,7 @@ export async function runRpcMode(
 		onHostToolResult: frame => hostToolBridge.handleResult(frame),
 		onHostToolUpdate: frame => hostToolBridge.handleUpdate(frame),
 		onHostUriResult: frame => hostUriBridge.handleResult(frame),
+		runBinding,
 	};
 
 	const inputDispatcher = new RpcInputDispatcher({
@@ -1637,18 +1773,30 @@ export async function runRpcMode(
 	// ordinary commands serialize through inputDispatcher (bounded, with
 	// overload rejection), and bash plus the abort trio stay
 	// background-dispatched so cancellation can overtake stalled work. Frames
-	// are read line-by-line by readRpcInputFrames so a single malformed or
-	// over-limit line is reported as an error frame and the loop keeps running
-	// instead of throwing out of the reader and killing the whole process
-	// (issue #5194).
-	await readRpcInputFrames(
+	// are read line-by-line with stdin backpressure: while the serial queue
+	// is full the reader stops pulling stdin (pause/drain counted below) so
+	// a flood blocks at the OS pipe instead of growing process memory, and a
+	// single malformed or over-limit line is reported as an error frame while
+	// the loop keeps running instead of throwing out of the reader and
+	// killing the whole process (issue #5194).
+	const backpressureStats = { pauses: 0, resumes: 0 };
+	await readRpcInputFramesWithBackpressure(
 		input ?? Bun.stdin.stream(),
 		parsed => inputDispatcher.dispatch(parsed),
 		message => output(error(undefined, "parse", message)),
+		{
+			shouldPause: () => inputDispatcher.queuedSerialCount >= MAX_RPC_SERIAL_QUEUE,
+			waitForDrain: () => inputDispatcher.awaitQueueBelow(MAX_RPC_SERIAL_QUEUE),
+			stats: backpressureStats,
+		},
 	);
 
 	// stdin closed — RPC client is gone. Fail pending side-channel requests
 	// first so active/queued commands can settle, then drain accepted work.
+	logger.debug("RPC stdin closed", {
+		backpressurePauses: backpressureStats.pauses,
+		backpressureResumes: backpressureStats.resumes,
+	});
 	pendingExtensionRequests.rejectAll("RPC client disconnected before extension UI response completed");
 	hostToolBridge.close("RPC client disconnected before host tool execution completed");
 	hostUriBridge.clear("RPC client disconnected before host URI request completed");

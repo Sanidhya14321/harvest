@@ -10,6 +10,13 @@ import * as path from "node:path";
 import { getAgentDir, isEnoent, logger } from "@harvest/pi-utils";
 import type { LayaClient, LayaQuestionDefinition } from "./laya-client";
 import type { SettingPath } from "../../config/settings";
+import {
+	CALIBRATION_PRUNING_CRITERIA,
+	CALIBRATION_SANITY_CHECK_INSTRUCTIONS,
+	SUBAGENT_CRITERIA,
+	SUBAGENT_SELECTION_INSTRUCTIONS,
+	renderCalibrationRelevanceInstructions,
+} from "./laya-prompt-assets";
 
 /** Settings surface needed to tell an explicit override from a schema default. */
 export interface ExplicitSettingSource {
@@ -95,6 +102,10 @@ const MINIMUM_TIMEOUT_FLOOR_MS = 300;
 
 /**
  * 4 Representative benchmark payloads matching real Harvest call sites.
+ *
+ * Question wording is built from the same versioned prompt assets the
+ * production call sites send (`laya-prompt-assets`), so calibration measures
+ * the deployed questions instead of drifting inline copies.
  */
 export const BENCHMARK_PAYLOADS = {
 	ultraShort: {
@@ -102,7 +113,7 @@ export const BENCHMARK_PAYLOADS = {
 		questions: {
 			status_check: {
 				type: "noul" as const,
-				instructions: "Is this task asking to check system or process status?",
+				instructions: CALIBRATION_SANITY_CHECK_INSTRUCTIONS,
 			},
 		},
 	},
@@ -114,18 +125,8 @@ export const BENCHMARK_PAYLOADS = {
 		questions: {
 			subagent_choice: {
 				type: "choice" as const,
-				instructions: "Which specialized subagent is best suited to execute this assigned task?",
-				criteria: {
-					scout: "Exploratory codebase research, rapid code analysis, broad pattern searches, symbol location, finding where things are defined without modifying files",
-					reviewer:
-						"Code review specialist for analyzing quality, logic correctness, regressions, edge cases, and reviewing PR diffs",
-					"security-reviewer":
-						"Read-only security specialist for evidence-backed repository vulnerability discovery, CWE analysis, and security audits",
-					sonic:
-						"Low-reasoning agent for strictly mechanical updates, bulk formatting, or simple data collection",
-					task:
-						"General-purpose multi-step implementation, complex coding, refactoring, and feature additions requiring full tool capabilities",
-				},
+				instructions: SUBAGENT_SELECTION_INSTRUCTIONS,
+				criteria: { ...SUBAGENT_CRITERIA },
 			},
 		},
 	},
@@ -135,13 +136,8 @@ export const BENCHMARK_PAYLOADS = {
 		questions: {
 			score_relevance: {
 				type: "score" as const,
-				instructions: "Rate how relevant this chunk is to resolving the task goal",
-				criteria: [
-					"irrelevant to current task",
-					"low relevance",
-					"moderately relevant",
-					"highly relevant to current task",
-				],
+				instructions: renderCalibrationRelevanceInstructions("chunk"),
+				criteria: [...CALIBRATION_PRUNING_CRITERIA],
 			},
 		},
 	},
@@ -157,23 +153,13 @@ export const BENCHMARK_PAYLOADS = {
 		questions: {
 			chunk_1: {
 				type: "score" as const,
-				instructions: "Rate how relevant this Tool 'bash' result is to the current task/goal",
-				criteria: [
-					"irrelevant to current task",
-					"low relevance",
-					"moderately relevant",
-					"highly relevant to current task",
-				],
+				instructions: renderCalibrationRelevanceInstructions("Tool 'bash' result"),
+				criteria: [...CALIBRATION_PRUNING_CRITERIA],
 			},
 			chunk_2: {
 				type: "score" as const,
-				instructions: "Rate how relevant this Tool 'read_file' result is to the current task/goal",
-				criteria: [
-					"irrelevant to current task",
-					"low relevance",
-					"moderately relevant",
-					"highly relevant to current task",
-				],
+				instructions: renderCalibrationRelevanceInstructions("Tool 'read_file' result"),
+				criteria: [...CALIBRATION_PRUNING_CRITERIA],
 			},
 		},
 	},

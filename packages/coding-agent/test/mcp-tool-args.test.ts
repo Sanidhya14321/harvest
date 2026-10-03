@@ -92,6 +92,7 @@ describe("MCP tool arguments", () => {
 				params: {
 					name: "search",
 					arguments: { symbol: "Foo", language: "", line: 0, exact: false },
+					_meta: { "mcp/idempotency-key": "call-1" },
 				},
 			},
 		]);
@@ -116,6 +117,7 @@ describe("MCP tool arguments", () => {
 				params: {
 					name: "search",
 					arguments: { symbol: "Foo", language: "TypeScript" },
+					_meta: { "mcp/idempotency-key": "call-1" },
 				},
 			},
 		]);
@@ -141,7 +143,11 @@ describe("MCP tool arguments", () => {
 		expect(calls).toEqual([
 			{
 				method: "tools/call",
-				params: { name: "search", arguments: { symbol: "Foo", language: "TypeScript" } },
+				params: {
+					name: "search",
+					arguments: { symbol: "Foo", language: "TypeScript" },
+					_meta: { "mcp/idempotency-key": "call-1" },
+				},
 			},
 		]);
 	});
@@ -162,7 +168,11 @@ describe("MCP tool arguments", () => {
 		expect(calls).toEqual([
 			{
 				method: "tools/call",
-				params: { name: "search", arguments: { symbol: "Bar", language: "TypeScript" } },
+				params: {
+					name: "search",
+					arguments: { symbol: "Bar", language: "TypeScript" },
+					_meta: { "mcp/idempotency-key": "call-1" },
+				},
 			},
 		]);
 	});
@@ -185,7 +195,16 @@ describe("MCP tool arguments", () => {
 
 		await tool.execute("call-1", { i: "hello" }, undefined, unusedContext, undefined);
 
-		expect(calls).toEqual([{ method: "tools/call", params: { name: "echo", arguments: { i: "hello" } } }]);
+		expect(calls).toEqual([
+			{
+				method: "tools/call",
+				params: {
+					name: "echo",
+					arguments: { i: "hello" },
+					_meta: { "mcp/idempotency-key": "call-1" },
+				},
+			},
+		]);
 	});
 
 	it("strips harness intent when propertyNames cannot admit an additional property", async () => {
@@ -202,7 +221,14 @@ describe("MCP tool arguments", () => {
 		const tool = new MCPTool(createCapturedConnection(calls), definition);
 		await tool.execute("closed", { value: "x", i: "caller intent" }, undefined, unusedContext, undefined);
 		expect(calls).toEqual([
-			{ method: "tools/call", params: { name: "closed-property-names", arguments: { value: "x" } } },
+			{
+				method: "tools/call",
+				params: {
+					name: "closed-property-names",
+					arguments: { value: "x" },
+					_meta: { "mcp/idempotency-key": "closed" },
+				},
+			},
 		]);
 	});
 
@@ -218,7 +244,14 @@ describe("MCP tool arguments", () => {
 		const tool = new MCPTool(createCapturedConnection(calls), definition);
 		await tool.execute("object", { i: "token" }, undefined, unusedContext, undefined);
 		expect(calls).toEqual([
-			{ method: "tools/call", params: { name: "object-constraint", arguments: { i: "token" } } },
+			{
+				method: "tools/call",
+				params: {
+					name: "object-constraint",
+					arguments: { i: "token" },
+					_meta: { "mcp/idempotency-key": "object" },
+				},
+			},
 		]);
 	});
 
@@ -229,7 +262,16 @@ describe("MCP tool arguments", () => {
 			inputSchema: { type: "object", properties: { i: false } },
 		});
 		await tool.execute("false", { i: "caller intent" }, undefined, unusedContext, undefined);
-		expect(calls).toEqual([{ method: "tools/call", params: { name: "false-intent", arguments: {} } }]);
+		expect(calls).toEqual([
+			{
+				method: "tools/call",
+				params: {
+					name: "false-intent",
+					arguments: {},
+					_meta: { "mcp/idempotency-key": "false" },
+				},
+			},
+		]);
 	});
 
 	it("strips intent prohibited by a false pattern schema", async () => {
@@ -239,7 +281,16 @@ describe("MCP tool arguments", () => {
 			inputSchema: { type: "object", patternProperties: { "^i$": false } },
 		});
 		await tool.execute("false-pattern", { i: "caller intent" }, undefined, unusedContext, undefined);
-		expect(calls).toEqual([{ method: "tools/call", params: { name: "false-pattern-intent", arguments: {} } }]);
+		expect(calls).toEqual([
+			{
+				method: "tools/call",
+				params: {
+					name: "false-pattern-intent",
+					arguments: {},
+					_meta: { "mcp/idempotency-key": "false-pattern" },
+				},
+			},
+		]);
 	});
 
 	it("forwards intent constrained by unevaluatedProperties", async () => {
@@ -250,7 +301,14 @@ describe("MCP tool arguments", () => {
 		});
 		await tool.execute("unevaluated", { i: "caller intent" }, undefined, unusedContext, undefined);
 		expect(calls).toEqual([
-			{ method: "tools/call", params: { name: "unevaluated-intent", arguments: { i: "caller intent" } } },
+			{
+				method: "tools/call",
+				params: {
+					name: "unevaluated-intent",
+					arguments: { i: "caller intent" },
+					_meta: { "mcp/idempotency-key": "unevaluated" },
+				},
+			},
 		]);
 	});
 
@@ -261,7 +319,16 @@ describe("MCP tool arguments", () => {
 			inputSchema: { type: "object", not: { required: ["i"] } },
 		});
 		await tool.execute("not-required", { i: "caller intent" }, undefined, unusedContext, undefined);
-		expect(calls).toEqual([{ method: "tools/call", params: { name: "forbidden-presence", arguments: {} } }]);
+		expect(calls).toEqual([
+			{
+				method: "tools/call",
+				params: {
+					name: "forbidden-presence",
+					arguments: {},
+					_meta: { "mcp/idempotency-key": "not-required" },
+				},
+			},
+		]);
 	});
 
 	it("forwards intent admitted by propertyNames", async () => {
@@ -282,7 +349,11 @@ describe("MCP tool arguments", () => {
 		expect(calls).toEqual([
 			{
 				method: "tools/call",
-				params: { name: "property-name-input", arguments: { [INTENT_FIELD]: "server data" } },
+				params: {
+					name: "property-name-input",
+					arguments: { [INTENT_FIELD]: "server data" },
+					_meta: { "mcp/idempotency-key": "call-property-name" },
+				},
 			},
 		]);
 	});
@@ -311,7 +382,11 @@ describe("MCP tool arguments", () => {
 		expect(calls).toEqual([
 			{
 				method: "tools/call",
-				params: { name: "excluded-property-name-input", arguments: { value: "ordinary" } },
+				params: {
+					name: "excluded-property-name-input",
+					arguments: { value: "ordinary" },
+					_meta: { "mcp/idempotency-key": "call-excluded-property-name" },
+				},
 			},
 		]);
 	});
@@ -329,7 +404,14 @@ describe("MCP tool arguments", () => {
 		const tool = new MCPTool(createCapturedConnection(calls), definition);
 		await tool.execute("call-ref", { i: "server data" }, undefined, unusedContext, undefined);
 		expect(calls).toEqual([
-			{ method: "tools/call", params: { name: "referenced-input", arguments: { i: "server data" } } },
+			{
+				method: "tools/call",
+				params: {
+					name: "referenced-input",
+					arguments: { i: "server data" },
+					_meta: { "mcp/idempotency-key": "call-ref" },
+				},
+			},
 		]);
 	});
 
@@ -357,7 +439,11 @@ describe("MCP tool arguments", () => {
 		expect(calls).toEqual([
 			{
 				method: "tools/call",
-				params: { name: "legacy-dependent-input", arguments: { mode: "active", [INTENT_FIELD]: "server data" } },
+				params: {
+					name: "legacy-dependent-input",
+					arguments: { mode: "active", [INTENT_FIELD]: "server data" },
+					_meta: { "mcp/idempotency-key": "call-legacy" },
+				},
 			},
 		]);
 	});
@@ -377,7 +463,14 @@ describe("MCP tool arguments", () => {
 			undefined,
 		);
 		expect(calls).toEqual([
-			{ method: "tools/call", params: { name: "search", arguments: { symbol: "Foo", language: "TypeScript" } } },
+			{
+				method: "tools/call",
+				params: {
+					name: "search",
+					arguments: { symbol: "Foo", language: "TypeScript" },
+					_meta: { "mcp/idempotency-key": "call-unused" },
+				},
+			},
 		]);
 	});
 
@@ -392,7 +485,11 @@ describe("MCP tool arguments", () => {
 		expect(calls).toEqual([
 			{
 				method: "tools/call",
-				params: { name: "read_image_with_model", arguments: { image_path: expectedPath } },
+				params: {
+					name: "read_image_with_model",
+					arguments: { image_path: expectedPath },
+					_meta: { "mcp/idempotency-key": "call-1" },
+				},
 			},
 		]);
 	});

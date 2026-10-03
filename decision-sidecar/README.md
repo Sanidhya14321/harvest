@@ -26,6 +26,9 @@ The service binds exclusively to `127.0.0.1` (configurable via `--host` / `--por
 
 ### `GET /health`
 Returns readiness status, loaded model identity, device, and active port.
+The `scheduler` block reports capacity plus stuck-slot observability
+(`in_flight`, `oldest_in_flight_ms`, `stuck`, `stuck_threshold_s`,
+`worker_model`, `restart_advisory`).
 
 **Response:**
 ```json
@@ -37,6 +40,19 @@ Returns readiness status, loaded model identity, device, and active port.
   "port": 8177
 }
 ```
+
+### Stuck-slot restart procedure (P0-2)
+A timed-out or cancelled inference retains its slot until the torch thread
+actually finishes; a permanently stuck op never releases. Detection and
+recovery are:
+1. Poll `GET /health` → `scheduler.stuck == true` (slot older than
+   `LAYA_STUCK_THRESHOLD_S`, default 120s) with a non-null `restart_advisory`.
+2. Confirm `scheduler.in_flight > 0` while `/v1/decide` keeps returning 504
+   (deadline exceeded) or queue timeouts despite an idle-looking client.
+3. Restart the sidecar process (same host/port; systemd/supervisor or
+   re-run `python server.py`). No in-flight request survives — callers fail
+   open per the contracts above (tool gating fails CLOSED to human approval).
+4. Verify `GET /health` → `scheduler.in_flight == 0`, `stuck == false`.
 
 ### `POST /v1/decide`
 Executes one or more structured questions against the provided `state`.
@@ -91,7 +107,7 @@ sidecar restart; it cannot silently oversubscribe inference capacity.
 | `score` | `{ score: float, confidence: float }` | Relevance ratings on 4 levels (0 to 3) for pruning/brain retrieval; see `packages/coding-agent/src/prompts/laya/pruning-criteria.md`. |
 
 **Audit Logging:**
-Every request and computed decision is appended to `~/.harvest/agent/logs/decisions.jsonl` by default (a private user-data directory; override with `LAYA_LOG_DIR` or `LAYA_LOG_FILE`) for continuous observability and offline calibration. The log is git-ignored — never commit it; the historical `decision-sidecar/decisions.jsonl` in this repo is a frozen artifact, not live data.
+Every request and computed decision is appended to `~/.harvest/agent/logs/decisions.jsonl` by default (a private user-data directory; override with `LAYA_LOG_DIR` or `LAYA_LOG_FILE`) for continuous observability and offline calibration. The log is git-ignored — never commit it; no decision log is tracked in the repo (the former `decision-sidecar/decisions.jsonl` seed was untracked via `git rm --cached` and survives only as local user data).
 Logged fields are length-capped (state kept to a 200-char snippet, instructions to 500 chars) and the log rotates size-based (`decisions.jsonl.1..N`).
 Requests may pass optional per-question `ground_truth` labels (`question_id -> 0/1`) which are stored in the log record (default `null`) for later calibration.
 
@@ -122,6 +138,16 @@ python server.py --host 127.0.0.1 --port 8177
 - `LAYA_TOKEN_FILE` (default: `~/.harvest/laya-token`) — Where the generated secret is persisted (0600).
 - `LAYA_DISABLE_AUTH=1` — Disable `/v1/decide` auth (tests only).
 - `LAYA_INFERENCE_TIMEOUT_S` (default: `120`) — Wall-clock inference guard.
+- `LAYA_STUCK_THRESHOLD_S` (default: `120`) — Age after which an in-flight
+  inference slot counts as stuck in `GET /health` → `scheduler.stuck`
+  (with `oldest_in_flight_ms` and a `restart_advisory` string).
+- `LAYA_WORKER_MODEL` (default: `thread`) — Only `thread`
+  (`asyncio.to_thread`) is supported. `process` is rejected at startup with
+  an explanatory error: the killable-process spike (P0-2) was evaluated and
+  rejected because the Laya agent/model state is not safely fork/pickle-able
+  per request (full checkpoint reload per child, tokenizer races, new IPC
+  protocol) and would risk the fail-open contract. Stuck torch work cannot be
+  cancelled in-process; use the stuck flag + restart procedure below.
 - `LAYA_LOG_MAX_BYTES` (default: `10485760`) / `LAYA_LOG_BACKUP_COUNT` (default: `3`) — Decision-log rotation.
 
 ---
@@ -168,3 +194,62 @@ of the following hold:
    overall calibrated ECE improves on the held-out set.
 4. The resulting params are version-stamped (`_provenance.synthetic: false`)
    and reviewed before replacing the bootstrap.
+
+---
+
+## 5. Release portability and manual gates (Stream-F docs slice)
+
+Docs only — no behavior changed. Stream-E owns the scheduler contract
+(`GET /health` → `scheduler`, stuck-slot procedure, `LAYA_*` worker
+variables) above; this section only itemizes which release legs are
+automated and which stay manual.
+
+Automated (`.github/workflows/release.yml`, all in `publish.needs`):
+binary matrix (linux-x64/arm64, linux-musl-x64/arm64, darwin-x64/arm64,
+win32-x64/arm64 — each runs `--version` + `--smoke-test` on its target
+host), CPU sidecar smoke on Linux + Windows (health identity,
+authenticated inference, token rotation, teardown), and the npm-bundle leg
+(pack → tarball contents, source-vs-packed version parity, bundled-CLI
+boot).
+
+Manual (documented skips — run verbatim on the stated host):
+
+- macOS sidecar (CPU torch wheel unverified on clean mac runners; darwin
+  binaries stay gated): `bash scripts/ci-sidecar-smoke.sh`
+  (`LAYA_SMOKE_PORT`/`LAYA_SMOKE_DIR` as needed; the script is macOS-safe).
+- Full-offline (runner isolation flaky; cold cache needs network):
+  cache-only operation is supported — with a warm Hugging Face cache,
+  `HF_HUB_OFFLINE=1 bash scripts/ci-sidecar-smoke.sh`. Model absent and
+  unreachable ⇒ server stays unready; the TS client fails open (tool
+  gating fails CLOSED to human approval).
+- Fresh-registry consumer install: the `@harvest` npm scope is
+  workspace-resolved, not published, so a clean-registry install stays a
+  manual gate.
+- Degraded hosts (non-admin Windows, missing Python/native assets,
+  unsupported accelerators): setup heals its 8 enumerated modes only and
+  logs to `~/.harvest/agent/logs/laya-setup.log`; anything else emits a
+  diagnostic bundle and fails open.
+
+## 6. Data handling for sharing and calibration (Stream-F docs slice)
+
+Docs only — no behavior changed. What stays local vs what is shareable:
+
+- `decisions.jsonl` is private user data (`~/.harvest/agent/logs/` by
+  default, `LAYA_LOG_DIR`/`LAYA_LOG_FILE` overrides; git-ignored — never
+  commit it). Logged fields are length-capped (state 200-char snippet,
+  instructions 500 chars) and the log rotates size-based
+  (`decisions.jsonl.1..N`).
+- The only shareable form is the sanitized review copy:
+  `python calibration.py --decisions decisions.jsonl --export-sanitized
+  /tmp/decisions.sanitized.jsonl` (free-text state/instructions removed).
+- `/v1/decide` requires the per-process secret (`x-laya-token` header or
+  `Authorization: Bearer <token>`; persisted at `LAYA_TOKEN_FILE`,
+  default `~/.harvest/laya-token`, mode `0600`; `LAYA_TOKEN` pins a fixed
+  secret). `GET /health` and `GET /v1/hardware` stay unauthenticated.
+  `LAYA_DISABLE_AUTH=1` is tests-only.
+- The service binds loopback only (`127.0.0.1`, `LAYA_HOST`/`LAYA_PORT`
+  overrides); never expose `/v1/decide` (unauthenticated) off-loopback.
+- Text-only consumers (share snapshots, calibration review) cannot inspect
+  secrets baked into image pixels — exclude images before sharing when in
+  doubt. Per-channel policy lives in `docs/product-decisions.md` (F4
+  matrix).

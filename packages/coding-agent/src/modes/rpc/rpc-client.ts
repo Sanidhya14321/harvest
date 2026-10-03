@@ -616,9 +616,13 @@ export class RpcClient {
 
 	/**
 	 * Abort current operation.
+	 *
+	 * When `runGeneration` names the run this Stop targets (learned from
+	 * `get_state`), the server ignores the abort once a newer run began
+	 * instead of cancelling it. Omit it to always cancel whatever is live.
 	 */
-	async abort(): Promise<void> {
-		await this.#send({ type: "abort" });
+	async abort(runGeneration?: number): Promise<void> {
+		await this.#send(runGeneration === undefined ? { type: "abort" } : { type: "abort", runGeneration });
 	}
 
 	/**

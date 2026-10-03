@@ -6,7 +6,12 @@ import contextTemplate from "../../prompts/brain/context.md" with { type: "text"
 import relevanceInstructions from "../../prompts/brain/relevance.md" with { type: "text" };
 import type { GraphEdge } from "./graph";
 import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
-import { createScoringExcerpt, extractMessageText, RELEVANCE_CRITERIA } from "./laya-pruning";
+import {
+	createScoringExcerpt,
+	extractMessageText,
+	RELEVANCE_CRITERIA,
+	type LayaContextBudget,
+} from "./laya-pruning";
 import { KnowledgeRetriever, type SectionPage, splitMarkdownSections, tokenize } from "./retrieval";
 import { SecuritySandbox } from "./security";
 
@@ -32,6 +37,15 @@ export interface BrainRetrievalOptions {
 	readonly rerank?: boolean;
 	/** Per-round-trip latency budget for reranking; falls back to lexical order on timeout. */
 	readonly rerankTimeoutMs?: number;
+	/**
+	 * Shared prune+rerank latency budget from `sdk.ts` transformContext.
+	 * When present, the rerank round trip is capped at the budget remainder
+	 * (and skipped entirely when exhausted) so prune+rerank never exceed
+	 * their joint allowance. Fail-open: exhaustion keeps lexical order.
+	 */
+	readonly contextBudget?: LayaContextBudget;
+	/** Override the prompt revision embedded in the rerank cache key (tests only). */
+	readonly promptRevision?: string;
 	/** Knowledge scopes eligible for retrieval; omitted means project + user. */
 	readonly scopes?: readonly BrainRoot["scope"][];
 	readonly signal?: AbortSignal;
@@ -47,6 +61,20 @@ const MAX_CANDIDATES = 8;
 const MAX_CONTEXT_CHARS = 8000;
 /** Default rerank budget: one sidecar round trip on the shared decision timescale. */
 export const DEFAULT_BRAIN_RERANK_TIMEOUT_MS = 300;
+/**
+ * Prompt revision binding rerank decisions to the exact instructions that
+ * produced them. Embedded in the rerank cache key so a prompt-asset edit
+ * never replays a ranking judged under different instructions.
+ */
+export const BRAIN_RERANK_PROMPT_REVISION: string = (() => {
+	try {
+		return Bun.hash(
+			`${relevanceInstructions}\n${RELEVANCE_CRITERIA.join("\n")}\n${contextTemplate}`,
+		).toString(36);
+	} catch {
+		return "brain-prompt-rev-unknown";
+	}
+})();
 /** Bounded rerank-result cache: unchanged query/pages reuse ranking without another round trip. */
 const MAX_RERANK_CACHE_ENTRIES = 32;
 
@@ -185,30 +213,61 @@ export class MarkdownBrain {
 	}
 
 	/**
-	 * Cache key binding a ranking to its exact inputs: normalized query plus
-	 * the candidate set's content signatures (order-independent, so retrieval
-	 * order never affects hits). Edits, deletions, and task changes all miss
-	 * naturally; scope is enforced before reranking so excluded knowledge
-	 * never enters the key.
+	 * Cache key binding a ranking to its exact inputs: prompt revision plus
+	 * normalized query plus the candidate set's content signatures
+	 * (order-independent, so retrieval order never affects hits). Edits,
+	 * deletions, task changes, and prompt-asset changes all miss naturally;
+	 * scope is enforced before reranking so excluded knowledge never enters
+	 * the key.
 	 */
-	#rerankCacheKey(query: string, pages: readonly BrainPage[]): string {
+	#rerankCacheKey(query: string, pages: readonly BrainPage[], promptRev?: string): string {
+		const revision = promptRev ?? BRAIN_RERANK_PROMPT_REVISION;
 		const normalizedQuery = query.trim().replace(/\s+/g, " ").toLowerCase();
 		const signatures = pages
 			.map(page => `${page.id}:${Bun.hash(`${page.title}\n${page.heading}\n${page.content}`).toString(36)}`)
 			.sort();
-		return `${normalizedQuery}\n${signatures.join("\n")}`;
+		return `${revision}\n${normalizedQuery}\n${signatures.join("\n")}`;
 	}
 
-	#cachedRerankOrder(query: string, pages: readonly BrainPage[]): readonly string[] | undefined {
-		return this.#rerankCache.get(this.#rerankCacheKey(query, pages));
+	#cachedRerankOrder(
+		query: string,
+		pages: readonly BrainPage[],
+		promptRev?: string,
+	): readonly string[] | undefined {
+		return this.#rerankCache.get(this.#rerankCacheKey(query, pages, promptRev));
 	}
 
-	#storeRerankOrder(query: string, pages: readonly BrainPage[], order: readonly string[]): void {
+	#storeRerankOrder(
+		query: string,
+		pages: readonly BrainPage[],
+		order: readonly string[],
+		promptRev?: string,
+	): void {
 		if (this.#rerankCache.size >= MAX_RERANK_CACHE_ENTRIES) {
 			const oldest = this.#rerankCache.keys().next();
 			if (!oldest.done) this.#rerankCache.delete(oldest.value);
 		}
-		this.#rerankCache.set(this.#rerankCacheKey(query, pages), order);
+		this.#rerankCache.set(this.#rerankCacheKey(query, pages, promptRev), order);
+	}
+
+	/** Drop cached rankings (history rewrite); next rerank scores afresh. Fail-open. */
+	clearRerankCache(): void {
+		try {
+			this.#rerankCache.clear();
+		} catch (error) {
+			logger.debug("Brain rerank cache clear failed open", { error: String(error) });
+		}
+	}
+
+	/** Effective rerank timeout: shared-budget remainder wins over the explicit option. */
+	#effectiveRerankTimeoutMs(options: BrainRetrievalOptions): number {
+		const explicit = options.rerankTimeoutMs ?? DEFAULT_BRAIN_RERANK_TIMEOUT_MS;
+		if (!options.contextBudget) return explicit;
+		try {
+			return Math.min(explicit, Math.max(0, options.contextBudget.remainingMs()));
+		} catch {
+			return explicit;
+		}
 	}
 
 	async #rerankPages(query: string, pages: BrainPage[], options: BrainRetrievalOptions): Promise<void> {
@@ -226,11 +285,17 @@ export class MarkdownBrain {
 			};
 		});
 		try {
+			const effectiveTimeoutMs = this.#effectiveRerankTimeoutMs(options);
+			// Shared-budget fail-open: no remainder means no round trip.
+			if (options.contextBudget && effectiveTimeoutMs <= 0) {
+				logger.debug("Brain reranking skipped: shared prune+rerank budget exhausted");
+				return;
+			}
 			const result = await (options.client ?? getLayaClient()).decide(state, questions, {
 				callSite: "brain_retrieval",
 				signal: options.signal,
 				sessionId: options.sessionId,
-				timeoutMs: options.rerankTimeoutMs ?? DEFAULT_BRAIN_RERANK_TIMEOUT_MS,
+				timeoutMs: effectiveTimeoutMs,
 			});
 			const scores = pages.map((_page, index) => result.data?.[`brain_${index}`]?.score);
 			// Incomplete/malformed decisions keep the deterministic BM25/graph ordering.
@@ -244,7 +309,9 @@ export class MarkdownBrain {
 					query,
 					pages,
 					pages.map(page => page.id),
+					options.promptRevision,
 				);
+				logger.debug("Brain reranking rescored pages", { pages: pages.length, latencyMs: result.latencyMs });
 			}
 		} catch (error) {
 			logger.debug("Brain reranking failed open", { error: String(error) });
@@ -278,8 +345,10 @@ export class MarkdownBrain {
 			if (neighbors.has(page.documentId) && !pages.some(candidate => candidate.id === page.id)) pages.push(page);
 		}
 		if (options.rerank && pages.length > 1 && !options.signal?.aborted) {
-			const cachedOrder = this.#cachedRerankOrder(query, pages);
+			const promptRev = options.promptRevision ?? BRAIN_RERANK_PROMPT_REVISION;
+			const cachedOrder = this.#cachedRerankOrder(query, pages, promptRev);
 			if (cachedOrder) {
+				logger.debug("Brain reranking served from cache", { pages: pages.length });
 				const rank = new Map(cachedOrder.map((id, index) => [id, index]));
 				pages.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
 			} else {

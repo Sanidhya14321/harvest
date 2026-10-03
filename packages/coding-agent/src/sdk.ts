@@ -81,7 +81,12 @@ import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate
 import { applyProviderGlobalsFromSettings } from "./config/provider-globals";
 import { buildServiceTierByFamily } from "./config/service-tier";
 import { Settings, type SkillsSettings } from "./config/settings";
-import { createMarkdownBrain, pruneContextWithLaya } from "./core/harvest";
+import {
+	createLayaContextBudget,
+	createMarkdownBrain,
+	DEFAULT_LAYA_CONTEXT_BUDGET_MS,
+	pruneContextWithLaya,
+} from "./core/harvest";
 import { CursorExecHandlers, type CursorMcpResourceAdapter } from "./cursor";
 import { createBridgeEditTool, createBridgeGrepFactory } from "./cursor-bridge-tools";
 import "./discovery";
@@ -3422,10 +3427,23 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		const transformContext = async (messages: AgentMessage[], _signal?: AbortSignal) => {
 			const withContext = await extensionRunner.emitContext(messages);
 			const steered = wrapSteeringForModel(withContext);
+			// Shared prune+rerank latency budget: pruning consumes from the
+			// front, reranking gets the remainder, so one pass never exceeds
+			// their joint allowance. Fail-open throughout.
+			const rerankTimeoutSetting = settings.get("brain.rerankTimeoutMs");
+			const sharedTotalMs =
+				typeof rerankTimeoutSetting === "number" &&
+				Number.isFinite(rerankTimeoutSetting) &&
+				rerankTimeoutSetting > 0
+					? Math.min(DEFAULT_LAYA_CONTEXT_BUDGET_MS, 300 + rerankTimeoutSetting)
+					: DEFAULT_LAYA_CONTEXT_BUDGET_MS;
+			const contextBudget = createLayaContextBudget(sharedTotalMs);
 			const result = await pruneContextWithLaya(steered, {
 				settings,
 				sessionId: sessionManager.getSessionId(),
 				signal: _signal,
+				budget: contextBudget,
+				prunableTokenBudget: settings.get("laya.pruningTokenBudget"),
 			});
 			if (sessionManager.getCwd() !== brainCwd || settings.get("skills.enabled") !== brainSkillsEnabled) {
 				brainCwd = sessionManager.getCwd();
@@ -3440,6 +3458,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 					rerank:
 						settings.get("laya.enabled") && settings.get("brain.rerank") && process.env.LAYA_ENABLED !== "false",
 					rerankTimeoutMs: settings.get("brain.rerankTimeoutMs"),
+					contextBudget,
 					scopes: scopes.length > 0 ? scopes : undefined,
 					signal: _signal,
 					sessionId: sessionManager.getSessionId(),

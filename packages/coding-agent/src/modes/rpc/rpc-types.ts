@@ -33,7 +33,13 @@ export type RpcCommand =
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
-	| { id?: string; type: "abort" }
+	/**
+	 * Cancel the live run. When `runGeneration` names the run this Stop
+	 * targets (learned from `get_state`), the server ignores the abort once
+	 * a newer run began instead of cancelling it. Omit it (older clients)
+	 * to always cancel whatever is live.
+	 */
+	| { id?: string; type: "abort"; runGeneration?: number }
 	| { id?: string; type: "abort_and_prompt"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "new_session"; parentSession?: string }
 
@@ -114,6 +120,12 @@ export interface RpcSessionState {
 	messageCount: number;
 	queuedMessageCount: number;
 	todoPhases: TodoPhase[];
+	/**
+	 * Live agent-run generation. Advanced by every command that starts (or
+	 * resets) agent work; an `abort` naming an older generation is stale
+	 * and ignored instead of cancelling this run.
+	 */
+	runGeneration: number;
 	/** For session dump / export (plain-text parity with /dump). */
 	systemPrompt?: string[];
 	dumpTools?: Array<{ name: string; description: string; parameters: unknown; examples?: readonly ToolExample[] }>;

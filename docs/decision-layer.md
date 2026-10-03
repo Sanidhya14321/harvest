@@ -121,3 +121,23 @@ Raw Laya probabilities are calibrated to prevent overconfidence:
   - **Model Routing**: $T = 1.1333$ (ECE: 0.0819 $\to$ 0.0598, -27.0%)
   - **Completion Checks**: $T = 1.4002$ (ECE: 0.1842 $\to$ 0.1750, -5.0%)
 - Calibrated parameters are saved to `decision-sidecar/calibration_params.json` and dynamically loaded by the sidecar server.
+
+---
+
+## 6. Provenance and release pointers (Stream-F docs slice)
+
+Docs only — no behavior changed. The explicit contracts live in
+`docs/product-decisions.md`: the F4 per-channel share-redaction matrix
+(which channels redact, which ship raw, and the image-embedded-secret
+limitation), the F7 retrieval-provenance surfacing contract (brain
+citations, Mnemopi correction workflow, scope controls), and the F9
+automated-vs-manual release legs. Sidecar portability and data-handling
+detail lives in `decision-sidecar/README.md` (§5–§6).
+
+Laya-side provenance already recorded in this repo: synthetic-vs-measured
+calibration stamps (`_provenance` in `calibration_params.json`, acceptance
+gate keeping autonomous clears off until measured), versioned Laya prompt
+assets binding calibration data to an exact prompt revision, length-capped
+rotated decision logs in git-ignored user data with a sanitized export,
+and per-decision-point fail-open / fail-closed contracts (§1–§2 above).
+Pre-share preview and unified provenance UIs remain open by design.

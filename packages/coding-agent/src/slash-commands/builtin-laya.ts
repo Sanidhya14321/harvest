@@ -65,7 +65,7 @@ async function buildStatusText(settings: SettingsLike): Promise<string> {
 	const enabled = readSetting<boolean>(settings, "laya.enabled") === true;
 	const url = resolveBaseUrl(settings);
 	const pruning = getExplicitSetting<boolean>(settings, "laya.pruning");
-	const subagent = readSetting<boolean>(settings, "laya.subagentSelection");
+	const subagent = getExplicitSetting<boolean>(settings, "laya.subagentSelection");
 	const timeout = getExplicitSetting<number>(settings, "laya.subagentSelectionTimeoutMs");
 	let connected = false;
 	try {

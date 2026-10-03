@@ -151,6 +151,81 @@ class InferenceSchedulerTests(unittest.IsolatedAsyncioTestCase):
             await active
         self.assertEqual(scheduler.snapshot()["in_flight"], 0)
 
+    async def test_snapshot_idle_reports_no_stuck_slot(self):
+        scheduler = InferenceScheduler(1, stuck_threshold_s=0.05)
+        snap = scheduler.snapshot()
+        self.assertEqual(snap["in_flight"], 0)
+        self.assertIsNone(snap["oldest_in_flight_ms"])
+        self.assertFalse(snap["stuck"])
+        self.assertIsNone(snap["restart_advisory"])
+        self.assertEqual(snap["worker_model"], "thread")
+
+    async def test_snapshot_exposes_stuck_slot_age_and_restart_advisory(self):
+        scheduler = InferenceScheduler(1, stuck_threshold_s=0.05)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def blocked():
+            entered.set()
+            release.wait(5)
+
+        active = asyncio.create_task(scheduler.run(blocked, 5))
+        try:
+            await asyncio.wait_for(asyncio.to_thread(entered.wait), 1)
+            early = scheduler.snapshot()
+            self.assertEqual(early["in_flight"], 1)
+            self.assertIsNotNone(early["oldest_in_flight_ms"])
+            self.assertGreaterEqual(early["oldest_in_flight_ms"], 0)
+            await asyncio.sleep(0.15)
+            stuck = scheduler.snapshot()
+            self.assertEqual(stuck["in_flight"], 1)
+            self.assertTrue(stuck["stuck"])
+            self.assertGreater(stuck["oldest_in_flight_ms"], 50)
+            self.assertIsNotNone(stuck["restart_advisory"])
+        finally:
+            release.set()
+            await active
+        recovered = scheduler.snapshot()
+        self.assertEqual(recovered["in_flight"], 0)
+        self.assertIsNone(recovered["oldest_in_flight_ms"])
+        self.assertFalse(recovered["stuck"])
+
+    async def test_permanently_stuck_thread_holds_slot_spike_proof(self):
+        """Spike proof: a never-finishing thread keeps its slot; only the
+        stuck flag + restart advisory signal it (no silent oversubscribe)."""
+        scheduler = InferenceScheduler(1, stuck_threshold_s=0.05)
+        entered = threading.Event()
+
+        def never_returns():
+            entered.set()
+            threading.Event().wait(30)
+
+        leaked = asyncio.create_task(scheduler.run(never_returns, 5))
+        try:
+            await asyncio.wait_for(asyncio.to_thread(entered.wait), 1)
+            await asyncio.sleep(0.15)
+            mid = scheduler.snapshot()
+            self.assertEqual(mid["in_flight"], 1)
+            self.assertTrue(mid["stuck"])
+            effects = []
+            with self.assertRaises(TimeoutError):
+                await scheduler.run(lambda: effects.append("ran"), 0.03)
+            self.assertEqual(effects, [])
+            self.assertEqual(scheduler.snapshot()["in_flight"], 1)
+        finally:
+            leaked.cancel()
+            try:
+                await leaked
+            except (asyncio.CancelledError, TimeoutError):
+                pass
+            # Slot is still held: the orphan thread cannot be killed
+            # in-process; a sidecar restart is the documented recovery.
+            self.assertEqual(scheduler.snapshot()["in_flight"], 1)
+
+    def test_process_worker_model_rejected_with_spike_rationale(self):
+        with self.assertRaisesRegex(RuntimeError, "killable-process spike"):
+            InferenceScheduler(1, worker_model="process")
+
 
 if __name__ == "__main__":
     unittest.main()

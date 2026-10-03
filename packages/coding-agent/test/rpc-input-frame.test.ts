@@ -7,6 +7,7 @@ import {
 	RpcInputDispatcher,
 	type RpcInputFrameDeps,
 	RpcPendingExtensionRequests,
+	RpcRunBinding,
 	RpcShutdownCoordinator,
 } from "@harvest/pi-coding-agent/modes/rpc/rpc-mode";
 import type {
@@ -333,6 +334,7 @@ describe("RpcInputDispatcher", () => {
 						messageCount: 0,
 						queuedMessageCount: 0,
 						todoPhases: [],
+						runGeneration: 0,
 					},
 				};
 			}
@@ -630,6 +632,170 @@ describe("RpcInputDispatcher", () => {
 				output.success === true,
 		);
 		expect(successes).toHaveLength(MAX_RPC_SERIAL_QUEUE);
+	});
+});
+
+describe("RpcRunBinding: stale aborts never cancel the next run", () => {
+	const promptSuccess = (id: string | undefined): RpcResponse => ({
+		id,
+		type: "response",
+		command: "prompt",
+		success: true,
+		data: { agentInvoked: false },
+	});
+
+	const makeRunHarness = () => {
+		const runs: Array<string | undefined> = [];
+		const aborts: Array<string | undefined> = [];
+		const { deps, outputs } = makeDeps(async command => {
+			if (command.type === "prompt") {
+				runs.push(command.id);
+				return promptSuccess(command.id);
+			}
+			if (command.type === "abort") {
+				aborts.push(command.id);
+				return { id: command.id, type: "response", command: "abort", success: true };
+			}
+			if (command.type === "abort_and_prompt") {
+				runs.push(command.id);
+				return { id: command.id, type: "response", command: "abort_and_prompt", success: true };
+			}
+			throw new Error(`unexpected command type: ${command.type}`);
+		});
+		const binding = new RpcRunBinding();
+		deps.runBinding = binding;
+		const dispatcher = new RpcInputDispatcher({ deps });
+		return { deps, outputs, runs, aborts, binding, dispatcher };
+	};
+
+	test("a bound abort for a superseded run is ignored without touching the live run", async () => {
+		const harness = makeRunHarness();
+
+		harness.dispatcher.dispatch({ id: "run-1", type: "prompt", message: "first" });
+		await harness.dispatcher.drain();
+		harness.dispatcher.dispatch({ id: "run-2", type: "prompt", message: "second" });
+		await harness.dispatcher.drain();
+		expect(harness.binding.current).toBe(2);
+
+		// A late Stop naming run 1 arrives after run 2 began: stale.
+		harness.dispatcher.dispatch({ id: "stop-old", type: "abort", runGeneration: 1 });
+		await flushMicrotasks();
+
+		expect(harness.aborts).toEqual([]);
+		expect(harness.runs).toEqual(["run-1", "run-2"]);
+		// The stale abort still gets its correlated success response.
+		expect(harness.outputs).toContainEqual({
+			id: "stop-old",
+			type: "response",
+			command: "abort",
+			success: true,
+		});
+	});
+
+	test("a bound abort for the live run proceeds", async () => {
+		const harness = makeRunHarness();
+
+		harness.dispatcher.dispatch({ id: "run-1", type: "prompt", message: "first" });
+		await harness.dispatcher.drain();
+
+		harness.dispatcher.dispatch({ id: "stop-live", type: "abort", runGeneration: 1 });
+		await flushMicrotasks();
+
+		expect(harness.aborts).toEqual(["stop-live"]);
+		expect(harness.outputs).toContainEqual({
+			id: "stop-live",
+			type: "response",
+			command: "abort",
+			success: true,
+		});
+	});
+
+	test("an unbound abort keeps the previous always-cancel behavior", async () => {
+		const harness = makeRunHarness();
+
+		harness.dispatcher.dispatch({ id: "run-1", type: "prompt", message: "first" });
+		await harness.dispatcher.drain();
+
+		harness.dispatcher.dispatch({ id: "stop-legacy", type: "abort" });
+		await flushMicrotasks();
+
+		expect(harness.aborts).toEqual(["stop-legacy"]);
+	});
+
+	test("abort_and_prompt starts a new run that invalidates older bound aborts", async () => {
+		const harness = makeRunHarness();
+
+		harness.dispatcher.dispatch({ id: "restart", type: "abort_and_prompt", message: "again" });
+		await harness.dispatcher.drain();
+		expect(harness.binding.current).toBe(1);
+
+		harness.dispatcher.dispatch({ id: "stop-older", type: "abort", runGeneration: 0 });
+		await flushMicrotasks();
+
+		expect(harness.aborts).toEqual([]);
+		expect(harness.runs).toEqual(["restart"]);
+	});
+});
+
+describe("RpcInputDispatcher backpressure hooks", () => {
+	test("queuedSerialCount tracks running-plus-waiting serial commands", async () => {
+		const releaseFirst = Promise.withResolvers<void>();
+		const { deps } = makeDeps(async command => {
+			if (command.type === "prompt" && command.id === "first") await releaseFirst.promise;
+			return {
+				id: command.id,
+				type: "response",
+				command: "prompt",
+				success: true,
+				data: { agentInvoked: false },
+			};
+		});
+		const dispatcher = new RpcInputDispatcher({ deps });
+
+		expect(dispatcher.queuedSerialCount).toBe(0);
+		dispatcher.dispatch({ id: "first", type: "prompt", message: "block the queue" });
+		dispatcher.dispatch({ id: "second", type: "prompt", message: "wait behind" });
+		await flushMicrotasks();
+
+		expect(dispatcher.queuedSerialCount).toBe(2);
+		releaseFirst.resolve();
+		await dispatcher.drain();
+		expect(dispatcher.queuedSerialCount).toBe(0);
+	});
+
+	test("awaitQueueBelow resolves immediately when already below, and on drain otherwise", async () => {
+		const releaseFirst = Promise.withResolvers<void>();
+		const { deps } = makeDeps(async command => {
+			if (command.type === "prompt" && command.id === "first") await releaseFirst.promise;
+			return {
+				id: command.id,
+				type: "response",
+				command: "prompt",
+				success: true,
+				data: { agentInvoked: false },
+			};
+		});
+		const dispatcher = new RpcInputDispatcher({ deps });
+
+		// Fast path: no waiting when the queue is already shallow.
+		await dispatcher.awaitQueueBelow(1);
+
+		dispatcher.dispatch({ id: "first", type: "prompt", message: "block the queue" });
+		dispatcher.dispatch({ id: "second", type: "prompt", message: "wait behind" });
+		await flushMicrotasks();
+		expect(dispatcher.queuedSerialCount).toBe(2);
+
+		let resumed = false;
+		const waiting = dispatcher.awaitQueueBelow(2).then(() => {
+			resumed = true;
+		});
+		await flushMicrotasks();
+		expect(resumed).toBe(false);
+
+		releaseFirst.resolve();
+		await waiting;
+		expect(resumed).toBe(true);
+		await dispatcher.drain();
 	});
 });
 

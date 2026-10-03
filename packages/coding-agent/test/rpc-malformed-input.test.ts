@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_RPC_INPUT_LINE_BYTES, readRpcInputFrames } from "@harvest/pi-coding-agent/modes/rpc/rpc-input";
+import {
+	MAX_RPC_INPUT_LINE_BYTES,
+	readRpcInputFrames,
+	readRpcInputFramesWithBackpressure,
+} from "@harvest/pi-coding-agent/modes/rpc/rpc-input";
 
 /**
  * Regression test for issue #5194: a non-JSON stdin line crashed the whole RPC
@@ -64,5 +68,85 @@ describe("RPC mode malformed stdin", () => {
 		expect(frames).toEqual([{ type: "get_state", id: "first" }]);
 		expect(parseErrors).toHaveLength(1);
 		expect(parseErrors[0]).toContain(`exceeds ${MAX_RPC_INPUT_LINE_BYTES} bytes`);
+	});
+});
+
+describe("RPC stdin backpressure", () => {
+	test("the reader pauses on a full queue and resumes on drain with accounting", async () => {
+		const encoder = new TextEncoder();
+		const chunks = [
+			`{"type":"get_state","id":"a"}\n`,
+			`{"type":"get_state","id":"b"}\n`,
+			`{"type":"get_state","id":"c"}\n`,
+			`{"type":"get_state","id":"d"}\n`,
+		];
+		let pulls = 0;
+		let index = 0;
+		const input = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				pulls++;
+				if (index < chunks.length) controller.enqueue(encoder.encode(chunks[index++]));
+				else controller.close();
+			},
+		});
+		const frames: unknown[] = [];
+		const parseErrors: string[] = [];
+		const stats = { pauses: 0, resumes: 0 };
+		// Simulate a full serial queue after two frames: the reader must stop
+		// pulling stdin until the queue drains.
+		let paused = false;
+		let releaseDrain: (() => void) | undefined;
+		const drained = new Promise<void>(resolve => {
+			releaseDrain = resolve;
+		});
+		const reading = readRpcInputFramesWithBackpressure(
+			input,
+			frame => {
+				frames.push(frame);
+				if (frames.length === 2) paused = true;
+			},
+			message => parseErrors.push(message),
+			{ shouldPause: () => paused, waitForDrain: () => drained, stats },
+		);
+
+		await Bun.sleep(25);
+		expect(frames).toHaveLength(2);
+		expect(parseErrors).toEqual([]);
+		expect(stats.pauses).toBeGreaterThanOrEqual(1);
+		expect(stats.resumes).toBe(0);
+		// Bounded while paused: no further stdin pulls after the pause.
+		const pullsWhilePaused = pulls;
+		await Bun.sleep(25);
+		expect(pulls).toBe(pullsWhilePaused);
+		expect(frames).toHaveLength(2);
+
+		paused = false;
+		releaseDrain?.();
+		await reading;
+		expect(frames).toEqual([
+			{ type: "get_state", id: "a" },
+			{ type: "get_state", id: "b" },
+			{ type: "get_state", id: "c" },
+			{ type: "get_state", id: "d" },
+		]);
+		expect(parseErrors).toEqual([]);
+		expect(stats.resumes).toBeGreaterThanOrEqual(1);
+		expect(stats.pauses).toBe(stats.resumes);
+	});
+
+	test("an idle queue never pauses the reader", async () => {
+		const input = new Blob([`{"type":"get_state","id":"a"}\n`, `{"type":"get_state","id":"b"}\n`]).stream();
+		const frames: unknown[] = [];
+		const stats = { pauses: 0, resumes: 0 };
+
+		await readRpcInputFramesWithBackpressure(
+			input,
+			frame => frames.push(frame),
+			() => {},
+			{ shouldPause: () => false, waitForDrain: () => Promise.resolve(), stats },
+		);
+
+		expect(frames).toHaveLength(2);
+		expect(stats).toEqual({ pauses: 0, resumes: 0 });
 	});
 });

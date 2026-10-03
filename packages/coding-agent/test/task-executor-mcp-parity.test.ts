@@ -85,7 +85,16 @@ describe("Task MCP proxy parity", () => {
 
 		await tool.execute("call-1", NOISY_INPUT, undefined, unusedContext, undefined);
 
-		expect(calls).toEqual([{ method: "tools/call", params: { name: "comment", arguments: CLEAN_ARGS } }]);
+		expect(calls).toEqual([
+			{
+				method: "tools/call",
+				params: {
+					name: "comment",
+					arguments: CLEAN_ARGS,
+					_meta: { "mcp/idempotency-key": "call-1" },
+				},
+			},
+		]);
 	});
 
 	it("strips harness intent and empty placeholders through the Task proxy path", async () => {
@@ -102,7 +111,16 @@ describe("Task MCP proxy parity", () => {
 		await proxy.execute("call-1", NOISY_INPUT, undefined, unusedContext, undefined);
 
 		// Identical outbound arguments to the parent path — no `i`, no empty optional.
-		expect(calls).toEqual([{ method: "tools/call", params: { name: "comment", arguments: CLEAN_ARGS } }]);
+		expect(calls).toEqual([
+			{
+				method: "tools/call",
+				params: {
+					name: "comment",
+					arguments: CLEAN_ARGS,
+					_meta: { "mcp/idempotency-key": "call-1" },
+				},
+			},
+		]);
 	});
 
 	it("preserves `i` through the Task proxy when the server declares it", async () => {
@@ -123,7 +141,16 @@ describe("Task MCP proxy parity", () => {
 
 		await proxy.execute("call-1", { i: "hello" }, undefined, unusedContext, undefined);
 
-		expect(calls).toEqual([{ method: "tools/call", params: { name: "echo", arguments: { i: "hello" } } }]);
+		expect(calls).toEqual([
+			{
+				method: "tools/call",
+				params: {
+					name: "echo",
+					arguments: { i: "hello" },
+					_meta: { "mcp/idempotency-key": "call-1" },
+				},
+			},
+		]);
 	});
 
 	it("re-resolves the source tool by MCP metadata so a reconnect replacement is honored", async () => {

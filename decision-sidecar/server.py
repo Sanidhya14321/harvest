@@ -148,7 +148,30 @@ _inference_scheduler: Optional[InferenceScheduler] = None
 def get_inference_scheduler() -> InferenceScheduler:
     global _inference_scheduler
     if _inference_scheduler is None:
-        _inference_scheduler = InferenceScheduler(INFERENCE_CONCURRENCY)
+        threshold_raw = os.getenv("LAYA_STUCK_THRESHOLD_S")
+        threshold: float | None = None
+        if threshold_raw is not None and threshold_raw.strip():
+            try:
+                threshold = float(threshold_raw)
+            except ValueError:
+                logger.warning(f"Ignoring invalid LAYA_STUCK_THRESHOLD_S={threshold_raw!r}; using default")
+                threshold = None
+        try:
+            _inference_scheduler = InferenceScheduler(
+                INFERENCE_CONCURRENCY,
+                stuck_threshold_s=threshold,
+                worker_model=os.getenv("LAYA_WORKER_MODEL", "thread"),
+            )
+        except RuntimeError:
+            # Fail open: an unsupported LAYA_WORKER_MODEL must never prevent
+            # the sidecar from serving on the proven thread backend.
+            logger.warning(
+                "Unsupported LAYA_WORKER_MODEL; falling back to 'thread' "
+                "(killable-process spike rejected, see inference_scheduler.py)"
+            )
+            _inference_scheduler = InferenceScheduler(
+                INFERENCE_CONCURRENCY, stuck_threshold_s=threshold, worker_model="thread"
+            )
     return _inference_scheduler
 
 

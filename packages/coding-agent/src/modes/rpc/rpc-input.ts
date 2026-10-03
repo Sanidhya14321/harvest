@@ -133,6 +133,28 @@ export async function* readBoundedRpcLines(
 }
 
 /**
+ * Pause/drain accounting for the backpressured stdin reader. Mutated in
+ * place: `pauses` counts reader stalls on a full serial queue, `resumes`
+ * counts wakeups on drain.
+ */
+export interface RpcStdinBackpressureStats {
+	pauses: number;
+	resumes: number;
+}
+
+/**
+ * Backpressure hooks between the stdin reader and the serial command queue.
+ * While `shouldPause()` holds, the reader stops pulling stdin — the client
+ * blocks at the OS pipe instead of this process buffering an unbounded
+ * backlog — until `waitForDrain()` resolves.
+ */
+export interface RpcStdinBackpressure {
+	shouldPause: () => boolean;
+	waitForDrain: () => Promise<void>;
+	stats?: RpcStdinBackpressureStats;
+}
+
+/**
  * Parses newline-delimited RPC input without letting one malformed line stop
  * subsequent protocol frames.
  *
@@ -163,5 +185,45 @@ export async function readRpcInputFrames(
 			continue;
 		}
 		onFrame(parsed);
+	}
+}
+
+/**
+ * `readRpcInputFrames` with stdin backpressure. After dispatching each
+ * frame, the reader pauses while `backpressure.shouldPause()` holds (a full
+ * serial queue) instead of pulling more stdin: no pulls means the
+ * pipe/buffered source stops being consumed, so a burst or flood applies
+ * backpressure to the writer rather than growing this process. Pause/resume
+ * transitions are counted in `backpressure.stats` when provided.
+ */
+export async function readRpcInputFramesWithBackpressure(
+	input: ReadableStream<Uint8Array>,
+	onFrame: (frame: unknown) => void,
+	onParseError: (message: string) => void,
+	backpressure: RpcStdinBackpressure,
+): Promise<void> {
+	const decoder = new TextDecoder();
+	const lines = readBoundedRpcLines(input, byteLength =>
+		onParseError(
+			`Input line exceeds ${MAX_RPC_INPUT_LINE_BYTES} bytes (${byteLength} bytes); skipping to next newline`,
+		),
+	);
+	for await (const line of lines) {
+		const text = decoder.decode(line).trim();
+		if (!text) continue;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			onParseError(`Failed to parse command: ${message}`);
+			continue;
+		}
+		onFrame(parsed);
+		while (backpressure.shouldPause()) {
+			if (backpressure.stats) backpressure.stats.pauses++;
+			await backpressure.waitForDrain();
+			if (backpressure.stats) backpressure.stats.resumes++;
+		}
 	}
 }

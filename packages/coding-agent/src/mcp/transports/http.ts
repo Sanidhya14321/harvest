@@ -16,11 +16,12 @@ import type {
 	MCPSseServerConfig,
 	MCPTransport,
 } from "../../mcp/types";
-import { toJsonRpcError } from "../../mcp/types";
+import { MCP_IDEMPOTENCY_KEY_HEADER, toJsonRpcError } from "../../mcp/types";
 import {
 	createMCPJsonRpcError,
 	type MCPFailureStage,
 	MCPTransportError,
+	mcpIdempotencyKeyFromHeaders,
 	mcpTraceIdFromHeaders,
 	normalizeMCPTransportError,
 } from "../errors";
@@ -592,6 +593,13 @@ export class HttpTransport implements MCPTransport {
 			generated["Mcp-Session-Id"] = this.#sessionId;
 		}
 
+		// The key is client-generated, so it wins over any configured header
+		// with the same name via mergeMCPHeaders; servers that ignore it
+		// behave exactly as before.
+		if (options?.idempotencyKey) {
+			generated[MCP_IDEMPOTENCY_KEY_HEADER] = options.idempotencyKey;
+		}
+
 		const timeout = resolveMCPTimeoutMs(this.config.timeout);
 		const operation = createMCPTimeout(timeout, this.#operationSignal(options?.signal));
 		let stage: MCPFailureStage = "send";
@@ -630,6 +638,10 @@ export class HttpTransport implements MCPTransport {
 					retryable: response.status === 404 || response.status === 502 || response.status === 503,
 					code: response.status,
 					traceId,
+					// A server that echoes/assigns an idempotency key opts the
+					// failed operation into dedupe: the bridge may replay once
+					// with this key. Absent otherwise — never inferred.
+					idempotencyKey: mcpIdempotencyKeyFromHeaders(response.headers),
 				});
 			}
 
@@ -716,7 +728,8 @@ export class HttpTransport implements MCPTransport {
 			try {
 				for (;;) {
 					if (!current.body) throw new Error("SSE response did not include a body");
-					const sseBody = boundSSEResponseBody(current.body, MAX_MCP_HTTP_BODY_BYTES, traceId, signal);					try {
+					const sseBody = boundSSEResponseBody(current.body, MAX_MCP_HTTP_BODY_BYTES, traceId, signal);
+					try {
 						for await (const event of readSseEvents(sseBody, signal, {
 							maxEventBytes: MAX_MCP_SSE_EVENT_BYTES,
 						})) {

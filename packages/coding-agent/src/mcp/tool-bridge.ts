@@ -83,6 +83,55 @@ function isUnknownToolOutcome(error: unknown): boolean {
 	return isRetriableConnectionError(error);
 }
 
+/**
+ * True for tools the server marks as side-effect-free. A replayed read
+ * cannot double-execute anything, so reads may recover from retriable
+ * failures even after dispatch.
+ */
+function isReadOnlyTool(tool: MCPToolDefinition): boolean {
+	return tool.annotations?.readOnlyHint === true;
+}
+
+/**
+ * Reads have no side effects: a retriable failure — or a response timeout
+ * on an operation that cannot have mutated anything — may reconnect and
+ * replay once. Deterministic server rejections (`json_rpc`) already
+ * answered and are never replayed.
+ */
+function canReplayReadOnlyToolCall(tool: MCPToolDefinition, error: unknown): boolean {
+	if (!isReadOnlyTool(tool)) return false;
+	if (error instanceof MCPTransportError) {
+		if (error.failure === "json_rpc") return false;
+		if (error.failure === "timeout") return true;
+	}
+	return isRetriableConnectionError(error);
+}
+
+/**
+ * Writes replay only when the server scoped the failed operation to an
+ * explicit idempotency key (echoed request key or assigned operation key).
+ * Advisory `idempotentHint`/`readOnlyHint` flags are NOT sufficient
+ * authorization — only a per-operation key opts into server-side dedupe.
+ * Returns the key the retry must echo, or undefined when replay is unsafe.
+ */
+function idempotentReplayKeyForWrite(tool: MCPToolDefinition, error: unknown): string | undefined {
+	if (isReadOnlyTool(tool)) return undefined;
+	return error instanceof MCPTransportError ? error.idempotencyKey : undefined;
+}
+
+/**
+ * Decide whether a failed `tools/call` may be sent again on a fresh
+ * connection, and with which idempotency key. Pre-dispatch failures sent
+ * nothing, so the call's own stable key suffices; reads are side-effect
+ * free; writes require a server-provided key. Anything else reports
+ * `outcomeUnknown` without replay.
+ */
+function replayKeyForRetry(tool: MCPToolDefinition, error: unknown, callKey: string): string | undefined {
+	if (canReplayToolCall(error)) return callKey;
+	if (canReplayReadOnlyToolCall(tool, error)) return callKey;
+	return idempotentReplayKeyForWrite(tool, error);
+}
+
 type MCPToolArgs = NonNullable<MCPToolCallParams["arguments"]>;
 
 function normalizeToolArgs(value: unknown): MCPToolArgs {
@@ -381,8 +430,9 @@ async function callToolWithAuthRetry(
 	args: MCPToolArgs,
 	reconnect: MCPReconnect | undefined,
 	signal?: AbortSignal,
+	idempotencyKey?: string,
 ): Promise<MCPToolCallAttempt> {
-	const result = await callTool(connection, toolName, args, { signal });
+	const result = await callTool(connection, toolName, args, { signal, idempotencyKey });
 	const authChallenge = getMcpAuthChallenge(result);
 	if (!authChallenge || !reconnect) return { connection, result };
 
@@ -398,7 +448,7 @@ async function callToolWithAuthRetry(
 	try {
 		return {
 			connection: newConnection,
-			result: await callTool(newConnection, toolName, args, { signal }),
+			result: await callTool(newConnection, toolName, args, { signal, idempotencyKey }),
 		};
 	} catch (error) {
 		rethrowIfAborted(error, signal);
@@ -621,9 +671,19 @@ export class MCPTool implements CustomTool<TSchema, MCPToolDetails> {
 		const args = await prepareOutboundArgs(params, this.tool.inputSchema, _ctx);
 		const provider = this.connection._source?.provider;
 		const providerName = this.connection._source?.providerName;
+		// Stable per-call key: sent on the first attempt so a server that
+		// dedupes on it can safely absorb a retry with the same key.
+		const idempotencyKey = _toolCallId;
 
 		try {
-			const attempt = await callToolWithAuthRetry(this.connection, this.tool.name, args, this.reconnect, signal);
+			const attempt = await callToolWithAuthRetry(
+				this.connection,
+				this.tool.name,
+				args,
+				this.reconnect,
+				signal,
+				idempotencyKey,
+			);
 			if (attempt.error !== undefined) {
 				return buildErrorResult(attempt.error, this.connection.name, this.tool.name, provider, providerName);
 			}
@@ -646,7 +706,12 @@ export class MCPTool implements CustomTool<TSchema, MCPToolDetails> {
 			);
 		} catch (error) {
 			rethrowIfAborted(error, signal);
-			if (this.reconnect && canReplayToolCall(error)) {
+			// Replays are gated by replayKeyForRetry: pre-dispatch failures
+			// sent nothing, reads are side-effect free, and writes require a
+			// server-provided idempotency key. Anything else keeps
+			// outcomeUnknown without a second effect.
+			const replayKey = replayKeyForRetry(this.tool, error, idempotencyKey);
+			if (this.reconnect && replayKey !== undefined) {
 				const newConn = await reconnectWithAbort(this.reconnect, signal);
 				if (newConn) {
 					// Rebind so subsequent calls on this instance use the fresh connection
@@ -654,7 +719,7 @@ export class MCPTool implements CustomTool<TSchema, MCPToolDetails> {
 					const retryProvider = newConn._source?.provider ?? provider;
 					const retryProviderName = newConn._source?.providerName ?? providerName;
 					try {
-						const result = await callTool(newConn, this.tool.name, args, { signal });
+						const result = await callTool(newConn, this.tool.name, args, { signal, idempotencyKey: replayKey });
 						return buildResult(result, newConn.name, this.tool.name, retryProvider, retryProviderName);
 					} catch (retryError) {
 						rethrowIfAborted(retryError, signal);
@@ -741,12 +806,22 @@ export class DeferredMCPTool implements CustomTool<TSchema, MCPToolDetails> {
 		const args = await prepareOutboundArgs(params, this.tool.inputSchema, _ctx);
 		const provider = this.#fallbackProvider;
 		const providerName = this.#fallbackProviderName;
+		// Stable per-call key: sent on the first attempt so a server that
+		// dedupes on it can safely absorb a retry with the same key.
+		const idempotencyKey = _toolCallId;
 
 		try {
 			const connection = await untilAborted(signal, () => this.getConnection());
 			throwIfAborted(signal);
 			try {
-				const attempt = await callToolWithAuthRetry(connection, this.tool.name, args, this.reconnect, signal);
+				const attempt = await callToolWithAuthRetry(
+					connection,
+					this.tool.name,
+					args,
+					this.reconnect,
+					signal,
+					idempotencyKey,
+				);
 				if (attempt.error !== undefined) {
 					return buildErrorResult(
 						attempt.error,
@@ -774,13 +849,20 @@ export class DeferredMCPTool implements CustomTool<TSchema, MCPToolDetails> {
 				);
 			} catch (callError) {
 				rethrowIfAborted(callError, signal);
-				if (this.reconnect && canReplayToolCall(callError)) {
+				// Same replay gate as MCPTool: pre-dispatch failures, reads,
+				// or writes with a server-provided idempotency key. Anything
+				// else keeps outcomeUnknown without a second effect.
+				const replayKey = replayKeyForRetry(this.tool, callError, idempotencyKey);
+				if (this.reconnect && replayKey !== undefined) {
 					const newConn = await reconnectWithAbort(this.reconnect, signal);
 					if (newConn) {
 						const retryProvider = newConn._source?.provider ?? provider;
 						const retryProviderName = newConn._source?.providerName ?? providerName;
 						try {
-							const result = await callTool(newConn, this.tool.name, args, { signal });
+							const result = await callTool(newConn, this.tool.name, args, {
+								signal,
+								idempotencyKey: replayKey,
+							});
 							return buildResult(result, this.serverName, this.tool.name, retryProvider, retryProviderName);
 						} catch (retryError) {
 							rethrowIfAborted(retryError, signal);
@@ -805,7 +887,7 @@ export class DeferredMCPTool implements CustomTool<TSchema, MCPToolDetails> {
 				const newConn = await reconnectWithAbort(this.reconnect, signal);
 				if (newConn) {
 					try {
-						const result = await callTool(newConn, this.tool.name, args, { signal });
+						const result = await callTool(newConn, this.tool.name, args, { signal, idempotencyKey });
 						return buildResult(
 							result,
 							this.serverName,

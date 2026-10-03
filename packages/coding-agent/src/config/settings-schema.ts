@@ -4231,7 +4231,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Approvals",
 			label: "Tool Approval Policies",
 			description:
-				"Per-tool approval policies. Set to 'allow' to auto-approve, 'prompt' to require confirmation, or 'deny' to block. Overrides are honored in every approval mode.",
+				"Per-tool approval policies. Set to 'allow' to auto-approve, 'prompt' to require confirmation, or 'deny' to block. Overrides are honored in every approval mode. MCP tools also accept per-server overrides via tools.approval.<server>.<tool> (nested { server: { tool: policy } } or flat dotted key), which take precedence over tools.approval.<tool>; invalid values are ignored fail-closed.",
 		},
 	},
 

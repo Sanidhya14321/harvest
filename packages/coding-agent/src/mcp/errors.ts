@@ -29,6 +29,12 @@ interface MCPTransportErrorOptions {
 	code?: string | number;
 	data?: string;
 	traceId?: string;
+	/**
+	 * Server-provided key scoping the failed operation (from the
+	 * `Idempotency-Key` response header). A retry that echoes this key is
+	 * deduplicated server-side, so replaying with it cannot double-execute.
+	 */
+	idempotencyKey?: string;
 	cause?: unknown;
 }
 
@@ -62,6 +68,12 @@ export class MCPTransportError extends Error {
 	readonly data: string | undefined;
 	/** Safe server trace or request identifier. */
 	readonly traceId: string | undefined;
+	/**
+	 * Server-provided idempotency key scoping the failed operation.
+	 * Present only when the server echoed one; a retry with this key is
+	 * deduplicated server-side.
+	 */
+	readonly idempotencyKey: string | undefined;
 
 	constructor(options: MCPTransportErrorOptions) {
 		super(
@@ -76,6 +88,7 @@ export class MCPTransportError extends Error {
 		this.code = options.code;
 		this.data = options.data;
 		this.traceId = options.traceId;
+		this.idempotencyKey = sanitizeIdempotencyKey(options.idempotencyKey);
 	}
 }
 
@@ -143,6 +156,15 @@ function safeTraceId(value: unknown): string | undefined {
 	return trimmed;
 }
 
+/**
+ * Validate a client- or server-supplied idempotency key: same safe token
+ * shape as trace IDs (opaque, header-safe, bounded). Returns undefined for
+ * anything that could smuggle log-injecting or oversized content.
+ */
+function sanitizeIdempotencyKey(value: unknown): string | undefined {
+	return safeTraceId(value);
+}
+
 function findTraceId(value: unknown, depth = 0): string | undefined {
 	if (depth > MAX_DATA_DEPTH || !isRecord(value)) return undefined;
 	for (const key in value) {
@@ -162,6 +184,20 @@ export function mcpTraceIdFromHeaders(headers: Headers): string | undefined {
 	for (const name of ["traceparent", "x-request-id", "x-trace-id", "x-correlation-id", "cf-ray"]) {
 		const traceId = safeTraceId(headers.get(name));
 		if (traceId) return traceId;
+	}
+	return undefined;
+}
+
+/**
+ * Extract a server-provided idempotency key from MCP HTTP response headers.
+ * A server that echoes the request's key (or assigns one to the failed
+ * operation) opts into dedupe: retrying with this key cannot double-execute.
+ * Absent on servers that do not participate — never inferred.
+ */
+export function mcpIdempotencyKeyFromHeaders(headers: Headers): string | undefined {
+	for (const name of ["idempotency-key", "x-idempotency-key"]) {
+		const key = sanitizeIdempotencyKey(headers.get(name));
+		if (key) return key;
 	}
 	return undefined;
 }

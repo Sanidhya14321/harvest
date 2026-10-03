@@ -49,6 +49,64 @@ export const MAX_PRUNING_QUESTIONS_PER_REQUEST = 64;
 export const RELEVANCE_CRITERIA: readonly string[] = parseRelevanceCriteria(pruningCriteriaDoc);
 
 /**
+ * Prompt revision binding scored decisions to the exact relevance prompt
+ * assets that produced them. Bumped implicitly whenever
+ * `pruning-relevance.md` or `pruning-criteria.md` changes: lock keys and
+ * rerank cache keys embed this, so a prompt edit never replays scores
+ * judged under different instructions. Fail-open: a hash failure falls back
+ * to a static sentinel (locks simply miss and rescore).
+ */
+export const PRUNING_PROMPT_REVISION: string = (() => {
+	try {
+		return Bun.hash(`${pruningRelevanceTemplate}\n${pruningCriteriaDoc}`).toString(36);
+	} catch {
+		return "prompt-rev-unknown";
+	}
+})();
+
+/** Total prune+rerank latency budget shared by one transformContext pass. */
+export const DEFAULT_LAYA_CONTEXT_BUDGET_MS = 600;
+
+/**
+ * Shared prune+rerank latency budget. Created once per transformContext pass
+ * in `sdk.ts`; pruning consumes from the front, reranking gets the remainder.
+ * Fail-open: when exhausted, callers skip inference and keep full context.
+ */
+export interface LayaContextBudget {
+	readonly totalMs: number;
+	readonly deadline: number;
+	remainingMs(): number;
+}
+
+/** Start a shared budget clock; invalid totals fall back to the default. */
+export function createLayaContextBudget(totalMs: number = DEFAULT_LAYA_CONTEXT_BUDGET_MS): LayaContextBudget {
+	const total =
+		typeof totalMs === "number" && Number.isFinite(totalMs) && totalMs > 0
+			? totalMs
+			: DEFAULT_LAYA_CONTEXT_BUDGET_MS;
+	const startedAt = performance.now();
+	const deadline = startedAt + total;
+	return {
+		totalMs: total,
+		deadline,
+		remainingMs(): number {
+			return Math.max(0, deadline - performance.now());
+		},
+	};
+}
+
+/** Effective prune timeout: shared-budget remainder wins over the explicit option. */
+export function pruningTimeoutFromBudget(
+	budget: LayaContextBudget | undefined,
+	explicitTimeoutMs: number | undefined,
+): number | undefined {
+	if (!budget) return explicitTimeoutMs;
+	const remaining = budget.remainingMs();
+	if (explicitTimeoutMs === undefined) return remaining;
+	return Math.min(explicitTimeoutMs, remaining);
+}
+
+/**
  * Relevance levels parsed from the versioned prompt asset, so calibration
  * data stays tied to an exact prompt revision. Throws at import time on a
  * malformed asset rather than sending a degraded question.
@@ -112,6 +170,10 @@ export interface LayaPruningOptions {
 	readonly minChunkTokens?: number;
 	readonly safetyTokenFloor?: number;
 	readonly timeoutMs?: number;
+	/** Shared prune+rerank latency budget; remainder caps the prune round trip. */
+	readonly budget?: LayaContextBudget;
+	/** Override the prompt revision embedded in lock keys (tests only). */
+	readonly promptRevision?: string;
 	readonly lockedDecisions?: Map<string, LockedPruningDecision>;
 	readonly lockDecisions?: boolean;
 	readonly signal?: AbortSignal;
@@ -126,19 +188,27 @@ export interface LockedPruningDecision {
 	readonly confidence: number;
 	readonly timestamp: number;
 	readonly estimatedTokens: number;
+	/** Prompt revision that scored this decision; miss → rescore. */
+	readonly promptRev?: string;
 }
 
 /**
  * In-memory registry of locked pruning decisions.
  *
- * Keyed by `${sessionId}::${chunkId}::${contentHash}` where contentHash is a
- * hash of the exact chunk text that was scored. Positions (turn/message
+ * Keyed by `${sessionId}::${chunkId}::${contentHash}::${promptRev}` where
+ * contentHash is a hash of the exact chunk text that was scored and
+ * promptRev is {@link PRUNING_PROMPT_REVISION}. Positions (turn/message
  * indices) are reused after rewinds, branch switches, and compactions, so a
  * positional key alone would replay a stale keep/drop onto different content;
- * the content hash forces anything at a reused position to be scored afresh.
- * Entries are also dropped when their session is disposed, and the map is
- * bounded (oldest evicted first) so long-lived processes cannot grow it
- * without limit.
+ * the content hash forces anything at a reused position to be scored afresh,
+ * and the prompt revision forces a rescore whenever the relevance prompt
+ * assets change. History rewrites (rewind/compact/restore/branch switch)
+ * must additionally clear the session's entries via
+ * {@link invalidatePruningLocksOnHistoryRewrite} — identical content in a
+ * rewritten transcript deserves a fresh relevance judgment in its new
+ * surrounding context. Entries are also dropped when their session is
+ * disposed, and the map is bounded (oldest evicted first) so long-lived
+ * processes cannot grow it without limit.
  *
  * Once a candidate chunk ages out of the recent window and is evaluated,
  * its keep/drop decision is locked here for identical content. Subsequent
@@ -154,9 +224,14 @@ export function pruningContentHash(text: string): string {
 	return Bun.hash(text).toString(36);
 }
 
-/** Lock key binding a decision to its session, position, and scored content. */
-export function pruningLockKey(sessionId: string, chunkId: string, text: string): string {
-	return `${sessionId}::${chunkId}::${pruningContentHash(text)}`;
+/** Lock key binding a decision to session, position, content, and prompt revision. */
+export function pruningLockKey(
+	sessionId: string,
+	chunkId: string,
+	text: string,
+	promptRev: string = PRUNING_PROMPT_REVISION,
+): string {
+	return `${sessionId}::${chunkId}::${pruningContentHash(text)}::${promptRev}`;
 }
 
 function evictExcessLockedPruningDecisions(store: Map<string, LockedPruningDecision>): void {
@@ -177,6 +252,35 @@ export function resetLockedPruningDecisions(sessionId?: string): void {
 		if (key.startsWith(prefix)) {
 			LOCKED_PRUNING_DECISIONS.delete(key);
 		}
+	}
+}
+
+/**
+ * Invalidate locked pruning decisions after a history rewrite
+ * (rewind, compaction, session restore, branch/session switch).
+ *
+ * Identical chunk text at a reused position must be scored afresh in its new
+ * surrounding context — replaying the pre-rewrite keep/drop keeps stale
+ * placeholders after the transcript changed. Fail-open: never throws; a
+ * custom store failure only means the next pass may rescore.
+ */
+export function invalidatePruningLocksOnHistoryRewrite(
+	sessionId?: string,
+	store: Map<string, LockedPruningDecision> = LOCKED_PRUNING_DECISIONS,
+): void {
+	try {
+		if (!sessionId) {
+			store.clear();
+			return;
+		}
+		const prefix = `${sessionId}::`;
+		for (const key of [...store.keys()]) {
+			if (key.startsWith(prefix)) {
+				store.delete(key);
+			}
+		}
+	} catch (error) {
+		logger.debug("Pruning lock invalidation failed open", { error: String(error) });
 	}
 }
 
@@ -392,6 +496,7 @@ export async function pruneContextWithLaya(
 	const alwaysKeepTurnThreshold = totalTurns - keepRecentTurns; // turns at or after this are always kept
 
 	const sessionId = options.sessionId || "default";
+	const promptRev = options.promptRevision ?? PRUNING_PROMPT_REVISION;
 	const lockStore = options.lockedDecisions ?? (options.sessionId ? LOCKED_PRUNING_DECISIONS : undefined);
 	const useLocking = options.lockDecisions !== false && lockStore !== undefined;
 	const preLockedByMsgIdx = new Map<number, LockedPruningDecision>();
@@ -425,7 +530,7 @@ export async function pruneContextWithLaya(
 				if (tokens >= minChunkTokens) {
 					const chunkId = `tool_${turn.turnIndex}_${msgIdx}_${toolMsg.toolName || "tool"}`;
 
-					const lockKey = pruningLockKey(sessionId, chunkId, text);
+					const lockKey = pruningLockKey(sessionId, chunkId, text, promptRev);
 					if (useLocking && lockStore.has(lockKey)) {
 						preLockedByMsgIdx.set(msgIdx, lockStore.get(lockKey)!);
 						continue;
@@ -455,7 +560,7 @@ export async function pruneContextWithLaya(
 				// Only consider very large assistant outputs in older turns
 				if (tokens >= minChunkTokens * 2) {
 					const chunkId = `assistant_${turn.turnIndex}_${msgIdx}`;
-					const lockKey = pruningLockKey(sessionId, chunkId, text);
+					const lockKey = pruningLockKey(sessionId, chunkId, text, promptRev);
 					if (useLocking && lockStore.has(lockKey)) {
 						preLockedByMsgIdx.set(msgIdx, lockStore.get(lockKey)!);
 						continue;
@@ -571,9 +676,31 @@ export async function pruneContextWithLaya(
 		const decideOptions = {
 			callSite: "context_pruning",
 			sessionId: options.sessionId,
-			timeoutMs: options.timeoutMs,
+			timeoutMs: pruningTimeoutFromBudget(options.budget, options.timeoutMs),
 			signal: options.signal,
 		};
+		// Shared-budget fail-open: when the prune+rerank budget is already
+		// exhausted, skip scoring without spending another round trip.
+		if (options.budget && options.budget.remainingMs() <= 0) {
+			const latencyMs = performance.now() - startTime;
+			logger.debug("Laya context pruning skipped: shared prune+rerank budget exhausted", {
+				latencyMs,
+				candidatesCount: candidates.length,
+			});
+			return {
+				messages: [...messages],
+				pruned: false,
+				fallback: true,
+				fallbackReason: "shared_budget_exhausted",
+				totalOriginalTokens: totalCandidateTokens,
+				totalPrunedTokens: 0,
+				tokensSaved: 0,
+				candidatesCount: candidates.length,
+				droppedCount: 0,
+				latencyMs,
+				auditRecords: [],
+			};
+		}
 		// The sidecar rejects more than MAX_PRUNING_QUESTIONS_PER_REQUEST
 		// questions per call: score large candidate sets in sequential
 		// chunks so a long session is scored instead of failing open
@@ -685,7 +812,7 @@ export async function pruneContextWithLaya(
 	// with a fuller context still score them afresh.
 	if (useLocking && needsScoring) {
 		for (const c of candidates) {
-			const lockKey = pruningLockKey(sessionId, c.id, c.originalText);
+			const lockKey = pruningLockKey(sessionId, c.id, c.originalText, promptRev);
 			const placeholder = c.dropped
 				? c.role === "toolResult"
 					? `[Earlier tool output for '${c.toolName || "tool"}' omitted for relevance (Laya score: ${(c.normalizedScore ?? 0).toFixed(2)})]`
@@ -701,6 +828,7 @@ export async function pruneContextWithLaya(
 				confidence: c.confidence ?? 0,
 				timestamp: now,
 				estimatedTokens: c.estimatedTokens,
+				promptRev,
 			});
 			evictExcessLockedPruningDecisions(lockStore);
 		}

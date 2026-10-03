@@ -38,7 +38,7 @@ import type {
 	MCPTransport,
 } from "./types";
 
-import { MCP_PROTOCOL_VERSION } from "./types";
+import { MCP_PROTOCOL_VERSION, MCP_IDEMPOTENCY_KEY_META } from "./types";
 
 /** Client info sent during initialization */
 const CLIENT_INFO = {
@@ -251,6 +251,12 @@ export async function listTools(
 
 /**
  * Call a tool on a connected server.
+ *
+ * When `options.idempotencyKey` is set, the stable key travels in the
+ * `params._meta` envelope (spec base metadata — strict tool schemas only
+ * constrain `arguments`, so validation is unaffected) and, on HTTP, as the
+ * `Idempotency-Key` header. Servers that dedupe on either channel make a
+ * retry with the same key safe; servers that ignore them behave as before.
  */
 export async function callTool(
 	connection: MCPServerConnection,
@@ -262,6 +268,9 @@ export async function callTool(
 		name: toolName,
 		arguments: args,
 	};
+	if (options?.idempotencyKey) {
+		params._meta = { [MCP_IDEMPOTENCY_KEY_META]: options.idempotencyKey };
+	}
 
 	return connection.transport.request<MCPToolCallResult>(
 		"tools/call",

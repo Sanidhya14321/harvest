@@ -254,7 +254,7 @@ import type {
 } from "./agent-session-types";
 import { writeArtifact } from "./artifacts";
 import type { ToolGatingDecision } from "../core/harvest/laya-gating";
-import { resetLockedPruningDecisions } from "../core/harvest/laya-pruning";
+import { invalidatePruningLocksOnHistoryRewrite, resetLockedPruningDecisions } from "../core/harvest/laya-pruning";
 import {
 	createHarvestSession,
 	interceptSessionToolCall,
@@ -5455,8 +5455,12 @@ export class AgentSession {
 	}
 
 	/** Compact the active session history. */
-	compact(customInstructions?: string, options?: CompactOptions): Promise<CompactionResult> {
-		return this.#maintenance.compact(customInstructions, options);
+	async compact(customInstructions?: string, options?: CompactOptions): Promise<CompactionResult> {
+		const result = await this.#maintenance.compact(customInstructions, options);
+		// Compaction replaces history with a summary: positional lock keys no
+		// longer correspond to live content, so rescore afresh next turn.
+		this.#invalidatePruningLocks("compact");
+		return result;
 	}
 
 	/** Cancel active manual, automatic, and handoff maintenance, preserving an optional source reason. */
@@ -8327,8 +8331,25 @@ export class AgentSession {
 		this.#advisors.resetSessionState({ preserveCost: true });
 		this.#todo.syncFromBranch();
 		this.#closeCodexProviderSessionsForHistoryRewrite();
+		this.#invalidatePruningLocks("rewind");
 		this.#checkpointState = undefined;
 		this.#pendingRewindReport = undefined;
+	}
+
+	/**
+	 * Clear locked pruning decisions after a history rewrite (rewind, compact,
+	 * restore). Best-effort and fail-open: lock cleanup must never break the
+	 * transcript transition it follows.
+	 */
+	#invalidatePruningLocks(reason: "rewind" | "compact" | "restore" | "switch"): void {
+		try {
+			invalidatePruningLocksOnHistoryRewrite(this.sessionManager.getSessionId());
+		} catch (error) {
+			logger.debug("Pruning lock invalidation failed open", {
+				reason,
+				error: String(error),
+			});
+		}
 	}
 	/** Plan-mode decision affordances: `ask`, or plan approval via `write xd://propose`. */
 	#isPlanDecisionTool(toolCall: { name: string; arguments?: Record<string, unknown> }): boolean {
@@ -9157,6 +9178,11 @@ export class AgentSession {
 			}
 			if (switchingToDifferentSession || didReloadConversationChange) {
 				this.#clearSessionScopedToolState();
+			}
+			// Restored transcript (same-file reload with changed messages):
+			// positional locks may reference pre-restore content, so rescore.
+			if (didReloadConversationChange) {
+				this.#invalidatePruningLocks("restore");
 			}
 			this.#reconnectToAgent();
 			try {

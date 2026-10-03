@@ -7,7 +7,11 @@
 # restart (old token rejected, new token accepted), and clean teardown.
 #
 # Usage: bash scripts/ci-sidecar-smoke.sh
-# Env: LAYA_SMOKE_PORT (default 8199), LAYA_SMOKE_DIR (default $RUNNER_TEMP or mktemp)
+# Env: LAYA_SMOKE_PORT (default 8199), LAYA_SMOKE_DIR (default: fresh mktemp dir)
+#   HF_HUB_OFFLINE=1 reuses a warm HF cache with zero network (cache-only model
+#   load; full-network-offline CI is intentionally not gated — see the offline
+#   note in .github/workflows/release.yml). macOS note: this script avoids
+#   GNU-only tools so the documented manual macOS gate runs it unmodified.
 set -euo pipefail
 
 PORT="${LAYA_SMOKE_PORT:-8199}"
@@ -32,7 +36,7 @@ trap cleanup EXIT
 
 echo "--- waiting for /health ready (model download on cold cache can take minutes) ---"
 READY=""
-for _ in $(seq 1 200); do
+for _ in {1..200}; do
   READY=$(curl -sf "http://127.0.0.1:$PORT/health" || true)
   if echo "$READY" | grep -q '"ready": *true'; then break; fi
   sleep 3
@@ -56,11 +60,13 @@ kill "$SERVER_PID" 2>/dev/null || true
 wait "$SERVER_PID" 2>/dev/null || true
 python server.py --port "$PORT" >"$WORK/server2.log" 2>&1 &
 SERVER_PID=$!
-for _ in $(seq 1 200); do
-  sleep 3
+READY=""
+for _ in {1..200}; do
   READY=$(curl -sf "http://127.0.0.1:$PORT/health" || true)
-  echo "$READY" | grep -q '"ready": *true' && break
+  if echo "$READY" | grep -q '"ready": *true'; then break; fi
+  sleep 3
 done
+echo "$READY" | grep -q '"ready": *true' || { echo "sidecar never became ready after restart"; cat "$WORK/server2.log"; exit 1; }
 TOKEN2=$(cat "$TOKEN_FILE")
 test "$TOKEN1" != "$TOKEN2" || { echo "token did not rotate across restart"; exit 1; }
 if curl -sf -X POST "http://127.0.0.1:$PORT/v1/decide" \

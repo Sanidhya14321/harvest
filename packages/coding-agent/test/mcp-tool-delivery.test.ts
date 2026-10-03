@@ -11,6 +11,17 @@ const definition: MCPToolDefinition = {
 	inputSchema: { type: "object" },
 	annotations: { idempotentHint: false, readOnlyHint: false },
 };
+const readDefinition: MCPToolDefinition = {
+	name: "read",
+	inputSchema: { type: "object" },
+	annotations: { readOnlyHint: true },
+};
+
+/** Idempotency key the bridge stamped on a `tools/call` params envelope. */
+function sentIdempotencyKey(params: Record<string, unknown> | undefined): unknown {
+	if (!params || typeof params._meta !== "object" || params._meta === null) return undefined;
+	return (params._meta as Record<string, unknown>)["mcp/idempotency-key"];
+}
 
 describe("MCP tool delivery", () => {
 	for (const deferred of [false, true]) {
@@ -111,6 +122,163 @@ describe("MCP tool delivery", () => {
 		expect(result.details?.outcomeUnknown).toBe(true);
 	});
 
+	describe("read/write split and server-provided idempotency keys", () => {
+		for (const deferred of [false, true]) {
+			const mode = deferred ? "deferred" : "eager";
+			it(`${mode}: a read-only tool replays once after a post-send EOF`, async () => {
+				let firstAttempts = 0;
+				let recoveredCalls = 0;
+				const firstKeys: unknown[] = [];
+				const retryKeys: unknown[] = [];
+				const transport = createMockTransport(new Map(), (_method, params) => {
+					firstAttempts++;
+					firstKeys.push(sentIdempotencyKey(params));
+					throw new MCPTransportError({
+						transport: "http",
+						stage: "receive",
+						failure: "eof",
+						retryable: true,
+						message: "response stream closed after dispatch",
+					});
+				});
+				const connection = createMockConnection({ tools: {} }, transport);
+				const recovered = createMockConnection(
+					{ tools: {} },
+					createMockTransport(
+						new Map([["tools/call", [{ content: [{ type: "text", text: "rows" }] }]]]),
+						(_method, params) => {
+							recoveredCalls++;
+							retryKeys.push(sentIdempotencyKey(params));
+						},
+					),
+				);
+				const tool = deferred
+					? new DeferredMCPTool(
+							connection.name,
+							readDefinition,
+							async () => connection,
+							undefined,
+							async () => recovered,
+						)
+					: new MCPTool(connection, readDefinition, async () => recovered);
+				// Reads cannot double-execute, so one reconnect+replay recovers them.
+				const result = await tool.execute("read-1", {}, undefined, context);
+				expect(firstAttempts).toBe(1);
+				expect(recoveredCalls).toBe(1);
+				expect(result.isError).not.toBe(true);
+				expect(result.content).toEqual([{ type: "text", text: "rows" }]);
+				// The stable call key travels on both attempts for server-side dedupe.
+				expect(firstKeys).toEqual(["read-1"]);
+				expect(retryKeys).toEqual(["read-1"]);
+			});
+
+			it(`${mode}: a write replays once when the server scopes the failure to an idempotency key`, async () => {
+				const firstKeys: unknown[] = [];
+				const retryKeys: unknown[] = [];
+				const transport = createMockTransport(new Map(), (_method, params) => {
+					firstKeys.push(sentIdempotencyKey(params));
+					throw new MCPTransportError({
+						transport: "http",
+						stage: "receive",
+						failure: "http_status",
+						code: 503,
+						retryable: true,
+						message: "HTTP 503: Service Unavailable",
+						idempotencyKey: "op-123",
+					});
+				});
+				const connection = createMockConnection({ tools: {} }, transport);
+				const recovered = createMockConnection(
+					{ tools: {} },
+					createMockTransport(
+						new Map([["tools/call", [{ content: [{ type: "text", text: "published" }] }]]]),
+						(_method, params) => {
+							retryKeys.push(sentIdempotencyKey(params));
+						},
+					),
+				);
+				const tool = deferred
+					? new DeferredMCPTool(
+							connection.name,
+							definition,
+							async () => connection,
+							undefined,
+							async () => recovered,
+						)
+					: new MCPTool(connection, definition, async () => recovered);
+				// The server opted this operation into dedupe, so echoing its
+				// key on exactly one retry cannot double-execute.
+				const result = await tool.execute("publish-key-1", {}, undefined, context);
+				expect(result.isError).not.toBe(true);
+				expect(result.details?.outcomeUnknown).toBeUndefined();
+				expect(firstKeys).toEqual(["publish-key-1"]);
+				expect(retryKeys).toEqual(["op-123"]);
+			});
+
+			it(`${mode}: a write timeout without a server key is not replayed`, async () => {
+				let attempts = 0;
+				let reconnects = 0;
+				const transport = createMockTransport(new Map(), () => {
+					attempts++;
+					throw new MCPTransportError({
+						transport: "http",
+						stage: "receive",
+						failure: "timeout",
+						retryable: false,
+						message: "Request timeout after 50ms",
+					});
+				});
+				const connection = createMockConnection({ tools: {} }, transport);
+				const tool = deferred
+					? new DeferredMCPTool(
+							connection.name,
+							definition,
+							async () => connection,
+							undefined,
+							async () => {
+								reconnects++;
+								throw new Error("must not reconnect after uncertain delivery");
+							},
+						)
+					: new MCPTool(connection, definition, async () => {
+							reconnects++;
+							throw new Error("must not reconnect after uncertain delivery");
+						});
+				const result = await tool.execute("publish-timeout-1", {}, undefined, context);
+				expect(attempts).toBe(1);
+				expect(reconnects).toBe(0);
+				expect(result.isError).toBe(true);
+				expect(result.details?.outcomeUnknown).toBe(true);
+			});
+		}
+
+		it("a read-only tool does not replay a deterministic server rejection", async () => {
+			let calls = 0;
+			let reconnects = 0;
+			const transport = createMockTransport(new Map(), () => {
+				calls++;
+				throw new MCPTransportError({
+					transport: "http",
+					stage: "protocol",
+					failure: "json_rpc",
+					retryable: false,
+					message: "MCP error -32602: Invalid params",
+					code: -32602,
+				});
+			});
+			const connection = createMockConnection({ tools: {} }, transport);
+			const tool = new MCPTool(connection, readDefinition, async () => {
+				reconnects++;
+				throw new Error("must not reconnect after a deterministic rejection");
+			});
+			const result = await tool.execute("read-rejected-1", {}, undefined, context);
+			expect(calls).toBe(1);
+			expect(reconnects).toBe(0);
+			expect(result.isError).toBe(true);
+			expect(result.details?.outcomeUnknown).toBeUndefined();
+		});
+	});
+
 	it("recovers a deferred connection failure before tools/call is attempted", async () => {
 		let effects = 0;
 		const recovered = createMockConnection(
@@ -184,10 +352,16 @@ describe("MCP tool delivery", () => {
 					});
 					const connection = createMockConnection({ tools: {} }, transport);
 					const tool = deferred
-						? new DeferredMCPTool(connection.name, definition, async () => connection, undefined, async () => {
-								reconnects++;
-								throw new Error("must not reconnect after uncertain delivery");
-							})
+						? new DeferredMCPTool(
+								connection.name,
+								definition,
+								async () => connection,
+								undefined,
+								async () => {
+									reconnects++;
+									throw new Error("must not reconnect after uncertain delivery");
+								},
+							)
 						: new MCPTool(connection, definition, async () => {
 								reconnects++;
 								throw new Error("must not reconnect after uncertain delivery");
@@ -215,10 +389,16 @@ describe("MCP tool delivery", () => {
 			});
 			const connection = createMockConnection({ tools: {} }, transport);
 			const tool = deferred
-				? new DeferredMCPTool(connection.name, definition, async () => connection, undefined, async () => {
-						reconnects++;
-						throw new Error("must not reconnect after cancellation");
-					})
+				? new DeferredMCPTool(
+						connection.name,
+						definition,
+						async () => connection,
+						undefined,
+						async () => {
+							reconnects++;
+							throw new Error("must not reconnect after cancellation");
+						},
+					)
 				: new MCPTool(connection, definition, async () => {
 						reconnects++;
 						throw new Error("must not reconnect after cancellation");
@@ -258,7 +438,13 @@ describe("MCP tool delivery", () => {
 				}),
 			);
 			const tool = deferred
-				? new DeferredMCPTool(first.name, definition, async () => first, undefined, async () => recovered)
+				? new DeferredMCPTool(
+						first.name,
+						definition,
+						async () => first,
+						undefined,
+						async () => recovered,
+					)
 				: new MCPTool(first, definition, async () => recovered);
 			// The 401 challenge definitively rejected the first attempt, so one
 			// replay on the re-authenticated connection is safe.

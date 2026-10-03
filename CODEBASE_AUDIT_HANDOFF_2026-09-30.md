@@ -12,6 +12,61 @@ This is a **source-based, risk-focused audit**, centered on `packages/coding-age
 
 **Important existing work:** Laya auth token rotation, sidecar spawn singleflight/PID/early-exit handling, subagent abort propagation, workspace-jail use in main edit/write/LSP paths, async-job cancelled-slot retention, and auth-gateway open-mode CORS have already been addressed in current source. Older `CODE_REVIEW*.md` findings about those paths should not be copied forward without rechecking.
 
+### Third-pass completion status — 2026-10-03 (HEAD `db336df`, clean tree)
+
+Source-based recheck of every finding against the current checkout (audit snapshot was `9324b50`). **26/38 P0+P1+P2+U findings fixed; 0/10 F proposals implemented** (5 partial). Detail sections below are historical as-written; this table supersedes their `Status:` dispositions. Full `check:types` gate was not re-run (U13 fixture confirmed fixed in file only).
+
+| ID | Status | Delta evidence |
+| --- | --- | --- |
+| P0-1 | Partial | Provenance/holdout infra added (`calibration.py`); shipped params still synthetic, thresholds still hard-coded (`laya-gating.ts:47`) |
+| P0-2 | Partial | Bounded queue/deadline/metrics added (`inference_scheduler.py:18`); worker still `to_thread`, no killable process |
+| P0-3 | Partial | Keying/bounding fixed (`laya-pruning.ts:158`); sole production caller is dispose (`agent-session.ts:4765`), no rewind/compact invalidation |
+| P1-1 | Fixed | Routing documented as not wired; no production callers |
+| P1-2 | Fixed | Tab path tries live resume first (`selector-controller.ts:2072-2087`); legacy switch kept as fallback |
+| P1-3 | Partial | Explicit-vs-derived resolver exists; `/laya status` (`laya-cli.ts:126-154`) still misreports defaults as overrides |
+| P1-4 | Fixed | Shadow dispatches immediately, classifies in background (`structured-subagent.ts:317-331`) |
+| P1-5 | Fixed | Production path uses active goal (`laya-pruning.ts:391`), legacy first-message helper retained only |
+| P1-6 | Fixed | Pre-score budget bypass (`laya-pruning.ts:544-554`) skips no-op scoring |
+| P1-7 | Fixed | Client chunks to 64-question cap (`laya-pruning.ts:46-47`) |
+| P1-8 | Fixed | Singleton resolved per call, rebuilt on drift (`laya-client.ts:415-440`) |
+| P1-9 | Fixed | Tier-first gating covers MCP/extension (`laya-gating.ts:52-66`) |
+| P1-10 | Fixed | Abort signal + `task_context` + narrowed checks (`laya-completion.ts:43-44,89-94`) |
+| P1-11 | Fixed | Reuse requires model identity + authenticated decide probe (`laya-self-healing.ts:553-597`) |
+| P2-1 | Fixed | Circuit breaker + p50/p95 (`laya-circuit.ts:35-38`); p99 gap remains |
+| P2-2 | Fixed | Pre-parse 8 MB body cap middleware (`server.py:402-467`) |
+| P2-3 | Partial | Writes moved to user-data + gitignored, but `decisions.jsonl` still tracked in git |
+| P2-4 | Partial | Range bounded (`<0.4.0`), startup probe exists; equivalence test opt-in only |
+| P2-5 | Partial | Production prompts in `.md`; subagent/calibration questions still inline |
+| P2-6 | Fixed | Central validator (`laya-client.ts:72-121`) + caller re-checks kept |
+| P2-7 | Fixed | `groundTruth` separated from `callerBaseline`; threshold still provisional pending held-out validation |
+| P2-8 | Fixed | README corrected to 0–3 + contract test (`laya-pruning.test.ts:54-83`) |
+| P2-9 | Fixed | Telemetry fallback via `logger.warn` (`telemetry.ts:632-644`), no `console.*` |
+| P2-10 | Partial | 8-target binary + sidecar smoke in `release.yml`; no source-vs-npm/macOS-sidecar/offline legs |
+| U1 | Fixed | Shared-root predicate gates snapshot/bus/transcript/control; advisors excluded (`host.ts:581-589,592-627,691-706`) |
+| U2 | Partial | Replay limited to pre-dispatch `connect` stage + `outcomeUnknown` flag; no idempotency keys, no read/write split |
+| U3 | Fixed | Cross-process file lock + lease/claim on rewrite (`file-lock.ts:1-55`, `session-manager.ts:3048-3058,486-528`) |
+| U4 | Fixed | Request-correlated completion incl local-only/idle/disconnect (`rpc-client.ts:1041-1071,1082-1180`) |
+| U5 | Partial | `abort*` on immediate lane + queue bound 64; no run/generation binding |
+| U6 | Fixed | Non-loopback bind refused before serve without token (`stats/server.ts:462-472`) |
+| U7 | Partial | 1 MiB line cap + drain + chunk admission; no stdin backpressure |
+| U8 | Fixed | Unknown-command errors preserve validated request ID (`rpc-mode.ts:1592-1599`) |
+| U9 | Fixed | 4 MiB bounded body/SSE reads (`http.ts:39,47,61-109`) |
+| U10 | Fixed | Pending UI settles `unavailable` when no writable peer remains (`host.ts:177-178,532-544`) |
+| U11 | Fixed | Progress to stderr in JSON mode, single doc on stdout (`stats/index.ts:109-113,172-200`) |
+| U12 | Partial | Explicit rerank controls + result cache; no shared prune+rerank budget, no prompt-rev in key |
+| U13 | Fixed (fixture; gate not re-run) | Fixture now includes `isError: false` (`markdown-brain.test.ts:228`) |
+| U14 | Fixed | Capability-checked native path with real TS fallback (`mmr.ts:25-61,82-96`) |
+| F1 | Absent | `isProjectTrusted: () => true` stub unchanged; no trust gate |
+| F2 | Partial | Still uniform `approval="write"`; no per-server/tool policy |
+| F3 | Absent | No user monetary ceiling found |
+| F4 | Partial | Share redaction exists; no per-channel preview |
+| F5 | Partial | `outcomeUnknown` flag only; no outcome ledger |
+| F6 | Absent | Fragments only, no unified view |
+| F7 | Partial | Store-side APIs exist; no provenance UI |
+| F8 | Absent | No single pipeline diagnostic |
+| F9 | Partial | Binary matrix only; listed portability legs missing |
+| F10 | Absent | No owner/phase/force-stop UI contract |
+
 ### Start here
 
 | Finding | Immediate concern | Evidence level |
@@ -199,14 +254,6 @@ The client still casts parsed JSON directly to `LayaDecideResponse` without a ce
 ### P2-10. Installation and packaging coverage remains incomplete
 
 `REVIEW_RECENT_CHANGES_2026-09-28.md` records that clean Windows/macOS/Linux setup, restricted/offline installs, actual CPU/GPU wheel selection, and standalone binary Laya inference were not exercised. The current focused tests do not close those gaps. Add a CI matrix or manual release gate for source, npm bundle, and compiled binary; verify one real `/v1/decide` call, token rotation, port fallback, and teardown on each supported platform. Keep the single-checkpoint invariant.
-
-## Suggested implementation sequence for another agent
-
-1. **Protect correctness:** fix timeout capacity, pruning lock identity/invalidation, and response validation; add focused regression tests for each observable failure.
-2. **Make Laya policy evidence-based:** collect coding-specific labeled data, separate shadow telemetry from dispatch, and expose effective calibrated settings. Keep conservative tool approvals throughout.
-3. **Remove wasted latency:** skip pruning below budget, bound scoring batches, adopt per-call deadlines/circuit breaker, and measure actual token savings against added decision time.
-4. **Finish integration deliberately:** connect live sessions to the UI, decide whether model routing and step completion are supported features, then wire or remove the claims.
-5. **Harden release paths:** validate authenticated sidecar identity, private logs, pinned dependency compatibility, and packaged cross-platform smoke tests.
 
 ## Measurement plan
 

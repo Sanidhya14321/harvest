@@ -485,6 +485,80 @@ describe("MCP Streamable HTTP protocol version header", () => {
 	});
 });
 
+describe("MCP HTTP idempotency keys", () => {
+	it("sends the per-call key as an Idempotency-Key header when provided", async () => {
+		let seen: string | null = "missing";
+		server = Bun.serve({
+			port: 0,
+			fetch(req) {
+				seen = req.headers.get("Idempotency-Key");
+				return Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [] } });
+			},
+		});
+		const transport = await connectedTransport();
+
+		await withPendingGuard(transport.request("tools/list", undefined, { idempotencyKey: "call-abc" }), "request");
+		expect(seen).toBe("call-abc");
+		await transport.close();
+	});
+
+	it("omits the header when no key is provided", async () => {
+		let present = true;
+		server = Bun.serve({
+			port: 0,
+			fetch(req) {
+				present = req.headers.has("Idempotency-Key");
+				return Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [] } });
+			},
+		});
+		const transport = await connectedTransport();
+
+		await withPendingGuard(transport.request("tools/list"), "request");
+		expect(present).toBe(false);
+		await transport.close();
+	});
+
+	it("surfaces a server-provided key on retryable HTTP failures", async () => {
+		server = Bun.serve({
+			port: 0,
+			fetch() {
+				return new Response("upstream unavailable", {
+					status: 503,
+					headers: { "Idempotency-Key": "op-123" },
+				});
+			},
+		});
+		const transport = await connectedTransport();
+
+		const error = await withPendingGuard(transport.request("tools/call"), "request").then(
+			() => undefined,
+			reason => reason,
+		);
+		if (!(error instanceof MCPTransportError)) throw error;
+		expect(error).toMatchObject({ failure: "http_status", code: 503, retryable: true });
+		expect(error.idempotencyKey).toBe("op-123");
+		await transport.close();
+	});
+
+	it("leaves the key absent when the server does not participate", async () => {
+		server = Bun.serve({
+			port: 0,
+			fetch() {
+				return new Response("upstream unavailable", { status: 503 });
+			},
+		});
+		const transport = await connectedTransport();
+
+		const error = await withPendingGuard(transport.request("tools/call"), "request").then(
+			() => undefined,
+			reason => reason,
+		);
+		if (!(error instanceof MCPTransportError)) throw error;
+		expect(error.idempotencyKey).toBeUndefined();
+		await transport.close();
+	});
+});
+
 describe("MCP Streamable HTTP POST response resumption", () => {
 	it("resumes a closed response stream with Last-Event-ID after the requested retry delay", async () => {
 		const observed: {
@@ -779,7 +853,10 @@ describe("MCP HTTP response byte limits", () => {
 		});
 		const transport = await connectedTransport(0);
 		const failure = Promise.withResolvers<Error>();
-		const guard = setTimeout(() => failure.resolve(new Error("timed out waiting for the oversized-event error")), 5000);
+		const guard = setTimeout(
+			() => failure.resolve(new Error("timed out waiting for the oversized-event error")),
+			5000,
+		);
 		transport.onError = error => {
 			clearTimeout(guard);
 			failure.resolve(error instanceof Error ? error : new Error(String(error)));

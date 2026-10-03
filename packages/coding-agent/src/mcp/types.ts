@@ -258,7 +258,25 @@ export interface MCPToolsListResult {
 export interface MCPToolCallParams {
 	name: string;
 	arguments?: Record<string, unknown>;
+	/**
+	 * Base-metadata envelope (MCP spec "Base Metadata"). Receivers ignore
+	 * unknown members, so the bridge stamps the per-call idempotency key
+	 * here for servers that dedupe on it. Never part of the tool's
+	 * `arguments`, so strict input schemas are unaffected.
+	 */
+	_meta?: Record<string, unknown>;
 }
+
+/**
+ * `_meta` / header member carrying the client's stable per-call idempotency
+ * key on `tools/call`. Mirrors the `Idempotency-Key` HTTP header sent on
+ * Streamable HTTP POSTs; servers that dedupe on either channel make a retry
+ * with the same key safe.
+ */
+export const MCP_IDEMPOTENCY_KEY_META = "mcp/idempotency-key";
+
+/** Wire header carrying the per-call idempotency key on MCP HTTP requests. */
+export const MCP_IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
 /** Content types in tool results */
 export interface MCPTextContent {
@@ -310,6 +328,13 @@ export interface MCPToolCallResult {
 export interface MCPRequestOptions {
 	/** Abort signal (e.g. Escape-to-interrupt) */
 	signal?: AbortSignal;
+	/**
+	 * Stable per-operation key the server may use to dedupe a retry.
+	 * Sent as the `Idempotency-Key` header on HTTP and as
+	 * `params._meta["mcp/idempotency-key"]` on every transport. Servers
+	 * that ignore it behave exactly as before.
+	 */
+	idempotencyKey?: string;
 }
 
 /** Transport interface - abstracts stdio/http */

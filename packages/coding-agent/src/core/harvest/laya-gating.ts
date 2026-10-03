@@ -43,10 +43,29 @@ export interface ToolGatingDecision {
 	readonly latencyMs: number;
 }
 
-/** Threshold above which a noul score is classified as irreversible / dangerous. */
+/**
+ * Threshold above which a noul score is classified as irreversible / dangerous.
+ *
+ * PROVISIONAL (P0-1): this constant is not a measured safety threshold. The
+ * shipped sidecar calibration is synthetic (see
+ * `decision-sidecar/calibration_params.json` `_provenance`), server-side
+ * temperature calibration only reshapes confidence (it does not feed this
+ * rule), and no labeled coding-tool dataset (read-only vs reversible write
+ * vs destructive vs network/publish vs permission-change) has established a
+ * false-clear rate for shell/write/edit/patch calls. Do NOT treat a Laya
+ * clear as safety evidence, and do NOT retune this value by guess: tuning
+ * requires real consented traces, a held-out measurement, and versioned
+ * calibration provenance with a pre-registered acceptance bar.
+ */
 export const IRREVERSIBLE_NOUL_THRESHOLD = 0.35;
 
-/** Minimum confidence required to auto-clear a high-risk tool call without approval. */
+/**
+ * Minimum confidence required to auto-clear a high-risk tool call without approval.
+ *
+ * PROVISIONAL (P0-1): same status as {@link IRREVERSIBLE_NOUL_THRESHOLD} —
+ * a conservative placeholder pending held-out validation, not a measured
+ * operating point. Approval policy still applies; low confidence escalates.
+ */
 export const MIN_GATING_CONFIDENCE = 0.75;
 
 export async function checkToolCallGating(

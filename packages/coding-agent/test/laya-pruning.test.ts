@@ -6,9 +6,12 @@ import {
 	estimateTextTokens,
 	extractMessageText,
 	extractTaskGoal,
+	invalidatePruningLocksOnHistoryRewrite,
 	partitionMessagesIntoTurns,
 	PRUNING_AUDIT_LOG,
+	PRUNING_PROMPT_REVISION,
 	pruneContextWithLaya,
+	pruningLockKey,
 	resetLockedPruningDecisions,
 } from "../src/core/harvest/laya-pruning";
 import { LayaClient } from "../src/core/harvest/laya-client";
@@ -818,6 +821,136 @@ describe("Laya Context Pruning (Phase 1)", () => {
 				setMemoryCachedCalibration(null);
 				resetLockedPruningDecisions("auto-pruning-test");
 			}
+		});
+	});
+
+	describe("History-rewrite invalidation P0-3 and prompt-revision re-key", () => {
+		it("embeds content hash and prompt revision in the lock key", () => {
+			const a = pruningLockKey("s", "tool_0_1_bash", "ALPHA");
+			const b = pruningLockKey("s", "tool_0_1_bash", "BETA");
+			const c = pruningLockKey("s", "tool_0_1_bash", "ALPHA", "rev-other");
+			expect(a).toContain(PRUNING_PROMPT_REVISION);
+			expect(a).not.toBe(b);
+			expect(a).not.toBe(c);
+		});
+
+		it("rescores identical content after a rewind/compact/restore invalidation instead of replaying stale drops", async () => {
+			const sessionId = `test-history-rewrite-${Date.now()}`;
+			try {
+				const mockDecide = vi.fn(async (_state: unknown, questions: Record<string, unknown>) => ({
+					success: true,
+					fallback: false,
+					latencyMs: 5,
+					data: Object.fromEntries(
+						Object.keys(questions).map(key => [key, { type: "score", score: 0, confidence: 0.9 }]),
+					),
+				}));
+				const mockClient = { decide: mockDecide } as unknown as LayaClient;
+				const testSettings = {
+					get: (k: string) => (k === "laya.enabled" || k === "laya.pruning" ? true : undefined),
+				} as unknown as Settings;
+				const messages: AgentMessage[] = [
+					makeUserMessage("Goal: inspect logs"),
+					makeToolResultMessage("c0", "bash", "STALE_LOG_".repeat(100)),
+					makeUserMessage("Turn 1"),
+					makeUserMessage("Turn 2"),
+				];
+				const opts = {
+					client: mockClient,
+					settings: testSettings,
+					sessionId,
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+				};
+				const first = await pruneContextWithLaya(messages, opts);
+				expect(first.droppedCount).toBe(1);
+				expect(mockDecide).toHaveBeenCalledTimes(1);
+
+				// Same transcript, no rewrite: locked decision replays without rescoring.
+				const second = await pruneContextWithLaya(messages, opts);
+				expect(mockDecide).toHaveBeenCalledTimes(1);
+				expect(second.droppedCount).toBe(1);
+
+				// Rewind/compact/restore clears the session's locks: identical
+				// content in a rewritten transcript is scored afresh.
+				invalidatePruningLocksOnHistoryRewrite(sessionId);
+				const third = await pruneContextWithLaya(messages, opts);
+				expect(mockDecide).toHaveBeenCalledTimes(2);
+				expect(third.droppedCount).toBe(1);
+			} finally {
+				resetLockedPruningDecisions(sessionId);
+			}
+		});
+
+		it("rescores identical content when the prompt revision changes", async () => {
+			const sessionId = `test-prompt-rev-${Date.now()}`;
+			try {
+				const mockDecide = vi.fn(async (_state: unknown, questions: Record<string, unknown>) => ({
+					success: true,
+					fallback: false,
+					latencyMs: 5,
+					data: Object.fromEntries(
+						Object.keys(questions).map(key => [key, { type: "score", score: 3, confidence: 0.9 }]),
+					),
+				}));
+				const mockClient = { decide: mockDecide } as unknown as LayaClient;
+				const testSettings = {
+					get: (k: string) => (k === "laya.enabled" || k === "laya.pruning" ? true : undefined),
+				} as unknown as Settings;
+				const messages: AgentMessage[] = [
+					makeUserMessage("Goal: inspect logs"),
+					makeToolResultMessage("c0", "bash", "PROMPT_REV_LOG_".repeat(100)),
+					makeUserMessage("Turn 1"),
+					makeUserMessage("Turn 2"),
+				];
+				const base = {
+					client: mockClient,
+					settings: testSettings,
+					sessionId,
+					keepRecentTurns: 1,
+					minKeptTurns: 1,
+					prunableTokenBudget: 10,
+				};
+				await pruneContextWithLaya(messages, { ...base, promptRevision: "rev-a" });
+				expect(mockDecide).toHaveBeenCalledTimes(1);
+				// Same revision replays from the lock.
+				await pruneContextWithLaya(messages, { ...base, promptRevision: "rev-a" });
+				expect(mockDecide).toHaveBeenCalledTimes(1);
+				// New prompt revision misses and scores afresh.
+				await pruneContextWithLaya(messages, { ...base, promptRevision: "rev-b" });
+				expect(mockDecide).toHaveBeenCalledTimes(2);
+			} finally {
+				resetLockedPruningDecisions(sessionId);
+			}
+		});
+
+		it("fails open without scoring when the shared prune+rerank budget is exhausted", async () => {
+			const mockDecide = vi.fn();
+			const mockClient = { decide: mockDecide } as unknown as LayaClient;
+			const testSettings = {
+				get: (k: string) => (k === "laya.enabled" || k === "laya.pruning" ? true : undefined),
+			} as unknown as Settings;
+			const messages: AgentMessage[] = [
+				makeUserMessage("Goal: inspect logs"),
+				makeToolResultMessage("c0", "bash", "BUDGET_LOG_".repeat(100)),
+				makeUserMessage("Turn 1"),
+				makeUserMessage("Turn 2"),
+			];
+			const exhausted = { totalMs: 600, deadline: 0, remainingMs: () => 0 };
+			const result = await pruneContextWithLaya(messages, {
+				client: mockClient,
+				settings: testSettings,
+				sessionId: `test-budget-${Date.now()}`,
+				keepRecentTurns: 1,
+				minKeptTurns: 1,
+				prunableTokenBudget: 10,
+				budget: exhausted,
+			});
+			expect(mockDecide).not.toHaveBeenCalled();
+			expect(result.fallback).toBe(true);
+			expect(result.fallbackReason).toBe("shared_budget_exhausted");
+			expect(result.messages).toEqual(messages);
 		});
 	});
 });

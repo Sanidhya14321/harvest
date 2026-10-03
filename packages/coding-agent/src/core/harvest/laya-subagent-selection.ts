@@ -24,22 +24,18 @@ import { type Settings, settings as globalSettings, type SettingPath } from "../
 import type { AgentDefinition } from "../../task/types";
 import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
 import { getDerivedTimeoutMsSync, getExplicitSetting } from "./laya-calibration";
+import { SUBAGENT_CRITERIA as BUILTIN_AGENT_CRITERIA, SUBAGENT_SELECTION_INSTRUCTIONS } from "./laya-prompt-assets";
 
 export const DEFAULT_SUBAGENT_SELECTION_CONFIDENCE_THRESHOLD = 0.01;
 export const DEFAULT_SUBAGENT_TIMEOUT_MS = 300;
 
-export const BUILTIN_AGENT_CRITERIA: Record<string, string> = {
-	scout:
-		"Codebase navigation and discovery. Select when the user wants to understand or find code without modifying it. Example tasks: 'Where is the auth handler defined?', 'Find all references to AgentMessage', 'Trace the request lifecycle'.",
-	reviewer:
-		"Code review and pull request inspection. Select when the user wants qualitative feedback or bug inspection on changes. Example tasks: 'Review this diff for bugs', 'Check this PR for edge cases', 'Verify correctness of this commit'.",
-	"security-reviewer":
-		"Security and vulnerability assessment. Select when the task is specifically focused on security threats or sensitive data leaks. Example tasks: 'Check for SQL injection or path traversal', 'Scan for hardcoded API keys', 'Audit permissions'.",
-	sonic:
-		"Mechanical and repetitive tasks. Select for non-creative, simple bulk edits that don't need deep reasoning. Example tasks: 'Replace tab indents with spaces across all files', 'Convert CRLF to LF', 'Rename imports'.",
-	task:
-		"Implementation and active software engineering. Select when the agent must write code, create files, implement algorithms, or execute end-to-end tasks. Example tasks: 'Build a rate limiter', 'Fix this bug and write tests', 'Implement feature X'.",
-};
+/**
+ * Distinct, mutually exclusive criteria for each built-in subagent, parsed
+ * from the versioned `prompts/laya/subagent-criteria.md` asset (re-exported
+ * here so existing importers keep working). Custom roster agents fall back to
+ * their own descriptions in {@link buildSubagentCriteria}.
+ */
+export { BUILTIN_AGENT_CRITERIA };
 
 export interface LayaSubagentSelectionOptions {
 	readonly client?: LayaClient;
@@ -269,7 +265,7 @@ export async function selectSubagentWithLaya(
 	const questions: Record<string, LayaQuestionDefinition> = {
 		subagent_choice: {
 			type: "choice",
-			instructions: "Which specialized subagent is best suited to execute this assigned task?",
+			instructions: SUBAGENT_SELECTION_INSTRUCTIONS,
 			criteria,
 		},
 	};
