@@ -44,6 +44,7 @@ import agentCreationArchitectPrompt from "../../prompts/system/agent-creation-ar
 import agentCreationUserPrompt from "../../prompts/system/agent-creation-user.md" with { type: "text" };
 import { createAgentSession } from "../../sdk";
 import { refreshAgentDiscovery } from "../../task";
+import { PRESET_IDENTIFIER_PATTERN as IDENTIFIER_PATTERN } from "../../task/agents";
 import { discoverAgents } from "../../task/discovery";
 import { resolveAgentPrewalkDefault } from "../../task/prewalk";
 import type { AgentDefinition, AgentSource } from "../../task/types";
@@ -138,7 +139,6 @@ export interface AgentsHubCallbacks {
 
 const SIDEBAR_MIN_WIDTH = 16;
 const SIDEBAR_MAX_WIDTH = 24;
-const IDENTIFIER_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+){1,5}$/;
 
 function extractAssistantText(messages: AgentMessage[]): string | null {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -1156,7 +1156,10 @@ export class AgentsHubComponent implements Component {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	#terminalRows(): number {
-		return Math.max(16, this.#tui.terminal?.rows || process.stdout.rows || 40);
+		// Short-terminal budget: never render taller than the viewport itself.
+		// The old Math.max(16, …) floor overflowed viewports under 16 rows and
+		// pushed the search row, selected row, and footer into scrollback.
+		return Math.max(6, this.#tui.terminal?.rows || process.stdout.rows || 40);
 	}
 
 	#sidebarWidth(): number {
@@ -1230,7 +1233,10 @@ export class AgentsHubComponent implements Component {
 		this.#listRowStart = lines.length;
 
 		const detailRows = 4;
-		const visibleRows = Math.max(3, rows - lines.length - detailRows);
+		// Short terminals collapse the detail block first: the search row and
+		// the selected agent row keep their rows, the detail block is cut by
+		// the trailing slice below.
+		const visibleRows = Math.max(1, rows - lines.length - detailRows);
 		if (this.#rowIndex < this.#listScroll) this.#listScroll = this.#rowIndex;
 		else if (this.#rowIndex >= this.#listScroll + visibleRows) this.#listScroll = this.#rowIndex - visibleRows + 1;
 		this.#listScroll = Math.max(0, Math.min(this.#listScroll, Math.max(0, this.#rows.length - visibleRows)));
@@ -1443,14 +1449,14 @@ export class AgentsHubComponent implements Component {
 		const sidebarWidth = this.#sidebarWidth();
 		this.#sidebarWidthLast = sidebarWidth;
 		const bodyWidth = splitBodyWidth(width, sidebarWidth);
-		const contentRows = Math.max(10, height - 4);
+		const contentRows = Math.max(1, height - 4);
 		this.#contentRowCount = contentRows;
 
 		const bodyLines: string[] = [this.#statusRow(bodyWidth)];
 		if (this.#createActive) {
 			bodyLines.push(...this.#renderCreate(bodyWidth, contentRows - 1));
 		} else if (this.#assigning) {
-			this.#browser.setMaxVisible(contentRows - 1 - 5);
+			this.#browser.setMaxVisible(Math.max(1, contentRows - 1 - 5));
 			this.#browser.setFocused(true);
 			bodyLines.push(...this.#browser.render(bodyWidth));
 		} else {

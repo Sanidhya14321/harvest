@@ -79,9 +79,7 @@ describe("theme setup scene preview", () => {
 
 		// The editor block is the real composer-shape render for the
 		// configured shape — the same getComposerStyle path runtime uses.
-		const composerPreview = renderComposerShapePreview("band", width, statusLine).map(line =>
-			Bun.stripANSI(line),
-		);
+		const composerPreview = renderComposerShapePreview("band", width, statusLine).map(line => Bun.stripANSI(line));
 		const chrome = composerPreview.filter(line => line.trim());
 		expect(chrome.length).toBeGreaterThanOrEqual(2);
 		for (const line of chrome) expect(stripped).toContain(line);

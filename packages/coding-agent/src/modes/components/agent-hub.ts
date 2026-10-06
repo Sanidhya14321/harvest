@@ -44,6 +44,7 @@ import { USER_INTERRUPT_LABEL } from "../../session/messages";
 import { shortenPath, truncateToWidth } from "../../tools/render-utils";
 import { formatLocalDateTimeWithOffset } from "../../utils/local-date";
 import type { ObservableSession, SessionObserverRegistry } from "../session-observer-registry";
+import type { ManagedSessionHandle, ManagedSessionStatus } from "../../session/session-management-facade";
 import { theme } from "../theme/theme";
 import { matchesSelectDown, matchesSelectUp } from "../utils/keybinding-matchers";
 import {
@@ -91,9 +92,97 @@ const SPLIT_MIN_WIDTH = 96;
 const DETAIL_MIN_WIDTH = 34;
 const ROSTER_MIN_WIDTH = 48;
 
-export type AgentHubSection = "agents" | "activity";
+export type AgentHubSection = "agents" | "activity" | "sessions";
 type ActivityFilter = "all" | "errors" | "responses" | "tools";
 type ActivityScope = "all" | "agent" | "subtree";
+/**
+ * Sessions-section filter over facade `list()` snapshots. `closed` means
+ * hidden-from-tabs but still live (reopenable); `attention` means waiting or
+ * errored. Distinct from the subagent Activity rows: those describe agent
+ * turns, these describe session visibility + runtime state.
+ */
+export type SessionHubFilter = "all" | "open" | "running" | "attention" | "closed" | "archived";
+export const SESSION_HUB_FILTERS: readonly SessionHubFilter[] = [
+	"all",
+	"open",
+	"running",
+	"attention",
+	"closed",
+	"archived",
+];
+
+/** Apply a Sessions-section filter and search query to facade snapshots. */
+export function filterSessionHandles(
+	handles: readonly ManagedSessionHandle[],
+	filter: SessionHubFilter,
+	query: string,
+): ManagedSessionHandle[] {
+	const q = query.trim().toLowerCase();
+	return handles.filter(handle => {
+		switch (filter) {
+			case "open":
+				if (!(handle.visible && !handle.archived)) return false;
+				break;
+			case "running":
+				if (handle.status !== "running") return false;
+				break;
+			case "attention":
+				if (handle.status !== "waiting" && handle.status !== "error") return false;
+				break;
+			case "closed":
+				if (handle.visible || handle.archived) return false;
+				break;
+			case "archived":
+				if (!handle.archived) return false;
+				break;
+			case "all":
+				break;
+		}
+		if (!q) return true;
+		const haystack = `${handle.id} ${handle.title ?? ""} ${handle.path ?? ""}`.toLowerCase();
+		return q.split(/\s+/).every(token => haystack.includes(token));
+	});
+}
+
+/**
+ * Merge live sync rows with cold-inclusive async rows (facade `listAll()`).
+ * Live rows win on duplicate stable IDs (freshest runtime state); cold-only
+ * rows append after, preserving their real `archived`/`visible` flags. Pure
+ * function so the sync/async contract stays testable without timers.
+ */
+export function mergeSessionHandles(
+	live: readonly ManagedSessionHandle[],
+	asyncHandles: readonly ManagedSessionHandle[],
+): ManagedSessionHandle[] {
+	const seen = new Set(live.map(handle => handle.id));
+	const merged = [...live];
+	for (const handle of asyncHandles) {
+		if (!seen.has(handle.id)) {
+			seen.add(handle.id);
+			merged.push(handle);
+		}
+	}
+	return merged;
+}
+
+/** Themed glyph + label for a managed session's lifecycle status. */
+export function formatManagedSessionStatus(status: ManagedSessionStatus): string {
+	switch (status) {
+		case "running":
+			return theme.fg("accent", "● running");
+		case "waiting":
+			return theme.fg("warning", "? waiting");
+		case "error":
+			return theme.fg("error", "! error");
+		case "completed":
+			return theme.fg("success", "✓ done");
+		case "archived":
+			return theme.fg("muted", "○ archived");
+		case "idle":
+		default:
+			return theme.fg("dim", "· idle");
+	}
+}
 
 type HubViewMode = "roster" | "tree";
 
@@ -182,6 +271,43 @@ export interface AgentHubDeps {
 	initialSection?: AgentHubSection;
 	/** Injectable unified activity source; production creates one from local or remote transcripts. */
 	activity?: AgentActivityIndex;
+
+	/**
+	 * Facade `list()` snapshot source for the Sessions section. Absent (tests,
+	 * collab guests) renders the section with an unavailable empty state.
+	 *
+	 * Must stay synchronous: the hub renders synchronously every frame and
+	 * cannot await disk I/O there. The sync source carries live snapshots only
+	 * (`facade.list()`); cold on-disk sessions arrive via `sessionListAsync`
+	 * below and merge once resolved. An owner that pre-merges cold sessions
+	 * synchronously (cached) may return them here directly — rows render
+	 * whatever this returns verbatim, including real `archived` flags.
+	 */
+	sessionList?: () => ManagedSessionHandle[];
+	/**
+	 * Cold-inclusive async source for the Sessions section (owner: facade
+	 * `listAll()`, live plus persisted cold sessions with real archived flags
+	 * from storage). Optional: when present the hub shows live rows
+	 * immediately, loads this once on first Sessions entry, then merges cold
+	 * rows and re-renders. Defined here so the owner can switch the production
+	 * source from sync `list()` to async `listAll()` without changing this
+	 * component's render contract.
+	 */
+	sessionListAsync?: () => Promise<ManagedSessionHandle[]>;
+	/** Reopen/view a session by stable ID (owner: facade reopen/select). */
+	onSessionReopen?: (id: string) => void | Promise<void>;
+	/** Stop only the requested run (owner: facade stop → registry.stop). Never force-kills children. */
+	onSessionStop?: (id: string) => void | Promise<void>;
+	/** Archive a session by stable ID (owner: facade archive). Refuses busy runs; reversible via restore. */
+	onSessionArchive?: (id: string) => void | Promise<void>;
+	/** Restore an archived session by stable ID (owner: facade restore). */
+	onSessionRestore?: (id: string) => void | Promise<void>;
+	/**
+	 * Send text to a session where supported. Absent hides the send action;
+	 * approval actions always stay bound to their originating owner and are
+	 * never proxied through here.
+	 */
+	onSessionSend?: (id: string, text: string) => void | Promise<void>;
 
 	/** Collab guest: route actions/transcripts to the host instead of local sessions. */
 	remote?: AgentHubRemote;
@@ -278,6 +404,25 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 	#expandKeys: KeyId[];
 	#focusAgent: ((id: string) => Promise<void>) | undefined;
 
+	// Sessions-section state (facade list() snapshots; distinct from subagent Activity rows).
+	#sessionListSource: (() => ManagedSessionHandle[]) | undefined;
+	#sessionListAsyncSource: (() => Promise<ManagedSessionHandle[]>) | undefined;
+	#sessionAsyncHandles: ManagedSessionHandle[] | undefined;
+	#sessionAsyncLoading = false;
+	#sessionAsyncGeneration = 0;
+	#onSessionReopen: ((id: string) => void | Promise<void>) | undefined;
+	#onSessionStop: ((id: string) => void | Promise<void>) | undefined;
+	#onSessionArchive: ((id: string) => void | Promise<void>) | undefined;
+	#onSessionRestore: ((id: string) => void | Promise<void>) | undefined;
+	#onSessionSend: ((id: string, text: string) => void | Promise<void>) | undefined;
+	#sessionFilter: SessionHubFilter = "all";
+	#sessionSearch = "";
+	#sessionSearchEditing = false;
+	#selectedSessionRow = 0;
+	#sessionSendEditing = false;
+	#sessionSendBuffer = "";
+	#sessionNotice: string | undefined;
+
 	// Fullscreen transcript overlay opened by openChat(), if any.
 	#transcriptOverlay: OverlayHandle | undefined;
 	#transcriptViewer: AgentTranscriptViewer | undefined;
@@ -313,6 +458,13 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		this.#proseOnlyThinking = deps.proseOnlyThinking;
 		this.#expandKeys = deps.expandKeys ?? ["ctrl+o"];
 		this.#focusAgent = deps.focusAgent;
+		this.#sessionListSource = deps.sessionList;
+		this.#sessionListAsyncSource = deps.sessionListAsync;
+		this.#onSessionReopen = deps.onSessionReopen;
+		this.#onSessionStop = deps.onSessionStop;
+		this.#onSessionArchive = deps.onSessionArchive;
+		this.#onSessionRestore = deps.onSessionRestore;
+		this.#onSessionSend = deps.onSessionSend;
 
 		this.#unsubscribers.push(this.#registry.onChange(() => this.#scheduleDataChange()));
 		this.#unsubscribers.push(this.#observers.onChange(() => this.#scheduleDataChange()));
@@ -357,6 +509,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 	override dispose(): void {
 		if (this.#disposed) return;
 		this.#disposed = true;
+		this.#sessionAsyncGeneration++;
 		for (const unsubscribe of this.#unsubscribers.splice(0)) unsubscribe();
 		if (this.#ageTimer) {
 			clearInterval(this.#ageTimer);
@@ -374,7 +527,9 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const frame = (
 			this.#section === "activity"
 				? this.#renderActivityTable(width, termHeight)
-				: this.#renderTable(width, termHeight)
+				: this.#section === "sessions"
+					? this.#renderSessionsTable(width, termHeight)
+					: this.#renderTable(width, termHeight)
 		).map(line => clampHubLine(line, width));
 		if (frame.length <= termHeight) return frame;
 
@@ -407,6 +562,10 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			this.#handleActivitySearchInput(keyData);
 			return;
 		}
+		if (this.#section === "sessions" && (this.#sessionSearchEditing || this.#sessionSendEditing)) {
+			this.#handleSessionTextInput(keyData);
+			return;
+		}
 		if (keyData === "1") {
 			this.#switchSection("agents");
 			return;
@@ -415,7 +574,12 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			this.#switchSection("activity");
 			return;
 		}
+		if (keyData === "3") {
+			this.#switchSection("sessions");
+			return;
+		}
 		if (this.#section === "activity") this.#handleActivityInput(keyData);
+		else if (this.#section === "sessions") this.#handleSessionsInput(keyData);
 		else this.#handleTableInput(keyData);
 	}
 
@@ -683,7 +847,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			this.#section === section
 				? theme.bg("selectedBg", theme.bold(theme.fg("accent", ` ${label} `)))
 				: theme.fg("muted", ` ${label} `);
-		return `${tab("agents", "1 Agents")}${theme.fg("dim", theme.sep.dot)}${tab("activity", "2 Activity")}`;
+		return `${tab("agents", "1 Agents")}${theme.fg("dim", theme.sep.dot)}${tab("activity", "2 Activity")}${theme.fg("dim", theme.sep.dot)}${tab("sessions", "3 Sessions")}`;
 	}
 
 	#renderActivityTable(width: number, termHeight: number): string[] {
@@ -762,6 +926,328 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			`${roleBadge}${theme.bold(agent)} ${theme.fg(activity.kind === "response" ? "success" : "muted", title)}`;
 		const available = Math.max(1, width - visibleWidth(prefix) - visibleWidth(theme.sep.dot));
 		return `${prefix}${theme.fg("dim", theme.sep.dot)}${sanitizeLine(activity.summary, available)}`;
+	}
+
+	// ========================================================================
+	// Sessions section (facade list() snapshots)
+	// ========================================================================
+
+	/**
+	 * Sessions table over facade snapshots: visibility + runtime state per
+	 * stable session ID. Rows render the snapshot status verbatim — children
+	 * of stopped parents show their actual state, never an invented cascade.
+	 * Archive/restore/stop/reopen stay separate: this surface only reopens/views
+	 * (facade reopen), stops the requested run (facade stop, never a
+	 * force-kill of children), archives/restores through the owner, and sends
+	 * text where the owner supports it. Approval actions are never proxied
+	 * here; they stay bound to their originating owner. The `archived` filter
+	 * reflects the real `archived` flag from the source — never a hardcoded
+	 * value.
+	 */
+	#sessionRows(): ManagedSessionHandle[] {
+		const live = this.#sessionListSource?.() ?? [];
+		const handles = this.#sessionAsyncHandles ? mergeSessionHandles(live, this.#sessionAsyncHandles) : live;
+		const rows = filterSessionHandles(handles, this.#sessionFilter, this.#sessionSearch);
+		this.#selectedSessionRow = Math.min(this.#selectedSessionRow, Math.max(0, rows.length - 1));
+		return rows;
+	}
+
+	/**
+	 * Lazily load the cold-inclusive async source once per hub lifetime.
+	 * Live rows render immediately from the sync source; cold rows merge when
+	 * the promise resolves and request a re-render. Stale generations (section
+	 * switches during flight, dispose) are ignored.
+	 */
+	#ensureSessionAsyncLoad(): void {
+		if (!this.#sessionListAsyncSource || this.#sessionAsyncHandles || this.#sessionAsyncLoading) return;
+		this.#sessionAsyncLoading = true;
+		const generation = ++this.#sessionAsyncGeneration;
+		void Promise.resolve()
+			.then(() => this.#sessionListAsyncSource?.())
+			.then(handles => {
+				if (this.#disposed || generation !== this.#sessionAsyncGeneration) return;
+				this.#sessionAsyncHandles = handles ?? [];
+				this.#sessionAsyncLoading = false;
+				this.#requestRender();
+			})
+			.catch((error: unknown) => {
+				if (this.#disposed || generation !== this.#sessionAsyncGeneration) return;
+				this.#sessionAsyncLoading = false;
+				logger.warn("Agent hub: async session list failed", { error: String(error) });
+				this.#requestRender();
+			});
+	}
+
+	#formatSessionRow(handle: ManagedSessionHandle, selected: boolean, width: number): string {
+		const cursor = selected ? theme.fg("accent", theme.nav.cursor) : " ";
+		const title = sanitizeLine(handle.title ?? "(unsaved session)", width);
+		const name = selected ? theme.bold(theme.fg("accent", title)) : theme.bold(title);
+		const markers = [
+			handle.selected ? theme.fg("accent", "●current") : undefined,
+			handle.visible ? undefined : theme.fg("muted", "○hidden"),
+			handle.archived ? theme.fg("muted", "archived") : undefined,
+		].filter((part): part is string => !!part);
+		const location = handle.path ? shortenPath(handle.path) : "(unsaved — reachable here)";
+		const prefix = `${cursor} ${formatManagedSessionStatus(handle.status)} ${name} `;
+		const suffix = markers.length > 0 ? ` ${markers.join(" ")}` : "";
+		const available = Math.max(8, width - visibleWidth(prefix) - visibleWidth(suffix));
+		return `${prefix}${theme.fg("dim", sanitizeLine(location, available))}${suffix}`;
+	}
+
+	#renderSessionsTable(width: number, termHeight: number): string[] {
+		this.#hitRows.length = 0;
+		this.#ensureSessionAsyncLoad();
+		const innerWidth = Math.max(1, width - 4);
+		const contentRows = Math.max(1, termHeight - 4);
+		const body: string[] = [this.#sectionTabs()];
+		const search = this.#sessionSearchEditing
+			? theme.fg("accent", `search: ${this.#sessionSearch}▌`)
+			: this.#sessionSearch
+				? `search: ${this.#sessionSearch}`
+				: "search: —";
+		const send = this.#sessionSendEditing ? theme.fg("accent", `message: ${this.#sessionSendBuffer}▌`) : undefined;
+		body.push(theme.fg("dim", `filter:${this.#sessionFilter}${theme.sep.dot}${search}`));
+		if (send) body.push(send);
+		if (this.#sessionAsyncLoading) body.push(theme.fg("dim", "Loading saved sessions…"));
+		if (this.#sessionNotice) body.push(theme.fg("error", sanitizeLine(this.#sessionNotice, innerWidth)));
+		if (contentRows >= 8) body.push("");
+
+		const budget = Math.max(0, contentRows - body.length);
+		const rows = this.#sessionRows();
+		if (!this.#sessionListSource && !this.#sessionListAsyncSource && budget > 0) {
+			body.push(theme.fg("muted", "Session management is unavailable in this context"));
+		} else if (rows.length === 0 && budget > 0) {
+			body.push(
+				theme.fg(
+					"muted",
+					this.#sessionSearch || this.#sessionFilter !== "all"
+						? "No matching sessions"
+						: "No sessions — hidden and unsaved sessions appear here once created",
+				),
+			);
+		} else if (budget > 0) {
+			const selected = Math.min(this.#selectedSessionRow, rows.length - 1);
+			const start = Math.max(0, Math.min(selected - Math.floor(budget / 2), rows.length - budget));
+			const end = Math.min(rows.length, start + budget);
+			if (start > 0) body.push(theme.fg("dim", `… ${start} earlier`));
+			for (let index = start + Number(start > 0); index < end; index++) {
+				this.#hitRows[1 + body.length] = index;
+				body.push(this.#formatSessionRow(rows[index]!, index === selected, innerWidth));
+			}
+		}
+		while (body.length < contentRows) body.push("");
+
+		const lines = [topBorder(width, "Agent Hub")];
+		for (const line of body.slice(0, contentRows)) lines.push(row(line, width));
+		lines.push(divider(width));
+		lines.push(
+			row(
+				theme.fg(
+					"dim",
+					"1:agents 2:activity  j/k:select  Enter:reopen  x:stop  a:archive  u:restore  m:message  f:filter  /:search  Esc:close",
+				),
+				width,
+			),
+		);
+		lines.push(bottomBorder(width));
+		return lines;
+	}
+
+	#handleSessionTextInput(keyData: string): void {
+		if (this.#sessionSendEditing) {
+			if (matchesKey(keyData, "escape")) {
+				this.#sessionSendEditing = false;
+				this.#sessionSendBuffer = "";
+			} else if (matchesKey(keyData, "enter") || keyData === "\r" || keyData === "\n") {
+				const rows = this.#sessionRows();
+				const handle = rows[this.#selectedSessionRow];
+				const text = this.#sessionSendBuffer;
+				this.#sessionSendEditing = false;
+				this.#sessionSendBuffer = "";
+				if (handle && text && this.#onSessionSend) {
+					this.#sessionNotice = undefined;
+					void Promise.resolve(this.#onSessionSend(handle.id, text)).catch((error: unknown) => {
+						this.#sessionNotice = error instanceof Error ? error.message : String(error);
+						this.#requestRender();
+					});
+				}
+			} else if (matchesKey(keyData, "backspace")) {
+				this.#sessionSendBuffer = this.#sessionSendBuffer.slice(0, -1);
+			} else if (keyData.length === 1 && keyData >= " " && keyData !== "") {
+				this.#sessionSendBuffer += keyData;
+			} else {
+				return;
+			}
+			this.#requestRender();
+			return;
+		}
+		if (matchesKey(keyData, "escape") || matchesKey(keyData, "enter") || keyData === "\r" || keyData === "\n") {
+			this.#sessionSearchEditing = false;
+		} else if (matchesKey(keyData, "backspace")) {
+			this.#sessionSearch = this.#sessionSearch.slice(0, -1);
+		} else if (keyData.length === 1 && keyData >= " " && keyData !== "") {
+			this.#sessionSearch += keyData;
+		} else {
+			return;
+		}
+		this.#selectedSessionRow = 0;
+		this.#requestRender();
+	}
+
+	#handleSessionsInput(keyData: string): void {
+		if (matchesKey(keyData, "escape")) {
+			if (this.#sessionSearch) {
+				this.#sessionSearch = "";
+				this.#selectedSessionRow = 0;
+				this.#requestRender();
+			} else {
+				this.#onDone();
+			}
+			return;
+		}
+		if (keyData === "/") {
+			this.#sessionSearchEditing = true;
+			this.#requestRender();
+			return;
+		}
+		if (keyData === "f") {
+			const index = SESSION_HUB_FILTERS.indexOf(this.#sessionFilter);
+			this.#sessionFilter = SESSION_HUB_FILTERS[(index + 1) % SESSION_HUB_FILTERS.length]!;
+			this.#selectedSessionRow = 0;
+			this.#requestRender();
+			return;
+		}
+		if (matchesKey(keyData, "j") || matchesSelectDown(keyData)) {
+			const rows = this.#sessionRows();
+			if (rows.length > 0) this.#selectedSessionRow = Math.min(this.#selectedSessionRow + 1, rows.length - 1);
+			this.#requestRender();
+			return;
+		}
+		if (matchesKey(keyData, "k") || matchesSelectUp(keyData)) {
+			const rows = this.#sessionRows();
+			if (rows.length > 0) this.#selectedSessionRow = Math.max(this.#selectedSessionRow - 1, 0);
+			this.#requestRender();
+			return;
+		}
+		if (matchesKey(keyData, "enter") || keyData === "\r" || keyData === "\n") {
+			this.#reopenSelectedSession();
+			return;
+		}
+		if (keyData === "x") {
+			this.#stopSelectedSession();
+			return;
+		}
+		if (keyData === "a") {
+			this.#archiveSelectedSession();
+			return;
+		}
+		if (keyData === "u") {
+			this.#restoreSelectedSession();
+			return;
+		}
+		if (keyData === "m") {
+			const rows = this.#sessionRows();
+			if (rows[this.#selectedSessionRow] && this.#onSessionSend) {
+				this.#sessionSendEditing = true;
+				this.#sessionSendBuffer = "";
+				this.#requestRender();
+			} else {
+				this.#sessionNotice = "Messaging is not supported for sessions in this context";
+				this.#requestRender();
+			}
+			return;
+		}
+	}
+
+	/** Reopen/view the selected session through the owner (facade reopen). */
+	#reopenSelectedSession(): void {
+		const handle = this.#sessionRows()[this.#selectedSessionRow];
+		if (!handle) return;
+		if (!this.#onSessionReopen) {
+			this.#sessionNotice = "Reopen is unavailable in this context";
+			this.#requestRender();
+			return;
+		}
+		this.#sessionNotice = undefined;
+		void Promise.resolve(this.#onSessionReopen(handle.id)).catch((error: unknown) => {
+			this.#sessionNotice = error instanceof Error ? error.message : String(error);
+			this.#requestRender();
+		});
+		this.#requestRender();
+	}
+
+	/** Stop only the selected run through the owner (facade stop → registry.stop). */
+	#stopSelectedSession(): void {
+		const handle = this.#sessionRows()[this.#selectedSessionRow];
+		if (!handle) return;
+		if (!this.#onSessionStop) {
+			this.#sessionNotice = "Stop is unavailable in this context";
+			this.#requestRender();
+			return;
+		}
+		if (handle.status !== "running" && handle.status !== "waiting") {
+			this.#sessionNotice = `Stop is unavailable: session is ${handle.status} (only running or waiting runs can be stopped)`;
+			this.#requestRender();
+			return;
+		}
+		this.#sessionNotice = undefined;
+		void Promise.resolve(this.#onSessionStop(handle.id)).catch((error: unknown) => {
+			this.#sessionNotice = error instanceof Error ? error.message : String(error);
+			this.#requestRender();
+		});
+		this.#requestRender();
+	}
+
+	/**
+	 * Archive the selected session through the owner (facade archive).
+	 * Honest disabled states, never force-kill: without a callback the action
+	 * is unavailable; already-archived rows report so instead of re-archiving;
+	 * busy runs surface the facade's stop-first refusal verbatim.
+	 */
+	#archiveSelectedSession(): void {
+		const handle = this.#sessionRows()[this.#selectedSessionRow];
+		if (!handle) return;
+		if (!this.#onSessionArchive) {
+			this.#sessionNotice = "Archive is unavailable in this context";
+			this.#requestRender();
+			return;
+		}
+		if (handle.archived) {
+			this.#sessionNotice = "Session is already archived — use u to restore it";
+			this.#requestRender();
+			return;
+		}
+		this.#sessionNotice = undefined;
+		void Promise.resolve(this.#onSessionArchive(handle.id)).catch((error: unknown) => {
+			this.#sessionNotice = error instanceof Error ? error.message : String(error);
+			this.#requestRender();
+		});
+		this.#requestRender();
+	}
+
+	/**
+	 * Restore the selected archived session through the owner (facade
+	 * restore). Non-archived rows report so instead of no-op restores.
+	 */
+	#restoreSelectedSession(): void {
+		const handle = this.#sessionRows()[this.#selectedSessionRow];
+		if (!handle) return;
+		if (!this.#onSessionRestore) {
+			this.#sessionNotice = "Restore is unavailable in this context";
+			this.#requestRender();
+			return;
+		}
+		if (!handle.archived) {
+			this.#sessionNotice = "Session is not archived — nothing to restore";
+			this.#requestRender();
+			return;
+		}
+		this.#sessionNotice = undefined;
+		void Promise.resolve(this.#onSessionRestore(handle.id)).catch((error: unknown) => {
+			this.#sessionNotice = error instanceof Error ? error.message : String(error);
+			this.#requestRender();
+		});
+		this.#requestRender();
 	}
 	#renderTable(width: number, termHeight: number): string[] {
 		this.#hitRows.length = 0;
@@ -1238,6 +1724,11 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 					Math.min(this.#selectedActivityRow + delta, this.#activityRows.length - 1),
 				);
 			}
+		} else if (this.#section === "sessions") {
+			const rows = this.#sessionRows();
+			if (rows.length > 0) {
+				this.#selectedSessionRow = Math.max(0, Math.min(this.#selectedSessionRow + delta, rows.length - 1));
+			}
 		} else if (this.#rows.length > 0) {
 			this.#selectRow(Math.max(0, Math.min(this.#selectedRow + delta, this.#rows.length - 1)));
 		}
@@ -1266,6 +1757,17 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			this.#requestRender();
 			return;
 		}
+		if (this.#section === "sessions") {
+			const rows = this.#sessionRows();
+			if (!rows[index]) return;
+			if (index === this.#selectedSessionRow) {
+				this.#reopenSelectedSession();
+				return;
+			}
+			this.#selectedSessionRow = index;
+			this.#requestRender();
+			return;
+		}
 		const selected = this.#rows[index];
 		if (!selected) return;
 		this.#hoveredRow = index;
@@ -1280,6 +1782,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		this.#hoveredRow = null;
 		this.#narrowDetailsOpen = false;
 		if (section === "activity") this.#refreshActivityRows();
+		if (section === "sessions") this.#ensureSessionAsyncLoad();
 		this.#requestRender();
 	}
 

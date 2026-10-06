@@ -1,5 +1,5 @@
 import type { Usage } from "@harvest/pi-ai";
-import { Container, Spacer, Text } from "@harvest/pi-tui";
+import { Container, Spacer, Text, truncateToWidth } from "@harvest/pi-tui";
 import { formatDuration, formatNumber } from "@harvest/pi-utils";
 import { theme } from "../../modes/theme/theme";
 
@@ -38,6 +38,7 @@ export function formatUsageRow(
 	ttftMs?: number,
 	timestamp?: number,
 	turnElapsedMs?: number,
+	width?: number,
 ): string {
 	const totalInput = usage.input + usage.cacheWrite;
 	const parts: string[] = [];
@@ -68,7 +69,13 @@ export function formatUsageRow(
 		const tokPerSec = (usage.output / durationMs) * 1000;
 		parts.push(`${theme.icon.throughput} ${tokPerSec.toFixed(1)}/s`);
 	}
-	return parts.join("  ");
+	const line = parts.join("  ");
+	// Owners that render into a fixed-width row clip the overflow here instead
+	// of leaving a wrapped remnant; absent/invalid widths keep the full line.
+	if (width !== undefined && Number.isFinite(width) && width > 0) {
+		return truncateToWidth(line, Math.floor(width));
+	}
+	return line;
 }
 
 /** Blocks minted by {@link createUsageRowBlock}, so transcript walkers can attribute them to the turn above. */
@@ -118,16 +125,21 @@ export function createCompletionEndcapBlock(options: {
 // `timestamp` and `turnElapsedMs` are optional and trail the throughput args to
 // preserve the existing (usage, durationMs, ttftMs) call contract — this
 // function is part of the package's public export surface (./modes/components/*).
+// The trailing `width` is likewise optional: owners that render into a
+// fixed-width row pass it to clip the overflow via `formatUsageRow`.
 export function createUsageRowBlock(
 	usage: Usage,
 	durationMs?: number,
 	ttftMs?: number,
 	timestamp?: number,
 	turnElapsedMs?: number,
+	width?: number,
 ): Container {
 	const block = new Container();
 	block.addChild(new Spacer(1));
-	block.addChild(new Text(theme.fg("dim", formatUsageRow(usage, durationMs, ttftMs, timestamp, turnElapsedMs)), 1, 0));
+	block.addChild(
+		new Text(theme.fg("dim", formatUsageRow(usage, durationMs, ttftMs, timestamp, turnElapsedMs, width)), 1, 0),
+	);
 	usageRowBlocks.add(block);
 	return block;
 }

@@ -311,7 +311,8 @@ export class WorkspaceSidebar implements Component {
 		const sections = this.#buildSections();
 		sections.forEach((section, index) => {
 			const collapsed = this.isCollapsed(section.title);
-			const marker = index === 0 ? "" : collapsed ? " ▸" : " ▾";
+			const marker =
+				index === 0 ? "" : collapsed ? ` ${theme.symbol("nav.expand")}` : ` ${theme.symbol("nav.collapse")}`;
 			const titleRow =
 				index === 0
 					? theme.bold(theme.fg("text", truncateToWidth(section.title, inner)))

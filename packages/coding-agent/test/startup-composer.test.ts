@@ -423,9 +423,9 @@ describe("Composer prepaint", () => {
 			welcome: { version: "9.9.9" },
 		});
 		composer.start();
-		await terminal.waitForRender(() => terminal.getViewport().some(row => Bun.stripANSI(row).includes("harvest")));
+		await terminal.waitForRender(() => terminal.getViewport().some(row => Bun.stripANSI(row).includes("█")));
 		const rows = terminal.getViewport().map(row => Bun.stripANSI(row));
-		const logoRow = rows.findIndex(row => row.includes("harvest"));
+		const logoRow = rows.findIndex(row => row.includes("█"));
 		expect(logoRow).toBeGreaterThan(8);
 		expect(logoRow).toBeLessThan(20);
 		expect(rows.join("\n")).not.toContain("Welcome back!");
@@ -437,11 +437,12 @@ describe("Composer prepaint", () => {
 		composer.start();
 		for (const width of [120, 90]) {
 			const rows = composer.renderFrame({ columns: width, rows: 32 }).viewport.map(row => Bun.stripANSI(row));
-			const logo = rows.find(row => row.includes("harvest"));
+			const logo = rows.find(row => row.includes("█"));
 			const prompt = rows.find(row => row.includes("▎"));
 			expect(logo).toBeDefined();
 			expect(prompt).toBeDefined();
-			expect(logo!.indexOf("harvest")).toBe(Math.floor((width - "harvest".length) / 2));
+			// Pixel wordmark is 41 columns wide and centered as one block.
+			expect(logo!.indexOf("█")).toBe(Math.floor((width - 41) / 2));
 			expect(prompt!.indexOf("▎")).toBeGreaterThanOrEqual(Math.floor((width - 76) / 2));
 		}
 		composer.stop();

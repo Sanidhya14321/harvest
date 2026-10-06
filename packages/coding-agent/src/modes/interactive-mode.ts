@@ -103,7 +103,7 @@ import guidedGoalInterviewPrompt from "../prompts/goals/guided-goal-interview.md
 import planFilenamePrompt from "../prompts/system/plan-filename.md" with { type: "text" };
 import planModeApprovedPrompt from "../prompts/system/plan-mode-approved.md" with { type: "text" };
 import planModeCompactInstructionsPrompt from "../prompts/system/plan-mode-compact-instructions.md" with { type: "text" };
-import { type AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
+import { AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
@@ -121,7 +121,9 @@ import type { SessionManager } from "../session/session-manager";
 import { FileSessionStorage } from "../session/session-storage";
 import { loadSessionTabs, sessionTabsFile } from "../session/session-tab-persistence";
 import { LiveSessionRegistry } from "../session/live-session-registry";
+import { SessionManagementFacade } from "../session/session-management-facade";
 import { liveSessionFactoryOptions, openLiveAgentSession } from "../session/live-session-factory";
+import { setSessionToolDeps } from "../tools/sessions";
 import type { ShakeMode } from "../session/shake-types";
 import { SessionViewStateStore } from "../session/session-view-state";
 import { BUILTIN_SLASH_COMMAND_RESERVED_NAMES, buildTuiBuiltinSlashCommands } from "../slash-commands/builtin-registry";
@@ -152,6 +154,7 @@ import { applyHyperlinkSetting } from "../tui/hyperlink";
 import { renderTreeList } from "../tui/tree-list";
 import { formatStartupChangelogSummary, type StartupChangelogSelection } from "../utils/changelog";
 import { copyToClipboard } from "../utils/clipboard";
+import { resolveActiveRepoContextSync } from "../utils/active-repo-context";
 import type { EventBus } from "../utils/event-bus";
 import { getEditorCommand, openInEditor } from "../utils/external-editor";
 import { resumeCommand } from "../utils/resume-command";
@@ -192,8 +195,8 @@ import { TranscriptContainer } from "./components/transcript-container";
 import type { LspServerInfo as WelcomeLspServerInfo } from "./components/welcome";
 import { Composer, type ComposerStatusSnapshot } from "./composer";
 import { writeComposerStatusCache, writeComposerWelcomeCache } from "./composer-cache";
-import { CommandPaletteComponent } from "./components/command-palette";
-import { emptySidebarSnapshot, WorkspaceSidebar, type WorkspaceSidebarSnapshot } from "./components/workspace-sidebar";
+import { CommandPaletteComponent, paletteListBudget } from "./components/command-palette";
+import { WorkspaceSidebar, type WorkspaceSidebarSnapshot } from "./components/workspace-sidebar";
 import { BtwController } from "./controllers/btw-controller";
 import { CleanseCommandController } from "./controllers/cleanse-command-controller";
 import { CommandController } from "./controllers/command-controller";
@@ -606,6 +609,12 @@ export class InteractiveMode implements InteractiveModeContext {
 	readonly runDiagnostics = new RunDiagnosticsTracker();
 	/** Live tab runtime ownership; the initial session is adopted in init. */
 	liveSessions: LiveSessionRegistry | undefined;
+	/**
+	 * Typed session lifecycle owner (close/reopen/stop/archive/delete over
+	 * the registry, tabs, storage, and view state). Constructed alongside
+	 * the registry; undefined when registry adoption failed.
+	 */
+	sessions: SessionManagementFacade | undefined;
 	/** Composer attachment band (chip cards) rendered directly above the prompt box. */
 	attachmentChipsContainer: Container;
 	hookWidgetContainerAbove: Container;
@@ -924,6 +933,106 @@ export class InteractiveMode implements InteractiveModeContext {
 	async #openColdLiveSession(sessionPath: string): Promise<AgentSession> {
 		return openLiveAgentSession(liveSessionFactoryOptions(this, sessionPath));
 	}
+
+	/**
+	 * Model-callable session creation seam. Independent sessions the model
+	 * creates go through the same live-session factory as tabs (never
+	 * `AgentSession.newSession()`, which would reset the caller), are adopted
+	 * into the existing owner registry, and start in the background without
+	 * stealing focus. Default access is the current project; broader targets
+	 * are rejected here and need an explicit permission grant upstream.
+	 *
+	 * Per-call scoping: callerId is the trusted ToolSession identity of the
+	 * executing session (computed server-side, never a model param). The
+	 * caller's live runtime provides the settings/model/credentials snapshot,
+	 * so two concurrent callers never inherit each other's overrides.
+	 */
+	#registerModelSessionFactory(): void {
+		const registry = this.liveSessions;
+		if (!registry) return;
+		setSessionToolDeps({
+			openSession: async input => {
+				const cwd = this.sessionManager.getCwd();
+				if (path.resolve(input.cwd) !== path.resolve(cwd)) {
+					throw new Error(`Session creation is limited to the current project (${cwd}).`);
+				}
+				const live = this.liveSessions;
+				if (!live) throw new Error("Live session registry is unavailable.");
+				// Resolve the caller from trusted runtime facts: live UUID
+				// first, then registry ID. Unknown callers fall back to the
+				// visible session snapshot (documented, never model-chosen).
+				let caller = this.session;
+				let callerRegistryId: string | undefined;
+				if (input.callerId) {
+					const warm = live.sessions.find(s => s.sessionManager.getSessionId() === input.callerId);
+					if (warm) {
+						caller = warm;
+					} else {
+						const ref = AgentRegistry.global()
+							.list()
+							.find(
+								candidate =>
+									candidate.id === input.callerId ||
+									candidate.session?.sessionManager.getSessionId() === input.callerId,
+							);
+						if (ref?.session) caller = ref.session as typeof caller;
+						if (ref) callerRegistryId = ref.id;
+					}
+					if (!callerRegistryId) {
+						callerRegistryId =
+							AgentRegistry.global()
+								.list()
+								.find(candidate => candidate.session === caller)?.id ??
+							(AgentRegistry.global().get(input.callerId) ? input.callerId : undefined);
+					}
+				}
+				const source = {
+					sessionManager: caller.sessionManager,
+					session: caller,
+					mcpManager: this.mcpManager,
+				};
+				const session = await openLiveAgentSession({
+					...liveSessionFactoryOptions(source),
+					background: true,
+					parentAgentId: callerRegistryId,
+					taskDepth: input.taskDepth ?? 1,
+				});
+				registry.adoptBackground(session);
+				const uuid = session.sessionManager.getSessionId();
+				const file = session.sessionManager.getSessionFile();
+				if (file) {
+					this.#selectorController.sessionTabs.open(file, session.sessionManager.getSessionName());
+					registry.notePath(uuid, file);
+				}
+				// Dispatch the initial task exactly once, in the background.
+				// The prompt is fire-and-forget: status/activity stay observable
+				// through inspect, and failures are logged, never silent.
+				let taskAccepted = false;
+				const firstTask = input.task?.trim();
+				if (firstTask) {
+					taskAccepted = true;
+					void session
+						.prompt(firstTask)
+						.catch(error =>
+							logger.warn("Model-created session task failed", { sessionId: uuid, error: String(error) }),
+						);
+				}
+				return {
+					id: uuid,
+					registryId: `tab:${uuid}`,
+					taskAccepted,
+					session: {
+						getSessionId: () => session.sessionManager.getSessionId(),
+						abort: () => session.abort(),
+						setSessionName: async (title: string, source?: string) => {
+							await session.setSessionName(title, (source as "auto" | "user") ?? "user");
+						},
+						prompt: (message: string) => session.prompt(message),
+					},
+				};
+			},
+		});
+	}
 	clearTransientSessionUi(): void {
 		this.#hideSessionInfo();
 		if (this.loadingAnimation) {
@@ -976,6 +1085,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	#commandPaletteOpen = false;
 	#sidebarGeneration = 0;
 	#sidebarRefreshTimer: NodeJS.Timeout | undefined;
+	#sidebarMutationTimer: NodeJS.Timeout | undefined;
 	#sidebarVcsUnwatch: (() => void) | undefined;
 	#sidebarMcpUnsubscribe: (() => void) | undefined;
 	#sidebarChanges: WorkspaceSidebarSnapshot["changes"] = [];
@@ -1040,6 +1150,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.editor.imageReferenceHyperlink = imageReferenceHyperlink;
 		this.#ownsStartedUi = wasStarted;
 		this.keybindings = KeybindingsManager.inMemory();
+		this.composer.setKeyHintSource(this.keybindings);
 		this.agent = session.agent;
 		this.#version = version;
 		this.#startupChangelog = startupChangelog;
@@ -1109,6 +1220,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		// settled normal-buffer repaint for each SIGWINCH.
 		this.#resizeHandler = () => {
 			this.#syncEditorMaxHeight();
+			this.#rebudgetCommandPalette();
 		};
 		process.stdout.on("resize", this.#resizeHandler);
 		try {
@@ -1282,25 +1394,71 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	#setupSidebarRefresh(): void {
+		try {
+			this.#workspaceSidebar.setSessionKey(this.sessionManager.getSessionId());
+		} catch {
+			// Unit-test doubles may lack a session id; sidebar keeps global state.
+		}
 		this.refreshWorkspaceSidebar();
 		void this.#refreshSidebarChanges();
+		this.#watchSidebarVcs();
+		if (this.#sidebarRefreshTimer) clearInterval(this.#sidebarRefreshTimer);
+		this.#sidebarRefreshTimer = setInterval(() => this.refreshWorkspaceSidebar(), 5000);
+		this.#sidebarRefreshTimer.unref?.();
+	}
+
+	/**
+	 * Repository root backing the Workspace Changes section: the session cwd
+	 * when it sits inside a repository, else the single direct-child repo
+	 * (covers worktree-parent layouts). Empty when no repository applies.
+	 */
+	#sidebarRepoCwd(): string {
+		let cwd = "";
+		try {
+			cwd = this.sessionManager.getCwd();
+		} catch {
+			return "";
+		}
+		if (!cwd) return "";
+		try {
+			return resolveActiveRepoContextSync(cwd)?.repoRoot ?? cwd;
+		} catch {
+			return cwd;
+		}
+	}
+
+	/** (Re)subscribe the native VCS watcher to the current repo root. */
+	#watchSidebarVcs(): void {
 		void import("@harvest/pi-natives/vcs")
 			.then(vcs => {
 				try {
-					const cwd = this.sessionManager.getCwd();
-					const handle = vcs.repo?.(cwd) ?? null;
+					const handle = vcs.repo?.(this.#sidebarRepoCwd()) ?? null;
 					if (handle) {
 						this.#sidebarVcsUnwatch?.();
 						this.#sidebarVcsUnwatch = vcs.watch(handle, () => void this.#refreshSidebarChanges(), 2000);
+					} else {
+						this.#sidebarVcsUnwatch?.();
+						this.#sidebarVcsUnwatch = undefined;
 					}
 				} catch {
 					// Native VCS unavailable; changes section degrades.
 				}
 			})
 			.catch(() => {});
-		if (this.#sidebarRefreshTimer) clearInterval(this.#sidebarRefreshTimer);
-		this.#sidebarRefreshTimer = setInterval(() => this.refreshWorkspaceSidebar(), 5000);
-		this.#sidebarRefreshTimer.unref?.();
+	}
+
+	/**
+	 * Tool completions and external edits change working files without
+	 * moving the repository HEAD the native watcher observes. Coalesce
+	 * those invalidations into one trailing refresh (never in render()).
+	 */
+	noteWorkspaceMutation(): void {
+		if (this.#sidebarMutationTimer) return;
+		this.#sidebarMutationTimer = setTimeout(() => {
+			this.#sidebarMutationTimer = undefined;
+			void this.#refreshSidebarChanges();
+		}, 2000);
+		this.#sidebarMutationTimer.unref?.();
 	}
 
 	/** Typed, read-only sidebar snapshot from existing owners. No I/O in render(). */
@@ -1348,9 +1506,9 @@ export class InteractiveMode implements InteractiveModeContext {
 			const phases = this.session.getTodoPhases?.() ?? [];
 			for (const phase of phases) {
 				for (const task of phase.tasks ?? []) {
-					if (task.status === "completed" || task.status === "in_progress" || task.status === "pending") {
-						todos.push({ label: task.content ?? "todo", done: task.status === "completed" });
-					}
+					// Project every supported task status; only completed reads done.
+					// Unknown/empty content stays visible rather than vanishing.
+					todos.push({ label: task.content || String(task.status ?? "todo"), done: task.status === "completed" });
 					if (todos.length >= 12) break;
 				}
 				if (todos.length >= 12) break;
@@ -1372,6 +1530,13 @@ export class InteractiveMode implements InteractiveModeContext {
 		} catch {
 			version = "";
 		}
+		let extensions: { label: string; detail?: string }[] = [];
+		try {
+			const paths = this.session.extensionRunner?.getExtensionPaths() ?? [];
+			extensions = paths.slice(0, 12).map(p => ({ label: path.basename(p) || p }));
+		} catch {
+			extensions = [];
+		}
 		return {
 			title,
 			contextKnown,
@@ -1388,7 +1553,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			changesTruncated: this.#sidebarChangesTruncated,
 			changesState: this.#sidebarChangesState,
 			changesError: this.#sidebarChangesError,
-			extensions: [],
+			extensions,
 			version,
 			sessionId: this.sessionManager.getSessionId?.(),
 			generation: this.#sidebarGeneration,
@@ -1406,12 +1571,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	async #refreshSidebarChanges(): Promise<void> {
 		const generation = ++this.#sidebarGeneration;
-		let cwd = "";
-		try {
-			cwd = this.sessionManager.getCwd();
-		} catch {
-			cwd = "";
-		}
+		const cwd = this.#sidebarRepoCwd();
 		if (!cwd) {
 			if (generation !== this.#sidebarGeneration) return;
 			this.#sidebarChangesState = "non-repository";
@@ -1487,15 +1647,31 @@ export class InteractiveMode implements InteractiveModeContext {
 		} else {
 			const open = !this.composer.sidebarOverlayOpen;
 			this.composer.setSidebarOverlayOpen(open);
-			if (!open) this.ui.setFocus(this.editor);
+			if (!open) {
+				this.#workspaceSidebar.setFocused(false);
+				this.#selectorController.closeOverlayToEditorArea(undefined);
+			}
 		}
 		this.ui.requestRender();
 	}
 
 	focusSidebar(): void {
+		if (this.settings.get("tui.sidebar") === "hide") return;
 		this.composer.setSidebarOverlayOpen(true);
 		this.#workspaceSidebar.setFocused(true);
+		this.#workspaceSidebar.setOnClose(() => {
+			this.#workspaceSidebar.setFocused(false);
+			this.#selectorController.closeOverlayToEditorArea(undefined);
+		});
 		this.ui.setFocus(this.#workspaceSidebar as unknown as Parameters<TUI["setFocus"]>[0]);
+	}
+
+	/** Re-derive the open palette's list budget from its live overlay allocation. */
+	#rebudgetCommandPalette(): void {
+		if (!this.#commandPaletteOpen) return;
+		const overlayRows = Math.max(8, Math.floor((this.ui.terminal.rows ?? 24) * 0.6));
+		this.#commandPalette.setMaxVisible(paletteListBudget(overlayRows));
+		this.ui.requestRender();
 	}
 
 	/** Registry-backed palette: TUI builtins + extensions/custom/MCP/skills/file commands. */
@@ -1505,44 +1681,131 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#commandPaletteOpen = true;
 		const previousFocus = this.ui.getFocused();
 		const draft = this.editor.getText();
+		const { buildTuiBuiltinSlashCommands, executeBuiltinSlashCommand } =
+			await import("../slash-commands/builtin-registry");
+		const {
+			mergePaletteItems,
+			paletteListBudget,
+			describePaletteDispatchResult,
+			describePaletteDispatchError,
+			resolvePaletteSelection,
+			TAB_MANAGEMENT_PALETTE_SOURCES,
+		} = await import("./components/command-palette");
+		type PaletteCommandSource = import("./components/command-palette").PaletteCommandSource;
 		try {
-			const { buildTuiBuiltinSlashCommands } = await import("../slash-commands/builtin-registry");
 			const builtins = buildTuiBuiltinSlashCommands({ ctx: this });
-			const items = builtins.map(cmd => ({
-				id: `/${cmd.name}`,
-				title: `/${cmd.name}`,
-				hint: cmd.description,
+			const builtinSources: PaletteCommandSource[] = builtins.map(cmd => ({
+				name: cmd.name,
+				description: cmd.description,
 				group: "builtin",
+				allowArgs: cmd.allowArgs,
+				hasSubcommands: (cmd.subcommands?.length ?? 0) > 0,
+				inlineHint: cmd.inlineHint,
 			}));
-			// Include session slash-command state (extensions, custom/MCP prompts,
-			// skills, file commands, templates) without duplicating a manual list.
+			// Refresh file/template state with the receiver intact and never let
+			// an async discovery failure terminate the session; the palette
+			// still offers registry state when a refresh fails.
 			try {
-				const extra = (this as unknown as { refreshSlashCommandState?: () => void }).refreshSlashCommandState;
-				if (typeof extra === "function") extra();
-			} catch {
-				// Palette still offers builtins when extension state is unavailable.
+				await this.refreshSlashCommandState();
+			} catch (error) {
+				logger.warn("Command palette refresh failed; using cached commands", {
+					error: String(error),
+				});
 			}
+			// Session slash-command state (extensions, custom/MCP prompts,
+			// skills, file commands, templates) without duplicating a manual list.
+			const pendingSources: PaletteCommandSource[] = this.#pendingSlashCommands
+				.filter(command => !builtins.some(b => b.name === command.name))
+				.map(command => ({
+					name: command.name,
+					description: command.description,
+					group: command.name.startsWith("skill:") ? "skill" : "extension",
+					allowArgs: command.allowArgs,
+					// Extension/skill specs lack static subcommand metadata; an
+					// argument-completion factory means the command takes input.
+					hasSubcommands: typeof command.getArgumentCompletions === "function",
+				}));
+			const fileSources: PaletteCommandSource[] = this.session.slashCommands.map(command => ({
+				name: command.name,
+				description: command.description,
+				group: "file",
+			}));
+			const templateSources: PaletteCommandSource[] = this.session.promptTemplates.map(template => ({
+				name: template.name,
+				description: template.description,
+				group: "template",
+			}));
+			const items = mergePaletteItems(
+				builtinSources,
+				pendingSources,
+				fileSources,
+				templateSources,
+				TAB_MANAGEMENT_PALETTE_SOURCES,
+			);
 			this.#commandPalette.setItems(items);
 			this.#commandPalette.setQuery("");
+			this.#commandPalette.setKeybindings(this.keybindings);
+			// Budget the visible window against the actual overlay height so
+			// the selected row, search, and controls stay visible at small
+			// sizes (no fixed ten-item assumption).
+			const overlayRows = Math.max(8, Math.floor((this.ui.terminal.rows ?? 24) * 0.6));
+			this.#commandPalette.setMaxVisible(paletteListBudget(overlayRows));
 			const handle = this.ui.showOverlay(this.#commandPalette, {
 				anchor: "top-center",
 				width: 60,
 				maxHeight: "60%",
 			});
-			this.ui.setFocus(this.#commandPalette as unknown as Parameters<TUI["setFocus"]>[0]);
-			// Close on Escape is handled by the overlay; ensure focus/draft restore.
-			const close = (): void => {
-				handle.hide();
+			const done = (restoreDraft: boolean): void => {
+				if (!this.#commandPaletteOpen) return;
 				this.#commandPaletteOpen = false;
-				this.ui.setFocus((previousFocus ?? this.editor) as Parameters<TUI["setFocus"]>[0]);
-				if (this.editor.getText() !== draft) this.editor.setText(draft);
-				this.ui.requestRender();
+				this.#commandPalette.onSelect = undefined;
+				this.#commandPalette.onClose = undefined;
+				if (restoreDraft && this.editor.getText() !== draft) this.editor.setText(draft);
+				this.#selectorController.closeOverlayToEditorArea(handle);
 			};
-			// Store for Escape/close paths; palette selection routes through
-			// existing actions/commands and never executes strings via shell.
-			(this.#commandPalette as unknown as { __close?: () => void }).__close = close;
+			this.#commandPalette.onSelect = (item): void => {
+				const plan = resolvePaletteSelection(item);
+				done(false);
+				// Draft intent (or argument-bearing commands) prepares `/name `
+				// in the editor instead of executing an incomplete command.
+				if (plan.kind === "draft") {
+					this.editor.setText(plan.text);
+					return;
+				}
+				void executeBuiltinSlashCommand(plan.text, { ctx: this }).then(
+					result => {
+						if (result === false) {
+							// Not a builtin: route through the same production
+							// submission dispatch as Enter (skills,
+							// extension-local, custom/file/template expansion).
+							// The handler runs exactly once, like a typed submit.
+							this.editor.setText(plan.text);
+							void Promise.resolve(this.editor.onSubmit?.(plan.text)).catch((error: unknown) => {
+								this.showError(error instanceof Error ? error.message : String(error));
+							});
+							return;
+						}
+						const feedback = describePaletteDispatchResult(item, result);
+						if (feedback.kind === "draft") this.editor.setText(feedback.text);
+						else if (feedback.kind === "status") this.showStatus(feedback.text);
+						else this.showError(feedback.text);
+					},
+					error => {
+						const feedback = describePaletteDispatchError(item, error);
+						this.showError(feedback.text);
+					},
+				);
+			};
+			this.#commandPalette.onClose = (): void => {
+				done(true);
+			};
+			this.ui.setFocus(this.#commandPalette as unknown as Parameters<TUI["setFocus"]>[0]);
+			// Legacy Escape/close paths; the component guards onClose to fire once.
+			(this.#commandPalette as unknown as { __close?: () => void }).__close = () => done(true);
 		} catch {
 			this.#commandPaletteOpen = false;
+			this.#commandPalette.onSelect = undefined;
+			this.#commandPalette.onClose = undefined;
 			if (previousFocus) this.ui.setFocus(previousFocus as Parameters<TUI["setFocus"]>[0]);
 		}
 	}
@@ -1555,6 +1818,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.isInitialized) return;
 
 		this.keybindings = logger.time("InteractiveMode.init:keybindings", () => KeybindingsManager.create());
+		this.composer.setKeyHintSource(this.keybindings);
 
 		// Route SIGINT/SIGTERM/SIGHUP/uncaughtException through the same teardown
 		// the TUI Ctrl+C keypress path performs: persist the in-progress editor
@@ -1652,6 +1916,23 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.liveSessions = new LiveSessionRegistry(this.session, sessionPath =>
 				this.#openColdLiveSession(sessionPath),
 			);
+			this.sessions = new SessionManagementFacade({
+				live: this.liveSessions,
+				tabs: this.#selectorController.sessionTabs,
+				viewState: this.viewStateStore,
+				storage: new FileSessionStorage(),
+				createSession: async () => {
+					const fresh = await openLiveAgentSession(liveSessionFactoryOptions(this));
+					this.liveSessions!.adopt(fresh);
+					return fresh;
+				},
+				openSession: sessionPath => this.#openColdLiveSession(sessionPath),
+				directories: {
+					cwd: this.sessionManager.getCwd(),
+					sessionDir: this.sessionManager.getSessionDir(),
+				},
+			});
+			this.#registerModelSessionFactory();
 		} catch (error) {
 			logger.debug("Live session registry unavailable; using legacy session switching", {
 				error: error instanceof Error ? error.message : String(error),
@@ -1688,6 +1969,58 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.showError(error instanceof Error ? error.message : String(error));
 			});
 		});
+		// × close: hide the view only, never activate a hidden tab first and
+		// never abort/dispose/archive/delete the runtime. Closing the ACTIVE
+		// tab selects the right neighbor (else left), exactly like slash
+		// close; last-tab close enters detached Home.
+		sessionTabStrip.setOnClose(path => {
+			void this.#queueSessionNavigation(`close-tab`, async () => {
+				const tabs = this.#selectorController.sessionTabs;
+				// Preserve the visible draft under the session that owns it
+				// (the active session, not the tab being closed) so reopen
+				// restores exactly what was typed.
+				this.viewStateStore.saveDraft(this.sessionManager.getSessionId(), this.editor);
+				const current = this.sessionManager.getSessionFile();
+				const isActive =
+					current !== undefined && normalizePathForComparison(current) === normalizePathForComparison(path);
+				if (isActive && tabs.paths.length > 1) {
+					const next = tabs.neighbor(current, 1);
+					if (next) {
+						await this.handleResumeSession(next);
+						const active = this.sessionManager.getSessionFile();
+						if (!active || normalizePathForComparison(active) !== normalizePathForComparison(next)) {
+							this.showError("Session switch did not complete; the active tab was preserved.");
+							return;
+						}
+					}
+				}
+				if (isActive && tabs.paths.length <= 1) {
+					tabs.closeLastTabToHome();
+					this.enterHomeDetached();
+				} else {
+					tabs.close(path);
+				}
+				this.#selectorController.persistSessionTabs();
+				this.ui.requestRender();
+			}).catch(error => {
+				this.showError(error instanceof Error ? error.message : String(error));
+			});
+		});
+		// Warm-first mouse navigation: resolve live runtimes before disk files.
+		sessionTabStrip.setOnSelectTarget(async navigationTarget => {
+			try {
+				this.clearHomeDetached();
+				const snapshots = this.liveSessions?.snapshots;
+				const warm =
+					navigationTarget.sessionId && snapshots
+						? snapshots.find(entry => entry.id === navigationTarget.sessionId)
+						: this.liveSessions?.snapshotForPath(navigationTarget.path);
+				if (warm?.path) await this.handleResumeSession(warm.path);
+				else await this.handleResumeSession(navigationTarget.path);
+			} catch (error) {
+				this.showError(error instanceof Error ? error.message : String(error));
+			}
+		});
 		this.composer.setWorkspaceTabs(sessionTabStrip);
 		this.composer.setWorkspaceSidebar(this.#workspaceSidebar);
 		this.#seedSidebarMcpFromManager();
@@ -1710,6 +2043,10 @@ export class InteractiveMode implements InteractiveModeContext {
 				}
 				if (this.keybindings.matches(data, "app.sidebar.toggle")) {
 					this.toggleSidebar();
+					return { consume: true };
+				}
+				if (this.keybindings.matches(data, "app.sidebar.focus")) {
+					this.focusSidebar();
 					return { consume: true };
 				}
 				const consumed = routeSgrMouseInput(data, event => {
@@ -2194,6 +2531,11 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 		setSessionTerminalTitle(this.sessionManager.getSessionName(), this.sessionManager.getCwd());
 		this.statusLine.applyCwdChange();
+		// Retarget Workspace Changes to the new repository: invalidate stale
+		// generations, resubscribe the native watcher, and refresh once.
+		this.#sidebarGeneration++;
+		this.#watchSidebarVcs();
+		void this.#refreshSidebarChanges();
 		return true;
 	}
 
@@ -5403,6 +5745,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#sidebarGeneration++;
 		if (this.#sidebarRefreshTimer) clearInterval(this.#sidebarRefreshTimer);
 		this.#sidebarRefreshTimer = undefined;
+		if (this.#sidebarMutationTimer) clearTimeout(this.#sidebarMutationTimer);
+		this.#sidebarMutationTimer = undefined;
 		this.#sidebarVcsUnwatch?.();
 		this.#sidebarVcsUnwatch = undefined;
 		this.#sidebarMcpUnsubscribe?.();
@@ -5767,6 +6111,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	#handleLspStartupEvent(event: LspStartupEvent): void {
 		this.#updateWelcomeLspServers();
+		this.refreshWorkspaceSidebar();
 
 		if (event.type === "failed") {
 			this.showWarning(`LSP startup failed: ${event.error}. It will retry lazily on write.`);
@@ -5901,13 +6246,16 @@ export class InteractiveMode implements InteractiveModeContext {
 				},
 				messageColorFn,
 				DEFAULT_WORKING_MESSAGE,
-				// The brand spinner lives in the status line while working; this row
-				// leads with the interrupt affordance instead of a second spinner.
-				// The leading space nudges the row one column right of the flush-left
-				// status rows so the interrupt glyph reads as indented.
-				[` ${theme.icon.esc}`],
+				// KnightRider-style busy blocks (OpenCode-like working row);
+				// the esc interrupt affordance rides the trailer instead of a
+				// second static glyph.
+				theme.getSpinnerFrames("working"),
 			);
-			this.loadingAnimation.setTrailer(() => this.#workingTitleTrailer());
+			this.loadingAnimation.setTrailer(() => {
+				const title = this.#workingTitleTrailer();
+				const interrupt = theme.fg("muted", `${theme.icon.esc} interrupt`);
+				return title ? `${title} · ${interrupt}` : interrupt;
+			});
 			this.statusContainer.addChild(this.loadingAnimation);
 		} else if (!this.statusContainer.children.includes(this.loadingAnimation)) {
 			this.statusContainer.disposeChildren();
@@ -6141,12 +6489,79 @@ export class InteractiveMode implements InteractiveModeContext {
 		return this.#queueSessionNavigation("new", () => this.#clearSessionView());
 	}
 
+	/** Zero-tab Home override state (see composer.setForceHome). */
+	isHomeDetached(): boolean {
+		return this.composer.forceHome;
+	}
+
+	/** Leave the zero-tab Home override; called by new/select/reopen flows. */
+	clearHomeDetached(): void {
+		this.composer.setForceHome(false);
+	}
+
+	/**
+	 * Enter zero-tab Home: hide the closed session's view while its runtime
+	 * keeps running headless. The closed session's draft, attachments, and
+	 * reading state are saved under its UUID first; the composer shows an
+	 * empty Home composer (no reused title, attachments, or callbacks).
+	 * Hidden sessions stay reachable through Activity/Sessions with Reopen
+	 * and Stop; hidden-session events, results, approvals, and callbacks are
+	 * never redirected into a later session.
+	 */
+	enterHomeDetached(): void {
+		const closedId = this.sessionManager.getSessionId();
+		this.viewStateStore.saveDraft(closedId, this.editor);
+		this.viewStateStore.saveScrollOffset(closedId, this.composer.workspaceScrollOffset);
+		this.viewStateStore.saveReadingAnchor(closedId, this.chatContainer.readingAnchorSnapshot());
+		this.editor.setText("");
+		this.editor.pendingImages = [];
+		this.editor.pendingImageLinks = [];
+		this.editor.imageLinks = undefined;
+		this.composer.resetWorkspaceScroll();
+		setSessionTerminalTitle(undefined, this.sessionManager.getCwd());
+		this.composer.setForceHome(true);
+	}
+
+	/**
+	 * Home-detached submit: the next Home prompt creates and selects a fresh
+	 * runtime through the existing factory before dispatch. The Home draft
+	 * and attachments are preserved when creation fails.
+	 */
+	async createSessionFromHomeDetached(): Promise<boolean> {
+		if (!this.isHomeDetached()) return true;
+		const beforeId = this.sessionManager.getSessionId();
+		try {
+			await this.#commandController.handleClearCommand();
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+			return false;
+		}
+		if (this.sessionManager.getSessionId() === beforeId && this.isHomeDetached()) {
+			// Creation did not land a fresh runtime; keep the Home draft.
+			return false;
+		}
+		// Register the fresh tab through the same lifecycle owner used by
+		// every other creation path, so the strip and /tab list show it.
+		const freshId = this.sessionManager.getSessionId();
+		const freshFile = this.sessionManager.getSessionFile();
+		if (freshFile) {
+			const tabs = this.#selectorController.sessionTabs;
+			tabs.open(freshFile, this.sessionManager.getSessionName());
+			tabs.noteId(freshFile, freshId);
+			tabs.visit(freshFile);
+			this.#selectorController.persistSessionTabs();
+		}
+		this.clearHomeDetached();
+		return true;
+	}
+
 	async #clearSessionView(): Promise<void> {
 		if (this.#vibeSessionTransitionBlocked()) return;
 		const previousFile = this.sessionManager.getSessionFile();
 		const previousId = this.sessionManager.getSessionId();
 		this.viewStateStore.saveDraft(previousId, this.editor);
 		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
+		this.viewStateStore.saveReadingAnchor(previousId, this.chatContainer.readingAnchorSnapshot());
 		try {
 			await this.#commandController.handleClearCommand();
 			if (this.sessionManager.getSessionId() === previousId) return;
@@ -6173,6 +6588,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		const sessionId = this.sessionManager.getSessionId();
 		this.viewStateStore.restoreDraft(sessionId, this.editor);
 		this.composer.setWorkspaceScrollOffset(this.viewStateStore.scrollOffset(sessionId));
+		this.chatContainer.restoreReadingAnchor(this.viewStateStore.readingAnchor(sessionId));
+		this.#workspaceSidebar.setSessionKey(sessionId);
+		this.refreshWorkspaceSidebar();
 	}
 
 	/**
@@ -6199,9 +6617,12 @@ export class InteractiveMode implements InteractiveModeContext {
 				continue;
 			}
 			sessionTabs.open(tab.path, tab.label);
+			if (tab.sessionId) sessionTabs.noteId(tab.path, tab.sessionId);
 			sessionTabs.visit(tab.path);
 		}
-		for (const closed of persisted.recentlyClosed) sessionTabs.rememberClosed(closed.path, closed.label);
+		for (const closed of persisted.recentlyClosed) {
+			sessionTabs.rememberClosed(closed.path, closed.label, closed.sessionId);
+		}
 		const current = this.sessionManager.getSessionFile();
 		if (current) sessionTabs.visit(current);
 		const notices: string[] = [];
@@ -6233,6 +6654,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		const previousId = this.sessionManager.getSessionId();
 		this.viewStateStore.saveDraft(previousId, this.editor);
 		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
+		this.viewStateStore.saveReadingAnchor(previousId, this.chatContainer.readingAnchorSnapshot());
 		this.#prepareSessionSwitch();
 		await this.#commandController.handleDropCommand();
 		this.composer.resetWorkspaceScroll();
@@ -6515,6 +6937,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		const previousId = this.sessionManager.getSessionId();
 		this.viewStateStore.saveDraft(previousId, this.editor);
 		this.viewStateStore.saveScrollOffset(previousId, this.composer.workspaceScrollOffset);
+		this.viewStateStore.saveReadingAnchor(previousId, this.chatContainer.readingAnchorSnapshot());
 		try {
 			const switched = await this.#selectorController.handleResumeSession(sessionPath, { settingsFlushed: true });
 			if (!switched || this.sessionManager.getSessionId() === previousId) return;

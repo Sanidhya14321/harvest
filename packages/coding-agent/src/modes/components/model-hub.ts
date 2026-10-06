@@ -237,6 +237,8 @@ export class ModelHubComponent implements Component {
 	// fullscreen overlay paints from screen row 0, so mouse rows map 1:1).
 	#contentRowStart = 1;
 	#contentRowCount = 0;
+	/** Browser row budget of the last render; gates the selection re-snap below. */
+	#browserBudgetLast: number | undefined;
 	#sidebarWidthLast = SIDEBAR_MIN_WIDTH;
 	#footerRow = 0;
 	#chipRanges: ChipRange[] = [];
@@ -2097,11 +2099,15 @@ export class ModelHubComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		const height = Math.max(16, this.#tui.terminal?.rows || process.stdout.rows || 40);
+		// Short-terminal budget: never render taller than the viewport itself.
+		// The old Math.max(16, …) floor overflowed viewports under 16 rows and
+		// pushed the search row, selected row, and footer into scrollback.
+		const termRows = this.#tui.terminal?.rows || process.stdout.rows || 40;
+		const height = Math.max(6, termRows);
 		const sidebarWidth = this.#sidebarWidth();
 		this.#sidebarWidthLast = sidebarWidth;
 		const bodyWidth = splitBodyWidth(width, sidebarWidth);
-		const contentRows = Math.max(10, height - 4);
+		const contentRows = Math.max(1, height - 4);
 		this.#contentRowCount = contentRows;
 
 		const entry = this.#activeEntry();
@@ -2111,7 +2117,20 @@ export class ModelHubComponent implements Component {
 		} else if (entry.kind === "provider" && entry.locked && this.#assigning === null) {
 			bodyLines.push(...this.#renderLockedView(entry, bodyWidth, contentRows - 1));
 		} else {
-			this.#browser.setMaxVisible(contentRows - 1 - 5);
+			const maxVisible = Math.max(1, contentRows - 1 - 5);
+			this.#browser.setMaxVisible(maxVisible);
+			// Re-snap the scroll window when the budget changed: keyboard
+			// navigation may have run against a different budget (first open
+			// before the first render, or a viewport resize), which leaves the
+			// drawn window lagging behind the selection. selectSelector only
+			// re-clamps the window — it fires no selection callbacks. The gate
+			// matters: wheel panning deliberately decouples the window from
+			// the selection, and must survive renders at a stable budget.
+			if (maxVisible !== this.#browserBudgetLast) {
+				this.#browserBudgetLast = maxVisible;
+				const selected = this.#browser.getSelected()?.selector;
+				if (selected) this.#browser.selectSelector(selected);
+			}
 			this.#browser.setFocused(this.#focus === "list");
 			bodyLines.push(...this.#browser.render(bodyWidth));
 		}

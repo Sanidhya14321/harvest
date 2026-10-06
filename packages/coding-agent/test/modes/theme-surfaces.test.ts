@@ -32,4 +32,17 @@ describe("theme surface tokens", () => {
 		expect(filled).toContain("\x1b[");
 		expect(theme.fgOnBg("text", "panelBg", "hi")).toContain("hi");
 	});
+
+	it("paints explicit screen backgrounds and leaves terminal-default screens alone", () => {
+		const builtins = getBuiltinThemes();
+		const light = createTheme(builtins["harvest-light"] as never, { mode: "truecolor" });
+		// #fafafa in truecolor: opaque background paint on every row.
+		expect(light.bgFill("screenBg", "row")).toContain("48;2;250;250;250");
+		// Legacy empty token resolves to a bare reset: custom terminal
+		// backgrounds show through instead of being clobbered.
+		const legacy = createTheme(builtins.dark as never, { mode: "truecolor" });
+		const filled = legacy.bgFill("screenBg", "row");
+		expect(filled.startsWith("\x1b[49m")).toBe(true);
+		expect(filled).not.toContain("48;2;");
+	});
 });

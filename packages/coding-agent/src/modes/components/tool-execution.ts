@@ -91,7 +91,8 @@ function resolveEditModeForTool(toolName: string, tool: AgentTool | undefined): 
 
 type ToolRendererStage = "call" | "result";
 
-class SafeToolRendererComponent implements Component {
+/** Render guard: a throwing custom renderer degrades to its fallback instead of corrupting the terminal. */
+export class SafeToolRendererComponent implements Component {
 	#toolName: string;
 	#stage: ToolRendererStage;
 	#component: Component;
@@ -853,7 +854,12 @@ export class ToolExecutionComponent extends Container {
 		// benign skips, expanded detail, and image-bearing results keep their
 		// purposeful chrome. Same-name extension tools own their renderer through
 		// the custom branch (#usesContentBox) and never reach this path.
-		if (this.#isQuietGenericSuccess()) return this.#renderQuietGenericSuccess(width);
+		if (this.#isQuietGenericSuccess()) {
+			// A squeezed allocation still gets the compact inline row instead
+			// of a full rail panel: quiet success never bypasses height pressure.
+			if (this.#allocation > 0 && this.#allocation < 3) return this.#renderCompact(width);
+			return this.#renderQuietGenericSuccess(width);
+		}
 		let lines = super.render(width);
 		if (this.#allocation < 3) {
 			// A squeezed allocation degrades only blocks that genuinely overflow it.
@@ -970,7 +976,7 @@ export class ToolExecutionComponent extends Container {
 			return this.#isRunning() ? { ...summary, detail: "running" } : summary;
 		}
 		if (isRecord(this.#args)) {
-			for (const key of ["command", "path", "input"] as const) {
+			for (const key of ["command", "path", "input", "query", "pattern", "prompt", "text"] as const) {
 				const value = this.#args[key];
 				if (typeof value === "string" && value.length > 0) {
 					return { label: this.#toolLabel, detail: value.split("\n", 1)[0] };

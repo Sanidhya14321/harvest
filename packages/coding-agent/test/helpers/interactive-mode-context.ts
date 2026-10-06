@@ -281,7 +281,12 @@ export function createInteractiveModeContext(overrides: ContextOverrides = {}): 
 		flushPendingModelSwitch: vi.fn(async () => {}),
 		reloadTodos: vi.fn(async () => {}),
 		setTodos: vi.fn(),
+		noteWorkspaceMutation: vi.fn(),
 		getUserMessageText: vi.fn(() => ""),
+		isHomeDetached: () => false,
+		createSessionFromHomeDetached: vi.fn(async () => false),
+		clearHomeDetached: vi.fn(),
+		enterHomeDetached: vi.fn(),
 	} satisfies ContextOverrides;
 	layer(ctx, overrides, RESOLVED_AHEAD);
 	return ctx as unknown as InteractiveModeContext;

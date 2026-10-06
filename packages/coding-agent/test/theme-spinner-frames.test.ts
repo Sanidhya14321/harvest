@@ -2,10 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import {
-	SPINNER_GLYPH_ADVANCE_MS,
-	sharedSpinnerFrame,
-} from "@harvest/pi-coding-agent/modes/components/tool-execution";
+import { SPINNER_GLYPH_ADVANCE_MS, sharedSpinnerFrame } from "@harvest/pi-coding-agent/modes/components/tool-execution";
+import { SPINNER_FRAMES } from "@harvest/pi-coding-agent/modes/theme/symbols";
 import { getThemeByName } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { getConfigRootDir, getCustomThemesDir, removeWithRetries, setAgentDir } from "@harvest/pi-utils";
 
@@ -47,7 +45,7 @@ describe("theme symbols.spinnerFrames", () => {
 		await removeWithRetries(tmpAgentDir);
 	});
 
-	it("flat-array override applies to both status and activity spinners", async () => {
+	it("flat-array override applies to status, activity, and working spinners", async () => {
 		const frames = ["◐", "◓", "◑", "◒"];
 		await writeCustomTheme("custom-flat", { spinnerFrames: frames });
 
@@ -55,6 +53,7 @@ describe("theme symbols.spinnerFrames", () => {
 		expect(theme).toBeDefined();
 		expect(theme!.getSpinnerFrames("status")).toEqual(frames);
 		expect(theme!.getSpinnerFrames("activity")).toEqual(frames);
+		expect(theme!.getSpinnerFrames("working")).toEqual(frames);
 		// Default getter is the status spinner.
 		expect(theme!.spinnerFrames).toEqual(frames);
 	});
@@ -90,6 +89,27 @@ describe("theme symbols.spinnerFrames", () => {
 		const status = theme!.getSpinnerFrames("status");
 		expect(status.length).toBeGreaterThan(1);
 		expect(status).not.toContain("A");
+	});
+
+	it("serves width-stable KnightRider working blocks per preset (busy-row)", () => {
+		expect(SPINNER_FRAMES.unicode.working.length).toBeGreaterThan(1);
+		const widths = new Set(SPINNER_FRAMES.unicode.working.map(frame => Bun.stringWidth(frame)));
+		expect(widths.size).toBe(1);
+		const asciiWidths = new Set(SPINNER_FRAMES.ascii.working.map(frame => Bun.stringWidth(frame)));
+		expect(asciiWidths.size).toBe(1);
+		for (const frame of SPINNER_FRAMES.ascii.working) {
+			expect(/^[\x20-\x7e]*$/.test(frame)).toBe(true);
+		}
+	});
+
+	it("accepts a working-only object override (partial-override)", async () => {
+		const working = ["1", "2"];
+		await writeCustomTheme("custom-working-only", { spinnerFrames: { working } });
+
+		const theme = await getThemeByName("custom-working-only");
+		expect(theme).toBeDefined();
+		expect(theme!.getSpinnerFrames("working")).toEqual(working);
+		expect(theme!.getSpinnerFrames("status").length).toBeGreaterThan(1);
 	});
 
 	it("derives live tool spinner frames from a shared clock", () => {

@@ -93,6 +93,11 @@ class HistoryResultsList implements Component {
 		this.#selectedIndex = selectedIndex;
 	}
 
+	/** Refit the visible row budget to the viewport (short-terminal dialogs call this every render). */
+	setMaxVisible(rows: number): void {
+		this.#maxVisible = Math.max(1, Math.trunc(rows));
+	}
+
 	invalidate(): void {
 		// No cached state to invalidate currently
 	}
@@ -188,6 +193,22 @@ export class HistorySearchComponent extends OverlayPanel {
 		this.addChild(new Spacer(1));
 
 		this.#updateResults();
+	}
+
+	/**
+	 * Viewport-budget render: shrink the result window to fit short terminals
+	 * instead of spilling past the viewport. The results list already centers
+	 * its scroll window on the selection, so the selected row stays visible;
+	 * the search input and the footer hint keep their rows and only result
+	 * rows are collapsed. Hard-caps the frame as a last resort (e.g. a wrapped
+	 * input row on a narrow terminal).
+	 */
+	override render(width: number): readonly string[] {
+		const termRows = process.stdout.rows || 40;
+		// Chrome: top + bottom borders (2), spacers (4), input (1), hint (1).
+		this.#resultsList.setMaxVisible(Math.max(1, termRows - 8));
+		const lines = super.render(width);
+		return lines.length > termRows ? lines.slice(0, Math.max(0, termRows)) : lines;
 	}
 
 	handleInput(keyData: string): void {

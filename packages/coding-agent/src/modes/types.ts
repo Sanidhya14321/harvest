@@ -26,6 +26,7 @@ import type { HistoryStorage } from "../session/history-storage";
 import type { SessionContext } from "../session/session-context";
 import type { SessionManager } from "../session/session-manager";
 import type { LiveSessionRegistry } from "../session/live-session-registry";
+import type { SessionManagementFacade } from "../session/session-management-facade";
 import type { LiveSessionFactoryOptions } from "../session/live-session-factory";
 import type { SessionViewStateStore } from "../session/session-view-state";
 import type { RunDiagnosticsTracker } from "./run-diagnostics";
@@ -114,7 +115,7 @@ export interface RenderSessionContextOptions {
 export interface AgentHubOpenOptions {
 	requireContent?: boolean;
 	armCloseTap?: boolean;
-	initialSection?: "agents" | "activity";
+	initialSection?: "agents" | "activity" | "sessions";
 }
 
 export interface InteractiveModeContext {
@@ -187,8 +188,29 @@ export interface InteractiveModeContext {
 	presentQueuedApprovals?: (sessionId: string) => Promise<void>;
 	/** Live tab runtime ownership; absent in unit-test contexts. */
 	liveSessions?: LiveSessionRegistry;
+	/** Typed session lifecycle owner; absent in unit-test contexts. */
+	sessions?: SessionManagementFacade;
 	/** Test seam for opening live tab runtimes; defaults to the real factory. */
 	openLiveSession?: (options: LiveSessionFactoryOptions) => Promise<AgentSession>;
+	/**
+	 * Zero-tab Home override: the last tab was closed and its session
+	 * continues hidden. Home input must create a fresh runtime before
+	 * dispatch, never execute against the hidden session.
+	 */
+	isHomeDetached(): boolean;
+	/**
+	 * Create and select a fresh runtime through the existing factory for a
+	 * Home-detached submit. Preserves the Home draft/attachments on failure.
+	 * Returns true when a fresh session is ready for dispatch.
+	 */
+	createSessionFromHomeDetached(): Promise<boolean>;
+	/** Leave the zero-tab Home override (new/select/reopen flows call this). */
+	clearHomeDetached(): void;
+	/**
+	 * Enter zero-tab Home: hide the closed session's view while its runtime
+	 * keeps running headless.
+	 */
+	enterHomeDetached(): void;
 
 	// State
 	isInitialized: boolean;
@@ -491,6 +513,8 @@ export interface InteractiveModeContext {
 	openCommandPalette(): Promise<void>;
 	toggleSidebar(): void;
 	focusSidebar(): void;
+	/** Coalesced working-tree invalidation for Workspace Changes (tool completions, external edits). */
+	noteWorkspaceMutation(): void;
 
 	// Input handling
 	handleCtrlC(): void;
