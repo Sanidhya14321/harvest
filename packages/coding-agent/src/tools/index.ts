@@ -24,6 +24,7 @@ import type { MnemopiSessionState } from "../mnemopi/state";
 import type { PlanModeState } from "../plan-mode/state";
 import type { AgentLifecycleManager } from "../registry/agent-lifecycle";
 import type { AgentRegistry } from "../registry/agent-registry";
+import { isSkillEvalRunActive } from "../autolearn/managed-skills";
 import type { ArtifactManager } from "../session/artifacts";
 import type { ClientBridge } from "../session/client-bridge";
 import type { CustomMessage } from "../session/messages";
@@ -52,6 +53,8 @@ import { GrepTool } from "./grep";
 import { HubTool, isIrcEnabled } from "./hub";
 import { LearnTool } from "./learn";
 import { ManageSkillTool } from "./manage-skill";
+import { PresetsTool } from "./presets";
+import { SessionsTool } from "./sessions";
 import { MemoryEditTool } from "./memory-edit";
 import { MemoryRecallTool } from "./memory-recall";
 import { MemoryReflectTool } from "./memory-reflect";
@@ -97,11 +100,13 @@ export * from "./memory-edit";
 export * from "./memory-recall";
 export * from "./memory-reflect";
 export * from "./memory-retain";
+export * from "./presets";
 export * from "./read";
 export * from "./report-tool-issue";
 export * from "./resolve";
 export * from "./review";
 export * from "./search-code";
+export * from "./sessions";
 export * from "./security-scan";
 export * from "./think";
 export * from "./todo";
@@ -318,6 +323,24 @@ export interface ToolSession {
 	pendingFullWriteDescription?: boolean;
 	/** Agent registry for IRC routing across live sessions. */
 	agentRegistry?: AgentRegistry;
+	/**
+	 * Host-provided grant authorizing the sessions tool to touch targets
+	 * outside the caller's owned lineage. Minted by the host (never by model
+	 * params); `scope` is fixed, `expiresAt` bounds its lifetime.
+	 */
+	managedSessionGrant?: { scope: string; expiresAt: number };
+	/**
+	 * Live-session factory for model-created independent sessions. The
+	 * interactive TUI registers its LiveSessionRegistry-backed factory
+	 * (background, no focus steal); headless hosts leave this unset and the
+	 * sessions tool reports creation as unwired instead of inventing one.
+	 */
+	openManagedSession?: (input: {
+		cwd: string;
+		task?: string;
+		callerId: string | null;
+		taskDepth?: number;
+	}) => Promise<{ id: string; registryId: string; taskAccepted: boolean; session: unknown }>;
 	/** Idle→parked→revive lifecycle owner; lets the hub kill a non-job-backed agent registration. Default: AgentLifecycleManager.global(). */
 	agentLifecycle?: () => AgentLifecycleManager;
 	/** Get artifacts directory for artifact:// URLs */
@@ -486,6 +509,8 @@ export const BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory> = {
 	learn: LearnTool.createIf,
 	manage_skill: ManageSkillTool.createIf,
 	search_code: s => new SearchCodeTool(s),
+	sessions: SessionsTool.createIf,
+	presets: PresetsTool.createIf,
 };
 
 export const HIDDEN_TOOLS: Record<HiddenToolName, ToolFactory> = {
@@ -653,11 +678,19 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		if (name === "memory_edit") return session.settings.get("memory.backend") === "mnemopi";
 		if (name === "manage_skill")
 			return (
+				!isSkillEvalRunActive() &&
+				session.settings.get("autolearn.enabled") &&
+				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined)
+			);
+		if (name === "sessions" || name === "presets")
+			return (
+				!isSkillEvalRunActive() &&
 				session.settings.get("autolearn.enabled") &&
 				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined)
 			);
 		if (name === "learn") {
 			return (
+				!isSkillEvalRunActive() &&
 				session.settings.get("autolearn.enabled") &&
 				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined) &&
 				["hindsight", "mnemopi", "local"].includes(session.settings.get("memory.backend") ?? "")

@@ -26,6 +26,8 @@ export const BUILTIN_TOOL_NAMES = [
 	"learn",
 	"manage_skill",
 	"search_code",
+	"sessions",
+	"presets",
 ] as const;
 
 export type BuiltinToolName = (typeof BUILTIN_TOOL_NAMES)[number];
