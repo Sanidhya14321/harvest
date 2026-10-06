@@ -526,6 +526,38 @@ function settingsSidebarWidth(): number {
 	return cachedSidebarWidth;
 }
 
+/**
+ * Slice over-long list output down to `budget` rows while keeping the selected
+ * row on screen. The list already centers its own scroll window, but its
+ * minimum viewport (3 rows + description block) can still exceed a short
+ * terminal's content budget — center the drawn window on the selected row
+ * instead of clipping it from the top. Falls back to the top slice when the
+ * selected label cannot be located (e.g. an open submenu owns the render).
+ */
+function fitContentToBudget(
+	lines: readonly string[],
+	budget: number,
+	selectedLabel?: string,
+): { rows: readonly string[]; start: number } {
+	if (budget <= 0) return { rows: [], start: 0 };
+	if (lines.length <= budget) return { rows: lines, start: 0 };
+	let anchor = -1;
+	if (selectedLabel) {
+		const needle = selectedLabel.slice(0, 32);
+		if (needle.length > 0) {
+			for (let i = 0; i < lines.length; i++) {
+				if (Bun.stripANSI(lines[i] ?? "").includes(needle)) {
+					anchor = i;
+					break;
+				}
+			}
+		}
+	}
+	if (anchor < 0) return { rows: lines.slice(0, budget), start: 0 };
+	const start = Math.max(0, Math.min(anchor - Math.floor(budget / 2), lines.length - budget));
+	return { rows: lines.slice(start, start + budget), start };
+}
+
 function getSettingsTabs(): Tab[] {
 	return [
 		...SETTING_TABS.map(id => {
@@ -614,6 +646,8 @@ export class SettingsSelectorComponent implements Component {
 	#tabRowCount = 0;
 	#contentRowStart = 0;
 	#contentRowCount = 0;
+	/** First list-render line drawn in the content window (selected-row tracking on short terminals). */
+	#contentWindowStart = 0;
 
 	constructor(
 		private readonly context: SettingsRuntimeContext,
@@ -697,24 +731,41 @@ export class SettingsSelectorComponent implements Component {
 	 * then a footer hint pinned above the bottom border.
 	 */
 	render(width: number): readonly string[] {
-		const height = Math.max(14, process.stdout.rows || 40);
+		// Short-terminal budget: never render taller than the viewport itself.
+		// The old Math.max(14, …) floor overflowed viewports under 14 rows and
+		// pushed required controls (tabs, search, footer) into scrollback.
+		const termRows = process.stdout.rows || 40;
+		const height = Math.max(6, termRows);
 		const innerWidth = Math.max(1, width - 4);
 
 		const tabLines = this.#tabBar.render(innerWidth);
 		const searching = this.#searchList !== null;
-		const showPreview = !searching && this.#currentTabId === "appearance";
+		// The appearance preview is the first thing to go on short terminals:
+		// required controls (tabs, search, selected row, footer) win over it.
+		const showPreview = !searching && this.#currentTabId === "appearance" && height >= 16;
 		const previewLines = showPreview ? ["", theme.fg("muted", "Preview:"), this.#getStatusPreviewString()] : [];
 
 		// Fixed chrome: top border, tabs, divider, [search row], divider, hint, bottom border.
 		const fixedRows = 1 + tabLines.length + 1 + (searching ? 1 : 0) + 1 + 1 + 1;
-		const contentRows = Math.max(7, height - fixedRows - previewLines.length);
+		let contentRows = height - fixedRows - previewLines.length;
+		// Collapse chrome before controls: when even one content row overflows
+		// the viewport (wrapped tab bar on a short terminal), drop the
+		// content/footer divider — pure decoration — instead of clipping the
+		// search banner, the selected row, or the footer hint.
+		let bottomDivider = true;
+		if (contentRows < 1) {
+			bottomDivider = false;
+			contentRows = height - (fixedRows - 1) - previewLines.length;
+		}
+		contentRows = Math.max(1, contentRows);
 
 		const list = this.#searchList ?? this.#currentList;
 		let contentLines: readonly string[];
 		if (list) {
-			// SettingsList pads itself to viewport + blank + 3 description rows.
-			list.setMaxVisible(contentRows - 4);
-			contentLines = list.render(innerWidth);
+			list.setMaxVisible(Math.max(1, contentRows - 4));
+			const fitted = fitContentToBudget(list.render(innerWidth), contentRows, list.getSelectedItem()?.label);
+			contentLines = fitted.rows;
+			this.#contentWindowStart = fitted.start;
 		} else if (this.#pluginComponent) {
 			contentLines = this.#pluginComponent.render(innerWidth);
 		} else {
@@ -740,7 +791,9 @@ export class SettingsSelectorComponent implements Component {
 		for (const line of previewLines) {
 			out.push(row(line, width));
 		}
-		out.push(divider(width));
+		if (bottomDivider) {
+			out.push(divider(width));
+		}
 		out.push(row(theme.fg("dim", this.#footerHintText()), width));
 		out.push(bottomBorder(width));
 		return out;
@@ -763,11 +816,14 @@ export class SettingsSelectorComponent implements Component {
 		const contentColInset = 2;
 		const innerCol = event.col - contentColInset;
 		const contentLine = event.row - this.#contentRowStart;
+		// The drawn content window may start mid-list on short terminals
+		// (see fitContentToBudget); map frame rows back to list-render rows.
+		const listLine = contentLine + this.#contentWindowStart;
 
 		// An open submenu owns the pointer: wheel, hover, and clicks route into
 		// it (text-input submenus ignore routed events).
 		if (list?.hasOpenSubmenu()) {
-			list.routeSubmenuMouse(event, contentLine, innerCol);
+			list.routeSubmenuMouse(event, listLine, innerCol);
 			return true;
 		}
 
@@ -787,7 +843,7 @@ export class SettingsSelectorComponent implements Component {
 			this.#tabBar.setHoverTab(hovered && !hovered.muted ? hovered.id : null);
 			// hoverTest: never light up pane rows while the pointer is on the
 			// sidebar — only rows the pointer is actually on.
-			list?.setHoverItem(overContent ? (list.hoverTest(contentLine, innerCol) ?? null) : null);
+			list?.setHoverItem(overContent ? (list.hoverTest(listLine, innerCol) ?? null) : null);
 			return true;
 		}
 		if (!event.leftClick) return true;
@@ -798,8 +854,8 @@ export class SettingsSelectorComponent implements Component {
 			return true;
 		}
 		if (overContent && list) {
-			const itemId = list.hoverTest(contentLine, innerCol);
-			const id = itemId ?? list.hitTest(contentLine, innerCol);
+			const itemId = list.hoverTest(listLine, innerCol);
+			const id = itemId ?? list.hitTest(listLine, innerCol);
 			if (id !== undefined) {
 				const wasSelected = list.getSelectedItem()?.id === id;
 				list.selectItem(id);

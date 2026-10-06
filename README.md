@@ -93,66 +93,41 @@ mise use -g github:Sanidhya14321/Harvest-Agent
 
 macOS · Linux · Windows · no Bun required for the default install
 
-### Single-Command Setup (Harvest + Local Laya Decision Layer)
+### Setup
 
-Harvest integrates **Laya** (`convaiinnovations/laya-typed-decisions`), a local ModernBERT decision sidecar providing zero-API-cost specialized subagent routing, tool output pruning, and hardware-adaptive self-calibration. A single command sets up both Harvest and the isolated Laya environment:
-
-**Windows (PowerShell)**:
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.ps1))) -WithLaya
-```
-
-**macOS · Linux**:
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.sh | sh -s -- --laya
+bun install -g @harvest/pi-coding-agent
 ```
 
-**Bun (recommended for developers)**:
-```sh
-bun install -g @harvest/pi-coding-agent && omp setup laya
-```
-
-> [!TIP]
-> **Idempotent & Self-Healing**: If Laya is already set up and verified, re-running setup executes an instant verification in **< 100ms**. If a known environmental issue occurs (such as a port collision or symlink restriction), Harvest heals it automatically.
-> **Graceful Degradation**: Laya is strictly fail-open. If sidecar setup cannot complete on an unsupported system, core Harvest CLI features remain 100% operational.
+> **Note:** the former `--laya` / `-WithLaya` install flags and `omp setup laya`
+> are ignored (Laya, the local decision sidecar, has been removed). Install
+> instructions above work without them.
 
 ---
 
 ### Quick Start
 
-1. **Run single-command setup**:
-   ```sh
-   omp setup laya
-   ```
-2. **Start coding**:
+1. **Start coding**:
    ```sh
    omp
    ```
-3. **Check decision status & live hardware benchmarks**:
-   ```sh
-   omp laya status
-   omp laya calibrate
-   ```
+
+> **Note:** `omp setup laya`, `omp laya status`, and `omp laya calibrate`
+> no longer exist — Laya has been removed. `omp setup` still runs the
+> onboarding wizard minus the Laya step, and approvals follow configured
+> permissions (`tools.approvalMode`).
 
 ---
 
-### Troubleshooting & Bounded Self-Healing
+### Local decision tooling (Laya removed)
 
-Harvest includes a bounded self-healing subsystem for Laya setup. If an issue occurs, Harvest automatically diagnoses and applies bounded remediation, logging every event to `~/.harvest/agent/logs/laya-setup.log`. If an error falls outside the 8 known deterministic signatures, Harvest activates a second-tier LLM-assisted diagnosis using Harvest's already-configured model/credentials to analyze the diagnostic bundle and propose a candidate fix. Actions are strictly gated by risk level (low-risk virtualenv actions may auto-apply with transparent logging; system-touching fixes require explicit confirmation). If the LLM connection is unavailable, Harvest emits a diagnostic bundle (`laya-diagnostic-<timestamp>.json`) and keeps core Harvest fully functional.
-
-| Known Issue | Detection Signature | Automated Remediation | Logging |
-| :--- | :--- | :--- | :--- |
-| **Wrong PyTorch Wheel** | Host NVIDIA driver detected while `torch.cuda.is_available()` returns `False` | Reinstalls PyTorch using CUDA 12.4 index (`cu124`) | Before/after CUDA availability logged to `laya-setup.log` |
-| **Windows Symlink Error** | `WinError 1314` ("A required privilege is not held by the client") during HuggingFace cache operations | Enables `HF_HUB_DISABLE_SYMLINKS=1` with safe file-copy fallback | Symlink bypass logged to `laya-setup.log` |
-| **Port 8177 In Use** | TCP bind failure / `EADDRINUSE` on port 8177 | Reuses existing Harvest sidecar if `/health` passes; preserves foreign processes and allocates alternate port (8178–8185) | Port reuse or reassignment logged to `laya-setup.log` |
-| **Corrupted Model Download** | `model.safetensors` size < 800 MB or corrupt header on load | Purges corrupt cache directory and retries download exactly once (halts on second failure) | Cache purge and retry result logged to `laya-setup.log` |
-| **Accidental Router Download** | Audit detects `laya.Router` import or secondary checkpoint downloading | Enforces single-checkpoint contract (`laya.load('convaiinnovations/laya-typed-decisions')`) | Structural verification outcome logged to `laya-setup.log` |
-| **Insufficient Disk Space** | Pre-flight volume check detects < 2,000 MB free space | Halts download before starting to prevent partial write corruption | Available vs required MB logged to `laya-setup.log` |
-| **Stale Calibration** | Calibration hardware signature doesn't match current machine or checkpoint | Automatically triggers recalibration benchmark | Signature mismatch and new baseline logged to `laya-setup.log` |
-| **Missing Python Runtime** | Python 3.9+ missing from `PATH` and standard install paths | Automatic installation via `winget` (Windows) or `brew` (macOS), or OS-specific instructions | Missing runtime and resolution steps logged to `laya-setup.log` |
-
-> [!NOTE]
-> If any Laya setup step fails irrecoverably, Harvest **fails open**: core CLI features remain 100% operational with Laya gracefully disabled (`laya.enabled = false`). Check `omp setup laya` logs at `~/.harvest/agent/logs/laya-setup.log` or run `omp laya status` to inspect health.
+> The Laya decision sidecar and its self-healing setup subsystem have been
+> removed. `laya.*` settings keys are inert, `LAYA_*` environment variables
+> are ignored (one deprecation warning), and prior Laya data under
+> `~/.harvest/agent/logs/` is left in place (delete manually if unwanted).
+> Preserved: human-approval policy fails closed on high-risk tool calls, and
+> local tiny-model inference (session titles, memory, auto-thinking) is
+> intact.
 
 ---
 
@@ -317,15 +292,14 @@ Eval's `browser.open(...)` returns a tab handle with direct navigation, inspecti
 
 Eval's `computer` helpers — `computer.window(...)`, `win.screenshot()`, `win.ax()`, `el.press()`, plus `computer.run(fnOrCode, options)` for multi-step scripts — control the real host: enumerate windows and displays, capture screenshots, send native input, walk the OS accessibility tree, and use the clipboard. It exposes no browser DOM.
 
-### 22 · Local Decision Layer with Laya (Zero-Cost Typed Decisions)
+### 22 · Approvals fail closed (Laya removed)
 
-Harvest embeds **Laya** (`convaiinnovations/laya-typed-decisions`, ModernBERT-large 421M) as a fast, self-hosted, local typed decision layer at specific narrow judgment points in the agent loop — with zero cloud API token cost and sub-second local latency:
-
-1. **Tool-Call Gating**: Intercepts high-risk mutations (`bash`, `write`, `edit`, `ast-edit`, `patch`) and evaluates irreversibility via a `noul` question (*"does this call write, delete, publish, or change access irreversibly?"*). Fails **CLOSED** (requires human approval) if the sidecar is offline, times out (300ms), or detects irreversible actions ($P > 0.35$).
-2. **Model Tier Routing**: Evaluates prompt complexity via a `choice` question to dynamically route between `smol`, `slow`, and `default` model tiers. Fails **OPEN** to the configured default.
-3. **Step & Task Completion**: Evaluates execution outputs and unexpected stop states with batched `noul` questions before calling expensive cloud models. Fails **OPEN**.
-
-Integrated into `harvest setup`: the interactive onboarding wizard includes a **"Configure Laya"** step that auto-detects Python 3.9+, verifies dependencies, caches the single model checkpoint, launches the local daemon (`127.0.0.1:8177`), and links it to Harvest settings.
+> The former Laya local decision layer has been removed. Preserved:
+> high-risk tool calls (`bash`, `write`, `edit`, …) require human approval
+> by default (fail closed, never blanket auto-approved); Markdown-brain
+> retrieval uses deterministic lexical/graph order; model selection is
+> explicit. Local tiny-model inference (titles, memory, auto-thinking) is
+> intact.
 
 ## Whatever the task needs, _it's already in the box_.
 
@@ -739,28 +713,19 @@ For architecture and contribution guidelines, see [packages/coding-agent/DEVELOP
 | **[brush-core](crates/vendor/brush-core)**         | Vendored fork of [brush-shell](https://github.com/reubeno/brush) for embedded bash execution        |
 | **[pi-builtins](crates/pi-builtins)**              | Bash builtins (cd, echo, test, printf, read, export, …) plus 67 in-process command-line utilities |
 
-## Troubleshooting: Self-Healing Decision Layer
+## Troubleshooting: decision layer (Laya removed)
 
-Harvest includes an automated, bounded self-repair engine for the Laya decision sidecar. It actively detects and remediates 8 known failure modes without user intervention. All setup actions are recorded to `~/.harvest/agent/logs/laya-setup.log`.
-
-| Issue Signature | Detection Mechanism | Automated Self-Healing Fix | Logged Details |
-|---|---|---|---|
-| `WRONG_TORCH_WHEEL` | Host NVIDIA GPU driver detected while `torch.cuda.is_available()` reports `False`. | Reinstalls PyTorch using CUDA 12.4 index (`https://download.pytorch.org/whl/cu124`). | Logs before/after `torch.cuda.is_available()` state. |
-| `WINDOWS_HF_SYMLINK_RESTRICTION` | `WinError 1314` ("A required privilege is not held by the client") during model cache writes. | Injects `HF_HUB_DISABLE_SYMLINKS=1` and `HF_HUB_DISABLE_SYMLINKS_WARNING=1` with safe copy fallback. | Logs symlink bypass activation. |
-| `PORT_CONFLICT` | Port 8177 occupied on startup. | Hits `/health`: reuses active Harvest sidecar; if foreign process, preserves foreign process (never terminates) and allocates alternate port in range `8178-8185`. | Logs whether port was reused or redirected without killing foreign processes. |
-| `CORRUPTED_CHECKPOINT` | Cached `model.safetensors` < 800MB or corrupt header on `safe_open`. | Purges corrupt snapshot directory and retries clean download **exactly once** (halts on second failure). | Logs corruption signature, purge event, and retry outcome. |
-| `ROUTER_ACCIDENTAL_INVOCATION` | Static audit reveals `Router` import in `server.py` or secondary checkpoint in cache. | Enforces single-checkpoint contract (`laya.load('convaiinnovations/laya-typed-decisions')`). | Logs architecture validation outcome. |
-| `INSUFFICIENT_DISK_SPACE` | Pre-flight `statfs` check detects < 2,000 MB available on cache volume. | Halts download before starting, preventing partial write corruption. | Logs available vs required MB. |
-| `STALE_CALIBRATION_SIGNATURE` | Hardware signature in `laya-calibration.json` does not match active hardware signature. | Triggers automatic recalibration benchmark to derive fresh latency thresholds. | Logs signature mismatch and recalibration event. |
-| `MISSING_PYTHON` | Python 3.9+ binary missing from PATH and standard directories. | Autonomous bootstrap via system package manager (`winget`/`brew`) or emits clear OS-specific commands. | Logs missing runtime and tailored installation instructions. |
-
-### Unrecognized Failures & Diagnostics
-If an unhandled failure occurs outside these 8 signatures:
-- Harvest **never** attempts an open-ended guess or arbitrary system modification.
-- A structured diagnostic bundle (`~/.harvest/agent/logs/laya-diagnostic-<timestamp>.json`) is generated containing OS release, Bun version, Python runtime, disk space, and recent setup logs.
-- Laya features fail-open (`laya.enabled = false`), leaving core Harvest CLI 100% operational.
-
-For full architectural details on sidecar design, prompt cache-locking, and subagent selection, see [ARCHITECTURE.md](ARCHITECTURE.md).
+> The Laya decision sidecar and its self-repair engine have been removed.
+> `laya.*` keys are inert, `LAYA_*` env vars are ignored (one
+> deprecation warning), and prior logs under `~/.harvest/agent/logs/` are
+> left in place. High-risk tool calls fail closed to human approval.
+>
+> Historical summary (archaeology only, no longer runs): the former engine
+> covered 8 bounded signatures (torch wheel, Windows symlink, port
+> conflict, corrupt checkpoint, router invocation, disk space, stale
+> calibration, missing Python) with logged remediation, plus a diagnostic
+> bundle for unrecognized failures. For the removal notice see
+> [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 

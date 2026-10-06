@@ -1,6 +1,6 @@
 import { type } from "@harvest/omptype";
 import type { AgentTool, AgentToolResult } from "@harvest/pi-agent-core";
-import { sanitizeSkillName, writeManagedSkill } from "../autolearn/managed-skills";
+import { requireAutoImprovementBudget, sanitizeSkillName, writeManagedSkill } from "../autolearn/managed-skills";
 import { isNameClaimedByAuthoredSkill } from "../extensibility/skills";
 import { localBackend } from "../memory-backend/local-backend";
 import learnDescription from "../prompts/tools/learn.md" with { type: "text" };
@@ -12,8 +12,13 @@ const learnSchema = type({
 	"skill?": type({
 		action: "'create' | 'update'",
 		name: type("string").describe("kebab-case skill name"),
-		description: type("string").describe("one-line description of when to use the skill"),
-		body: type("string").describe("the SKILL.md body in markdown (no frontmatter)"),
+		"description?": type("string").describe(
+			"one-line description of when to use the skill (required for create; update merges omitted fields)",
+		),
+		"body?": type("string").describe(
+			"the SKILL.md body in markdown (no frontmatter) (required for create; update merges omitted fields)",
+		),
+		"expectedActive?": type("string").describe("expected current active skill revision; rejects on conflict"),
 	}).describe("also create or enhance a managed skill in the same call"),
 });
 
@@ -98,6 +103,7 @@ export class LearnTool implements AgentTool<typeof learnSchema> {
 		// 2) Optionally mint/enhance a managed skill. A failure here is surfaced
 		// as a partial outcome — the lesson is already stored or queued.
 		if (params.skill) {
+			requireAutoImprovementBudget(this.session, "candidate");
 			// A managed skill resolves below any authored skill of the same name, so
 			// minting one under a claimed name writes a file that never surfaces. The
 			// lesson is already stored/queued; refuse the skill rather than report a
@@ -120,16 +126,34 @@ export class LearnTool implements AgentTool<typeof learnSchema> {
 					details: { skill: null, shadowed: true },
 				};
 			}
+			if (params.skill.action === "create" && (!params.skill.description || !params.skill.body)) {
+				throw new Error(
+					`${memoryMessage}, but the managed skill could not be written: "create" requires both "description" and "body".`,
+				);
+			}
+			if (params.skill.action === "update" && !params.skill.description && !params.skill.body) {
+				throw new Error(
+					`${memoryMessage}, but the managed skill could not be written: "update" requires "description" and/or "body" (omitted fields merge from current).`,
+				);
+			}
 			try {
-				await writeManagedSkill(params.skill);
+				await writeManagedSkill({ ...params.skill, expectedActive: params.skill.expectedActive });
 			} catch (err) {
 				const reason = err instanceof Error ? err.message : String(err);
 				throw new Error(`${memoryMessage}, but the managed skill could not be written: ${reason}`);
 			}
+			try {
+				await this.session.refreshSkills?.();
+			} catch {
+				// Refresh is best-effort: the file is written; catalog pickup retries on next load.
+			}
 			const verb = params.skill.action === "create" ? "Created" : "Updated";
 			return {
 				content: [{ type: "text", text: `${memoryMessage}. ${verb} managed skill "${params.skill.name}".` }],
-				details: { skill: params.skill.name },
+				// The write routes through revision history (seeded + recorded
+				// inside writeManagedSkill); immediate activation is unevaluated,
+				// surfaced here for the gated draft/evaluate/promote follow-up.
+				details: { skill: params.skill.name, evaluated: false, status: "unevaluated-active" },
 			};
 		}
 

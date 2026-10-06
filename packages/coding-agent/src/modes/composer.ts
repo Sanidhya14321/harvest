@@ -19,6 +19,7 @@ import {
 } from "@harvest/pi-tui";
 import { CustomEditor } from "./components/custom-editor";
 import type { SessionTabStrip } from "./components/session-tab-strip";
+import type { KeybindingsManager } from "../config/keybindings";
 import { type AnimationFrame, TranscriptContainer } from "./components/transcript-container";
 import type { WorkspaceSidebar } from "./components/workspace-sidebar";
 import { type LspServerInfo, type RecentSession, WelcomeComponent } from "./components/welcome";
@@ -171,12 +172,38 @@ export class Composer implements TerminalFrameProvider {
 	#headerBefore: readonly Component[] = [];
 	#headerAfter: readonly Component[] = [];
 	#runtimeChildren: readonly Component[] = [];
+	/**
+	 * Zero-tab override: the last tab was closed and its session continues
+	 * hidden. The transcript stays mounted (state is preserved for reopen)
+	 * but the workspace renders Home and never dispatches input against the
+	 * hidden session. Cleared by any new-session/select/reopen flow.
+	 */
+	#forceHome = false;
+
+	/** Enter or leave the zero-tab Home override. */
+	setForceHome(force: boolean): void {
+		if (this.#forceHome === force) return;
+		this.#forceHome = force;
+		this.ui.requestRender();
+	}
+
+	get forceHome(): boolean {
+		return this.#forceHome;
+	}
 	#workspaceTabs: SessionTabStrip | undefined;
 	#workspaceSidebar: WorkspaceSidebar | undefined;
 	#sidebarOverlayOpen = false;
 	#sidebarOverlayRequestedOnce = false;
 	#workspaceScrollOffset = 0;
+	// Offset/width the reading anchor was last pinned for. While scrolled
+	// back the transcript paints from the pinned anchor (identity-stable
+	// across appended rows) instead of a bottom-relative offset; the anchor
+	// is re-pinned only when the offset or width changes. Offset 0 follows
+	// the live tail and releases any anchor.
+	#scrollAnchorOffset: number | undefined;
+	#scrollAnchorWidth: number | undefined;
 	#statusSnapshot: ComposerStatusSnapshot | undefined;
+	#keyHintSource: Pick<KeybindingsManager, "getDisplayString"> | undefined;
 	#runtimeMounted = false;
 	// Composer-owned history id space. Transcript batch ids restart across
 	// container clears/swaps; the composer translates them into one monotonic
@@ -525,7 +552,7 @@ export class Composer implements TerminalFrameProvider {
 		const geometry = computeWorkspaceLayout(
 			{ columns, rows },
 			{
-				hasConversation: Boolean(transcript?.children.length),
+				hasConversation: Boolean(transcript?.children.length) && !this.#forceHome,
 				sidebarPreference: this.sidebarPreference,
 				sidebarOverlayOpen: this.#sidebarOverlayOpen,
 			},
@@ -550,6 +577,7 @@ export class Composer implements TerminalFrameProvider {
 		// move toward the live tail. Callers must use scrollWorkspaceWheel /
 		// scrollWorkspacePage so every input shares this convention.
 		this.#workspaceScrollOffset = Math.max(0, this.#workspaceScrollOffset + delta);
+		if (this.#workspaceScrollOffset === 0) this.#releaseScrollAnchor();
 		this.ui.requestRender();
 	}
 
@@ -575,12 +603,61 @@ export class Composer implements TerminalFrameProvider {
 	/** Restore a per-session scroll-back offset; negative values clamp to the live tail. */
 	setWorkspaceScrollOffset(offset: number): void {
 		this.#workspaceScrollOffset = Math.max(0, Math.floor(offset));
+		if (this.#workspaceScrollOffset === 0) this.#releaseScrollAnchor();
 		this.ui.requestRender();
 	}
 
 	resetWorkspaceScroll(): void {
 		this.#workspaceScrollOffset = 0;
+		this.#releaseScrollAnchor();
 		this.ui.requestRender();
+	}
+
+	/** Release the pinned reading position and return to the live tail. */
+	#releaseScrollAnchor(): void {
+		this.#scrollAnchorOffset = undefined;
+		this.#scrollAnchorWidth = undefined;
+		this.#findTranscript()?.followLiveTail();
+	}
+
+	/**
+	 * Session transcript window. At offset 0 the live tail paints directly.
+	 * Scrolled back, the window paints from a pinned reading anchor
+	 * (identity-stable: appended rows below it never move the viewed text;
+	 * rewrap/sidebar resize recompute from the same anchor). The anchor is
+	 * pinned once per offset/width and re-pinned when its block retires.
+	 */
+	#renderSessionTranscript(transcript: TranscriptContainer, mainWidth: number, available: number): readonly string[] {
+		const offset = this.#workspaceScrollOffset;
+		if (offset <= 0 || available <= 0) {
+			if (offset <= 0) this.#releaseScrollAnchor();
+			const tail = transcript.renderTail(mainWidth, available + Math.max(0, offset));
+			this.#workspaceScrollOffset = Math.min(offset, Math.max(0, tail.length - available));
+			return offset > 0 ? tail.slice(0, Math.max(0, available)) : tail;
+		}
+		if (this.#scrollAnchorOffset !== offset || this.#scrollAnchorWidth !== mainWidth) {
+			const found = transcript.anchorForOffset(mainWidth, available, offset);
+			if (found) transcript.pinReadingAnchor(found.block, found.row);
+			else transcript.followLiveTail();
+			this.#scrollAnchorOffset = offset;
+			this.#scrollAnchorWidth = mainWidth;
+		}
+		let rows = transcript.renderAnchoredViewport(mainWidth, available);
+		if (rows.length === 0 && !transcript.isFollowingTail()) {
+			// Pinned block retired mid-read: re-pin once at the same offset.
+			const found = transcript.anchorForOffset(mainWidth, available, offset);
+			if (found) transcript.pinReadingAnchor(found.block, found.row);
+			else transcript.followLiveTail();
+			rows = transcript.renderAnchoredViewport(mainWidth, available);
+		}
+		if (rows.length === 0) {
+			// Offset beyond content or anchor released: legacy tail behavior.
+			transcript.followLiveTail();
+			const tail = transcript.renderTail(mainWidth, available + offset);
+			this.#workspaceScrollOffset = Math.min(offset, Math.max(0, tail.length - available));
+			return tail.slice(0, Math.max(0, available));
+		}
+		return rows;
 	}
 
 	#renderWorkspace(width: number, rows: number): readonly string[] {
@@ -592,7 +669,7 @@ export class Composer implements TerminalFrameProvider {
 			: [this.#bootstrapInputGap, this.editor, this.#statusHost];
 		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
 		const transcript = transcriptIndex >= 0 ? (roots[transcriptIndex] as TranscriptContainer) : undefined;
-		const hasConversation = Boolean(transcript?.children.length);
+		const hasConversation = Boolean(transcript?.children.length) && !this.#forceHome;
 		// Entering narrow `show` requests the overlay once; dismissal sticks
 		// until an explicit toggle/focus action. Do not reopen on every render.
 		const preference = this.sidebarPreference;
@@ -678,25 +755,24 @@ export class Composer implements TerminalFrameProvider {
 			let headerTabs = [...centeredHeader, ...tabs];
 			// Cap attention rows so the transcript keeps >= 1 row when rows >= 6.
 			if (safeRows >= 6) {
-				const maxHeaderTabs = Math.max(
-					headerTabs.length > 0 ? 1 : 0,
-					safeRows - after.length - 1,
-				);
+				const maxHeaderTabs = Math.max(headerTabs.length > 0 ? 1 : 0, safeRows - after.length - 1);
 				if (headerTabs.length > maxHeaderTabs) headerTabs = headerTabs.slice(0, Math.max(0, maxHeaderTabs));
 			}
-			const available = Math.max(0, safeRows - headerTabs.length - after.length);
-			const tail = transcript.renderTail(mainWidth, available + this.#workspaceScrollOffset);
-			this.#workspaceScrollOffset = Math.min(this.#workspaceScrollOffset, Math.max(0, tail.length - available));
-			const visible = this.#workspaceScrollOffset > 0 ? tail.slice(0, Math.max(0, available)) : tail;
+			const showHints = !this.#preferences.quiet && safeRows >= 8;
+			const available = Math.max(0, safeRows - headerTabs.length - after.length - (showHints ? 1 : 0));
+			const visible = this.#renderSessionTranscript(transcript, mainWidth, available);
 			const paddedVisible = visible.map(row => {
 				if (contentInset > 0) return `${" ".repeat(contentInset)}${row}`;
 				if (safeWidth >= 40 && mainWidth > chromeWidth) return `  ${row}`;
 				return row;
 			});
-			const mainRows = [...headerTabs, ...paddedVisible, ...blank(available - paddedVisible.length), ...after].slice(
-				0,
-				safeRows,
-			);
+			const mainRows = [
+				...headerTabs,
+				...paddedVisible,
+				...blank(available - paddedVisible.length),
+				...after,
+				...(showHints ? [this.#hintRow(mainWidth)] : []),
+			].slice(0, safeRows);
 			return this.#composeMainWithSidebar(
 				mainRows,
 				centeredHeader,
@@ -708,17 +784,36 @@ export class Composer implements TerminalFrameProvider {
 			);
 		}
 		// HOME: intentional wordmark, centered prompt, shortcuts, footer.
-		const wordmark = "HARVEST";
-		const logoRow = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth(wordmark)) / 2)))}${theme.bold(theme.fg("accent", wordmark))}`;
-		const harvestMark = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth("harvest")) / 2)))}${theme.bold(theme.fg("accent", "harvest"))}`;
-		const hints = this.#preferences.quiet
-			? []
-			: [
-					`${" ".repeat(Math.max(0, Math.floor((safeWidth - 44) / 2)))}${theme.fg("muted", "send ⏎ · newline ⌃J · commands ⌥K")}`,
-				];
-		const intro = this.#preferences.quiet
-			? [...centeredHeader, ...tabs, ...after]
-			: [logoRow, harvestMark, "", ...tabs, ...after.slice(0, Math.max(0, safeRows - 4)), ...hints];
+		const wordmarkRows = this.#homeWordmark(safeWidth);
+		const hints = [this.#hintRow(safeWidth)];
+		if (!this.#preferences.quiet) {
+			// Non-quiet home budgets the whole viewport through #homeIntro
+			// (one attention row + editor head + hints + decoration). The full
+			// centered header never preempts the intro: at short heights its
+			// padding blanks would displace the editable draft.
+			const intro = this.#homeIntro(centeredHeader, tabs, after, wordmarkRows, hints, safeRows);
+			const before = Math.max(0, Math.floor((safeRows - intro.length) / 2));
+			const homeRows = [...blank(before), ...intro, ...blank(safeRows - before - intro.length)].slice(0, safeRows);
+			// Version stamp bottom-right when the last row is unused padding.
+			if (this.#version && homeRows.length > 0) {
+				const last = homeRows.length - 1;
+				if (Bun.stripANSI(homeRows[last]!).trim().length === 0) {
+					const stamp = theme.fg("muted", `v${this.#version}`);
+					const pad = Math.max(0, safeWidth - visibleWidth(stamp));
+					homeRows[last] = truncateToWidth(`${" ".repeat(pad)}${stamp}`, Math.max(1, safeWidth));
+				}
+			}
+			return this.#composeMainWithSidebar(
+				homeRows,
+				centeredHeader,
+				mainWidth,
+				safeWidth,
+				safeRows,
+				sidebarDocked,
+				overlayActive,
+			);
+		}
+		const intro = [...centeredHeader, ...tabs, ...after];
 		// Vertically center the bounded home group when space allows.
 		const before = Math.max(0, Math.floor((safeRows - centeredHeader.length - intro.length) / 2));
 		const homeRows = [
@@ -727,7 +822,105 @@ export class Composer implements TerminalFrameProvider {
 			...intro,
 			...blank(safeRows - before - centeredHeader.length - intro.length),
 		].slice(0, safeRows);
-		return this.#composeMainWithSidebar(homeRows, centeredHeader, mainWidth, safeWidth, safeRows, sidebarDocked, overlayActive);
+		return this.#composeMainWithSidebar(
+			homeRows,
+			centeredHeader,
+			mainWidth,
+			safeWidth,
+			safeRows,
+			sidebarDocked,
+			overlayActive,
+		);
+	}
+
+	/**
+	 * Home column under height pressure. Priority: required attention, then
+	 * the editable composer head (the draft lives on its first rows), then
+	 * hints, then wordmark decoration. Decorations never displace the draft.
+	 */
+	#homeIntro(
+		centeredHeader: readonly string[],
+		tabs: readonly string[],
+		after: readonly string[],
+		wordmarkRows: readonly string[],
+		hints: readonly string[],
+		safeRows: number,
+	): readonly string[] {
+		const attentionSource = [...centeredHeader, ...tabs];
+		// Warnings render with surrounding blank padding; the attention row
+		// is the first row with content, never a padding blank.
+		const contentIndex = attentionSource.findIndex(row => Bun.stripANSI(row).trim().length > 0);
+		const attention =
+			contentIndex >= 0 ? attentionSource.slice(contentIndex, contentIndex + 1) : attentionSource.slice(0, 1);
+		const afterBudget = Math.max(0, safeRows - attention.length);
+		// Leading gap spacers (space-padded blank rows) yield to editable rows first.
+		let head = 0;
+		while (head < after.length && Bun.stripANSI(after[head]!).trim().length === 0) head++;
+		const homeAfter = after.slice(head, head + afterBudget);
+		const spare = Math.max(0, afterBudget - homeAfter.length);
+		const homeHints = hints.slice(0, spare);
+		const homeDeco = [...wordmarkRows, ""].slice(0, Math.max(0, spare - homeHints.length));
+		return [...attention, ...homeDeco, ...homeAfter, ...homeHints];
+	}
+
+	/**
+	 * Pixel-block HARVEST wordmark (OpenCode-style terminal glyph art, original
+	 * Harvest name): muted left half, bright accent right half, centered. Falls
+	 * back to plain text on narrow viewports and the ASCII symbol preset.
+	 */
+	#homeWordmark(safeWidth: number): readonly string[] {
+		const text = "harvest";
+		const textRow = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth(text)) / 2)))}${theme.bold(theme.fg("accent", text))}`;
+		if (theme.getSymbolPreset() === "ascii" || safeWidth < 45) return [textRow];
+		const glyphs: Record<string, readonly string[]> = {
+			H: ["█   █", "█   █", "█████", "█   █", "█   █"],
+			A: ["  █  ", " █ █ ", "█████", "█   █", "█   █"],
+			R: ["████ ", "█   █", "████ ", "█  █ ", "█   █"],
+			V: ["█   █", "█   █", "█   █", " █ █ ", "  █  "],
+			E: ["█████", "█    ", "████ ", "█    ", "█████"],
+			S: [" ████", "█    ", " ███ ", "    █", "████ "],
+			T: ["█████", "  █  ", "  █  ", "  █  ", "  █  "],
+		};
+		const letters = "HARVEST".split("").map(letter => glyphs[letter] ?? []);
+		const rows: string[] = [];
+		for (let row = 0; row < 5; row++) {
+			const cells = letters.map(cell => cell[row] ?? "     ");
+			// "HARV" muted, "EST" bright (4 cells + 3 separators = 23 columns).
+			const left = cells.slice(0, 4).join(" ");
+			const right = cells.slice(4).join(" ");
+			const art = `${theme.fg("muted", left)} ${theme.bold(theme.fg("accent", right))}`;
+			const pad = Math.max(0, Math.floor((safeWidth - 41) / 2));
+			rows.push(`${" ".repeat(pad)}${art}`);
+		}
+		return rows;
+	}
+
+	/**
+	 * Hint row in the OpenCode `key label` style (bright chord, dim action):
+	 * `⏎ send · ⌃J newline · ⌥K commands`. Remap-aware through the key-hint
+	 * source; falls back to defaults pre-adoption. Shared by home and the
+	 * session composer so both read the same way.
+	 */
+	#hintRow(safeWidth: number): string {
+		const display = (
+			key: "tui.input.submit" | "tui.input.newLine" | "app.commands.open",
+			fallback: string,
+		): string => {
+			try {
+				return this.#keyHintSource?.getDisplayString(key) || fallback;
+			} catch {
+				return fallback;
+			}
+		};
+		const pair = (
+			key: "tui.input.submit" | "tui.input.newLine" | "app.commands.open",
+			fallback: string,
+			label: string,
+		): string => `${theme.fg("text", display(key, fallback))} ${theme.fg("muted", label)}`;
+		const sep = theme.fg("muted", " · ");
+		const text = `${pair("tui.input.submit", "Enter", "send")}${sep}${pair("tui.input.newLine", "Ctrl+J", "newline")}${sep}${pair("app.commands.open", "Alt+K", "commands")}`;
+		const centered = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth(text)) / 2)))}${text}`;
+		return truncateToWidth(centered, Math.max(1, safeWidth));
 	}
 
 	#composeMainWithSidebar(
@@ -856,6 +1049,9 @@ export class Composer implements TerminalFrameProvider {
 	}
 
 	/** Apply settings changes without replacing the editor or welcome component. */
+	setKeyHintSource(source: Pick<KeybindingsManager, "getDisplayString"> | undefined): void {
+		this.#keyHintSource = source;
+	}
 	setPreferences(update: Partial<ComposerPreferences>): void {
 		if (this.#stopped) return;
 		const wasQuiet = this.#preferences.quiet;

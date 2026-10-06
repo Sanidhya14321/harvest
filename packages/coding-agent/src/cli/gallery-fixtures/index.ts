@@ -21,6 +21,7 @@ import { interactionFixtures } from "./interaction";
 import { memoryFixtures } from "./memory";
 import { miscFixtures } from "./misc";
 import { searchFixtures } from "./search";
+import { semanticToolsFixtures } from "./semantic-tools";
 import { shellFixtures } from "./shell";
 import { statusLineFixtures } from "./status-line";
 import { webFixtures } from "./web";
@@ -34,6 +35,7 @@ export const galleryFixtures = {
 	...shellFixtures,
 	...fsFixtures,
 	...searchFixtures,
+	...semanticToolsFixtures,
 	...editFixtures,
 	...agenticFixtures,
 	...memoryFixtures,

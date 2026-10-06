@@ -1344,39 +1344,44 @@ export const SYMBOL_PRESETS: Record<SymbolPreset, SymbolMap> = {
 	ascii: ASCII_SYMBOLS,
 };
 
-export type SpinnerType = "status" | "activity";
+export type SpinnerType = "status" | "activity" | "working";
 
 export const SPINNER_FRAMES: Record<SymbolPreset, Record<SpinnerType, string[]>> = {
 	unicode: {
 		status: ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"],
 		activity: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+		// KnightRider-style busy blocks (OpenCode-like working row).
+		working: ["██  ", " ██ ", "  ██", " ██ "],
 	},
 	nerd: {
 		status: ["󱑖", "󱑋", "󱑌", "󱑍", "󱑎", "󱑏", "󱑐", "󱑑", "󱑒", "󱑓", "󱑔", "󱑕"],
 		activity: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+		working: ["██  ", " ██ ", "  ██", " ██ "],
 	},
 	ascii: {
 		status: ["|", "/", "-", "\\"],
 		activity: ["-", "\\", "|", "/"],
+		working: ["#   ", " #  ", "  # ", "   #", "  # ", " #  "],
 	},
 };
 
 /**
  * Shape accepted by `themeJson.symbols.spinnerFrames`. A flat array applies to
- * both spinner types; an object lets a theme override `status` and/or
- * `activity` independently. Anything not specified falls back to the symbol
- * preset's default frames.
+ * all spinner types; an object lets a theme override `status`, `activity`,
+ * and/or `working` independently. Anything not specified falls back to the
+ * symbol preset's default frames.
  */
-export type SpinnerFramesOverride = string[] | { status?: string[]; activity?: string[] };
+export type SpinnerFramesOverride = string[] | { status?: string[]; activity?: string[]; working?: string[] };
 
 export function normalizeSpinnerFramesOverride(
 	value: SpinnerFramesOverride | undefined,
 ): Partial<Record<SpinnerType, string[]>> {
 	if (value === undefined) return {};
-	if (Array.isArray(value)) return { status: value, activity: value };
+	if (Array.isArray(value)) return { status: value, activity: value, working: value };
 	const result: Partial<Record<SpinnerType, string[]>> = {};
 	if (value.status) result.status = value.status;
 	if (value.activity) result.activity = value.activity;
+	if (value.working) result.working = value.working;
 	return result;
 }
 

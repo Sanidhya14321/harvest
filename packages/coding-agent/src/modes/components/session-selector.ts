@@ -755,8 +755,36 @@ class SessionList implements Component {
 	}
 }
 
+/**
+ * Minimal live-run state for the picker's target-aware busy guard. The
+ * predicate matches selector-controller.ts:2269 exactly: a target is busy
+ * while it streams, runs bash/eval, or holds pending async work.
+ */
+export interface SessionBusyState {
+	readonly isStreaming: boolean;
+	readonly isBashRunning: boolean;
+	readonly isEvalRunning: boolean;
+	hasPendingAsyncWork(): boolean;
+}
+
+/** True when a delete target is busy and must not be deleted without an explicit stop-and-delete. */
+export function isSessionBusyForDelete(session: SessionBusyState): boolean {
+	return session.isStreaming || session.isBashRunning || session.isEvalRunning || session.hasPendingAsyncWork();
+}
+
 export interface SessionSelectorOptions {
 	onDelete?: (session: SessionInfo) => Promise<boolean>;
+	/**
+	 * Target-aware liveness probe for the delete flow. Busy targets are
+	 * refused unless the operator explicitly authorizes stop-and-delete.
+	 */
+	isSessionBusy?: (session: SessionInfo) => boolean;
+	/**
+	 * Stop-then-delete for a busy target. The owner routes the stop through
+	 * existing cancellation (registry.stop) and deletes only after
+	 * settlement; resolves true when the session was deleted.
+	 */
+	onStopAndDelete?: (session: SessionInfo) => Promise<boolean>;
 	/** Create a new session from the fullscreen picker. Omitted for import-only pickers. */
 	onNewSession?: () => void;
 	historyMatcher?: SessionHistoryMatcher;
@@ -801,6 +829,8 @@ export class SessionSelectorComponent extends OverlayPanel {
 	#contentSlot: Container;
 	#messageContainer: Container;
 	#onDelete?: (session: SessionInfo) => Promise<boolean>;
+	#isSessionBusy?: (session: SessionInfo) => boolean;
+	#onStopAndDelete?: (session: SessionInfo) => Promise<boolean>;
 	#onRequestRender?: () => void;
 	readonly #loadAllSessions?: () => Promise<SessionInfo[]>;
 	#folderSessions: SessionInfo[];
@@ -836,6 +866,8 @@ export class SessionSelectorComponent extends OverlayPanel {
 
 		this.#messageContainer = new Container();
 		this.#onDelete = options.onDelete;
+		this.#isSessionBusy = options.isSessionBusy;
+		this.#onStopAndDelete = options.onStopAndDelete;
 		this.#onNewSession = options.onNewSession;
 		this.#loadAllSessions = options.loadAllSessions;
 		this.#folderSessions = sessions;
@@ -963,6 +995,16 @@ export class SessionSelectorComponent extends OverlayPanel {
 	}
 
 	#showDeleteConfirmation(session: SessionInfo): void {
+		// Target-aware busy guard: a live run must never be deleted out from
+		// under itself. Busy targets detour to the stop-and-delete flow; only
+		// idle targets reach the plain delete confirm below. The guard rechecks
+		// at execution time (after confirmation) as well as request time, so a
+		// run that started while the dialog was open detours instead of
+		// deleting mid-flight.
+		if (this.#isSessionBusy?.(session)) {
+			this.#showStopAndDeleteConfirmation(session);
+			return;
+		}
 		const displayName = session.title || session.firstMessage.slice(0, 40) || session.id;
 		const closeDialog = () => {
 			this.#confirmationDialog = null;
@@ -978,6 +1020,11 @@ export class SessionSelectorComponent extends OverlayPanel {
 			["Yes", "No"],
 			async (option: string) => {
 				if (option === "Yes" && this.#onDelete) {
+					if (this.#isSessionBusy?.(session)) {
+						closeDialog();
+						this.#showStopAndDeleteConfirmation(session);
+						return;
+					}
 					this.#clearError();
 					try {
 						const deleted = await this.#onDelete(session);
@@ -997,6 +1044,48 @@ export class SessionSelectorComponent extends OverlayPanel {
 		// never the SessionList AND the picker chrome, so the picker frame stays
 		// inside the terminal viewport and the TUI never commits the header into
 		// scrollback (issue #3283).
+		this.#contentSlot.clear();
+		this.#contentSlot.addChild(this.#confirmationDialog);
+		this.#onRequestRender?.();
+	}
+
+	/**
+	 * Busy-target deletion: refuse outright unless the operator explicitly
+	 * authorizes stop-and-delete. The actual stop routes through the owner's
+	 * `onStopAndDelete` (existing cancellation); without it the picker only
+	 * explains how to stop first and deletes nothing.
+	 */
+	#showStopAndDeleteConfirmation(session: SessionInfo): void {
+		const displayName = session.title || session.firstMessage.slice(0, 40) || session.id;
+		const closeDialog = () => {
+			this.#confirmationDialog = null;
+			this.#contentSlot.clear();
+			this.#contentSlot.addChild(this.#sessionList);
+			this.#onRequestRender?.();
+		};
+		this.#confirmationDialog = new HookSelectorComponent(
+			`Session is busy: ${displayName}\nStop the run and delete the session?`,
+			["Stop & Delete", "Cancel"],
+			async (option: string) => {
+				if (option === "Stop & Delete") {
+					if (!this.#onStopAndDelete) {
+						this.#showError("Session is busy: stop the run first (Esc), then delete the session.");
+					} else {
+						this.#clearError();
+						try {
+							const deleted = await this.#onStopAndDelete(session);
+							if (deleted) {
+								this.#sessionList.removeSession(session.path);
+							}
+						} catch (err) {
+							this.#showError(err instanceof Error ? err.message : String(err));
+						}
+					}
+				}
+				closeDialog();
+			},
+			closeDialog,
+		);
 		this.#contentSlot.clear();
 		this.#contentSlot.addChild(this.#confirmationDialog);
 		this.#onRequestRender?.();

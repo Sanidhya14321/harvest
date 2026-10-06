@@ -263,15 +263,13 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		// them on the user's behalf.
 		const explicitPrompt = resolved.override || Object.hasOwn(userPolicies, resolved.policyKey ?? this.tool.name);
 		const xdevBypass = context?.xdevApproved === true && effectiveParams === params;
-		const layaGated = context?.toolCall?.providerMetadata?.layaGatingRequired === true;
+		// Legacy `providerMetadata.layaGatingRequired/layaGatingReason` (removed
+		// Laya sidecar) is deliberately ignored: it must never change approval
+		// outcomes. Only the tier policy and provider computer safety checks
+		// below can require approval.
 		const approvalCheck = {
-			required:
-				layaGated ||
-				pendingSafetyChecks.length > 0 ||
-				(resolved.policy === "prompt" && (explicitPrompt || !xdevBypass)),
-			reason:
-				(layaGated ? (context?.toolCall?.providerMetadata?.layaGatingReason as string) : undefined) ||
-				resolved.reason,
+			required: pendingSafetyChecks.length > 0 || (resolved.policy === "prompt" && (explicitPrompt || !xdevBypass)),
+			reason: resolved.reason,
 		};
 
 		if (approvalCheck.required) {

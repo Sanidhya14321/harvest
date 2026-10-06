@@ -38,6 +38,120 @@ export function buildAutoLearnInstructions(available: { manageSkill: boolean; le
 	return parts.join("\n\n");
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Configured vs effective state (workstream B, display wiring only)
+//
+// Surfaces what the settings ask for versus what is actually live, so live
+// settings displays can tell "configured on" apart from "capturing now".
+// Activation/deactivation itself applies at turn boundary in the session
+// owner (sdk/interactive-mode); this module never rebuilds tools or
+// subscriptions and never activates anything: every effective state requires
+// explicit opt-in flags, so a configured-off feature can never read as live.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Minimal settings surface for effective-state computation. */
+export interface AutoLearnSettingsView {
+	get(key: string): unknown;
+}
+
+/** Tool presence in the session's active set. */
+export interface AutoLearnToolsPresent {
+	manageSkill: boolean;
+	learn: boolean;
+}
+
+export type AutoLearnEffectiveKind = "capturing" | "guidance-only" | "disabled";
+
+export interface AutoLearnEffectiveState {
+	/** The `autolearn.enabled` flag as configured. */
+	configuredEnabled: boolean;
+	/** The `autolearn.autoContinue` flag as configured. */
+	configuredAutoContinue: boolean;
+	/** Whether the auto-learn tools made it into the active tool set. */
+	toolsPresent: AutoLearnToolsPresent;
+	/** Whether the session controller subscription is installed. */
+	controllerActive: boolean;
+	/** What is actually live. Never "capturing" unless everything opted in. */
+	effective: AutoLearnEffectiveKind;
+	/** Human reason for the effective state. */
+	reason: string;
+}
+
+/**
+ * Compute configured vs effective auto-learning state. Pure display helper:
+ * `controllerActive` is supplied by the owner that installed (or skipped)
+ * the controller at session start.
+ */
+export function describeAutoLearnState(
+	settings: AutoLearnSettingsView,
+	toolsPresent: AutoLearnToolsPresent,
+	controllerActive: boolean,
+): AutoLearnEffectiveState {
+	const configuredEnabled = settings.get("autolearn.enabled") === true;
+	const configuredAutoContinue = settings.get("autolearn.autoContinue") === true;
+	if (!configuredEnabled) {
+		return {
+			configuredEnabled,
+			configuredAutoContinue,
+			toolsPresent,
+			controllerActive,
+			effective: "disabled",
+			reason: "autolearn.enabled is off",
+		};
+	}
+	if (!toolsPresent.manageSkill) {
+		return {
+			configuredEnabled,
+			configuredAutoContinue,
+			toolsPresent,
+			controllerActive,
+			effective: "disabled",
+			reason: "autolearn.enabled is on but the manage_skill tool is not in the active set",
+		};
+	}
+	if (!controllerActive) {
+		return {
+			configuredEnabled,
+			configuredAutoContinue,
+			toolsPresent,
+			controllerActive,
+			effective: "guidance-only",
+			reason:
+				"tools are present but the session controller is not installed (e.g. subagent depth); standing guidance only",
+		};
+	}
+	if (!configuredAutoContinue) {
+		return {
+			configuredEnabled,
+			configuredAutoContinue,
+			toolsPresent,
+			controllerActive,
+			effective: "guidance-only",
+			reason: "controller is installed but autolearn.autoContinue is off; standing guidance only, no capture turns",
+		};
+	}
+	return {
+		configuredEnabled,
+		configuredAutoContinue,
+		toolsPresent,
+		controllerActive,
+		effective: "capturing",
+		reason: "enabled, tools present, controller installed, and autoContinue on",
+	};
+}
+
+/** Render the configured-vs-effective state for live settings displays. */
+export function formatAutoLearnStatus(state: AutoLearnEffectiveState): string {
+	const configured = state.configuredEnabled ? "on" : "off";
+	const autoContinue = state.configuredAutoContinue ? "on" : "off";
+	const tools = state.toolsPresent.manageSkill ? `manage_skill${state.toolsPresent.learn ? " + learn" : ""}` : "none";
+	return (
+		`Auto-learn configured: ${configured} (autoContinue ${autoContinue}); ` +
+		`tools: ${tools}; controller: ${state.controllerActive ? "active" : "inactive"}; ` +
+		`effective: ${state.effective} (${state.reason}).`
+	);
+}
+
 export interface AutoLearnControllerOptions {
 	session: AgentSession;
 	settings: Settings;

@@ -283,8 +283,9 @@ export class EventController {
 			auto_retry_end: e => this.#handleAutoRetryEnd(e),
 			retry_fallback_applied: e => this.#handleRetryFallbackApplied(e),
 			retry_fallback_succeeded: e => this.#handleRetryFallbackSucceeded(e),
-			// Tool-gating verdicts are owned by run diagnostics (local-delay
-			// attribution); the transcript needs no card for them.
+			// Inert replay tombstone for the removed Laya sidecar: old
+			// `laya_gating_decision` records replay safely and activate nothing;
+			// gate history display is owned by run diagnostics, never the transcript.
 			laya_gating_decision: async () => {},
 			ttsr_triggered: e => this.#handleTtsrTriggered(e),
 			todo_reminder: e => this.#handleTodoReminder(e),
@@ -1925,6 +1926,10 @@ export class EventController {
 					});
 			}
 		}
+		// Working files may have changed without moving the repository HEAD the
+		// native watcher observes (tool edits, external edits). Coalesce that
+		// invalidation into one trailing Workspace Changes refresh.
+		this.ctx.noteWorkspaceMutation();
 	}
 	async #handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>): Promise<void> {
 		// A superseded agent_end: the agent is already streaming a fresh turn, so

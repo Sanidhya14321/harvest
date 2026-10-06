@@ -3,15 +3,8 @@ import { isEnoent, logger, parseFrontmatter, prompt } from "@harvest/pi-utils";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import contextTemplate from "../../prompts/brain/context.md" with { type: "text" };
-import relevanceInstructions from "../../prompts/brain/relevance.md" with { type: "text" };
 import type { GraphEdge } from "./graph";
-import { getLayaClient, type LayaClient, type LayaQuestionDefinition } from "./laya-client";
-import {
-	createScoringExcerpt,
-	extractMessageText,
-	RELEVANCE_CRITERIA,
-	type LayaContextBudget,
-} from "./laya-pruning";
+import { extractMessageText } from "./text-extract";
 import { KnowledgeRetriever, type SectionPage, splitMarkdownSections, tokenize } from "./retrieval";
 import { SecuritySandbox } from "./security";
 
@@ -33,19 +26,14 @@ interface IndexedDocument {
 }
 
 export interface BrainRetrievalOptions {
-	readonly client?: LayaClient;
-	readonly rerank?: boolean;
-	/** Per-round-trip latency budget for reranking; falls back to lexical order on timeout. */
-	readonly rerankTimeoutMs?: number;
 	/**
-	 * Shared prune+rerank latency budget from `sdk.ts` transformContext.
-	 * When present, the rerank round trip is capped at the budget remainder
-	 * (and skipped entirely when exhausted) so prune+rerank never exceed
-	 * their joint allowance. Fail-open: exhaustion keeps lexical order.
+	 * Removed Laya model reranking now resolves as lexical/graph order.
+	 * Kept so older callers keep compiling; ignored at runtime.
+	 * @deprecated Reranking was removed with Laya; lexical/graph order is authoritative.
 	 */
-	readonly contextBudget?: LayaContextBudget;
-	/** Override the prompt revision embedded in the rerank cache key (tests only). */
-	readonly promptRevision?: string;
+	readonly rerank?: boolean;
+	/** @deprecated Ignored since Laya removal. */
+	readonly rerankTimeoutMs?: number;
 	/** Knowledge scopes eligible for retrieval; omitted means project + user. */
 	readonly scopes?: readonly BrainRoot["scope"][];
 	readonly signal?: AbortSignal;
@@ -59,24 +47,6 @@ const MAX_FILE_BYTES = 256 * 1024;
 const MAX_PAGES = 4096;
 const MAX_CANDIDATES = 8;
 const MAX_CONTEXT_CHARS = 8000;
-/** Default rerank budget: one sidecar round trip on the shared decision timescale. */
-export const DEFAULT_BRAIN_RERANK_TIMEOUT_MS = 300;
-/**
- * Prompt revision binding rerank decisions to the exact instructions that
- * produced them. Embedded in the rerank cache key so a prompt-asset edit
- * never replays a ranking judged under different instructions.
- */
-export const BRAIN_RERANK_PROMPT_REVISION: string = (() => {
-	try {
-		return Bun.hash(
-			`${relevanceInstructions}\n${RELEVANCE_CRITERIA.join("\n")}\n${contextTemplate}`,
-		).toString(36);
-	} catch {
-		return "brain-prompt-rev-unknown";
-	}
-})();
-/** Bounded rerank-result cache: unchanged query/pages reuse ranking without another round trip. */
-const MAX_RERANK_CACHE_ENTRIES = 32;
 
 /** Markdown remains authoritative; the page/postings/edge index is disposable session state. */
 export class MarkdownBrain {
@@ -88,8 +58,6 @@ export class MarkdownBrain {
 	#edges: GraphEdge[] = [];
 	#refreshing?: Promise<void>;
 	#refreshedAt = 0;
-	/** Rerank cache keyed by normalized query + candidate content signatures. */
-	readonly #rerankCache = new Map<string, readonly string[]>();
 
 	constructor(roots: readonly BrainRoot[]) {
 		this.#roots = roots;
@@ -213,110 +181,11 @@ export class MarkdownBrain {
 	}
 
 	/**
-	 * Cache key binding a ranking to its exact inputs: prompt revision plus
-	 * normalized query plus the candidate set's content signatures
-	 * (order-independent, so retrieval order never affects hits). Edits,
-	 * deletions, task changes, and prompt-asset changes all miss naturally;
-	 * scope is enforced before reranking so excluded knowledge never enters
-	 * the key.
+	 * Removed Laya rerank-cache hook. Kept so older callers keep compiling;
+	 * lexical/graph retrieval holds no model-ranked state.
+	 * @deprecated Rerank cache was removed with Laya.
 	 */
-	#rerankCacheKey(query: string, pages: readonly BrainPage[], promptRev?: string): string {
-		const revision = promptRev ?? BRAIN_RERANK_PROMPT_REVISION;
-		const normalizedQuery = query.trim().replace(/\s+/g, " ").toLowerCase();
-		const signatures = pages
-			.map(page => `${page.id}:${Bun.hash(`${page.title}\n${page.heading}\n${page.content}`).toString(36)}`)
-			.sort();
-		return `${revision}\n${normalizedQuery}\n${signatures.join("\n")}`;
-	}
-
-	#cachedRerankOrder(
-		query: string,
-		pages: readonly BrainPage[],
-		promptRev?: string,
-	): readonly string[] | undefined {
-		return this.#rerankCache.get(this.#rerankCacheKey(query, pages, promptRev));
-	}
-
-	#storeRerankOrder(
-		query: string,
-		pages: readonly BrainPage[],
-		order: readonly string[],
-		promptRev?: string,
-	): void {
-		if (this.#rerankCache.size >= MAX_RERANK_CACHE_ENTRIES) {
-			const oldest = this.#rerankCache.keys().next();
-			if (!oldest.done) this.#rerankCache.delete(oldest.value);
-		}
-		this.#rerankCache.set(this.#rerankCacheKey(query, pages, promptRev), order);
-	}
-
-	/** Drop cached rankings (history rewrite); next rerank scores afresh. Fail-open. */
-	clearRerankCache(): void {
-		try {
-			this.#rerankCache.clear();
-		} catch (error) {
-			logger.debug("Brain rerank cache clear failed open", { error: String(error) });
-		}
-	}
-
-	/** Effective rerank timeout: shared-budget remainder wins over the explicit option. */
-	#effectiveRerankTimeoutMs(options: BrainRetrievalOptions): number {
-		const explicit = options.rerankTimeoutMs ?? DEFAULT_BRAIN_RERANK_TIMEOUT_MS;
-		if (!options.contextBudget) return explicit;
-		try {
-			return Math.min(explicit, Math.max(0, options.contextBudget.remainingMs()));
-		} catch {
-			return explicit;
-		}
-	}
-
-	async #rerankPages(query: string, pages: BrainPage[], options: BrainRetrievalOptions): Promise<void> {
-		const questions: Record<string, LayaQuestionDefinition> = {};
-		const state: Record<string, unknown> = {};
-		pages.forEach((page, index) => {
-			const key = `brain_${index}`;
-			questions[key] = { type: "score", instructions: relevanceInstructions, criteria: RELEVANCE_CRITERIA };
-			const sanitize = options.sanitize ?? (text => text);
-			state[key] = {
-				query: sanitize(query.slice(0, 2000)),
-				scope: page.scope,
-				title: sanitize(page.title),
-				content: sanitize(createScoringExcerpt(page.content)),
-			};
-		});
-		try {
-			const effectiveTimeoutMs = this.#effectiveRerankTimeoutMs(options);
-			// Shared-budget fail-open: no remainder means no round trip.
-			if (options.contextBudget && effectiveTimeoutMs <= 0) {
-				logger.debug("Brain reranking skipped: shared prune+rerank budget exhausted");
-				return;
-			}
-			const result = await (options.client ?? getLayaClient()).decide(state, questions, {
-				callSite: "brain_retrieval",
-				signal: options.signal,
-				sessionId: options.sessionId,
-				timeoutMs: effectiveTimeoutMs,
-			});
-			const scores = pages.map((_page, index) => result.data?.[`brain_${index}`]?.score);
-			// Incomplete/malformed decisions keep the deterministic BM25/graph ordering.
-			if (
-				!result.fallback &&
-				scores.every(score => typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 3)
-			) {
-				const order = new Map(pages.map((page, index) => [page.id, scores[index]!]));
-				pages.sort((a, b) => order.get(b.id)! - order.get(a.id)!);
-				this.#storeRerankOrder(
-					query,
-					pages,
-					pages.map(page => page.id),
-					options.promptRevision,
-				);
-				logger.debug("Brain reranking rescored pages", { pages: pages.length, latencyMs: result.latencyMs });
-			}
-		} catch (error) {
-			logger.debug("Brain reranking failed open", { error: String(error) });
-		}
-	}
+	clearRerankCache(): void {}
 
 	async retrieve(query: string, options: BrainRetrievalOptions = {}): Promise<BrainPage[]> {
 		if (options.signal?.aborted || !query.trim()) return [];
@@ -328,8 +197,8 @@ export class MarkdownBrain {
 		const ranked = this.#retriever.searchPages(candidates, query, MAX_CANDIDATES / 2, Number.MAX_SAFE_INTEGER);
 		const unscoped = ranked.map(result => this.#pages.get(result.page.id)!);
 		// Scope exclusion is user policy, not relevance: drop out-of-scope
-		// pages before graph expansion and reranking so excluded knowledge
-		// can never leak back in through neighbors or model scores.
+		// pages before graph expansion so excluded knowledge can never leak
+		// back in through neighbors.
 		const pages = options.scopes ? unscoped.filter(page => options.scopes!.includes(page.scope)) : unscoped;
 		// Expand only positive graph relationships, one hop, with bounded fan-out.
 		const documents = new Set(pages.map(page => page.documentId));
@@ -344,17 +213,9 @@ export class MarkdownBrain {
 			if (pages.length >= MAX_CANDIDATES) break;
 			if (neighbors.has(page.documentId) && !pages.some(candidate => candidate.id === page.id)) pages.push(page);
 		}
-		if (options.rerank && pages.length > 1 && !options.signal?.aborted) {
-			const promptRev = options.promptRevision ?? BRAIN_RERANK_PROMPT_REVISION;
-			const cachedOrder = this.#cachedRerankOrder(query, pages, promptRev);
-			if (cachedOrder) {
-				logger.debug("Brain reranking served from cache", { pages: pages.length });
-				const rank = new Map(cachedOrder.map((id, index) => [id, index]));
-				pages.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-			} else {
-				await this.#rerankPages(query, pages, options);
-			}
-		}
+		// Model reranking was removed with Laya: lexical BM25 order refined by
+		// one-hop graph expansion is authoritative. The deprecated `rerank`
+		// option is accepted but ignored.
 		if (options.signal?.aborted) return [];
 		let remaining = Math.max(0, Math.min(MAX_CONTEXT_CHARS, options.maxChars ?? MAX_CONTEXT_CHARS));
 		const bounded: BrainPage[] = [];

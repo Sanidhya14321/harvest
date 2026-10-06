@@ -89,15 +89,13 @@ const spinnerFramesSchema = type("unknown").narrow((value): value is SpinnerFram
 		const obj = value as Record<string, unknown>;
 		const status = obj.status;
 		const activity = obj.activity;
-		if (status === undefined && activity === undefined) return false;
-		if (status !== undefined) {
-			if (!Array.isArray(status) || status.length < 1 || !status.every(item => typeof item === "string")) {
-				return false;
-			}
-		}
-		if (activity !== undefined) {
-			if (!Array.isArray(activity) || activity.length < 1 || !activity.every(item => typeof item === "string")) {
-				return false;
+		const working = obj.working;
+		if (status === undefined && activity === undefined && working === undefined) return false;
+		for (const frames of [status, activity, working]) {
+			if (frames !== undefined) {
+				if (!Array.isArray(frames) || frames.length < 1 || !frames.every(item => typeof item === "string")) {
+					return false;
+				}
 			}
 		}
 		return true;

@@ -186,9 +186,7 @@ describe("ChatTranscriptBuilder token-usage row timestamp", () => {
 		expect(usageRendered).toContain(USAGE_LABEL);
 		const endcap = children[children.length - 1]!;
 		expect(endcap.render(120).join("\n")).toContain("claude-sonnet-4-5");
-		expect(
-			children.filter(component => component.render(120).join("\n").includes(USAGE_LABEL)),
-		).toHaveLength(1);
+		expect(children.filter(component => component.render(120).join("\n").includes(USAGE_LABEL))).toHaveLength(1);
 	});
 
 	it("deep-links tool-only assistant entries to their first rendered row", () => {
@@ -393,7 +391,13 @@ describe("completion endcap aggregation", () => {
 		// A late duplicate result for the already-settled call routes nowhere
 		// and must not produce a second completion row.
 		builder.append([
-			{ type: "message" as const, id: "l2", parentId: "l1", timestamp: new Date(0).toISOString(), message: toolResult },
+			{
+				type: "message" as const,
+				id: "l2",
+				parentId: "l1",
+				timestamp: new Date(0).toISOString(),
+				message: toolResult,
+			},
 		]);
 		expect(countEndcaps()).toBe(1);
 	});
@@ -457,8 +461,8 @@ describe("parked viewer background tasks", () => {
 		expect(parked).toBeDefined();
 		expect(parked!.isTranscriptBlockFinalized()).toBe(true);
 		// … and the trailing usage flush is not held back by the retained card.
-		expect(
-			builder.container.children.some(component => component.render(120).join("\n").includes(USAGE_LABEL)),
-		).toBe(true);
+		expect(builder.container.children.some(component => component.render(120).join("\n").includes(USAGE_LABEL))).toBe(
+			true,
+		);
 	});
 });

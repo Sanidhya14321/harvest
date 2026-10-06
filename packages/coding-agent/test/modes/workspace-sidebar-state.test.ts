@@ -1,15 +1,10 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Composer } from "@harvest/pi-coding-agent/modes/composer";
-import {
-	emptySidebarSnapshot,
-	WorkspaceSidebar,
-} from "@harvest/pi-coding-agent/modes/components/workspace-sidebar";
+import { emptySidebarSnapshot, WorkspaceSidebar } from "@harvest/pi-coding-agent/modes/components/workspace-sidebar";
+import { TranscriptContainer } from "@harvest/pi-coding-agent/modes/components/transcript-container";
 import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
-import {
-	computeWorkspaceLayout,
-	sidebarOverlayVisible,
-} from "@harvest/pi-coding-agent/modes/workspace-layout";
-import { visibleWidth, CURSOR_MARKER } from "@harvest/pi-tui";
+import { computeWorkspaceLayout, sidebarOverlayVisible } from "@harvest/pi-coding-agent/modes/workspace-layout";
+import { Text, visibleWidth, CURSOR_MARKER } from "@harvest/pi-tui";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal";
 
 beforeEach(async () => {
@@ -72,15 +67,24 @@ describe("sidebar overlay hit testing", () => {
 		expect(closed.hitTest(79)).toBe("main");
 	});
 
-	it("never routes overlay columns to the sidebar for auto/hide preferences", () => {
-		expect(sidebarOverlayVisible(80, "auto", true)).toBe(false);
-		expect(sidebarOverlayVisible(80, "hide", true)).toBe(false);
+	it("opens the temporary overlay from auto/hide on explicit toggle, never by itself", () => {
+		// Explicit toggle/focus paints the narrow overlay in any mode; without
+		// the open flag nothing paints, and wide viewports dock instead.
+		expect(sidebarOverlayVisible(80, "auto", true)).toBe(true);
+		expect(sidebarOverlayVisible(80, "hide", true)).toBe(true);
 		expect(sidebarOverlayVisible(160, "show", true)).toBe(false);
 		const auto = computeWorkspaceLayout(
 			{ columns: 80, rows: 24 },
 			{ hasConversation: true, sidebarPreference: "auto", sidebarOverlayOpen: true },
 		);
-		expect(auto.hitTest(79)).toBe("main");
+		expect(auto.sidebarOverlayRequested).toBe(true);
+		expect(auto.hitTest(79)).toBe("sidebar");
+		const autoClosed = computeWorkspaceLayout(
+			{ columns: 80, rows: 24 },
+			{ hasConversation: true, sidebarPreference: "auto", sidebarOverlayOpen: false },
+		);
+		expect(autoClosed.sidebarOverlayRequested).toBe(false);
+		expect(autoClosed.hitTest(79)).toBe("main");
 	});
 });
 
@@ -164,6 +168,89 @@ describe("composer tiny viewports and overlay splice", () => {
 			} finally {
 				composer.stop();
 			}
+		}
+	});
+
+	it("keeps the home draft editable at 24x4 with decorations and warnings", () => {
+		for (const [columns, rows] of [
+			[20, 4],
+			[24, 4],
+		] as const) {
+			const terminal = new VirtualTerminal(columns, rows);
+			const composer = new Composer({
+				preferences: { fullscreen: true, quiet: false, sidebar: "hide" },
+				terminal,
+			});
+			try {
+				composer.editor.setText("DRAFT9");
+				composer.setHeaderExtras([new Text("WARN-MARKER")], []);
+				composer.start();
+				const viewport = [...composer.renderFrame({ columns, rows }).viewport].map(row => Bun.stripANSI(row));
+				expect(viewport.length).toBeLessThanOrEqual(rows);
+				for (const row of viewport) expect(paintedWidth(row)).toBeLessThanOrEqual(columns);
+				// Editable draft survives home decorations, warnings, and hints.
+				// (Marker is short: at 20 columns a long draft wraps, which is
+				// correct rendering — the contract is draft visibility.)
+				expect(viewport.join("\n")).toContain("DRAFT9");
+			} finally {
+				composer.stop();
+			}
+		}
+	});
+
+	it("paints the pixel wordmark, key-style hints, and version stamp on a roomy home (text-home)", () => {
+		const terminal = new VirtualTerminal(100, 30);
+		const composer = new Composer({
+			preferences: { fullscreen: true, quiet: false, sidebar: "hide" },
+			terminal,
+			welcome: { version: "9.9.9" },
+		});
+		try {
+			composer.start();
+			const viewport = [...composer.renderFrame({ columns: 100, rows: 30 }).viewport].map(row => Bun.stripANSI(row));
+			const art = viewport.filter(row => row.includes("█"));
+			// Five pixel rows forming one 41-column centered block.
+			expect(art).toHaveLength(5);
+			const firsts = art.map(row => row.indexOf("█"));
+			expect(new Set(firsts).size).toBe(1);
+			expect(firsts[0]).toBe(Math.floor((100 - 41) / 2));
+			expect(viewport.join("\n")).toContain("send");
+			expect(viewport.join("\n")).toContain("v9.9.9");
+		} finally {
+			composer.stop();
+		}
+	});
+
+	it("falls back to the text wordmark on narrow viewports (art-crush)", () => {
+		const terminal = new VirtualTerminal(40, 12);
+		const composer = new Composer({
+			preferences: { fullscreen: true, quiet: false, sidebar: "hide" },
+			terminal,
+		});
+		try {
+			composer.start();
+			const viewport = [...composer.renderFrame({ columns: 40, rows: 12 }).viewport].map(row => Bun.stripANSI(row));
+			expect(viewport.join("\n")).not.toContain("█");
+			expect(viewport.join("\n")).toContain("harvest");
+		} finally {
+			composer.stop();
+		}
+	});
+
+	it("shows the hint row below the session composer on roomy screens (hintless-session)", () => {
+		const terminal = new VirtualTerminal(100, 30);
+		const composer = new Composer({ preferences: { fullscreen: true, quiet: false }, terminal });
+		const transcript = new TranscriptContainer();
+		transcript.addChild(new Text("hello line"));
+		composer.setRuntimeChildren([transcript, composer.editor]);
+		try {
+			composer.start();
+			const viewport = [...composer.renderFrame({ columns: 100, rows: 30 }).viewport].map(row => Bun.stripANSI(row));
+			expect(viewport.join("\n")).toContain("hello line");
+			expect(viewport.join("\n")).toContain("send");
+			expect(viewport.join("\n")).toContain("commands");
+		} finally {
+			composer.stop();
 		}
 	});
 

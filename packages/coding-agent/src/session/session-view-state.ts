@@ -24,6 +24,13 @@ export interface DraftEditor {
  * Switching tabs must not leak one session's unsent text into another, and
  * returning must restore what was typed. Drafts stay in memory only: process
  * exit drops them so sensitive unsent text is never persisted.
+ *
+ * Home entry/exit uses the same primitives: entering Home saves the closed
+ * session's draft/scroll/anchor under its UUID (`saveDraft` +
+ * `saveScrollOffset` + `saveReadingAnchor`), then empties the composer with
+ * {@link clearEditor} so no text, attachments, or title leak into Home.
+ * Exiting Home to a fresh session restores via `restoreDraft` — a session
+ * with no saved draft clears to an empty composer by construction.
  */
 export class SessionViewStateStore {
 	readonly #drafts = new Map<string, ComposerDraftState>();
@@ -52,10 +59,7 @@ export class SessionViewStateStore {
 	restoreDraft(sessionId: string, editor: DraftEditor): void {
 		const draft = this.#drafts.get(sessionId);
 		if (!draft) {
-			editor.setText("");
-			editor.pendingImages = [];
-			editor.pendingImageLinks = [];
-			editor.imageLinks = undefined;
+			this.clearEditor(editor);
 			return;
 		}
 		editor.pendingImages = [...draft.pendingImages];
@@ -67,6 +71,18 @@ export class SessionViewStateStore {
 	/** Drop `sessionId`'s draft without touching the editor. */
 	clearDraft(sessionId: string): void {
 		this.#drafts.delete(sessionId);
+	}
+
+	/**
+	 * Empty the editor to a fresh Home composer: no text, attachments, or
+	 * image links. Mirrors the empty branch of `restoreDraft` so Home entry
+	 * and fresh-session restores share one clearing contract.
+	 */
+	clearEditor(editor: DraftEditor): void {
+		editor.setText("");
+		editor.pendingImages = [];
+		editor.pendingImageLinks = [];
+		editor.imageLinks = undefined;
 	}
 
 	hasDraft(sessionId: string): boolean {
@@ -91,5 +107,25 @@ export class SessionViewStateStore {
 	/** Saved scroll-back offset in rows, or 0 when the session has none. */
 	scrollOffset(sessionId: string): number {
 		return this.#scrollOffsets.get(sessionId) ?? 0;
+	}
+
+	/** Remember the pinned reading anchor for `sessionId`; undefined releases to the tail. */
+	saveReadingAnchor(sessionId: string, anchor: TranscriptReadingAnchor | undefined): void {
+		if (anchor === undefined) {
+			this.#readingAnchors.delete(sessionId);
+			return;
+		}
+		this.#readingAnchors.delete(sessionId);
+		this.#readingAnchors.set(sessionId, { block: anchor.block, row: anchor.row });
+		while (this.#readingAnchors.size > SessionViewStateStore.maxScrollEntries) {
+			const oldest = this.#readingAnchors.keys().next();
+			if (oldest.done) break;
+			this.#readingAnchors.delete(oldest.value);
+		}
+	}
+
+	/** Saved reading anchor, or undefined when following the tail. */
+	readingAnchor(sessionId: string): TranscriptReadingAnchor | undefined {
+		return this.#readingAnchors.get(sessionId);
 	}
 }

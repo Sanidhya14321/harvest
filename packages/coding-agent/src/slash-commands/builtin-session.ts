@@ -204,7 +204,17 @@ export const BUILTIN_SESSION_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 				return commandConsumed();
 			}
 			if (verb === "delete" && !rest) {
-				if (runtime.session.isStreaming) return usage("Cannot delete the session while streaming.", runtime);
+				if (
+					runtime.session.isStreaming ||
+					runtime.session.isBashRunning ||
+					runtime.session.isEvalRunning ||
+					runtime.session.hasPendingAsyncWork()
+				) {
+					return usage(
+						"Cannot delete the session while it is busy (streaming, bash/eval, or pending work).",
+						runtime,
+					);
+				}
 				const sessionFile = runtime.sessionManager.getSessionFile();
 				if (!sessionFile) return usage("No session file to delete (in-memory session).", runtime);
 				// Route through the active SessionManager so the persist writer is

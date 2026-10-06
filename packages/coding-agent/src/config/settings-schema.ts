@@ -202,7 +202,7 @@ export const TAB_METADATA: Record<SettingTab, { label: string; icon: `tab.${stri
  */
 export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
 	appearance: ["Theme", "Composer", "Status Line", "Display", "Images"],
-	model: ["Thinking", "Sampling", "Prompt", "Retry & Fallback", "Advisor", "Prewalk", "Vision", "Local Decisions"],
+	model: ["Thinking", "Sampling", "Prompt", "Retry & Fallback", "Advisor", "Prewalk", "Vision"],
 	interaction: [
 		"Input",
 		"Approvals",
@@ -547,129 +547,50 @@ export const SETTINGS_SCHEMA = {
 	"laya.enabled": {
 		type: "boolean",
 		default: false,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Laya Decision Layer",
-			description:
-				"Enable local ModernBERT-based typed decisions for tool gating, model routing, and step completion checks.",
-		},
 	},
 	"laya.url": {
 		type: "string",
 		default: "http://127.0.0.1:8177",
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Laya Sidecar URL",
-			description: "HTTP endpoint for the local Laya decision sidecar process.",
-		},
 	},
 	"laya.autostart": {
 		type: "boolean",
 		default: true,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Auto-start Sidecar",
-			description: "Automatically spawn the local Laya sidecar daemon when Harvest runs if not already active.",
-		},
 	},
 	"laya.pruning": {
 		type: "boolean",
 		default: true,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Context Pruning",
-			description:
-				"Use Laya to score and prune low-relevance historical turns and tool results before calling the main LLM.",
-		},
 	},
 	"laya.pruningKeepRecentTurns": {
 		type: "number",
 		default: 2,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Pruning Recent Turns Kept",
-			description: "Number of most recent conversation turns that are always kept and never pruned.",
-		},
 	},
 	"laya.pruningMinKeptTurns": {
 		type: "number",
 		default: 3,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Pruning Safety Floor (Turns)",
-			description: "Minimum total turns kept as a safety floor to prevent degenerate empty context.",
-		},
 	},
 	"laya.pruningTokenBudget": {
 		type: "number",
 		default: 32000,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Pruning Token Budget",
-			description: "Target token budget for prunable historical context.",
-		},
 	},
 	"laya.subagentSelection": {
 		type: "boolean",
 		default: false,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Subagent Selection",
-			description:
-				"Use Laya to evaluate tasks and select the optimal specialized subagent from Harvest's roster. Defaults to false pending empirical calibration against >= 100 real sessions (avoids inert 100% escalation or CPU timeout fallback).",
-		},
 	},
 	"laya.subagentSelectionShadow": {
 		type: "boolean",
 		default: true,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Subagent Selection Shadow Mode",
-			description:
-				"Run Laya subagent selection in shadow mode in the background for real dispatches, recording model pick and confidence to telemetry while preserving the caller/default agent selection unchanged. Defaults to true to build an empirical dataset of >= 100 real session traces.",
-		},
 	},
 	"laya.subagentSelectionConfidenceThreshold": {
 		type: "number",
 		default: 0.01,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Subagent Selection Confidence Threshold",
-			description:
-				"Minimum Laya confidence required to auto-pick a subagent without escalating to the main LLM. Provisional default of 0.010 pending validation on held-out real assignments; raise it if auto-picks misfire.",
-		},
 	},
 	"laya.subagentSelectionTimeoutMs": {
 		type: "number",
 		default: 300,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Subagent Selection Timeout (ms)",
-			description:
-				"Maximum latency budget in milliseconds for Laya subagent selection before failing open to default agent. Derived automatically from local hardware calibration (~2x measured choice latency) when unset. Can be explicitly overridden.",
-		},
 	},
 	"laya.maxAcceptableLatencyPerTurnMs": {
 		type: "number",
 		default: 200,
-		ui: {
-			tab: "model",
-			group: "Local Decisions",
-			label: "Max Acceptable Turn Latency (ms)",
-			description:
-				"Maximum added latency in milliseconds permitted per main-LLM turn for local Laya decision features (e.g. context pruning). If measured batched scoring latency exceeds this budget during calibration, pruning is disabled by default to protect interactive responsiveness.",
-		},
 	},
 	"prewalk.enabled": {
 		type: "boolean",
@@ -5394,25 +5315,12 @@ export const SETTINGS_SCHEMA = {
 	// Brain retrieval
 	"brain.rerank": {
 		type: "boolean",
-		default: true,
-		ui: {
-			tab: "tasks",
-			group: "Memory & Knowledge",
-			label: "Brain Reranking",
-			description:
-				"Let the local Laya sidecar rerank retrieved knowledge pages. Off preserves the deterministic lexical/graph order.",
-		},
+		default: false,
 	},
 
 	"brain.rerankTimeoutMs": {
 		type: "number",
 		default: 300,
-		ui: {
-			tab: "tasks",
-			group: "Memory & Knowledge",
-			label: "Brain Rerank Timeout (ms)",
-			description: "Maximum latency budget for one brain rerank round trip before falling back to lexical order.",
-		},
 	},
 
 	"brain.scopes": {

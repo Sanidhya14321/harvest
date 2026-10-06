@@ -14,7 +14,7 @@ import { isSttModelKey, STT_MODEL_OPTIONS } from "../stt/models";
 import { downloadTtsModel, isTtsLocalModelKey, isTtsModelCached, TTS_LOCAL_MODEL_OPTIONS } from "../tts";
 import { selectSetupModel } from "./setup-model-picker";
 
-export type SetupComponent = "python" | "speech" | "laya";
+export type SetupComponent = "python" | "speech";
 
 export interface SetupCommandArgs {
 	component: SetupComponent;
@@ -24,7 +24,7 @@ export interface SetupCommandArgs {
 	};
 }
 
-const VALID_COMPONENTS: SetupComponent[] = ["python", "speech", "laya"];
+const VALID_COMPONENTS: SetupComponent[] = ["python", "speech"];
 
 const MANAGED_PYTHON_ENV = getPythonEnvDir();
 
@@ -111,18 +111,6 @@ export async function runSetupCommand(cmd: SetupCommandArgs): Promise<void> {
 		case "speech":
 			await handleSpeechSetup(cmd.flags);
 			break;
-		case "laya":
-			await handleLayaSetup(cmd.flags);
-			break;
-	}
-}
-
-async function handleLayaSetup(flags: { json?: boolean; check?: boolean }): Promise<void> {
-	const { runLayaCommand } = await import("./laya-cli");
-	if (flags.check) {
-		await runLayaCommand({ action: "status", flags: { json: flags.json } });
-	} else {
-		await runLayaCommand({ action: "setup", flags: { json: flags.json } });
 	}
 }
 
@@ -309,7 +297,6 @@ ${chalk.bold("Usage:")}
 ${chalk.bold("Components:")}
   python    Verify a Python 3 interpreter is reachable for code execution
   speech    Pick and download speech-to-text and text-to-speech models
-  laya      Install, calibrate, and start local Laya decision sidecar
 
 ${chalk.bold("Options:")}
   -c, --check   Check if dependencies are installed without installing

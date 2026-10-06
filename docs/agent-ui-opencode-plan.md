@@ -1,5 +1,43 @@
 # Harvest agent UI: OpenCode implementation plan
 
+> **Current plan (2026-10-06, integration owner).** This section supersedes
+> older restrictions in this document against changing session management,
+> session persistence, and Laya. The user explicitly authorizes completing
+> session and agent management, adding narrowly scoped missing model-callable
+> management capabilities, improving skills/agent presets through versioning
+> and evaluation ("fine-tuning" = versioned iteration, never model weights),
+> and removing Laya completely. Older "done" entries are evidence claims to
+> verify, not proof of completeness. Everything below this notice remains the
+> visual/interaction reference; conflicts resolve in favor of this notice plus
+> `docs/agent-ui-execution-state.md` (checkpoint) and
+> `docs/agent-ui-feature-coverage.md` (per-feature evidence).
+>
+> Locked decisions: tab × close (`x` ASCII); close hides view, preserves
+> runtime; closed running sessions reachable via Activity with Reopen/Stop;
+> Close/Stop/Archive/Delete are separate; last-tab close displays Home; Home
+> input never executes against the hidden session; model-created independent
+> sessions start in the background without stealing focus; Laya removed from
+> runtime/packaging/setup/settings/UI/active docs; approvals, provider
+> safety, plan mode, memory retrieval, and unrelated local inference survive.
+>
+> Owners: LiveSessionRegistry (live runtimes), SessionTabs (visibility +
+> history), SessionManager/storage (durable sessions), InteractiveMode
+> (presentation/focus/order). One typed facade coordinates them:
+> `src/session/session-management-facade.ts` (Create/List/Inspect/Select/
+> Rename/Close/Reopen/Stop/Archive/Restore/Delete, stable IDs, serialized
+> lifecycle ops, tombstones). One revision service versions managed skills
+> and presets: `src/autolearn/revisions.ts` (immutable revs, parents,
+> provenance, draft/active, eval records, atomic pointer, 20-retention +
+> pinning, expected-revision conflicts). Message extraction for retrieval
+> lives in `src/core/harvest/text-extract.ts` (relocated from laya-pruning).
+> No second runtime registry, no alternative session engine, no UI-only
+> lifecycle, no blanket auto-approval.
+>
+> Workstreams (exclusive file ownership; shared SDK/registry/schema/event/
+> persistence files owned by the integration owner): A. session management +
+> UI; B. managed agents/skills, revision/evaluation, model tools; C. Laya
+> removal + verification. Workers request shared-file changes as patches.
+
 Prepared: 2026-10-03. Repository: `C:\Users\sanid\Desktop\harvest-2.0\harvest`.
 Baseline HEAD: `db336df501d6f36dddf0aa6f30544b6c3d1e3387`; the working tree already contains unrelated uncommitted work.
 Concurrent repository activity advanced HEAD to `cca60c0a08244318056d195305784a51c8498a95` during planning. Recheck the current checkout and source before execution; preserve changes made by other work.
@@ -458,3 +496,35 @@ Follow root `AGENTS.md`: use central utilities, no `console.*` on TUI/worker/RPC
 Do not change Laya, provider routing, model policy, RPC/ACP schemas, session persistence, cancellation semantics, or sharing/trust policy to complete this UI work. The open product decisions in `docs/product-decisions.md` are context; this redesign may surface existing diagnostics, but must not invent force-stop, budget enforcement, trust, or privacy behavior.
 
 When implementation encounters source drift, keep the intended visible contract, locate the current central owner, and adapt the file map. When a dependency or platform blocks verification, preserve the work and report the exact missing check. Neither a screenshot mismatch nor a failing contract is a reason to declare the milestone complete.
+
+## 11. Expanded coverage addendum (2026-10-04 execution assignment)
+
+This section incorporates the expanded execution-assignment requirements. It does not replace §§1–10; it extends coverage from "redesign shell + transcript + palette" to **every user-facing feature flow**.
+
+### 11.1 Shared presentation system (required)
+
+- Typed UI actions with identity, category, availability reason, active keybinding, invocation intent. Actions distinguish: execute existing operation / open existing selector-inspector / collect arguments-subcommands / prepare draft without executing. Use existing dispatchers/controllers; never run command strings through the shell.
+- Immutable session/run-scoped snapshots from existing authoritative owners. Rendering performs no discovery, VCS work, network, or inference. Reuse cached state/subscriptions; dispose/retarget on ownership change.
+- Named workspace slots: transcript, tabs, required attention, optional widgets, focused input, metadata, hints, sidebar.
+- Shared responsive dialog/list/form/inspector/notice/activity/output/artifact components. `OverlayPanel` + 60/88/116 caps; fullscreen explorers (Agent Hub, transcript rewind) preserved.
+- Visual rules (§4 still authoritative): home wordmark + 75-col centered prompt; anchored composer + main column; 42-col sidebar docked >120 with usable main width; ephemeral narrow overlay independent of persisted `tui.sidebar`; actual inner-pane widths shared by render/cursor/mouse; focused input + required attention survive height pressure; semantic surface tokens incl. ANSI-reset; effective `harvest`/`harvest-light` defaults through startup/adoption/previews/runtime; plain prose, distinct user panel, restrained reasoning; compact success + purposeful code/diff/structured panels; endcap once per turn with detail on demand; remap-aware hints; registry-backed symbols.
+
+### 11.2 Complete feature coverage (per-feature entries in `docs/agent-ui-feature-coverage.md`)
+
+Enumerate current registries (prior evidence ~84 commands / 30 tools is stale; recon found ~90+ builtin specs, 28+3 tools — re-enumerate, don't hardcode). Every commands/subcommands/actions, tool operations, selectors, message types, settings flows, widgets, dynamic extension contracts gets an entry: feature + authoritative owner; discovery/invocation; component family + detail view; lifecycle states; errors + valid recovery; responsive/capability fallback; behavioral test + visual evidence.
+
+Cover: startup/setup/warnings/changelog/init; sessions/tabs/resume/tree/branch/fork/rewind/handoff/worktrees/dirs; composer editing/history/autocomplete/attachments/paste/clipboard/external-editor/queues/steering/follow-up; models/roles/effort/providers/auth-accounts/quotas/fast/prewalk/xctx; plan/approval/review/goals/loops/pause-retry/forced-tools; files/search/AST/diffs/diagnostics/binary-large/artifacts; bash/manual/PTY/Eval/kernels/cells/SSH/debug; task/hub/vibe/background/advisor/watchdog/agents/live-parked; todo phases + all statuses; MCP/plugins/marketplaces/extensions/hooks/skills/templates/custom-UI; browser/computer-use/web/citations/GitHub/workspace-changes; memory/learning/maintenance/provenance/corrections; context/compaction/rules/Laya/snapcompact/tiny/diagnostics; security/findings/validation/disposition/approvals/questions/uncertain; collab/guests/permissions/sharing-export/redaction/transport; STT/voice/TTS/images/media/device-failures; settings/usage-stats-trace/help-hotkeys-tools/updates/restart/exit; BTW/TAN/OMFG/Cleanse + custom/hook/skill/advisor/summary/diagnostic/launch messages.
+
+Deliberate semantic presentation required for: checkpoint, rewind, security_scan, memory_edit, learn, manage_skill, search_code, yield. Shared component may serve multiple features; generic JSON dump or bare label is not a complete flow. Dynamic fallbacks preserve args/output/artifacts/lifecycle/bounded diagnostics; renderer failure degrades visibly without corruption or canonical-output loss. Runtime coverage checks against registries + extension fixtures; no source-grep tests.
+
+### 11.3 Required fallbacks (qualify each)
+
+Unicode/Nerd/ASCII; true/limited/no color; keyboard-only, optional mouse, remapped keys, paste, Unicode input, IME; narrow/short, resizing, long/wide text, tabs, ANSI, hyperlinks, image rows; unsupported image/audio protocols; missing clipboard/editor/browser/native/service; offline/loading/degraded/interrupted/denied/uncertain; fullscreen alt-screen + inline scrollback. Truthful explanations + existing alternatives; never silently switch execution ownership or fabricate success. Preserve fail-open + approval fail-closed.
+
+### 11.4 Review defects A–I (verified 2026-10-04; fix first)
+
+A palette-refresh crash (unawaited, unbound) · B late-result drop on rebuild · C short-height hidden input (mostly fixed; home-branch reserve missing) · D sidebar flag/focus/nav (fixed; `app.sidebar.focus` unwired, `hide`+narrow silent no-op) · E palette windowing/paste/discovery/metadata (all confirmed) · F output geometry (unbroken overflow fixed; quiet-allocation + query-arg header + usage-row width remnants) · G anchors vs offsets (both exist, split ownership; width-resync missing) · H defaults/tokens/symbols/hints (runtime harvest/* fixed; schema defaults stale; 2 hardcoded symbol sites) · I sidebar projection gaps (agents/todo-states/extensions/VCS-retarget/worktrees). Each fix gets an observable regression test through real components/terminal input.
+
+### 11.5 Execution order + ownership
+
+Baseline/coverage/ownership/fixtures → regression repairs + shared interfaces → geometry/surfaces/defaults/shell/composer/nav → transcript/tool families + parity → dialogs/inspectors/integrations/fallbacks → integration/independent-review/perf/docs/acceptance. One editing owner per file at a time; cross-file needs return as patch requests to the integration owner. `docs/agent-ui-execution-state.md` (owner-only) + `docs/agent-ui-feature-coverage.md` stay current.

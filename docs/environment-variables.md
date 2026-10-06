@@ -615,19 +615,12 @@ OMP initializes OTLP export only when at least one signal has an endpoint. `OTEL
 
 ---
 
-## 12) Local Decision Layer (Laya)
+## 12) Local Decision Layer (Laya — removed)
 
-Controls the local ModernBERT-large typed decision layer (`decision-sidecar/`):
-
-| Variable | Type | Default | Behavior |
-| --- | --- | --- | --- |
-| `LAYA_ENABLED` | boolean | `true` | When set to `"false"`, disables Laya completely; all call sites fall back to default behavior. |
-| `LAYA_GATING` | boolean | `true` | When set to `"false"`, disables Laya tool-call gating specifically. |
-| `LAYA_SIDECAR_URL` | string | `http://127.0.0.1:8177` | Overrides the HTTP endpoint for the local Laya sidecar daemon. |
-| `LAYA_TIMEOUT_MS` | number | `300` | Per-call timeout in milliseconds before triggering fail-closed (gating) or fail-open (routing/completion). |
-| `LAYA_SIDECAR_AUTOSTART` | boolean | `true` | Controls whether Harvest automatically spawns the sidecar daemon if offline. |
-| `LAYA_HOST` | string | `127.0.0.1` | Sidecar server host binding. |
-| `LAYA_PORT` | number | `8177` | Sidecar server port binding. |
+> **Removed:** the Laya sidecar has been removed. `LAYA_*` variables
+> (`LAYA_ENABLED`, `LAYA_GATING`, `LAYA_SIDECAR_URL`, `LAYA_TIMEOUT_MS`,
+> `LAYA_SIDECAR_AUTOSTART`, `LAYA_HOST`, `LAYA_PORT`) are ignored, with one
+> deprecation warning on startup when any is set.
 
 ---
 

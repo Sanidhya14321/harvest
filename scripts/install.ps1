@@ -325,21 +325,6 @@ if ($Source) {
 }
 
 if ($WithLaya -or $Laya) {
-    Write-Host ""
-    Write-Host "Configuring local Laya decision sidecar..." -ForegroundColor Cyan
-    try {
-        if (Test-Path (Join-Path $InstallDir "omp.exe")) {
-            & (Join-Path $InstallDir "omp.exe") setup laya
-        } else {
-            bun x @harvest/pi-coding-agent setup laya
-        }
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] Harvest + Laya setup complete!" -ForegroundColor Green
-        } else {
-            Write-Warning "Laya decision sidecar setup failed, but core Harvest is fully installed and operational. Run 'omp setup laya' to retry."
-        }
-    } catch {
-        Write-Warning "Laya decision sidecar setup encountered an error: $_. Core Harvest is fully installed and operational. Run 'omp setup laya' to retry."
-    }
+    Write-Host "Note: the Laya decision sidecar was removed; -WithLaya/-Laya is ignored."
 }
 

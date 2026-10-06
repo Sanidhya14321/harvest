@@ -10,7 +10,6 @@ import {
 	buildSubcommandInlineHint,
 } from "./builtin-completions";
 import { BUILTIN_CONTROL_SLASH_COMMANDS } from "./builtin-control";
-import { BUILTIN_LAYA_SLASH_COMMANDS } from "./builtin-laya";
 import { BUILTIN_LIFECYCLE_SLASH_COMMANDS } from "./builtin-lifecycle";
 import { BUILTIN_MARKETPLACE_SLASH_COMMANDS, reloadTuiPluginState } from "./builtin-marketplace";
 import { BUILTIN_MODE_SLASH_COMMANDS } from "./builtin-modes";
@@ -38,7 +37,6 @@ export interface TuiBuiltinSlashCommand extends BuiltinSlashCommand {
 
 const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<SlashCommandSpec> = [
 	...BUILTIN_MODE_SLASH_COMMANDS,
-	...BUILTIN_LAYA_SLASH_COMMANDS,
 	...BUILTIN_COLLABORATION_SLASH_COMMANDS,
 	...BUILTIN_SESSION_SLASH_COMMANDS,
 	...BUILTIN_LIFECYCLE_SLASH_COMMANDS,
@@ -130,7 +128,16 @@ export async function executeBuiltinSlashCommand(
 	if (!parsed) return false;
 
 	const command = BUILTIN_SLASH_COMMAND_LOOKUP.get(parsed.name);
-	if (!command) return false;
+	if (!command) {
+		if (parsed.name === "laya") {
+			runtime.ctx.showStatus(
+				"Laya was removed; approvals follow configured permissions (tools.approvalMode). See CHANGELOG.",
+			);
+			runtime.ctx.editor.setText("");
+			return true;
+		}
+		return false;
+	}
 	if (parsed.args.length > 0 && !command.allowArgs) {
 		return false;
 	}

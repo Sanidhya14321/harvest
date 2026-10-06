@@ -92,14 +92,14 @@ export function pickDialogCap(columns: number): 60 | 88 | 116 {
 	return 60;
 }
 
-/** True when the sidebar overlay panel is actually painted (narrow `show` + open). */
-export function sidebarOverlayVisible(
-	columns: number,
-	preference: SidebarPreference,
-	overlayOpen: boolean,
-): boolean {
+/** True when the sidebar overlay panel is actually painted (narrow + explicitly open). */
+export function sidebarOverlayVisible(columns: number, preference: SidebarPreference, overlayOpen: boolean): boolean {
 	if (!overlayOpen) return false;
-	if (preference !== "show") return false;
+	// Any preference can reach the temporary overlay through an explicit
+	// toggle/focus action (`show` additionally auto-requests it on entering
+	// narrow); closing never changes the stored preference. Wide viewports
+	// dock instead, so the overlay only ever paints when narrow.
+	void preference;
 	const safe = Math.max(1, Math.floor(columns));
 	const dockPossible =
 		safe > WORKSPACE_LAYOUT.sidebarDockBreakpoint &&
@@ -124,22 +124,28 @@ export function computeWorkspaceLayout(
 
 	const sidebarWidth = WORKSPACE_LAYOUT.sidebarWidth;
 	const minMain = WORKSPACE_LAYOUT.minMainContentWidth;
+	const dockPossible = columns > WORKSPACE_LAYOUT.sidebarDockBreakpoint && columns - sidebarWidth >= minMain;
 	let sidebarDocked = false;
 	let sidebarOverlayRequested = false;
 
 	if (preference === "hide") {
 		sidebarDocked = false;
+		// An explicitly opened overlay (toggle/focus) still paints; `hide`
+		// only suppresses docking and auto-opening.
+		sidebarOverlayRequested = !dockPossible;
 	} else if (preference === "show") {
-		if (columns > WORKSPACE_LAYOUT.sidebarDockBreakpoint && columns - sidebarWidth >= minMain) {
+		if (dockPossible) {
 			sidebarDocked = true;
 		} else {
 			// Narrow `show` requests an overlay instead of crushing the transcript.
 			sidebarOverlayRequested = true;
 		}
 	} else {
-		// auto: dock when wide, hide when narrow.
-		if (columns > WORKSPACE_LAYOUT.sidebarDockBreakpoint && columns - sidebarWidth >= minMain) {
+		// auto: dock when wide, hide when narrow (toggle/focus opens overlay).
+		if (dockPossible) {
 			sidebarDocked = true;
+		} else {
+			sidebarOverlayRequested = true;
 		}
 	}
 

@@ -29,7 +29,8 @@ import { listOmpExtensionRoots } from "../discovery/omp-extension-roots";
 import { loadBundledAgents, parseAgent } from "./agents";
 import type { AgentDefinition, AgentSource } from "./types";
 
-const TASK_AGENT_CONFIG_SOURCE = ".omp";
+const TASK_AGENT_CONFIG_SOURCE = ".harvest";
+const TASK_AGENT_CONFIG_SOURCE_LEGACY = ".omp";
 
 /** Result of agent discovery */
 export interface DiscoveryResult {
@@ -77,14 +78,14 @@ export async function discoverAgents(
 	const resolvedCwd = path.resolve(cwd);
 
 	const userDirs = getConfigDirs("agents", { project: false })
-		.filter(entry => entry.source === TASK_AGENT_CONFIG_SOURCE)
+		.filter(entry => entry.source === TASK_AGENT_CONFIG_SOURCE || entry.source === TASK_AGENT_CONFIG_SOURCE_LEGACY)
 		.map(entry => ({
 			...entry,
 			path: path.resolve(entry.path),
 		}));
 
 	const projectDirs = findAllNearestProjectConfigDirs("agents", resolvedCwd)
-		.filter(entry => entry.source === TASK_AGENT_CONFIG_SOURCE)
+		.filter(entry => entry.source === TASK_AGENT_CONFIG_SOURCE || entry.source === TASK_AGENT_CONFIG_SOURCE_LEGACY)
 		.map(entry => ({
 			...entry,
 			path: path.resolve(entry.path),
@@ -135,9 +136,19 @@ export async function discoverAgents(
 		return true;
 	});
 
+	// Managed presets live in an isolated directory and resolve by name at
+	// spawn time. Authored, extension, plugin, and bundled definitions win on
+	// collision; managed entries only fill names nothing else claimed.
+	const { discoverManagedPresets } = await import("./agents");
+	const managedAgents = (await discoverManagedPresets().catch(() => [])).filter(agent => {
+		if (seen.has(agent.name)) return false;
+		seen.add(agent.name);
+		return true;
+	});
+
 	const projectAgentsDir = projectDirs.length > 0 ? projectDirs[0].path : null;
 
-	return { agents: [...loadedAgents, ...bundledAgents], projectAgentsDir };
+	return { agents: [...loadedAgents, ...bundledAgents, ...managedAgents], projectAgentsDir };
 }
 
 /**

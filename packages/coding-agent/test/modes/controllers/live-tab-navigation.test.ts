@@ -139,6 +139,9 @@ describe("live tab navigation", () => {
 				active = stub;
 			}),
 			handleResumeSession: (target: string) => controller.handleResumeSession(target, { settingsFlushed: true }),
+			clearHomeDetached: () => {},
+			enterHomeDetached: () => {},
+			isHomeDetached: () => false,
 		} as unknown as InteractiveModeContext;
 		const controller: SelectorController = new SelectorController(ctx);
 		const registry = new LiveSessionRegistry(initial.session, openSession);

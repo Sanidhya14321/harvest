@@ -80,7 +80,6 @@ export function createGallerySegmentContext(sessionOptions?: GallerySessionOptio
 			fiveHour: { percent: 32, resetMinutes: 71 },
 			sevenDay: { percent: 68, resetHours: 52 },
 		},
-		laya: { enabled: true, connected: true },
 	};
 }
 
@@ -238,12 +237,6 @@ function variantsFor(id: StatusLineSegmentId): readonly SegmentVariantSpec[] {
 			return [
 				{ label: "host active", context: { collab: { role: "host", participantCount: 3 } } },
 				{ label: "guest active", context: { collab: { role: "guest", participantCount: 3 } } },
-			];
-		case "laya":
-			return [
-				{ label: "connected", context: { laya: { enabled: true, connected: true } } },
-				{ label: "disconnected", context: { laya: { enabled: true, connected: false } } },
-				{ label: "off", context: { laya: { enabled: false, connected: false } } },
 			];
 		default:
 			return [{ label: "canonical" }];

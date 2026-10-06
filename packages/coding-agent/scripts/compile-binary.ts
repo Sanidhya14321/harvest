@@ -2,7 +2,6 @@
 // absent on cross-compiling release runners.
 import { USER_AGENT } from "@harvest/pi-utils/dirs";
 import { buildDocsIndexPayload } from "./generate-docs-index";
-import { buildLayaSidecarPayload } from "./laya-sidecar-payload";
 import { createLegacyPiVirtualModulePlugin } from "./legacy-pi-virtual-module";
 
 /** Native runtime dependencies always resolved from the on-demand install instead of embedded into compiled binaries. */
@@ -46,7 +45,6 @@ export async function compileCodingAgent(options: CodingAgentCompileOptions): Pr
 				"process.env.PI_COMPILED": JSON.stringify("true"),
 				"process.env.PI_TINY_TRANSFORMERS_VERSION": JSON.stringify(options.transformersVersion),
 				"process.env.PI_DOCS_EMBED": JSON.stringify((await buildDocsIndexPayload()).payload),
-				"process.env.PI_LAYA_SIDECAR_EMBED": JSON.stringify(await buildLayaSidecarPayload()),
 			},
 			minify: {
 				identifiers: options.minifyIdentifiers ?? false,

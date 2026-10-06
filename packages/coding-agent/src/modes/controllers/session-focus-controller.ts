@@ -51,6 +51,7 @@ export class SessionFocusController {
 		this.ctx.sessionManager = session.sessionManager;
 		this.ctx.settings = session.settings;
 		this.ctx.agent = session.agent;
+		this.ctx.clearHomeDetached();
 		try {
 			await this.#attach(session);
 			const store = this.ctx.viewStateStore;

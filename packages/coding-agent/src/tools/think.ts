@@ -1,7 +1,7 @@
 import { type } from "@harvest/omptype";
 import type { AgentTool, AgentToolResult } from "@harvest/pi-agent-core";
 import type { Model } from "@harvest/pi-ai";
-import { type Component, Markdown } from "@harvest/pi-tui";
+import { type Component, Markdown, Text } from "@harvest/pi-tui";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { getMarkdownTheme, type Theme } from "../modes/theme/theme";
 
@@ -63,7 +63,10 @@ export const thinkToolRenderer = {
 		});
 	},
 	renderResult(): Component {
-		return undefined as unknown as Component;
+		// The scratchpad result carries no displayable content; return an
+		// empty component instead of undefined so sparse/odd results can
+		// never crash a render path that trusts the Component contract.
+		return new Text("", 0, 0);
 	},
 };
 

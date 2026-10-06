@@ -61,6 +61,13 @@ import { TranscriptContainer } from "./transcript-container";
 import { createCompletionEndcapBlock, createUsageRowBlock, turnElapsedMs } from "./usage-row";
 import { CollapsedSyntheticMessageComponent, UserMessageComponent } from "./user-message";
 
+/**
+ * Bound for parked-rebuild sealed-call retention (`#recentlySealedTools`):
+ * large enough that a late toolResult still finds its card, small enough that
+ * a long parked transcript cannot pin unbounded components.
+ */
+const MAX_RECENTLY_SEALED_TOOLS = 50;
+
 export interface ChatTranscriptBuilderDeps {
 	ui: TUI;
 	getTool?: (name: string) => AgentTool | undefined;
@@ -87,6 +94,16 @@ function userMessageText(message: Extract<AgentMessage, { role: "user" }>): stri
 export class ChatTranscriptBuilder {
 	readonly container = new TranscriptContainer();
 	#pendingTools = new Map<string, ToolExecutionComponent | ReadToolGroupComponent>();
+	/**
+	 * Recently sealed ordinary calls from a parked `rebuild()`: trailing
+	 * dangling calls are sealed so they retire as history, but a late
+	 * toolResult appended afterwards (agent/advisor viewers stream persisted
+	 * frames) must still route to the sealed card via `updateResult` instead of
+	 * hitting the no-pending early return. Bounded (FIFO eviction) so a long
+	 * parked transcript cannot pin unbounded components; unlike `#pendingTools`
+	 * these never gate usage/endcap flushes. Cleared on `reset()`.
+	 */
+	#recentlySealedTools = new Map<string, ToolExecutionComponent | ReadToolGroupComponent>();
 	#readArgs = new Map<string, Record<string, unknown>>();
 	#readGroup: ReadToolGroupComponent | null = null;
 	#pendingUsage: Usage | undefined;
@@ -134,14 +151,16 @@ export class ChatTranscriptBuilder {
 		// Trailing dangling calls (toolCall persisted without any result) can never
 		// complete in a parked rebuild: seal them so they retire as history instead
 		// of pinning retirement forever. Parked background tasks stay retained.
+		// Sealed ordinary calls are retained (bounded) so a late toolResult
+		// arriving via append() still updates the card in place — without
+		// re-adding rows — instead of being silently discarded.
 		for (const [toolCallId, component] of this.#pendingTools) {
 			if (this.#backgroundTaskCallIds.has(toolCallId)) continue;
 			component.seal();
 			this.#pendingTools.delete(toolCallId);
+			this.#retainSealedTool(toolCallId, component);
 		}
-		this.#backgroundTaskCallIds = new Set(
-			[...this.#backgroundTaskCallIds].filter(id => this.#pendingTools.has(id)),
-		);
+		this.#backgroundTaskCallIds = new Set([...this.#backgroundTaskCallIds].filter(id => this.#pendingTools.has(id)));
 		// A trailing waiting poll / todo snapshot is final history in a parked
 		// rebuild: seal it instead of letting its spinner tick while idle.
 		this.#resolveWaitingPoll();
@@ -165,6 +184,20 @@ export class ChatTranscriptBuilder {
 			if (!this.#backgroundTaskCallIds.has(toolCallId)) return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Retain a sealed call for late-result routing, evicting the oldest entry
+	 * past the bound. Recently sealed calls never re-enter `#pendingTools`, so
+	 * they cannot gate usage/endcap flushes or reorder the container.
+	 */
+	#retainSealedTool(toolCallId: string, component: ToolExecutionComponent | ReadToolGroupComponent): void {
+		while (this.#recentlySealedTools.size >= MAX_RECENTLY_SEALED_TOOLS) {
+			const oldest = this.#recentlySealedTools.keys().next();
+			if (oldest.done) break;
+			this.#recentlySealedTools.delete(oldest.value);
+		}
+		this.#recentlySealedTools.set(toolCallId, component);
 	}
 
 	/**
@@ -199,6 +232,7 @@ export class ChatTranscriptBuilder {
 	reset(): void {
 		for (const pending of this.#pendingTools.values()) pending.seal();
 		this.#pendingTools.clear();
+		this.#recentlySealedTools.clear();
 		this.#backgroundTaskCallIds.clear();
 		this.#readArgs.clear();
 		this.#readGroup = null;
@@ -566,9 +600,7 @@ export class ChatTranscriptBuilder {
 				settings.get("display.showTokenUsage") && typeof messageModel === "string" && messageModel.trim()
 					? messageModel.trim()
 					: undefined;
-			this.#pendingEndcapElapsedMs = settings.get("display.showTurnTime")
-				? this.#turnElapsedMs(message)
-				: undefined;
+			this.#pendingEndcapElapsedMs = settings.get("display.showTurnTime") ? this.#turnElapsedMs(message) : undefined;
 		} else {
 			this.#pendingEndcapModel = undefined;
 			this.#pendingEndcapElapsedMs = undefined;
@@ -577,6 +609,18 @@ export class ChatTranscriptBuilder {
 
 	#appendToolResult(message: Extract<AgentMessage, { role: "toolResult" }>): void {
 		const pending = this.#pendingTools.get(message.toolCallId);
+		// A late result for a call sealed by a parked rebuild: apply it to the
+		// sealed card in place. The card is already in the container, so no rows
+		// are added or reordered — and the sealed retention never gates flushes.
+		if (!pending) {
+			const sealed = this.#recentlySealedTools.get(message.toolCallId);
+			if (sealed) {
+				sealed.updateResult(message, false, message.toolCallId);
+				this.#recentlySealedTools.delete(message.toolCallId);
+				this.#readArgs.delete(message.toolCallId);
+				return;
+			}
+		}
 		const isReadGroupResult = message.toolName === "read" && (!pending || pending instanceof ReadToolGroupComponent);
 		if (isReadGroupResult) {
 			let component = pending;

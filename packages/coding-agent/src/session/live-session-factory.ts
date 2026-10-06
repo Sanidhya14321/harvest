@@ -41,6 +41,22 @@ export interface OpenLiveSessionOptions {
 	subagentEventBus?: EventBus;
 	/** Private IRC registry; defaults to the process-global one. */
 	agentRegistry?: AgentRegistry;
+	/**
+	 * Registry identity of the spawning agent, recorded as the child's
+	 * parent for lineage checks. Resolved from trusted runtime facts by the
+	 * model-session factory; never from model params.
+	 */
+	parentAgentId?: string;
+	/**
+	 * Task depth for the child (caller's depth + 1, computed by the trusted
+	 * caller, not the model). Default: 0.
+	 */
+	taskDepth?: number;
+	/**
+	 * Background model-created session: no UI ownership, never steals focus,
+	 * adopted into the owner registry without a selection change.
+	 */
+	background?: boolean;
 	/** Session factory seam (defaults to {@link createAgentSession}); tests inject a stub. */
 	createSession?: (options: Record<string, unknown>) => Promise<CreateAgentSessionResult>;
 }
@@ -103,7 +119,9 @@ export async function openLiveAgentSession(options: OpenLiveSessionOptions): Pro
 			modelRegistry: options.modelRegistry,
 			model: options.model,
 			rebindModelAfterDiscovery: true,
-			hasUI: true,
+			hasUI: options.background ? false : true,
+			parentAgentId: options.parentAgentId,
+			taskDepth: options.taskDepth,
 			agentId: options.agentId ?? `tab:${sessionManager.getSessionId()}`,
 			extensionRoots: options.extensionRoots,
 			preloadedExtensionPaths: options.preloadedExtensionPaths,

@@ -47,7 +47,10 @@ export type AgentSessionEvent =
 	  }
 	| { type: "retry_fallback_applied"; from: string; to: string; role: string }
 	| { type: "retry_fallback_succeeded"; model: string; role: string }
-	/** Tool-gating verdict with its local sidecar latency, for delay attribution. */
+	/** Inert replay tombstone for the removed Laya sidecar: persisted
+	 * `laya_gating_decision` records still decode and flow through diagnostics
+	 * replay, but activate nothing and change no approval or diagnostics
+	 * verdict. New code must not emit this event. */
 	| {
 			type: "laya_gating_decision";
 			toolName: string;

@@ -24,6 +24,17 @@ import { hubToolRenderer } from "./hub";
 import { recallToolRenderer, reflectToolRenderer, retainToolRenderer } from "./memory-render";
 import { readToolRenderer } from "./read";
 import { resolveRenderer } from "./resolve";
+import {
+	checkpointToolRenderer,
+	learnToolRenderer,
+	manageSkillToolRenderer,
+	memoryEditToolRenderer,
+	presetsToolRenderer,
+	rewindToolRenderer,
+	searchCodeToolRenderer,
+	securityScanToolRenderer,
+	sessionsToolRenderer,
+} from "./semantic-ops";
 import { thinkToolRenderer } from "./think";
 import { todoToolRenderer } from "./todo";
 import { createVibeToolRenderer } from "./vibe";
@@ -112,6 +123,15 @@ export const toolRenderers: Record<string, ToolRenderer> = {
 		return hubToolRenderer as ToolRenderer;
 	},
 	read: readToolRenderer as ToolRenderer,
+	checkpoint: checkpointToolRenderer as ToolRenderer,
+	rewind: rewindToolRenderer as ToolRenderer,
+	security_scan: securityScanToolRenderer as ToolRenderer,
+	memory_edit: memoryEditToolRenderer as ToolRenderer,
+	learn: learnToolRenderer as ToolRenderer,
+	manage_skill: manageSkillToolRenderer as ToolRenderer,
+	search_code: searchCodeToolRenderer as ToolRenderer,
+	sessions: sessionsToolRenderer as ToolRenderer,
+	presets: presetsToolRenderer as ToolRenderer,
 	// Keyed by xd:// resolution-device names: the write dispatch delegates here
 	// by dispatch tool, and historical `resolve` tool transcripts still render
 	// through the `resolve` entry. Both devices carry the same ResolveDetails.

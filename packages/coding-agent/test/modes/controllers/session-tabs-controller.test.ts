@@ -28,6 +28,9 @@ it("closes the active tab by switching first, then reopens the saved session", a
 		},
 		handleResumeSession,
 		ui: { requestRender: vi.fn() },
+		clearHomeDetached: () => {},
+		enterHomeDetached: () => {},
+		isHomeDetached: () => false,
 	} as unknown as InteractiveModeContext;
 	const controller = new SelectorController(ctx);
 	controller.sessionTabs.open(second, "Second task");
@@ -59,6 +62,9 @@ it("moves through tab history only after the session switch succeeds", async () 
 			if (allowSwitch) active = target;
 		},
 		ui: { requestRender: vi.fn() },
+		clearHomeDetached: () => {},
+		enterHomeDetached: () => {},
+		isHomeDetached: () => false,
 	} as unknown as InteractiveModeContext;
 	const controller = new SelectorController(ctx);
 	controller.sessionTabs.open(first, "First task");
@@ -211,12 +217,14 @@ describe("tab persistence wiring", () => {
 		const tabsFile = path.join(root, "tabs.json");
 		const persisted = (await Bun.file(tabsFile).json()) as {
 			version: number;
-			tabs: { path: string }[];
+			tabs: { path: string; sessionId?: string }[];
 			activePath: string;
+			activeSessionId?: string;
 		};
-		expect(persisted.version).toBe(1);
+		expect(persisted.version).toBe(2);
 		expect(persisted.tabs.map(tab => tab.path).sort()).toEqual([first, second].sort());
 		expect(persisted.activePath).toBe(second);
+		expect(persisted.activeSessionId).toBe("session-two");
 		expect(await controller.handleSessionTabsCommand("close 2")).toContain("Closed session tab");
 		const afterClose = (await Bun.file(tabsFile).json()) as { tabs: { path: string }[] };
 		expect(afterClose.tabs.map(tab => tab.path)).toEqual([second]);

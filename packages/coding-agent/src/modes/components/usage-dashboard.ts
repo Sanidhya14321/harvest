@@ -549,12 +549,15 @@ export class UsageDashboardComponent implements Component {
 	}
 
 	render(width: number): readonly string[] {
-		const height = Math.max(14, process.stdout.rows || 40);
+		// Short-terminal budget: never render taller than the viewport itself.
+		// The old Math.max(14, …) floor overflowed viewports under 14 rows and
+		// pushed the hint/footer into scrollback.
+		const height = Math.max(6, process.stdout.rows || 40);
 		const innerWidth = Math.max(20, width - 4);
 
 		const contentSource = this.#view === "detail" ? this.#detailLines(innerWidth) : this.#overviewLines(innerWidth);
 		// Fixed chrome: top border, blank, content…, divider, hint, bottom border.
-		const contentRows = Math.max(5, height - 5);
+		const contentRows = Math.max(1, height - 5);
 		this.#lastViewportRows = contentRows;
 		const maxScroll = Math.max(0, contentSource.length - contentRows);
 		if (this.#scroll > maxScroll) this.#scroll = maxScroll;

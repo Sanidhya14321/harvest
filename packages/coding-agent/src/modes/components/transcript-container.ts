@@ -595,6 +595,61 @@ export class TranscriptContainer extends Container {
 		this.#readingAnchor = undefined;
 	}
 
+	/**
+	 * Locate the first visible row of a bottom-relative window without
+	 * rendering the whole ledger: walks bottom-up, skipping `offsetRows`
+	 * rows from the end, then `viewportRows - 1` more rows up. Returns the
+	 * owning block index plus intra-block row in blank-trimmed block
+	 * coordinates (the frame `pinReadingAnchor` expects). Separator rows
+	 * between blocks attribute to the block below at row 0. Work is bounded
+	 * by offset + viewport rows; appended rows below a pinned anchor never
+	 * move it, so owners re-pin only when the offset or width changes.
+	 */
+	anchorForOffset(
+		width: number,
+		viewportRows: number,
+		offsetRows: number,
+	): { block: number; row: number } | undefined {
+		this.#syncEntries();
+		let skip = Math.max(0, Math.trunc(offsetRows));
+		let up = Math.max(0, Math.trunc(viewportRows) - 1);
+		let hasRowsBelow = false;
+		for (let index = this.#entries.length - 1; index >= 0; index--) {
+			const entry = this.#entries[index]!;
+			this.#setAllocation(entry.component, Number.MAX_SAFE_INTEGER, this.#lastFrame);
+			const block = trimBlankEdges(entry.component.render(width));
+			// Empty blocks are transparent in renderTail: no rows, no separator.
+			if (block.length === 0) continue;
+			// Separator row above the rendered content below this block: it is
+			// the next row up after the lower block (renderTail unshifts the
+			// blank before each subsequent block). Attributing it to the block
+			// below keeps the pinned window within one blank row when a window
+			// edge lands exactly on a separator.
+			if (hasRowsBelow) {
+				if (skip > 0) {
+					skip--;
+				} else if (up > 0) {
+					up--;
+				} else {
+					return { block: index + 1, row: 0 };
+				}
+			}
+			for (let r = block.length - 1; r >= 0; r--) {
+				if (skip > 0) {
+					skip--;
+					continue;
+				}
+				if (up > 0) {
+					up--;
+					continue;
+				}
+				return { block: index, row: r };
+			}
+			hasRowsBelow = true;
+		}
+		return undefined;
+	}
+
 	/** Whether the view tracks the live tail (no pinned reading position). */
 	isFollowingTail(): boolean {
 		this.#syncEntries();

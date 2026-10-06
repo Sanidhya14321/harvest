@@ -168,6 +168,52 @@ export class SelectorController {
 		);
 	}
 
+	/** Public persist seam for tab mutations owned outside this controller (strip × close). */
+	persistSessionTabs(): void {
+		this.#persistTabs();
+	}
+
+	/**
+	 * Warm-runtime lookup for a tab path across live and released runtimes.
+	 * Navigation checks this before touching disk so unsaved live sessions
+	 * work for keyboard and mouse paths alike.
+	 */
+	#warmNavigationRef(tabPath: string): { id: string; path: string } | undefined {
+		const live = this.ctx.liveSessions;
+		if (!live) return undefined;
+		const snapshot = live.snapshotForPath(tabPath);
+		if (snapshot) return { id: snapshot.id, path: snapshot.path };
+		const id = this.sessionTabs.idForPath(tabPath);
+		if (!id) return undefined;
+		const byId = live.snapshots.find(entry => entry.id === id);
+		return byId ? { id: byId.id, path: byId.path } : undefined;
+	}
+
+	/**
+	 * Resolve a /tab operand (number, UUID, registry ID, or path) to the
+	 * stable session UUID. Falls back to the raw value when unresolvable so
+	 * the facade reports the miss truthfully.
+	 */
+	async #resolveSessionIdReference(value: string): Promise<string> {
+		const trimmed = value.trim();
+		if (/^\d+$/.test(trimmed)) {
+			const tabPath = this.sessionTabs.paths[Number(trimmed) - 1];
+			if (tabPath) {
+				const warm = this.ctx.liveSessions?.snapshotForPath(tabPath);
+				if (warm) return warm.id;
+				const noted = this.sessionTabs.idForPath(tabPath);
+				if (noted) return noted;
+			}
+			return trimmed;
+		}
+		const live = this.ctx.liveSessions?.snapshots.find(
+			snapshot => snapshot.id === trimmed || snapshot.path === trimmed,
+		);
+		if (live) return live.id;
+		const noted = this.sessionTabs.idForPath(trimmed);
+		return noted ?? trimmed;
+	}
+
 	async handleSessionTabsCommand(args: string): Promise<string> {
 		const [verb = "list", value] = args.trim().split(/\s+/, 2);
 		const current = this.ctx.sessionManager.getSessionFile();
@@ -215,7 +261,16 @@ export class SelectorController {
 			if (!target) return `No tab ${value ?? "is active"}.`;
 			if (current && normalizePathForComparison(current) === normalizePathForComparison(target)) {
 				const next = this.sessionTabs.neighbor(current, 1);
-				if (!next) return "The last tab cannot be closed while its session is active.";
+				if (!next) {
+					// Last tab: close the view and display Home. The session
+					// and its ongoing work are preserved and stay reachable
+					// through Activity/Sessions with Reopen and Stop.
+					this.sessionTabs.close(target);
+					this.#persistTabs();
+					this.ctx.enterHomeDetached();
+					this.ctx.ui.requestRender();
+					return "Closed the last session tab. The session keeps running and is reachable through Activity.";
+				}
 				await this.ctx.handleResumeSession(next);
 				const active = this.ctx.sessionManager.getSessionFile();
 				if (!active || normalizePathForComparison(active) !== normalizePathForComparison(next)) {
@@ -230,11 +285,15 @@ export class SelectorController {
 		if (verb === "reopen" && !value) {
 			const target = this.sessionTabs.reopen();
 			if (!target) return "No recently closed session tab.";
-			if (!(await Bun.file(target).exists())) {
+			// Warm runtimes resolve before disk-file checks so unsaved live
+			// sessions reopen without requiring a file on disk.
+			const warm = this.#warmNavigationRef(target);
+			if (!warm && !(await Bun.file(target).exists())) {
 				this.sessionTabs.close(target, false);
 				this.#persistTabs();
 				return "The closed session file is no longer available.";
 			}
+			this.ctx.clearHomeDetached();
 			await this.ctx.handleResumeSession(target);
 			const active = this.ctx.sessionManager.getSessionFile();
 			if (!active || normalizePathForComparison(active) !== normalizePathForComparison(target)) {
@@ -244,6 +303,16 @@ export class SelectorController {
 			}
 			this.ctx.ui.requestRender();
 			return `Reopened session tab ${this.sessionTabs.indexOf(target) + 1}.`;
+		}
+		if ((verb === "archive" || verb === "restore") && this.ctx.sessions) {
+			const id =
+				(value ? await this.#resolveSessionIdReference(value) : this.ctx.sessionManager.getSessionId()) ??
+				this.ctx.sessionManager.getSessionId();
+			const ok = verb === "archive" ? await this.#archiveManagedSession(id) : await this.#restoreManagedSession(id);
+			if (!ok) return `Session ${verb} failed; see the status message.`;
+			this.#persistTabs();
+			this.ctx.ui.requestRender();
+			return verb === "archive" ? `Archived session ${id}.` : `Restored session ${id}.`;
 		}
 		const historyDirection = verb === "back" ? -1 : verb === "forward" ? 1 : undefined;
 		const target = historyDirection
@@ -257,12 +326,16 @@ export class SelectorController {
 			if (current && normalizePathForComparison(current) === normalizePathForComparison(target)) {
 				return `Already viewing session tab ${this.sessionTabs.indexOf(target) + 1}.`;
 			}
-			if (!(await Bun.file(target).exists())) {
+			// Warm runtimes resolve before disk-file checks: keyboard and
+			// mouse navigation share this path so unsaved live runtimes work
+			// for both.
+			if (!this.#warmNavigationRef(target) && !(await Bun.file(target).exists())) {
 				this.sessionTabs.close(target, false);
 				this.#persistTabs();
 				this.ctx.ui.requestRender();
 				return "The session file is no longer available; its tab was removed.";
 			}
+			this.ctx.clearHomeDetached();
 			if (historyDirection) this.#historyNavigationTarget = target;
 			try {
 				await this.ctx.handleResumeSession(target);
@@ -277,7 +350,7 @@ export class SelectorController {
 				? `Switched to session tab ${this.sessionTabs.indexOf(target) + 1}.`
 				: "Session switch did not complete; the current session was preserved.";
 		}
-		return "Usage: /tab [list|open <session id>|switch <number>|next|prev|back|forward|close [number]|reopen]";
+		return "Usage: /tab [list|open <session id>|switch <number>|next|prev|back|forward|close [number]|reopen|archive [id]|restore <id>]";
 	}
 	/**
 	 * Mount a primary fullscreen menu through the one polished modal path shared
@@ -1979,6 +2052,25 @@ export class SelectorController {
 				? (query: string) => historyStorage.matchingSessionIds(query)
 				: undefined;
 			onSelectSession = session => this.handleResumeSession(session.path);
+			// Target-aware busy guard: the picker deletion path uses the same
+			// predicate as /delete (streaming/bash/eval/pending work). Busy
+			// targets detour to an explicit stop-and-delete flow instead of
+			// deleting a running session's transcript out from under it.
+			const isSessionBusy = (target: SessionInfo): boolean => {
+				const live = this.ctx.liveSessions?.snapshotForPath(target.path);
+				if (!live) return false;
+				const session = this.ctx.liveSessions?.sessions.find(
+					runtime => runtime.sessionManager.getSessionId() === live.id,
+				);
+				if (!session) return false;
+				return (
+					session.isStreaming || session.isBashRunning || session.isEvalRunning || session.hasPendingAsyncWork()
+				);
+			};
+			const onStopAndDelete = async (target: SessionInfo): Promise<boolean> => {
+				const sessionId = await this.#resolveTargetSessionId(target);
+				return this.#deleteSessionById(sessionId, { stopFirst: true });
+			};
 			selectorOptions = {
 				onNewSession: () => {
 					selector.lockInput();
@@ -1995,24 +2087,21 @@ export class SelectorController {
 					);
 				},
 				onDelete: async (session: SessionInfo) => {
-					if (!(await this.#detachActiveSessionBeforeDeletion(session.path))) {
-						return false;
+					// Re-check at execution time: the target may have started
+					// a run between confirmation and deletion. The facade
+					// re-checks busy state and seals the writer, so a deleted
+					// file can never be resurrected by a lingering runtime.
+					if (isSessionBusy(session)) {
+						throw new Error("Session became busy; stop the run first (Esc), then delete the session.");
 					}
-					const storage = new FileSessionStorage();
-					try {
-						await storage.deleteSessionWithArtifacts(session.path);
-						this.sessionTabs.close(session.path, false);
-						return true;
-					} catch (error) {
-						throw new Error(
-							`Failed to delete session: ${error instanceof Error ? error.message : String(error)}`,
-							{ cause: error },
-						);
-					}
+					const sessionId = await this.#resolveTargetSessionId(session);
+					return this.#deleteSessionById(sessionId);
 				},
 				historyMatcher,
 				loadAllSessions: () => SessionManager.listAll(),
 				pinnedIds,
+				isSessionBusy,
+				onStopAndDelete,
 			};
 		}
 
@@ -2075,27 +2164,46 @@ export class SelectorController {
 		setSessionTerminalTitle(sessionManager.getSessionName?.(), sessionManager.getCwd());
 	}
 
-	async #detachActiveSessionBeforeDeletion(sessionPath: string): Promise<boolean> {
-		const currentSessionFile = this.ctx.sessionManager.getSessionFile();
-		if (currentSessionFile !== sessionPath) {
-			return true;
-		}
+	async #resolveTargetSessionId(target: SessionInfo): Promise<string> {
+		const live = this.ctx.liveSessions?.snapshotForPath(target.path);
+		if (live) return live.id;
+		const noted = this.sessionTabs.idForPath(target.path);
+		if (noted) return noted;
+		return target.id;
+	}
 
-		const detached = await this.ctx.session.newSession();
-		if (!detached) {
+	/**
+	 * Delete any session (active or background) through the lifecycle
+	 * facade: settle → seal writer → delete storage → tombstone → dispose +
+	 * detach. Deleting the ACTIVE session rebuilds a fresh view afterwards;
+	 * background targets need no view change. Never leaves a live writer
+	 * that could resurrect the deleted file.
+	 */
+	async #deleteSessionById(sessionId: string, opts?: { stopFirst?: boolean }): Promise<boolean> {
+		const facade = this.ctx.sessions;
+		if (!facade) {
+			this.ctx.showError("Session management is unavailable in this context.");
 			return false;
 		}
-		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
-		this.#refreshSessionTerminalTitle();
-
-		this.ctx.clearTransientSessionUi();
-		this.ctx.statusLine.invalidate();
-		this.ctx.statusLine.resetActiveTime();
+		const activeId = this.ctx.sessionManager.getSessionId();
+		const isActive = activeId === sessionId;
+		try {
+			await facade.delete(sessionId, opts);
+		} catch (error) {
+			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			return false;
+		}
+		this.#persistTabs();
+		if (isActive) {
+			try {
+				await this.ctx.handleClearCommand();
+			} catch (error) {
+				this.ctx.showError(
+					`Session deleted, but starting a fresh view failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
 		this.ctx.ui.requestRender();
-		this.ctx.updateEditorBorderColor();
-		await this.ctx.renderInitialMessages({ clearTerminalHistory: true });
-		await this.ctx.reloadTodos();
-		this.ctx.ui.requestRender(true, { clearScrollback: true });
 		return true;
 	}
 
@@ -2265,6 +2373,8 @@ export class SelectorController {
 		}
 
 		// Deleting a live run would orphan its in-flight work: stop it first.
+		// The busy check mirrors the facade predicate (streaming, shell/Eval,
+		// pending work); the facade re-checks at execution time.
 		const session = this.ctx.session;
 		if (session.isStreaming || session.isBashRunning || session.isEvalRunning || session.hasPendingAsyncWork()) {
 			this.ctx.showError("Stop the run first (Esc), then delete the session.");
@@ -2281,16 +2391,8 @@ export class SelectorController {
 			return;
 		}
 
-		if (!(await this.#detachActiveSessionBeforeDeletion(sessionFile))) {
-			this.ctx.showStatus("Delete cancelled");
-			return;
-		}
-
-		// Delete the session file and artifacts directory
-		await storage.deleteSessionWithArtifacts(sessionFile);
-		this.sessionTabs.close(sessionFile, false);
-		this.#persistTabs();
-		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
+		const deleted = await this.#deleteSessionById(this.ctx.sessionManager.getSessionId());
+		if (!deleted) return;
 
 		// Show session selector
 		this.ctx.showStatus("Session deleted");
@@ -2670,6 +2772,105 @@ export class SelectorController {
 		}
 	}
 
+	/** Reopen a hidden session from Activity: warm-first, clears zero-tab Home. */
+	/**
+	 * Reopen the exact requested session by stable ID: warm runtime when
+	 * live (including pathless unsaved sessions, which need no disk file),
+	 * otherwise a cold open of that session's persisted file. Archived
+	 * sessions must be restored first.
+	 */
+	async #reopenManagedSession(sessionId: string): Promise<void> {
+		const facade = this.ctx.sessions;
+		const live = this.ctx.liveSessions?.snapshots.find(entry => entry.id === sessionId);
+		if (live?.path) {
+			this.ctx.clearHomeDetached();
+			const ok = await this.handleResumeSession(live.path);
+			if (ok) this.ctx.showStatus("Reopened session.");
+			return;
+		}
+		if (live && this.ctx.selectMainSession) {
+			// Pathless unsaved runtime: retarget the view without a file.
+			try {
+				const selection = this.ctx.liveSessions!.selectById(sessionId);
+				if (!selection.selected) return;
+				this.ctx.clearHomeDetached();
+				await this.ctx.selectMainSession(selection.session);
+				this.#refreshSessionTerminalTitle();
+				this.ctx.updateEditorBorderColor();
+				this.#persistTabs();
+				this.ctx.ui.requestRender();
+				this.ctx.showStatus("Reopened session.");
+			} catch (error) {
+				this.ctx.showError(error instanceof Error ? error.message : String(error));
+			}
+			return;
+		}
+		if (!facade) {
+			this.ctx.showError("That session is not live and session management is unavailable.");
+			return;
+		}
+		try {
+			this.ctx.clearHomeDetached();
+			const { switched } = await facade.reopen(sessionId);
+			if (!switched) {
+				this.ctx.showError("That session is no longer available.");
+				return;
+			}
+			const target = this.ctx.liveSessions?.snapshots.find(entry => entry.id === sessionId);
+			if (target?.path) {
+				const ok = await this.handleResumeSession(target.path);
+				if (ok) this.ctx.showStatus("Reopened session.");
+			} else {
+				this.ctx.showStatus("Reopened session.");
+				this.ctx.ui.requestRender();
+			}
+		} catch (error) {
+			this.ctx.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** Targeted stop of one session from Activity; never a force-kill cascade. */
+	async #stopManagedSession(sessionId: string): Promise<void> {
+		try {
+			if (this.ctx.sessions) await this.ctx.sessions.stop(sessionId);
+			else await this.ctx.liveSessions?.stop(sessionId);
+			this.ctx.showStatus("Stopped session.");
+		} catch (error) {
+			this.ctx.showError(error instanceof Error ? error.message : String(error));
+		}
+		this.ctx.ui.requestRender();
+	}
+
+	async #archiveManagedSession(sessionId: string): Promise<boolean> {
+		if (!this.ctx.sessions) {
+			this.ctx.showError("Session management is unavailable in this context.");
+			return false;
+		}
+		try {
+			await this.ctx.sessions.archive(sessionId);
+			this.ctx.showStatus("Archived session.");
+			return true;
+		} catch (error) {
+			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			return false;
+		}
+	}
+
+	async #restoreManagedSession(sessionId: string): Promise<boolean> {
+		if (!this.ctx.sessions) {
+			this.ctx.showError("Session management is unavailable in this context.");
+			return false;
+		}
+		try {
+			await this.ctx.sessions.restore(sessionId);
+			this.ctx.showStatus("Restored session.");
+			return true;
+		} catch (error) {
+			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			return false;
+		}
+	}
+
 	async showDebugSelector(): Promise<void> {
 		const { DebugSelectorComponent } = await import("../../debug");
 		this.showSelector(done => {
@@ -2709,6 +2910,40 @@ export class SelectorController {
 			remote: this.ctx.collabGuest?.hubRemote,
 			ui: this.ctx.ui,
 			getTool: name => this.ctx.session.getToolByName(name),
+			// Sessions section: live snapshots projected through the
+			// lifecycle facade (real archived flags) so closed-but-running
+			// tabs stay reachable here with Reopen and targeted Stop
+			// (close ≠ stop ≠ delete). Archive/Restore ride the same owner.
+			sessionList: () =>
+				this.ctx.sessions?.list() ??
+				(this.ctx.liveSessions?.snapshots ?? []).map(snapshot => ({
+					id: snapshot.id,
+					path: snapshot.path || undefined,
+					title: snapshot.title,
+					status: snapshot.status,
+					selected: snapshot.selected,
+					visible: this.ctx.liveSessions
+						? this.sessionTabs.paths.some(
+								tabPath => normalizePathForComparison(tabPath) === normalizePathForComparison(snapshot.path),
+							)
+						: false,
+					archived: false,
+				})),
+			onSessionReopen: id => this.#reopenManagedSession(id),
+			onSessionStop: id => this.#stopManagedSession(id),
+			sessionListAsync: () => this.ctx.sessions?.listAll() ?? Promise.resolve([]),
+			onSessionArchive: async (id: string) => {
+				if (!this.ctx.sessions) throw new Error("Session management is unavailable in this context.");
+				await this.ctx.sessions.archive(id);
+				this.#persistTabs();
+				this.ctx.ui.requestRender();
+			},
+			onSessionRestore: async (id: string) => {
+				if (!this.ctx.sessions) throw new Error("Session management is unavailable in this context.");
+				await this.ctx.sessions.restore(id);
+				this.#persistTabs();
+				this.ctx.ui.requestRender();
+			},
 			isBuiltInTool: name => this.ctx.session.hasBuiltInTool(name),
 			getMessageRenderer: type => this.ctx.session.extensionRunner?.getMessageRenderer(type),
 			cwd: this.ctx.sessionManager.getCwd(),

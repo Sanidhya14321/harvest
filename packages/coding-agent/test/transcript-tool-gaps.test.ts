@@ -50,8 +50,7 @@ describe("transcript geometry widths", () => {
 		setThemeInstance(loaded);
 		const component = askToolRenderer.renderCall(
 			{
-				question:
-					"Which authentication method should this API use for all of its public endpoints and webhooks?",
+				question: "Which authentication method should this API use for all of its public endpoints and webhooks?",
 				options: [
 					{ label: "JWT bearer tokens for stateless API clients everywhere" },
 					{ label: "OAuth2 delegated authorization with external identity providers" },
@@ -144,14 +143,7 @@ describe("generic fallback quiet success", () => {
 		const loaded = await getThemeByName("dark");
 		if (!loaded) throw new Error("theme unavailable");
 		setThemeInstance(loaded);
-		const failed = new ToolExecutionComponent(
-			"mcp_widget",
-			{},
-			{ showImages: false },
-			undefined,
-			ui,
-			process.cwd(),
-		);
+		const failed = new ToolExecutionComponent("mcp_widget", {}, { showImages: false }, undefined, ui, process.cwd());
 		failed.updateResult({ content: [{ type: "text", text: "boom failed" }], isError: true }, false);
 		expect(strippedLines(failed.render(WIDTH)).join("\n")).toContain("boom failed");
 

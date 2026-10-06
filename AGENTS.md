@@ -28,7 +28,6 @@ This repo contains multiple packages, but **`packages/coding-agent/`** is the pr
 | `packages/harvest-memory/`, `packages/harvest-schema/` | Memory backend + shared schema                       |
 | `packages/typescript-edit-benchmark/` | Edit benchmark suite                                         |
 | `crates/pi-*` (`crates/harvest-*` mirrors) | Rust natives: shell, ast, iso, voice, walker, edit, vcs, diff |
-| `decision-sidecar/`             | Laya local decision microservice (Python/FastAPI, see below)       |
 | `python/robomp/`                | GitHub issue/PR lifecycle automation                               |
 
 Authoritative subsystem map: `packages/coding-agent/DEVELOPMENT.md` links each `src/` directory to its reference doc under `docs/`. Trust `docs/` over prose elsewhere; if docs conflict with scripts/config, trust the executable source.
@@ -214,15 +213,18 @@ To change an entry, fix the source:
 
 Regenerate with `bun run gen:compat` and/or `bun run gen:models` and commit the generated files alongside the source change. Add a regression test against the **rule/descriptor/mapper**, not the bundled JSON, so it survives upstream metadata shifts.
 
-## Laya Decision Sidecar (hard invariants)
+## Laya Decision Sidecar (removed)
 
-`decision-sidecar/` is a Python/FastAPI microservice on `127.0.0.1:8177` (fallbacks `8178-8185`) serving `POST /v1/decide` to the TS agent loop. Full contract: `decision-sidecar/README.md` + `ARCHITECTURE.md`.
+Laya was removed from runtime, packaging, setup, settings, UI, and active
+documentation. `decision-sidecar/` no longer exists. `laya.*` settings keys
+are inert (parsed, ignored, no UI), `LAYA_*` environment is ignored with one
+deprecation warning, and `/laya` reports the removal. Model context pruning,
+gating, reranking, and subagent auto-selection are gone: high-risk tool calls
+fall through to the existing human-approval policy (fail closed — never blanket
+auto-approval), and MarkdownBrain retrieval is lexical/graph order.
 
-- **Single checkpoint only**: load via `laya.load("convaiinnovations/laya-typed-decisions")`. Never import `Router` — it triggers multi-GB secondary downloads.
-- **Fail-open, except gating**: sidecar offline/timeout/error → fall back to defaults (unpruned context, heuristic routing). Exception: tool-call gating fails **CLOSED** (require human approval).
-- **Bind loopback only**; never expose `/v1/decide` (unauthenticated) on `0.0.0.0`. Same rule applies to metaharness, auth-gateway/broker, and stats servers — keep `127.0.0.1` defaults, require a token for any non-loopback bind.
-- **Pruning must preserve protocol blocks**: never strip `toolCall` blocks while leaving `toolResult` messages orphaned — providers reject the replay with 400. Exclude mixed messages from candidacy or preserve non-text blocks.
-- Setup heals 8 enumerated failure modes only (torch wheel, symlink restriction, port conflict, corrupt checkpoint, router invocation, disk space, stale calibration, missing python) and logs to `~/.harvest/agent/logs/laya-setup.log`. Never invent new remediation classes; unrecognized failures emit a diagnostic bundle and fail open.
+- **Bind loopback only**; never expose unauthenticated local services on `0.0.0.0`. Same rule applies to metaharness, auth-gateway/broker, and stats servers — keep `127.0.0.1` defaults, require a token for any non-loopback bind.
+- **Context transforms must preserve protocol blocks**: never strip `toolCall` blocks while leaving `toolResult` messages orphaned — providers reject the replay with 400.
 
 ## Security Invariants
 

@@ -50,6 +50,7 @@ interface AppKeybindings {
 	"app.session.resume": true;
 	"app.session.tab.next": true;
 	"app.session.tab.previous": true;
+	"app.session.tab.close": true;
 	"app.session.tab.reopen": true;
 	"app.session.observe": true;
 	"app.session.togglePath": true;
@@ -204,6 +205,13 @@ export const KEYBINDINGS = {
 	"app.session.tab.previous": {
 		defaultKeys: "ctrl+shift+tab",
 		description: "Switch to previous session tab",
+	},
+	"app.session.tab.close": {
+		// Alt+W: Alt+W has no editor meaning (word deletion stays on Ctrl+W),
+		// so closing the current tab never steals an editing chord. Close
+		// hides the view and preserves the runtime; reopen with Ctrl+Shift+T.
+		defaultKeys: "alt+w",
+		description: "Close current session tab (view hides, runtime keeps running)",
 	},
 	"app.session.tab.reopen": {
 		defaultKeys: "ctrl+shift+t",

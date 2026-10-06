@@ -50,6 +50,9 @@ import {
 } from "./advisor";
 import { AsyncJobManager } from "./async";
 import { AutoLearnController, buildAutoLearnInstructions } from "./autolearn/controller";
+import { installManagedEvalExecutors } from "./autolearn/eval-executor";
+import { noteParentTurnCompleted } from "./autolearn/managed-skills";
+import { notePresetParentTurnCompleted } from "./task/agents";
 import { createAutoresearchExtension } from "./autoresearch";
 import { loadCapability } from "./capability";
 import {
@@ -81,12 +84,7 @@ import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate
 import { applyProviderGlobalsFromSettings } from "./config/provider-globals";
 import { buildServiceTierByFamily } from "./config/service-tier";
 import { Settings, type SkillsSettings } from "./config/settings";
-import {
-	createLayaContextBudget,
-	createMarkdownBrain,
-	DEFAULT_LAYA_CONTEXT_BUDGET_MS,
-	pruneContextWithLaya,
-} from "./core/harvest";
+import { createMarkdownBrain } from "./core/harvest";
 import { CursorExecHandlers, type CursorMcpResourceAdapter } from "./cursor";
 import { createBridgeEditTool, createBridgeGrepFactory } from "./cursor-bridge-tools";
 import "./discovery";
@@ -591,6 +589,12 @@ export interface CreateAgentSessionOptions {
 	agentName?: string;
 	/** Optional shared agent registry for IRC routing. Default: AgentRegistry.global(). */
 	agentRegistry?: AgentRegistry;
+	/**
+	 * Live-session factory for model-created independent sessions (the
+	 * sessions tool's `create` action). The interactive TUI supplies its
+	 * LiveSessionRegistry-backed factory; headless hosts leave this unset.
+	 */
+	openManagedSession?: ToolSession["openManagedSession"];
 	/**
 	 * Registry generation authorized for this creation. `null` requires the id
 	 * to be absent; an AgentRef allows a parked revival to reuse only that ref.
@@ -1847,6 +1851,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			getEvalBridgeToolNames: () => session?.getEvalBridgeToolNames() ?? [],
 			getCodeModeDirectToolNames: () => session?.getCodeModeDirectToolNames(),
 			agentRegistry,
+			openManagedSession: options.openManagedSession,
 			// The global lifecycle releases through AgentRegistry.global(); wiring it
 			// onto a caller-supplied registry would report a cancel while releasing an
 			// unrelated global ref. With no lifecycle, hub cancel falls back to
@@ -3427,24 +3432,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		const transformContext = async (messages: AgentMessage[], _signal?: AbortSignal) => {
 			const withContext = await extensionRunner.emitContext(messages);
 			const steered = wrapSteeringForModel(withContext);
-			// Shared prune+rerank latency budget: pruning consumes from the
-			// front, reranking gets the remainder, so one pass never exceeds
-			// their joint allowance. Fail-open throughout.
-			const rerankTimeoutSetting = settings.get("brain.rerankTimeoutMs");
-			const sharedTotalMs =
-				typeof rerankTimeoutSetting === "number" &&
-				Number.isFinite(rerankTimeoutSetting) &&
-				rerankTimeoutSetting > 0
-					? Math.min(DEFAULT_LAYA_CONTEXT_BUDGET_MS, 300 + rerankTimeoutSetting)
-					: DEFAULT_LAYA_CONTEXT_BUDGET_MS;
-			const contextBudget = createLayaContextBudget(sharedTotalMs);
-			const result = await pruneContextWithLaya(steered, {
-				settings,
-				sessionId: sessionManager.getSessionId(),
-				signal: _signal,
-				budget: contextBudget,
-				prunableTokenBudget: settings.get("laya.pruningTokenBudget"),
-			});
+			// Model context pruning was removed with Laya: the steered messages
+			// pass through to lexical/graph brain retrieval (fail-open).
 			if (sessionManager.getCwd() !== brainCwd || settings.get("skills.enabled") !== brainSkillsEnabled) {
 				brainCwd = sessionManager.getCwd();
 				brainSkillsEnabled = settings.get("skills.enabled");
@@ -3454,11 +3443,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				const scopes = settings
 					.get("brain.scopes")
 					.filter((scope): scope is "project" | "user" => scope === "project" || scope === "user");
-				return await brain.transform(result.messages, {
-					rerank:
-						settings.get("laya.enabled") && settings.get("brain.rerank") && process.env.LAYA_ENABLED !== "false",
-					rerankTimeoutMs: settings.get("brain.rerankTimeoutMs"),
-					contextBudget,
+				return await brain.transform(steered, {
 					scopes: scopes.length > 0 ? scopes : undefined,
 					signal: _signal,
 					sessionId: sessionManager.getSessionId(),
@@ -3466,7 +3451,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				});
 			} catch (error) {
 				logger.debug("Markdown brain retrieval failed open", { error: String(error) });
-				return result.messages;
+				return steered;
 			}
 		};
 		// Per-request provider-context transforms. Obfuscate FIRST so secrets are
@@ -4180,6 +4165,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			});
 		};
 
+		// Production evaluation executors for managed skill/preset revisions:
+		// real restricted task execution (installed once, idempotent; tests
+		// may still override via the module setters).
+		installManagedEvalExecutors();
 		const runAutoLearnCapture = createAutoLearnCaptureRunner({
 			sourceAgent: agent,
 			captureTools: autoLearnCaptureTools,
@@ -4263,6 +4252,26 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			} else {
 				void logger.time("startMemoryStartupTask", startMemoryBackend);
 			}
+		}
+
+		// Improvement-budget turn boundary: every completed turn resets the
+		// one-candidate + one-evaluation allowance for automatic skill/preset
+		// improvement, keyed by session UUID. Installed for every session
+		// (not only auto-learn ones) so budgets can never wedge shut.
+		try {
+			const budgetSessionId = sessionManager.getSessionId();
+			session.subscribe?.(event => {
+				if (event?.type === "agent_end") {
+					try {
+						noteParentTurnCompleted(budgetSessionId);
+						notePresetParentTurnCompleted(budgetSessionId);
+					} catch {
+						// Budget bookkeeping must never break the turn.
+					}
+				}
+			});
+		} catch {
+			// Sessions without event subscriptions simply never reset budgets.
 		}
 
 		// MCP manager wiring has two ownership models:

@@ -60,9 +60,6 @@ out.jsonl
 out.html
 pi-*.html
 .close_issue.sh
-# Operational sidecar decision logs (may contain state snippets; user-data only)
-decision-sidecar/decisions.jsonl
-decision-sidecar/decisions.jsonl.*
 
 # Generated files
 packages/coding-agent/src/export/html/tool-views.generated.js
@@ -98,3 +95,6 @@ packages/coding-agent/bench/boot-baseline.json
 .parity/
 
 /graphify-out
+
+/.agents/
+/brag-output

@@ -1,6 +1,6 @@
 # The Model Is Only Half the Agent
 
-*Engineering reliable AI coding systems with validated edits, local decisions, and evidence-driven execution*
+_Engineering reliable AI coding systems with validated edits, local decisions, and evidence-driven execution_
 
 An AI coding agent can understand a bug, propose a reasonable fix, and still spend its next five turns fighting a file edit.
 
@@ -105,12 +105,12 @@ Tool approval needs a different response. An unavailable classifier supplies no 
 
 ### Define a fallback contract for each decision
 
-| Decision | Conservative fallback |
-|---|---|
-| Model selection | Use the configured default |
-| Context relevance | Preserve the original context |
+| Decision                         | Conservative fallback                 |
+| -------------------------------- | ------------------------------------- |
+| Model selection                  | Use the configured default            |
+| Context relevance                | Preserve the original context         |
 | Supplemental completion judgment | Continue the baseline evaluation path |
-| Additional mutation-risk gating | Require human approval |
+| Additional mutation-risk gating  | Require human approval                |
 
 The final row applies when that gating layer is enabled. Existing permission rules remain authoritative throughout.
 
@@ -210,11 +210,17 @@ PUT 4.=4:
 
 Here, `1A2B` represents the recorded snapshot tag, and the operation replaces original line 4. The runtime checks snapshot history and visible ranges; stale edits attempt recovery only when that history proves a unique safe result. The short tag participates in a session snapshot protocol and should not be interpreted as a cryptographic integrity guarantee.
 
-Harvest also integrates Laya through a local Python/FastAPI sidecar using the upstream `convaiinnovations/laya-typed-decisions` checkpoint. Laya provides typed decision outputs for narrow questions. [Laya checkpoint and model card](https://huggingface.co/convaiinnovations/laya-typed-decisions).
+> **Laya removal note (2026-10-06):** the Laya local decision sidecar described
+> below was removed from Harvest runtime, packaging, setup, and active docs.
+> What follows is historical design context, kept for the fallback-contract
+> reasoning — not current behavior. Approvals now follow configured
+> permissions (`tools.approvalMode`).
 
-The integration applies different fallback contracts at different decision points. With Laya gating enabled, write and execution tiers receive additional risk checks, while read-tier calls bypass that check. Invalid answers, incomplete evidence, and service failures require approval. Context-pruning failures retain the original context.
+Harvest historically integrated Laya through a local Python/FastAPI sidecar using the upstream `convaiinnovations/laya-typed-decisions` checkpoint. Laya provided typed decision outputs for narrow questions. [Laya checkpoint and model card](https://huggingface.co/convaiinnovations/laya-typed-decisions).
 
-The pruning implementation protects assistant tool-call messages, scores eligible older content in bounded batches, and keys cached decisions to session and content identity. The sidecar scheduler preserves inference capacity until timed-out prediction work actually finishes. LSP and DAP integrations provide semantic and runtime observations.
+The historical integration applied different fallback contracts at different decision points. With Laya gating enabled, write and execution tiers received additional risk checks, while read-tier calls bypassed that check. Invalid answers, incomplete evidence, and service failures required approval (following configured permissions). Context-pruning failures retained the original context.
+
+The historical pruning implementation protected assistant tool-call messages, scored eligible older content in bounded batches, and keyed cached decisions to session and content identity. The sidecar scheduler preserved inference capacity until timed-out prediction work actually finished. LSP and DAP integrations provide semantic and runtime observations.
 
 These mechanisms make the design inspectable. Claims about lower latency, lower token use, or better task success still require controlled measurements. The architecture supplies specific hypotheses and failure modes to evaluate.
 
@@ -222,14 +228,14 @@ These mechanisms make the design inspectable. Claims about lower latency, lower 
 
 A useful evaluation keeps the main model and task set fixed, then varies one mechanism at a time.
 
-| Mechanism | Measurement | Regression to challenge |
-|---|---|---|
-| Snapshot-bound edits | Correct application rate and retries | Concurrent changes and ambiguous targets |
-| Local decisions | End-to-end p50/p95 latency and decision errors | Slow hardware, bad answers, and service outages |
-| Context pruning | Input tokens and final task success | Missing evidence and invalid tool histories |
-| Risk gating | Missed dangerous actions and unnecessary approvals | Destructive command tails and revised arguments |
-| Inference scheduling | Active work and queue depth during timeouts | Capacity released before computation ends |
-| Verification tracking | Completion claims backed by finished checks | Background work reported as already verified |
+| Mechanism             | Measurement                                        | Regression to challenge                         |
+| --------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| Snapshot-bound edits  | Correct application rate and retries               | Concurrent changes and ambiguous targets        |
+| Local decisions       | End-to-end p50/p95 latency and decision errors     | Slow hardware, bad answers, and service outages |
+| Context pruning       | Input tokens and final task success                | Missing evidence and invalid tool histories     |
+| Risk gating           | Missed dangerous actions and unnecessary approvals | Destructive command tails and revised arguments |
+| Inference scheduling  | Active work and queue depth during timeouts        | Capacity released before computation ends       |
+| Verification tracking | Completion claims backed by finished checks        | Background work reported as already verified    |
 
 Token savings are useful when they preserve task quality. Low latency is useful when it preserves decision quality. A high edit-application rate is useful when the intended change lands in the intended location.
 

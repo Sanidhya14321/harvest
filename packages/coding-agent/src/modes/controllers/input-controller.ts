@@ -566,6 +566,7 @@ export class InputController {
 		for (const [binding, action] of [
 			["app.session.tab.next", "next"],
 			["app.session.tab.previous", "prev"],
+			["app.session.tab.close", "close"],
 			["app.session.tab.reopen", "reopen"],
 		] as const) {
 			for (const key of this.ctx.keybindings.getKeys(binding)) {
@@ -611,6 +612,9 @@ export class InputController {
 		for (const key of this.ctx.keybindings.getKeys("app.sidebar.toggle")) {
 			this.ctx.editor.setCustomKeyHandler(key, () => this.ctx.toggleSidebar());
 		}
+		for (const key of this.ctx.keybindings.getKeys("app.sidebar.focus")) {
+			this.ctx.editor.setCustomKeyHandler(key, () => this.ctx.focusSidebar());
+		}
 		for (const key of hubKeys) {
 			this.ctx.editor.setCustomKeyHandler(key, () => this.ctx.showAgentHub());
 		}
@@ -644,6 +648,7 @@ export class InputController {
 			if (wasBashMode !== this.ctx.isBashMode || wasPythonMode !== this.ctx.isPythonMode) {
 				this.ctx.updateEditorBorderColor();
 			}
+			this.#syncPlaceholder();
 			// Editor input repaints through the scoped fast path (only the editor
 			// component). The attachment chips band lives outside the editor, so a
 			// visibility change — a chip pasted in or its token deleted — must escape
@@ -657,6 +662,16 @@ export class InputController {
 				this.ctx.ui.requestRender();
 			}
 		};
+		this.#syncPlaceholder();
+	}
+
+	/** Ghost prompt inside the empty box; follows shell/python/normal mode. */
+	#syncPlaceholder(): void {
+		this.ctx.editor.placeholder = this.ctx.isBashMode
+			? "Run a command…"
+			: this.ctx.isPythonMode
+				? "Run Python…"
+				: "Ask anything…";
 	}
 
 	#handleFocusedLeftTap(): void {
@@ -750,6 +765,42 @@ export class InputController {
 			if (this.ctx.focusedAgentId) {
 				await this.#submitToFocusedSession(text, "steer");
 				return;
+			}
+
+			// Empty submissions create nothing — including on detached Home.
+			// (Mirrors handleFollowUp ordering: emptiness is decided before
+			// any session creation so stray Enters never mint runtimes. The
+			// streaming-abort path below still runs for empty submits.)
+			const isEmptySubmit = !text && !hasPendingImages;
+
+			// Zero-tab Home: the visible view is detached from the hidden
+			// session that was just closed. Never execute prompt input
+			// against it — create and select a fresh runtime through the
+			// existing factory first. Slash input is exempt here: builtins
+			// like /tab reopen are the deliberate recovery paths; a builtin
+			// that returns remaining prompt text is gated below instead.
+			// Snapshot the ENTIRE submission before the first await (session
+			// creation rebuilds the view and clears the editor): text,
+			// images, image links, and link metadata. Creation failure
+			// restores the complete Home draft and offers recovery.
+			if (!text.startsWith("/") && !isEmptySubmit && this.ctx.isHomeDetached()) {
+				const homeText = text;
+				const homeImages = [...this.ctx.editor.pendingImages];
+				const homeImageLinks = [...this.ctx.editor.pendingImageLinks];
+				const homeLinks = this.ctx.editor.imageLinks ? [...this.ctx.editor.imageLinks] : undefined;
+				const ready = await this.ctx.createSessionFromHomeDetached();
+				if (!ready) {
+					this.ctx.editor.setText(homeText);
+					this.ctx.editor.pendingImages = homeImages;
+					this.ctx.editor.pendingImageLinks = homeImageLinks;
+					this.ctx.editor.imageLinks = homeLinks;
+					return;
+				}
+				text = homeText;
+				this.ctx.editor.setText(homeText);
+				this.ctx.editor.pendingImages = homeImages;
+				this.ctx.editor.pendingImageLinks = homeImageLinks;
+				this.ctx.editor.imageLinks = homeLinks;
 			}
 
 			// Empty submit while streaming with queued messages: abort the active
@@ -855,6 +906,12 @@ export class InputController {
 					// "/loop 10 fix bug" rather than just "fix bug".
 					if (!shouldSkipHistory(text)) this.ctx.editor.addToHistory(text);
 					text = slashResult;
+					// Remaining prompt text dispatches to a session: never the
+					// hidden Home-detached one.
+					if (this.ctx.isHomeDetached()) {
+						const ready = await this.ctx.createSessionFromHomeDetached();
+						if (!ready) return;
+					}
 				}
 			}
 
@@ -1499,6 +1556,13 @@ export class InputController {
 			return;
 		}
 
+		// Zero-tab Home: follow-ups also create a fresh runtime first — never
+		// the hidden session. Slash remainders are gated after builtin handling.
+		if (!text.startsWith("/") && this.ctx.isHomeDetached()) {
+			const ready = await this.ctx.createSessionFromHomeDetached();
+			if (!ready) return;
+		}
+
 		// Compaction first: while compacting, free text gets queued via
 		// `queueCompactionMessage`, and `/skill:*` rides the same queue so a
 		// skill typed during compaction is not lost or short-circuited through
@@ -1522,6 +1586,10 @@ export class InputController {
 				// Record the original slash command text so Up Arrow recalls it.
 				if (!shouldSkipHistory(text)) this.ctx.editor.addToHistory(text);
 				text = slashResult;
+				if (this.ctx.isHomeDetached()) {
+					const ready = await this.ctx.createSessionFromHomeDetached();
+					if (!ready) return;
+				}
 			}
 		}
 

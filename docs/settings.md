@@ -138,8 +138,8 @@ Use nested YAML mappings for dotted setting paths:
 
 ```yaml
 theme:
-  dark: titanium
-  light: light
+  dark: harvest
+  light: harvest-light
 
 tools:
   approvalMode: write
@@ -253,7 +253,7 @@ compaction:
   thresholdPercent: 80
 
 theme:
-  dark: titanium
+  dark: harvest
 ```
 
 Keep secrets out of committed project config unless your repository policy allows it. Prefer environment variables, stored auth, an auth broker, or an untracked `--config` overlay for credentials.
@@ -492,24 +492,13 @@ providers:
 
 When the active model keeps failing (429s, quota walls, provider outages) and `retry.modelFallback` is on, the session picks the chain that owns the failing model, by specificity: an exact `provider/model-id` key, then a `provider/*` wildcard, then the current role's chain, then `default`. If several roles assign the same model, yaml key order does not decide: the live session role wins, and `default` wins over other matching roles when the session is not on those roles. It skips models whose selectors are still cooling down and switches for the rest of the turn. Subagents get their own per-spawn chains when their agent definition lists multiple model patterns — the first resolvable pattern is primary and the rest become its fallbacks; there is no `agent:<name>` key in `fallbackChains`.
 
-### Local decision layer (Laya)
+### Local decision layer (Laya — removed)
 
-Harvest integrates Laya (`convaiinnovations/laya-typed-decisions`, ModernBERT-large 421M) as a zero-cost local decision layer for narrow judgment points: tool-call gating, model routing, and step completion checks.
-
-```yaml
-laya:
-  enabled: true
-  url: "http://127.0.0.1:8177"
-  autostart: true
-```
-
-| Key              | Type    | Default                 | Notes                                                                                            |
-| ---------------- | ------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `laya.enabled`   | boolean | `false`                 | Enable local ModernBERT-based typed decisions. When disabled, standard heuristics and cloud LLMs handle all decisions. |
-| `laya.url`       | string  | `http://127.0.0.1:8177` | HTTP endpoint for the local Laya sidecar daemon process.                                         |
-| `laya.autostart` | boolean | `true`                  | Automatically spawn the local sidecar daemon when Harvest starts if the port is not listening.   |
-
-For details on the sidecar architecture, judgment points, calibration, and fallback semantics, see [Decision layer](./decision-layer.md).
+> **Removed:** the Laya local decision sidecar has been removed from
+> runtime, setup, and packaging. The `laya.enabled`, `laya.url`, and
+> `laya.autostart` keys are parsed but inert (no settings UI), and `/laya`
+> reports the removal. High-risk tool calls fall through to the existing
+> human-approval policy (fail closed). See [Decision layer](./decision-layer.md).
 
 ### Tools and approvals
 
@@ -687,8 +676,8 @@ memory:
 
 ```yaml
 theme:
-  dark: titanium
-  light: light
+  dark: harvest
+  light: harvest-light
 symbolPreset: unicode # unicode, nerd, ascii
 colorBlindMode: false
 
@@ -709,8 +698,8 @@ tui:
 
 | Key                         | Type    | Default          | Values                                                                    |
 | --------------------------- | ------- | ---------------- | ------------------------------------------------------------------------- |
-| `theme.dark`                | string  | `titanium`       | Theme used on a dark terminal background.                                 |
-| `theme.light`               | string  | `light`          | Theme used on a light terminal background.                                |
+| `theme.dark`                | string  | `harvest`        | Theme used on a dark terminal background.                                 |
+| `theme.light`               | string  | `harvest-light`  | Theme used on a light terminal background.                                |
 | `symbolPreset`              | enum    | `unicode`        | `unicode`, `nerd`, `ascii`.                                               |
 | `colorBlindMode`            | boolean | `false`          | Use blue instead of green for diff additions.                             |
 | `showHardwareCursor`        | boolean | `true`           | Show the terminal hardware cursor.                                        |

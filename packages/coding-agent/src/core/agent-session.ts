@@ -6,22 +6,13 @@
  * File Freshness Tracking into the agent session lifecycle.
  */
 
-import type { ToolTier } from "@harvest/pi-agent-core";
-import type { Settings } from "../config/settings";
 import { ExecutionGroundingEngine } from "./harvest/grounding";
 import { PreReadEnforcement, type ToolCallPayload } from "./harvest/loop-policy";
 import { routeRole, type RoleRoutingResult, type SpecialistRole } from "./harvest/roles";
 import { FileSession } from "./tools/file-session";
 import { FreshnessTracker } from "./tools/freshness";
 
-import { checkToolCallGating, type ToolGatingDecision } from "./harvest/laya-gating";
-
 export * from "../session/agent-session";
-export * from "./harvest/laya-client";
-export * from "./harvest/laya-gating";
-export * from "./harvest/laya-routing";
-export * from "./harvest/laya-completion";
-export * from "./harvest/laya-pruning";
 
 export interface HarvestSessionHooks {
 	readonly preReadEnforcement: PreReadEnforcement;
@@ -107,20 +98,8 @@ export function interceptSessionToolCall(
 }
 
 /**
- * Laya Tool-Call Gating Interceptor for session loops.
- * Evaluates high-risk tool calls with a noul question.
+ * Removed Laya tool-call gating interceptor. High-risk tool calls fall
+ * through to the existing human-approval policy (fail closed), never
+ * blanket auto-approval.
+ * @deprecated Laya gating was removed; use interceptSessionToolCall.
  */
-export async function interceptSessionToolCallLaya(
-	toolCall: ToolCallPayload,
-	sessionId?: string,
-	signal?: AbortSignal,
-	toolTier?: ToolTier,
-	owningSettings?: Settings,
-): Promise<ToolGatingDecision> {
-	return await checkToolCallGating(toolCall.name, toolCall.args ?? {}, {
-		sessionId,
-		signal,
-		toolTier,
-		settings: owningSettings,
-	});
-}

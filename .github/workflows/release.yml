@@ -58,50 +58,6 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  sidecar-smoke:
-    # CPU sidecar proof (P2-10/F9): health identity, authenticated inference,
-    # token rotation, teardown. Linux + Windows are gated here.
-    #
-    # macOS sidecar: intentionally NOT matrixed (documented skip). The smoke
-    # script installs torch from the CPU-only wheel index, whose macOS
-    # availability on a clean runner is unverified — gating on it risks
-    # false-red releases. darwin-x64/arm64 compiled binaries ARE gated above
-    # (including --smoke-test). Manual gate on a clean mac host:
-    #   bash scripts/ci-sidecar-smoke.sh
-    # (LAYA_SMOKE_PORT/LAYA_SMOKE_DIR as needed; the script is macOS-safe).
-    # Re-enable by adding `- { runner: macos-15-arm64, cache: ~/.cache/huggingface }`
-    # below once the CPU torch install proves green there.
-    #
-    # Offline behavior note: full-network-offline CI is intentionally not
-    # gated (runner network isolation is flaky, and a cold cache needs network
-    # for the one-time model download). Cache-only operation IS supported:
-    # with a warm HF cache, HF_HUB_OFFLINE=1 forces cache-only model load and
-    # the sidecar serves /health + /v1/decide with zero network. When the
-    # model is absent and unreachable, the server stays unready and the TS
-    # client fails open per contract (tool gating fails CLOSED to human
-    # approval). Manual gate on a warm-cache host:
-    #   HF_HUB_OFFLINE=1 bash scripts/ci-sidecar-smoke.sh
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-24.04, cache: ~/.cache/huggingface }
-          - { runner: windows-2022, cache: ~\.cache\huggingface }
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Cache the pinned checkpoint
-        uses: actions/cache@v4
-        with:
-          path: ${{ matrix.cache }}
-          key: laya-typed-decisions-${{ hashFiles('decision-sidecar/requirements.txt') }}
-      - name: CPU sidecar smoke (health, decide, token rotation, teardown)
-        shell: bash
-        run: bash scripts/ci-sidecar-smoke.sh
-
   npm-bundle:
     # Source-vs-npm leg (P2-10): prove the packed npm tarball — the artifact
     # npm consumers install — carries the release version and a bootable
@@ -151,7 +107,7 @@ jobs:
           echo "npm bundle ok: tarball ${tarballs[0]}, version $SRC_VERSION, CLI '$CLI_VERSION'"
 
   publish:
-    needs: [binaries, sidecar-smoke, npm-bundle]
+    needs: [binaries, npm-bundle]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

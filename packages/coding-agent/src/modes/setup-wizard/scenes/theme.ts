@@ -1,9 +1,4 @@
-import {
-	routeSelectListMouse,
-	type SelectItem,
-	SelectList,
-	type SgrMouseEvent,
-} from "@harvest/pi-tui";
+import { routeSelectListMouse, type SelectItem, SelectList, type SgrMouseEvent } from "@harvest/pi-tui";
 import {
 	enableAutoTheme,
 	getAvailableThemes,
