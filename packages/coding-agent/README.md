@@ -34,16 +34,16 @@ The agent supports three mutually-exclusive memory backends, selected via the `m
 
 Switching backends mid-session immediately replaces the live backend, memory tools, listeners, and system-prompt context. Existing users with `memories.enabled = true|false` are migrated to `memory.backend = "local"|"off"` exactly once on first launch; afterward, `memory.backend` is the sole runtime selector.
 
-## Local Decision Layer (Laya)
+## Local Decision Layer (Laya — removed)
 
-Harvest embeds [Laya](https://github.com/convaiinnovations/laya) (`convaiinnovations/laya-typed-decisions`, ModernBERT-large 421M) as a local typed decision layer for high-frequency classifications:
-
-- **Tool-Call Gating**: Intercepts high-risk mutations (`bash`, `write`, `edit`, `ast-edit`, `patch`) and asks a `noul` irreversibility question. Fails **CLOSED** (prompts user for interactive approval) if offline, timed out (300ms), or risky ($P > 0.35$).
-- **Model Routing**: Evaluates prompt complexity with a `choice` question to route between `smol`, `slow`, and `default` model tiers. Fails **OPEN** to default tier.
-- **Step Completion Checks**: Evaluates execution outputs and stop classifications with `noul` before invoking heavy cloud models. Fails **OPEN**.
-
-### Configuration & Setup
-- Configured during onboarding via `harvest setup` ("Configure Laya" page).
-- Config keys: `laya.enabled`, `laya.url` (default: `"http://127.0.0.1:8177"`), `laya.autostart`.
-- Environment overrides: `LAYA_ENABLED=false`, `LAYA_GATING=false`, `LAYA_SIDECAR_URL`, `LAYA_TIMEOUT_MS`.
-- For full architectural details, see the [Decision Layer Guide](../../docs/decision-layer.md) and [Sidecar Documentation](../../decision-sidecar/README.md).
+> **Removed:** the Laya local decision sidecar has been removed from
+> runtime, packaging, setup, settings UI, and active docs. The
+> `laya.enabled`, `laya.url`, and `laya.autostart` config keys are parsed
+> but inert (no settings UI), `LAYA_ENABLED`, `LAYA_GATING`,
+> `LAYA_SIDECAR_URL`, and `LAYA_TIMEOUT_MS` are ignored with one
+> deprecation warning, and `/laya` reports the removal. High-risk tool
+> calls fall through to the existing human-approval policy (fail closed —
+> never blanket auto-approved); Markdown-brain retrieval uses
+> lexical/graph order with no rerank step; model selection is explicit.
+> Prior Laya user data (logs, calibration, model cache) is left in place —
+> delete manually if unwanted. See [Decision Layer Guide](../../docs/decision-layer.md).

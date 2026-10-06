@@ -81,11 +81,29 @@
 - Background approvals queue under their session with an attention badge and present in order when their tab becomes active; stopping or quitting denies whatever is still parked.
 - `/diagnostics` and the run record now include the last tool-gating verdict with its local sidecar latency, separating gating delay from model and tool time.
 - Concurrent Laya sidecar starters now share one spawn run instead of double-spawning daemons behind a port drift; the same singleflight guard now covers the full setup pipeline.
+- Fixed deleting a session that is still busy from the session picker.
+- Picker and `/delete` removals now settle, seal the writer, tombstone the ID, and dispose the runtime, so late renames or callbacks cannot recreate the deleted file; unsettled stop-and-delete refuses instead of proceeding.
+- Closing the active tab now selects its right neighbor (else left) like slash close; last-tab close enters a clean Home that keeps no title, draft, or attachments.
+- Home submissions snapshot text, PNGs, image links, and link metadata before creating the fresh session, and the fresh tab is registered in the strip and `/tab list`.
+- Model-created sessions return the stable UUID with a registry mapping, run their first task once in the background, and record caller lineage; `scopeGrant` model flags no longer bypass ownership.
+- Prompt-only preset updates preserve omitted `tools`/`spawns`/`model` policy fields; architect and evaluation runs use runtime-only settings overrides that never persist.
+- Skill/preset promotion publishes the active pointer only after successful materialization and rolls back on failure; rollback targets previously-active revisions only.
+- Revision IDs and artifact names reject path separators, absolute paths, and traversal; preset writes enforce symlink/hardlink boundaries.
+- Automatic skill/preset improvement is bounded to one candidate plus one evaluation per parent turn for auto-continue sessions; ordinary sessions are never gated; evaluation runs pin their revision and cannot trigger recursive learning.
+- Palette-listed custom/extension/MCP/skill/file/template commands execute through normal submission instead of failing as non-actions; the open palette re-budgets on every resize.
+- Legacy Laya provider metadata no longer changes approval outcomes (computer safety checks unchanged); old gating-decision events replay inertly.
+- Removal notices now state that approvals follow configured permissions instead of claiming universal human confirmation.
 
 ### Added
 
 - OpenCode-like workspace shell: responsive right sidebar (session title, context/cost, MCP/LSP, Todo/Agents, Workspace Changes, version footer) with docked (>120 cols) and overlay modes, `tui.sidebar: auto | show | hide`, `Alt+Shift+B` / `/sidebar`, and a registry-backed command palette (`Alt+K` / `/commands`).
 - Harvest `harvest` (dark) and `harvest-light` palettes with screen/panel/raised/composer/modal surfaces and central fallbacks for legacy themes.
+- The command palette now lists extension, skill, file, and template commands alongside builtins, and commands that take arguments prepare an editable `/name ` draft instead of executing immediately.
+- The sidebar overlay opens from any sidebar mode on narrow terminals, and scrolling back pins the text being read so streamed output no longer moves it.
+- Checkpoint, rewind, security scan, memory edit, learn, manage skill, and search code results now render as readable summaries with bounded detail instead of raw data.
+- Workspace Changes follows the active repository across directory switches and refreshes after tool runs; extension and full task-state lists now appear in the sidebar.
+- Fresh installs start on the `harvest` / `harvest-light` themes, and home key hints follow keybinding remaps.
+- The home screen now shows a pixel-block Harvest wordmark, ghost prompt text, and `key action` hints; the working row animates block spinners with an `esc interrupt` trailer, and newly opened session tabs flash until selection moves.
 - Project and user Markdown brains retrieve cited knowledge and skill sections using cached page indexing, graph links, and optional Laya reranking.
 
 - Interactive sessions now open in a full-screen workspace with clickable session tabs, a centered new-session composer, and mouse or Page Up/Down transcript navigation.
@@ -93,11 +111,25 @@
 - GitHub releases now include binaries for Windows, macOS, and Linux on x64 and ARM64, plus checksums and license notices.
 - `/sessions` opens the session picker, `/timeline` opens the session tree, and a visible tab strip supports switching, history, closing, and reopening sessions.
 - `/laya on` now provisions the sidecar from your configured `laya.url` and connects it to the agent when missing, instead of only flipping the flag; `/laya setup` and `/laya calibrate` work the same way in-session.
+- Added session and preset management tools to the agent tool surface.
+- Tabs can now be closed without stopping their session's run.
+- The Activity view now covers sessions with searchable timelines.
+- Skills and presets now track revisions with evaluation.
+- Session tabs show an `x` close control (`Alt+W`); closing the last tab shows a clean Home whose first prompt starts a fresh session with text and attachments intact.
+- The Hub Sessions section lists live, cold, and archived sessions with Reopen, targeted Stop, Archive, and Restore; `/tab archive` and `/tab restore` work too.
+- The model `sessions` tool creates background sessions that run their first task immediately and answer inspect/rename/send/stop by session ID; forged permission flags are refused.
+- Managed skills and presets evaluate through real restricted runs, keep revision history with promotion/rollback, and bound automatic improvement to one candidate plus one evaluation per turn.
+- The command palette runs listed custom/extension/skill/file/template commands through normal submission and re-budgets its list on every terminal resize.
 
 ### Changed
 
 - Shift+Tab now cycles the agent mode (Plan → Build → Accept Edits → Auto) instead of the thinking level. Thinking levels remain available via `/model` and the model selector; rebind `app.thinking.cycle` to restore the old chord.
 - Documented the per-channel share-redaction policy, retrieval-provenance surfacing contract, and release manual gates (`docs/product-decisions.md`, `docs/decision-layer.md`, `decision-sidecar/README.md`); no behavior changed — pre-share preview and unified provenance UIs remain open by design.
+
+### Removed
+
+- Removed the Laya local decision sidecar, including runtime, setup, packaging, and active docs; `laya.*` settings keys are now inert, `LAYA_*` environment variables are ignored with one deprecation warning, and `/laya` reports the removal.
+- Laya user data (logs, calibration, model cache) is left in place; delete it manually if unwanted.
 
 ## [18.1.14] - 2026-09-07
 

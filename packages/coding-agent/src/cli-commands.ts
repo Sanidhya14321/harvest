@@ -133,11 +133,6 @@ export const commands: CommandEntry[] = [
 		help: commandHelp.joinHelp,
 	},
 	{
-		name: "laya",
-		load: () => import("./commands/laya").then(m => m.default),
-		help: commandHelp.layaHelp,
-	},
-	{
 		name: "models",
 		load: () => import("./commands/models").then(m => m.default),
 		help: commandHelp.modelsHelp,

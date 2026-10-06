@@ -828,14 +828,21 @@ export interface ComputerToolCallMetadata {
 	providerItemId: string;
 	actions: ComputerAction[];
 	pendingSafetyChecks: ComputerSafetyCheck[];
-	layaGatingRequired?: boolean;
-	layaGatingReason?: string;
 }
 
+/**
+ * Inert replay tombstone for pre-removal Laya records (`type: "laya"`).
+ *
+ * The Laya decision sidecar was removed: no producer emits this metadata and
+ * no consumer may read gating fields from it. The index signature exists only
+ * so persisted sessions containing legacy `laya` objects still decode and
+ * replay without activating anything. Never add `layaGatingRequired` /
+ * `layaGatingReason` back here — approval outcomes must not depend on legacy
+ * metadata (see `ExtensionToolWrapper`).
+ */
 export interface LayaToolCallMetadata {
 	type: "laya";
-	layaGatingRequired: boolean;
-	layaGatingReason?: string;
+	[key: string]: unknown;
 }
 
 export type ToolCallProviderMetadata = ComputerToolCallMetadata | LayaToolCallMetadata;

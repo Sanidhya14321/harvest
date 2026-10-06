@@ -56,5 +56,8 @@ Terminals that implement OSC 5522 enhanced paste can send clipboard MIME data di
 
 Older unqualified action names are migrated when `keybindings.yml` is loaded, but new docs and new configs should use the namespaced action IDs above. Existing `keybindings.json` files are still accepted and migrated to `keybindings.yml`; `keybindings.yaml` is also accepted.
 
-- `app.commands.open` (default `Alt+K`, `/commands`): registry-backed command palette. Item hints show the active chord from `KeybindingsManager`, so remaps stay visible; `Escape` closes once and restores the pre-open draft and editor-slot focus.
-- `app.sidebar.toggle` (default `Alt+Shift+B`, `/sidebar`): dock/overlay sidebar. `Alt+B` stays word-left in the editor.
+- `app.commands.open` (default `Alt+K`, `/commands`): registry-backed command palette over builtins, extensions, skills, file commands, and templates. Commands that take arguments prepare an editable `/name ` draft instead of executing; item hints show the active chord from `KeybindingsManager`, so remaps stay visible; `Escape` closes once and restores the pre-open draft and editor-slot focus.
+- `app.session.tab.close` (default `Alt+W`, `/tab close`): hide the tab's view and preserve its session and ongoing work (Close ≠ Stop ≠ Archive ≠ Delete). Closing the final tab displays Home; the hidden session stays reachable through Activity with Reopen and Stop. `Ctrl+W` keeps its editor word-deletion meaning.
+- `app.session.tab.reopen` (default `Ctrl+Shift+T`, `/tab reopen`): reopen the most recently closed tab.
+- `app.sidebar.toggle` (default `Alt+Shift+B`, `/sidebar`): dock/overlay sidebar. On narrow terminals the toggle opens a temporary overlay without changing the stored `tui.sidebar` preference. `Alt+B` stays word-left in the editor.
+- `app.sidebar.focus` (unbound by default): move keyboard focus into the sidebar; section controls collapse/expand and `Escape` restores editor focus.
