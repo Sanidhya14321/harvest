@@ -13,7 +13,6 @@ import type { CustomTool } from "../extensibility/custom-tools/types";
 import type { LocalProtocolOptions } from "../internal-urls";
 import { registerArtifactsDir } from "../internal-urls/registry-helpers";
 import { MCPManager } from "../mcp/manager";
-import * as layaSubagent from "../core/harvest/laya-subagent-selection";
 import { loadOverallPlanReference } from "../plan-mode/plan-handoff";
 import planModeSubagentPrompt from "../prompts/system/plan-mode-subagent.md" with { type: "text" };
 import subagentUserPromptTemplate from "../prompts/system/subagent-user-prompt.md" with { type: "text" };
@@ -25,6 +24,8 @@ import { buildOutputValidator } from "../tools/output-schema-validator";
 import { trackLateCleanup } from "../utils/late-cleanup";
 import { type DiscoveryResult, discoverAgents, getAgent } from "./discovery";
 import { type ExecutorOptions, runSubprocess } from "./executor";
+import { pinPresetRevisionForRun, readActivePresetRevision, unpinPresetRevisionForRun } from "./agents";
+import { unpinActiveSkillsForRun, pinActiveSkillsForRun } from "../autolearn/managed-skills";
 import {
 	applyEligibleNestedPatches,
 	type IsolationContext,
@@ -148,7 +149,6 @@ export interface EffectiveSubagentPolicy {
 	applyChanges: boolean;
 	enableLsp: boolean;
 	enableIrc: boolean;
-	layaTraceId?: string;
 }
 
 /** Settled child execution plus data needed by the frontends' own rendering. */
@@ -266,72 +266,16 @@ export async function resolveEffectiveSubagentPolicy(
 ): Promise<EffectiveSubagentPolicy> {
 	await request.session.settings.reloadFromDisk();
 	const spawnPolicy = resolveSpawnPolicy(request.session.getSessionSpawns());
-	let agentName = request.agent?.trim() || spawnPolicy.defaultAgent;
+	const agentName = request.agent?.trim() || spawnPolicy.defaultAgent;
 	const planMode = request.session.getPlanModeState?.()?.enabled === true;
 	assertPlanControlsAllowed(request, planMode);
 	assertDepthAndSpawnAllowed(request, agentName);
 
 	const discovery = await discoverAgents(request.session.cwd, undefined, request.session.effectiveExtensionRoots?.());
 	const disabledAgents = (request.session.settings.get("task.disabledAgents") as string[]) ?? [];
-	const taskDepth = request.session.taskDepth ?? 0;
-	const maxDepth = request.session.settings.get("task.maxRecursionDepth") ?? 2;
-	const blockedAgent = request.blockedAgent ?? $env.PI_BLOCKED_AGENT;
 
-	const eligibleAgents = canSpawnAtDepth(maxDepth, taskDepth)
-		? discovery.agents.filter(cand => {
-				if (blockedAgent && blockedAgent === cand.name) return false;
-				if (disabledAgents.includes(cand.name)) return false;
-				if (spawnPolicy.allowedAgents !== null && !spawnPolicy.allowedAgents.includes(cand.name)) return false;
-				return true;
-		  })
-		: [];
-
-	let layaTraceId: string | undefined;
-	// If the subagent was not explicitly specialized (or was set to the generic default 'task'),
-	// consult Laya subagent selection with confidence gating and fail-open fallback.
-	if (!request.agent?.trim() || request.agent.trim() === spawnPolicy.defaultAgent) {
-		if (layaSubagent.isLayaSubagentAutoPickEnabled(request.session.settings)) {
-			const layaDecision = await layaSubagent.selectSubagentWithLaya(request.assignment, {
-				availableAgents: eligibleAgents,
-				defaultAgent: spawnPolicy.defaultAgent,
-				context: request.context,
-				sessionId: (request.session as { sessionId?: string }).sessionId,
-				settings: request.session.settings,
-				signal: request.signal,
-			});
-			layaTraceId = layaDecision.traceId;
-			if (layaDecision.decisionType === "auto_pick") {
-				const candidatePick = layaDecision.selectedAgent;
-				try {
-					assertDepthAndSpawnAllowed(request, candidatePick);
-					const candidateAgent = getAgent(eligibleAgents, candidatePick);
-					if (candidateAgent && !disabledAgents.includes(candidatePick)) {
-						agentName = candidateAgent.name;
-					} else {
-						agentName = spawnPolicy.defaultAgent;
-					}
-				} catch {
-					agentName = spawnPolicy.defaultAgent;
-				}
-			}
-		} else if (layaSubagent.isLayaSubagentShadowEnabled(request.session.settings)) {
-			// Shadow telemetry must not serialize handoff dispatch: use the
-			// default agent immediately and score the assignment in the
-			// background (bounded, parent-cancellable). The pre-allocated
-			// trace id keeps the outcome joinable to the shadow audit record.
-			layaTraceId = layaSubagent.generateTraceId();
-			layaSubagent.classifySubagentShadow(request.assignment, {
-				availableAgents: eligibleAgents,
-				defaultAgent: spawnPolicy.defaultAgent,
-				context: request.context,
-				sessionId: (request.session as { sessionId?: string }).sessionId,
-				settings: request.session.settings,
-				signal: request.signal,
-				traceId: layaTraceId,
-			});
-		}
-	}
-
+	// Model subagent auto-selection was removed with Laya: an explicitly
+	// requested agent is used, otherwise the spawn policy default.
 	const agent = getAgent(discovery.agents, agentName);
 	if (!agent) {
 		const available = discovery.agents.map(candidate => candidate.name).join(", ") || "none";
@@ -402,7 +346,6 @@ export async function resolveEffectiveSubagentPolicy(
 			(request.enableIrc ??
 				(request.session.enableIrc !== false &&
 					isIrcEnabled(request.session.settings, request.session.taskDepth ?? 0))),
-		layaTraceId,
 	};
 }
 
@@ -635,7 +578,6 @@ function attachStructuredOutputMetadata(result: SingleResult, schema: Structured
  * lease or child dispatch; callers keep responsibility for their result text.
  */
 export async function runStructuredSubagent(request: StructuredSubagentRequest): Promise<StructuredSubagentResult> {
-	const subagentStartTime = performance.now();
 	const policy = await resolveEffectiveSubagentPolicy(request);
 	const lease = await leaseArtifacts(request.session, request.invocationKind);
 	let changesApplied: boolean | null = null;
@@ -653,114 +595,130 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 			...request.identity,
 			label: request.identity?.label ?? (request.invocationKind === "eval" ? "EvalAgent" : undefined),
 		});
-		const baseOptions = buildExecutorOptions(request, policy, lease, id);
-		baseOptions.onCleanupDeferred = completion => {
-			deferredCleanup = completion;
-		};
-		baseOptions.planReference = await loadPlanReference(request, policy);
-		let isolationContext: IsolationContext | null = null;
-		if (policy.isIsolated) {
-			try {
-				isolationContext = await prepareIsolationContext(request.session.cwd);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				throw new StructuredSubagentError(
-					"isolation",
-					`Isolated subagent execution could not be prepared: ${message}`,
-					{ cause: error },
-				);
+		// Pin the selected managed-preset revision for this run so retention
+		// cannot drop it mid-run; promotion affects subsequent runs only.
+		// Released in the finally below; other runs' pins survive.
+		let pinnedPreset: { name: string; revId: string } | undefined;
+		try {
+			const active = await readActivePresetRevision(policy.agentName).catch(() => undefined);
+			if (active) {
+				pinPresetRevisionForRun(policy.agentName, active.id, id);
+				pinnedPreset = { name: policy.agentName, revId: active.id };
 			}
+		} catch {
+			// Pinning is retention hygiene, never execution fate.
 		}
-		let result: SingleResult;
-		if (!isolationContext) {
-			result = await runSubprocess(baseOptions);
-			onSubprocessResult?.(result);
-		} else {
-			result = await runIsolatedSubprocess({
-				baseOptions,
-				context: isolationContext,
-				preferredBackend: parseIsolationBackend(request.session.settings.get("isolation.backend")),
-				agentId: id,
-				mergeMode: policy.mergeMode,
-				artifactsDir: lease.artifactsDir,
-				description: trimToUndefined(request.identity?.label),
-				buildCommitMessage: makeIsolationCommitMessage(request.session),
-				buildFailureResult: buildFailureResult(request, policy, id, Date.now()),
-				onSubprocessResult,
-			});
+		// Pin every active managed skill revision for the same reason.
+		let pinnedSkills: Array<{ name: string; revId: string }> = [];
+		try {
+			pinnedSkills = await pinActiveSkillsForRun(id);
+		} catch {
+			// Pinning is retention hygiene, never execution fate.
 		}
-		attachStructuredOutputMetadata(result, policy.schema);
-		hasValidStructuredOutput = result.structuredOutput?.status === "valid";
-		requiresRecoveryArtifacts =
-			policy.isIsolated &&
-			(result.exitCode !== 0 || result.error !== undefined || result.aborted === true) &&
-			(result.patchPath !== undefined || result.branchName !== undefined || (result.nestedPatches?.length ?? 0) > 0);
+		try {
+			const baseOptions = buildExecutorOptions(request, policy, lease, id);
+			baseOptions.onCleanupDeferred = completion => {
+				deferredCleanup = completion;
+			};
+			baseOptions.planReference = await loadPlanReference(request, policy);
+			let isolationContext: IsolationContext | null = null;
+			if (policy.isIsolated) {
+				try {
+					isolationContext = await prepareIsolationContext(request.session.cwd);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new StructuredSubagentError(
+						"isolation",
+						`Isolated subagent execution could not be prepared: ${message}`,
+						{ cause: error },
+					);
+				}
+			}
+			let result: SingleResult;
+			if (!isolationContext) {
+				result = await runSubprocess(baseOptions);
+				onSubprocessResult?.(result);
+			} else {
+				result = await runIsolatedSubprocess({
+					baseOptions,
+					context: isolationContext,
+					preferredBackend: parseIsolationBackend(request.session.settings.get("isolation.backend")),
+					agentId: id,
+					mergeMode: policy.mergeMode,
+					artifactsDir: lease.artifactsDir,
+					description: trimToUndefined(request.identity?.label),
+					buildCommitMessage: makeIsolationCommitMessage(request.session),
+					buildFailureResult: buildFailureResult(request, policy, id, Date.now()),
+					onSubprocessResult,
+				});
+			}
+			attachStructuredOutputMetadata(result, policy.schema);
+			hasValidStructuredOutput = result.structuredOutput?.status === "valid";
+			requiresRecoveryArtifacts =
+				policy.isIsolated &&
+				(result.exitCode !== 0 || result.error !== undefined || result.aborted === true) &&
+				(result.patchPath !== undefined ||
+					result.branchName !== undefined ||
+					(result.nestedPatches?.length ?? 0) > 0);
 
-		if (
-			policy.isIsolated &&
-			isolationContext &&
-			policy.applyChanges &&
-			result.exitCode === 0 &&
-			!result.error &&
-			!result.aborted
-		) {
-			const outcome = await mergeIsolatedChanges({
-				result,
-				repoRoot: isolationContext.repoRoot,
-				mergeMode: policy.mergeMode,
-			});
-			mergeSummary = outcome.summary;
-			changesApplied = outcome.changesApplied;
-			if (outcome.changesApplied !== false) {
-				const nestedPatchSummary = await applyEligibleNestedPatches({
+			if (
+				policy.isIsolated &&
+				isolationContext &&
+				policy.applyChanges &&
+				result.exitCode === 0 &&
+				!result.error &&
+				!result.aborted
+			) {
+				const outcome = await mergeIsolatedChanges({
 					result,
 					repoRoot: isolationContext.repoRoot,
 					mergeMode: policy.mergeMode,
-					changesApplied: outcome.changesApplied,
-					mergedBranchForNestedPatches: outcome.mergedBranchForNestedPatches,
-					commitMessage: makeIsolationCommitMessage(request.session)(),
 				});
-				mergeSummary += nestedPatchSummary;
-				requiresRecoveryArtifacts ||=
-					nestedPatchSummary.includes("<system-notification>") && (result.nestedPatches?.length ?? 0) > 0;
+				mergeSummary = outcome.summary;
+				changesApplied = outcome.changesApplied;
+				if (outcome.changesApplied !== false) {
+					const nestedPatchSummary = await applyEligibleNestedPatches({
+						result,
+						repoRoot: isolationContext.repoRoot,
+						mergeMode: policy.mergeMode,
+						changesApplied: outcome.changesApplied,
+						mergedBranchForNestedPatches: outcome.mergedBranchForNestedPatches,
+						commitMessage: makeIsolationCommitMessage(request.session)(),
+					});
+					mergeSummary += nestedPatchSummary;
+					requiresRecoveryArtifacts ||=
+						nestedPatchSummary.includes("<system-notification>") && (result.nestedPatches?.length ?? 0) > 0;
+				}
+			} else if (policy.isIsolated && isolationContext && !policy.applyChanges) {
+				if (result.branchName)
+					mergeSummary = `\n\nIsolation: changes captured on branch \`${result.branchName}\` (apply=false). Not merged.`;
+				else if (result.patchPath)
+					mergeSummary = `\n\nIsolation: changes captured at \`${result.patchPath}\` (apply=false). Not applied.`;
+				else if ((result.nestedPatches?.length ?? 0) > 0)
+					mergeSummary = `\n\nIsolation: changes captured for ${result.nestedPatches?.length} nested ${(result.nestedPatches?.length ?? 0) === 1 ? "repository" : "repositories"} (apply=false). Not applied.`;
+				else mergeSummary = "\n\nIsolation: no changes captured.";
 			}
-		} else if (policy.isIsolated && isolationContext && !policy.applyChanges) {
-			if (result.branchName)
-				mergeSummary = `\n\nIsolation: changes captured on branch \`${result.branchName}\` (apply=false). Not merged.`;
-			else if (result.patchPath)
-				mergeSummary = `\n\nIsolation: changes captured at \`${result.patchPath}\` (apply=false). Not applied.`;
-			else if ((result.nestedPatches?.length ?? 0) > 0)
-				mergeSummary = `\n\nIsolation: changes captured for ${result.nestedPatches?.length} nested ${(result.nestedPatches?.length ?? 0) === 1 ? "repository" : "repositories"} (apply=false). Not applied.`;
-			else mergeSummary = "\n\nIsolation: no changes captured.";
-		}
 
-		completedSuccessfully = result.exitCode === 0 && !result.error && !result.aborted;
-		if (policy.layaTraceId) {
-			layaSubagent.recordSubagentOutcome(policy.layaTraceId, {
-				completedCleanly: completedSuccessfully,
-				exitCode: result.exitCode,
-				error: result.error,
-				durationMs: performance.now() - subagentStartTime,
-				timestamp: Date.now(),
-			}).catch(() => {});
+			completedSuccessfully = result.exitCode === 0 && !result.error && !result.aborted;
+			return {
+				result,
+				policy,
+				mergeSummary,
+				changesApplied,
+				artifactsDir: lease.artifactsDir,
+				temporaryArtifacts: lease.temporary,
+			};
+		} finally {
+			if (pinnedPreset) {
+				try {
+					unpinPresetRevisionForRun(pinnedPreset.name, pinnedPreset.revId, id);
+				} catch {
+					// Best-effort release; other runs' pins survive regardless.
+				}
+			}
+			unpinActiveSkillsForRun(pinnedSkills, id);
 		}
-		return {
-			result,
-			policy,
-			mergeSummary,
-			changesApplied,
-			artifactsDir: lease.artifactsDir,
-			temporaryArtifacts: lease.temporary,
-		};
 	} catch (error) {
-		if (policy?.layaTraceId) {
-			layaSubagent.recordSubagentOutcome(policy.layaTraceId, {
-				completedCleanly: false,
-				error: error instanceof Error ? error.message : String(error),
-				durationMs: performance.now() - subagentStartTime,
-				timestamp: Date.now(),
-			}).catch(() => {});
-		}
 		if (error instanceof StructuredSubagentError) throw error;
 		throw new StructuredSubagentError(
 			"execution",
