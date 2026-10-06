@@ -142,6 +142,26 @@ export class LiveSessionRegistry {
 		this.#emit();
 	}
 
+	/**
+	 * Attach a model-created independent session without changing the user's
+	 * focus: same ownership as adopt(), but the selection stays where the
+	 * user left it. The session is visible in Sessions/Activity immediately.
+	 */
+	adoptBackground(session: AgentSession): void {
+		if (this.#disposed) throw new Error("Live session registry is closed");
+		this.#selectionGeneration++;
+		const id = session.sessionManager.getSessionId();
+		for (const [liveId, entry] of this.#entries) {
+			if (entry.session === session && liveId !== id) this.detach(liveId);
+		}
+		const previousSelection = this.#selectedId;
+		this.#add(session);
+		this.#selectedId = previousSelection;
+		this.#entries.get(id)!.lastUsed = ++this.#usageOrder;
+		this.#entries.get(id)!.unread = true;
+		this.#emit();
+	}
+
 	/** Record the persistence path for a previously path-less live session. */
 	notePath(sessionId: string, path: string): void {
 		if (this.#disposed) throw new Error("Live session registry is closed");

@@ -5,7 +5,7 @@ import {
 	mergeRegistrySnapshot,
 	SessionTabStrip,
 } from "../../../src/modes/components/session-tab-strip";
-import { initTheme } from "../../../src/modes/theme/theme";
+import { initTheme, theme } from "../../../src/modes/theme/theme";
 import { SessionTabs } from "../../../src/session/session-tabs";
 
 beforeAll(async () => {
@@ -265,5 +265,48 @@ describe("mergeRegistrySnapshot", () => {
 		expect(merged?.status).toBe("waiting");
 		const background = mergeRegistrySnapshot(live, { ...selected, selected: false }, true);
 		expect(background?.status).toBe("completed");
+	});
+
+	it("flashes a newly opened tab with the hover highlight until selection changes (silent-swap)", async () => {
+		const tabs = new SessionTabs();
+		tabs.open("/work/first.jsonl", "First task");
+		tabs.open("/work/second.jsonl", "Second task");
+		let selected = "/work/first.jsonl";
+		const titles: Record<string, string> = {
+			"/work/first.jsonl": "First task",
+			"/work/second.jsonl": "Second task",
+			"/work/third.jsonl": "Third task",
+		};
+		const strip = new SessionTabStrip(
+			tabs,
+			() => selected,
+			() => titles[selected] ?? "New session",
+			async path => {
+				selected = path;
+			},
+		);
+		strip.renderWorkspace(100, true);
+		tabs.open("/work/third.jsonl", "Third task");
+		const raw = strip.renderWorkspace(100, true).join("\n");
+		const selectedBg = theme.getBgAnsi("selectedBg");
+		// New tab carries the hover highlight (selectedBg, not bold);
+		// the active tab keeps the bold active style. Every tab also carries
+		// its ASCII close column (`x`).
+		expect(raw).toContain(`${selectedBg}${theme.fg("text", " Third task x ")}`);
+		expect(raw.split(selectedBg).length - 1).toBe(2);
+		const thirdAt = raw.indexOf("Third task");
+		expect(thirdAt).toBeGreaterThan(-1);
+		const thirdChunk = raw.slice(Math.max(0, thirdAt - 60), thirdAt + 20);
+		expect(thirdChunk).not.toContain("\x1b[1m");
+		// Selecting it clears the flash: the highlight moves with selection —
+		// exactly one tab carries the selected background afterwards.
+		const row = Bun.stripANSI(strip.renderWorkspace(100, true)[0] ?? "");
+		expect(strip.clickWorkspace(0, row.indexOf("Third task"))).toBe(true);
+		await Bun.sleep(0);
+		expect(selected).toBe("/work/third.jsonl");
+		const after = strip.renderWorkspace(100, true).join("\n");
+		const selectedCount = after.split(selectedBg).length - 1;
+		expect(after).toContain("Third task");
+		expect(selectedCount).toBe(1);
 	});
 });

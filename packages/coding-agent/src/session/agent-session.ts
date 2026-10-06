@@ -200,7 +200,7 @@ import {
 import { isLowSignalTitleInput } from "../tiny/text";
 import { shutdownTinyTitleClient } from "../tiny/title-client";
 import type { ImageAttachmentEntry } from "../tools";
-import { resolveApproval, resolveToolTier, type ToolTier } from "../tools/approval";
+import { resolveApproval } from "../tools/approval";
 import { type AskToolDetails, type AskToolInput, recoverAskQuestions } from "../tools/ask";
 import { releaseTabsForOwner } from "../tools/browser/tab-supervisor";
 import type { CheckpointState, CompletedRewindState } from "../tools/checkpoint";
@@ -253,12 +253,9 @@ import type {
 	UsageFallbackConfirmer,
 } from "./agent-session-types";
 import { writeArtifact } from "./artifacts";
-import type { ToolGatingDecision } from "../core/harvest/laya-gating";
-import { invalidatePruningLocksOnHistoryRewrite, resetLockedPruningDecisions } from "../core/harvest/laya-pruning";
 import {
 	createHarvestSession,
 	interceptSessionToolCall,
-	interceptSessionToolCallLaya,
 	installGroundingNudge,
 	type HarvestSessionHooks,
 } from "../core/agent-session";
@@ -510,20 +507,6 @@ function cloneMessageEndNotification(message: AgentMessage): AgentMessage {
 
 const INTERRUPTED_THINKING_MIN_CHARS = 60;
 const SESSION_CWD_CHANGE_REJECTED = Symbol("sessionCwdChangeRejected");
-
-/**
- * Structured approval tier for Laya gating eligibility. Function-valued
- * tool approvals run against these args (matching the approval engine), so
- * MCP/extension writes classify as write/exec even though their wire names
- * are not listed. Never throws: failures fall back to name-based matching.
- */
-function resolveToolTierSafe(tool: Parameters<typeof resolveToolTier>[0], args: unknown): ToolTier | undefined {
-	try {
-		return resolveToolTier(tool, args);
-	} catch {
-		return undefined;
-	}
-}
 
 /**
  * Translate a `power.sleepPrevention` mode into `PowerAssertion.start` options,
@@ -3946,55 +3929,8 @@ export class AgentSession {
 			};
 		}
 
-		// Harvest Laya Tool-Call Gating (Decision Point 1: Gating high-risk actions)
-		if (process.env.LAYA_GATING !== "false") {
-			try {
-				const gating = await interceptSessionToolCallLaya(
-					{
-						name: ctx.tool.name,
-						args: (ctx.args ?? {}) as Record<string, unknown>,
-					},
-					this.sessionManager?.getSessionId(),
-					signal,
-					resolveToolTierSafe(ctx.tool, ctx.args),
-					this.settings,
-				);
-				await this.#emitGatingDecision(ctx.tool.name, gating);
-				if (gating.isHighRiskTool && gating.requireApproval) {
-					if (ctx.toolCall.providerMetadata?.type === "computer") {
-						ctx.toolCall.providerMetadata.layaGatingRequired = true;
-						ctx.toolCall.providerMetadata.layaGatingReason = gating.reason;
-					} else {
-						ctx.toolCall.providerMetadata = {
-							...ctx.toolCall.providerMetadata,
-							type: "laya",
-							layaGatingRequired: true,
-							layaGatingReason: gating.reason,
-						};
-					}
-				}
-			} catch (err) {
-				await this.#emitGatingDecision(ctx.tool.name, {
-					isHighRiskTool: true,
-					requireApproval: true,
-					fallback: true,
-					reason: `Laya gating error: ${String(err)}`,
-					latencyMs: 0,
-				});
-				// Fail CLOSED on gating error
-				if (ctx.toolCall.providerMetadata?.type === "computer") {
-					ctx.toolCall.providerMetadata.layaGatingRequired = true;
-					ctx.toolCall.providerMetadata.layaGatingReason = `Laya gating error: ${String(err)}`;
-				} else {
-					ctx.toolCall.providerMetadata = {
-						...ctx.toolCall.providerMetadata,
-						type: "laya",
-						layaGatingRequired: true,
-						layaGatingReason: `Laya gating error: ${String(err)}`,
-					};
-				}
-			}
-		}
+		// High-risk tool calls fall through to the existing human-approval
+		// policy below (fail closed). Laya model gating was removed.
 
 		const runner = this.#extensionRunner;
 		if (!runner?.hasHandlers("tool_call")) return undefined;
@@ -4042,69 +3978,12 @@ export class AgentSession {
 					reason: revisedHarvestCheck.error ?? `Pre-read enforcement blocked tool '${ctx.tool.name}'`,
 				};
 			}
-			if (process.env.LAYA_GATING !== "false") {
-				try {
-					const gating = await interceptSessionToolCallLaya(
-						{ name: ctx.tool.name, args: revisedArgs },
-						this.sessionManager?.getSessionId(),
-						signal,
-						resolveToolTierSafe(ctx.tool, revisedArgs),
-						this.settings,
-					);
-					await this.#emitGatingDecision(ctx.tool.name, gating);
-					if (gating.isHighRiskTool && gating.requireApproval) {
-						ctx.toolCall.providerMetadata = {
-							...ctx.toolCall.providerMetadata,
-							type: "laya",
-							layaGatingRequired: true,
-							layaGatingReason: gating.reason,
-						};
-					}
-				} catch (error) {
-					await this.#emitGatingDecision(ctx.tool.name, {
-						isHighRiskTool: true,
-						requireApproval: true,
-						fallback: true,
-						reason: `Laya gating error: ${String(error)}`,
-						latencyMs: 0,
-					});
-					ctx.toolCall.providerMetadata = {
-						...ctx.toolCall.providerMetadata,
-						type: "laya",
-						layaGatingRequired: true,
-						layaGatingReason: `Laya gating error: ${String(error)}`,
-					};
-				}
-			}
 			return { args: callResult.input };
 		}
 		return undefined;
 	}
 
-	/**
-	 * Publish a tool-gating verdict for run diagnostics (local-delay
-	 * attribution). Never throws: emission failure must not break the gate.
-	 */
-	async #emitGatingDecision(toolName: string, gating: ToolGatingDecision): Promise<void> {
-		// Low-risk bypasses never consult the sidecar; recording them would
-		// evict the meaningful high-risk measurements they precede.
-		if (!gating.isHighRiskTool && !gating.fallback) return;
-		try {
-			await this.#emitSessionEvent({
-				type: "laya_gating_decision",
-				toolName,
-				latencyMs: gating.latencyMs,
-				requireApproval: gating.requireApproval,
-				fallback: gating.fallback,
-				reason: gating.reason,
-			});
-		} catch (error) {
-			logger.warn("Failed to emit tool gating decision event", {
-				toolName,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
-	}
+	/** Removed Laya gating-decision event hook (no callers remain). */
 
 	/** Find the last assistant message in agent state (including aborted ones) */
 	#findLastAssistantMessage(): AssistantMessage | undefined {
@@ -4761,11 +4640,6 @@ export class AgentSession {
 		this.#movedFromEmptySessionFile = undefined;
 		this.#closeAllProviderSessions("dispose");
 		this.#maintenance.cancelSpeculation();
-		try {
-			resetLockedPruningDecisions(this.sessionManager.getSessionId());
-		} catch {
-			// Lock cleanup is best-effort hygiene; the bounded map evicts anyway.
-		}
 		this.setHindsightSessionState(undefined);
 		hindsightState?.dispose();
 		this.#disconnectFromAgent();
@@ -8337,20 +8211,10 @@ export class AgentSession {
 	}
 
 	/**
-	 * Clear locked pruning decisions after a history rewrite (rewind, compact,
-	 * restore). Best-effort and fail-open: lock cleanup must never break the
-	 * transcript transition it follows.
+	 * Removed Laya pruning-lock invalidation. History rewrites no longer carry
+	 * model pruning state, so this is a no-op kept for call-site stability.
 	 */
-	#invalidatePruningLocks(reason: "rewind" | "compact" | "restore" | "switch"): void {
-		try {
-			invalidatePruningLocksOnHistoryRewrite(this.sessionManager.getSessionId());
-		} catch (error) {
-			logger.debug("Pruning lock invalidation failed open", {
-				reason,
-				error: String(error),
-			});
-		}
-	}
+	#invalidatePruningLocks(_reason: "rewind" | "compact" | "restore" | "switch"): void {}
 	/** Plan-mode decision affordances: `ask`, or plan approval via `write xd://propose`. */
 	#isPlanDecisionTool(toolCall: { name: string; arguments?: Record<string, unknown> }): boolean {
 		return toolCall.name === "ask" || isProposeToolCall(toolCall);

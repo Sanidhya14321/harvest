@@ -10,10 +10,11 @@ export interface PersistedSessionTabs {
 	projectKey: string;
 	tabs: { path: string; label?: string; sessionId?: string }[];
 	activePath?: string;
-	recentlyClosed: { path: string; label?: string }[];
+	activeSessionId?: string;
+	recentlyClosed: { path: string; label?: string; sessionId?: string }[];
 }
 
-export const SESSION_TABS_VERSION = 1;
+export const SESSION_TABS_VERSION = 2;
 export const SESSION_TABS_FILENAME = "tabs.json";
 /** Recently-closed entries retained across restarts. */
 export const MAX_PERSISTED_CLOSED_TABS = 10;
@@ -25,9 +26,9 @@ export function sessionTabsFile(sessionDir: string): string {
 }
 
 /**
- * Snapshot live tab state for persistence. Only the active tab carries its
- * session ID today — tabs are still path-keyed until live-session routing
- * lands, so IDs for background tabs are filled in then.
+ * Snapshot live tab state for persistence. Every tab carries its stable
+ * session ID when the owner has noted one (via `SessionTabs.noteId`); the
+ * active tab additionally falls back to the explicit `activeSessionId`.
  */
 export function snapshotSessionTabs(
 	tabs: SessionTabs,
@@ -40,12 +41,16 @@ export function snapshotSessionTabs(
 			const entry: { path: string; label?: string; sessionId?: string } = { path: tabPath };
 			const label = tabs.label(tabPath);
 			if (label) entry.label = label;
-			if (options.activePath && options.activeSessionId && tabPath === options.activePath) {
-				entry.sessionId = options.activeSessionId;
-			}
+			const sessionId =
+				tabs.idForPath(tabPath) ??
+				(options.activePath && options.activeSessionId && tabPath === options.activePath
+					? options.activeSessionId
+					: undefined);
+			if (sessionId) entry.sessionId = sessionId;
 			return entry;
 		}),
 		activePath: options.activePath,
+		activeSessionId: options.activeSessionId,
 		recentlyClosed: tabs.recentlyClosed.slice(-MAX_PERSISTED_CLOSED_TABS),
 	};
 }
@@ -92,14 +97,16 @@ export async function loadSessionTabs(
 		});
 		return undefined;
 	}
-	if (!isObject(parsed) || parsed.version !== SESSION_TABS_VERSION) return undefined;
+	if (!isObject(parsed) || (parsed.version !== SESSION_TABS_VERSION && parsed.version !== 1)) return undefined;
 	if (parsed.projectKey !== projectKey || !Array.isArray(parsed.tabs)) return undefined;
 	const tabs = parsed.tabs.filter(isTabRef).slice(-MAX_RESTORED_TABS);
 	const recentlyClosed = Array.isArray(parsed.recentlyClosed)
 		? parsed.recentlyClosed.filter(isTabRef).slice(-MAX_PERSISTED_CLOSED_TABS)
 		: [];
 	const activePath = typeof parsed.activePath === "string" ? parsed.activePath : undefined;
-	return { version: SESSION_TABS_VERSION, projectKey, tabs, activePath, recentlyClosed };
+	const activeSessionId = typeof parsed.activeSessionId === "string" ? parsed.activeSessionId : undefined;
+	// v1 payloads normalize forward: missing IDs stay absent, never fabricated.
+	return { version: SESSION_TABS_VERSION, projectKey, tabs, activePath, activeSessionId, recentlyClosed };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
