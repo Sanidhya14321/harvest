@@ -1,7 +1,0 @@
-# laya is pinned to the tested 0.3.x range: server.py depends on private
-# laya.agent internals (see assert_laya_internals_compatible), so a new minor
-# release must be adopted deliberately after the startup probe passes.
-laya>=0.3.5,<0.4.0
-fastapi>=0.115.0
-uvicorn>=0.30.0
-pydantic>=2.0.0
