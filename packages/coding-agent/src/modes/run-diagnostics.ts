@@ -234,6 +234,9 @@ export class RunDiagnosticsTracker {
 				return;
 			}
 			case "laya_gating_decision": {
+				// Inert replay tombstone for the removed Laya sidecar: record the
+				// historical gate line for diagnostics display only. Activates
+				// nothing; stage, failure, and approval verdicts are untouched.
 				run.lastGate = {
 					toolName: event.toolName,
 					latencyMs: Math.max(0, event.latencyMs),

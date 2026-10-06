@@ -1534,6 +1534,13 @@ export async function runRootCommand(
 		}
 
 		const settingsInstance = await settingsPromise;
+		// Laya was removed: legacy LAYA_* environment is ignored with a single
+		// deprecation warning. Approvals follow configured permissions.
+		if (Object.keys(Bun.env).some(key => key === "LAYA_ENABLED" || key.startsWith("LAYA_"))) {
+			logger.warn(
+				"LAYA_* environment is ignored: the Laya decision sidecar was removed; approvals follow configured permissions (tools.approvalMode).",
+			);
+		}
 		if (parsedArgs.approvalMode) {
 			// Runtime override (not persisted): every settings.get("tools.approvalMode") downstream
 			// sees this value. The wrapper still honours --auto-approve / --yolo on top of it.
@@ -1881,13 +1888,6 @@ export async function runRootCommand(
 		}
 
 		const createAgentSessionImpl = deps.createAgentSession ?? createAgentSession;
-		if (isInteractive && settingsInstance.get("laya.enabled") && settingsInstance.get("laya.autostart")) {
-			void import("./core/harvest/laya-service")
-				.then(({ autostartInstalledLayaSidecar }) => autostartInstalledLayaSidecar(settingsInstance))
-				.catch(error => {
-					logger.warn("Laya autostart encountered an unexpected error", { error: String(error) });
-				});
-		}
 		const createSession = async (options: CreateAgentSessionOptions): Promise<CreateAgentSessionResult> => {
 			const result = await logger.time("createAgentSession", createAgentSessionImpl, options);
 			// Kick off background model discovery only after createAgentSession finishes its parallel
