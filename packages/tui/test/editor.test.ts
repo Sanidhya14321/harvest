@@ -2982,4 +2982,38 @@ describe("Editor component", () => {
 			}
 		});
 	});
+
+	describe("placeholder", () => {
+		it("paints a muted ghost prompt in the empty box and never submits it (blank-box)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.placeholder = "Ask anything…";
+			const plain = stripVTControlCharacters(editor.render(40).join("\n"));
+			expect(plain).toContain("Ask anything…");
+			expect(editor.getText()).toBe("");
+		});
+
+		it("hides the placeholder once text is typed (ghost-lingers)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.placeholder = "Ask anything…";
+			editor.setText("hi");
+			const plain = stripVTControlCharacters(editor.render(40).join("\n"));
+			expect(plain).toContain("hi");
+			expect(plain).not.toContain("Ask anything…");
+		});
+
+		it("treats whitespace as content so the ghost never overlaps spaces (space-ghost)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.placeholder = "Ask anything…";
+			editor.setText("   ");
+			const plain = stripVTControlCharacters(editor.render(40).join("\n"));
+			expect(plain).not.toContain("Ask anything…");
+		});
+
+		it("truncates a long placeholder to the content width (ghost-overflow)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			editor.placeholder = "Ask anything… this is a very long ghost prompt";
+			const [line] = editor.render(20);
+			expect(visibleWidth(stripVTControlCharacters(line ?? ""))).toBeLessThanOrEqual(20);
+		});
+	});
 });

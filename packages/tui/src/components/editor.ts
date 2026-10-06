@@ -491,6 +491,14 @@ export class Editor implements Component, Focusable {
 	cursorOverride: string | undefined;
 	/** Display width of the cursorOverride glyph (needed because override may contain ANSI escapes). */
 	cursorOverrideWidth: number | undefined;
+	/**
+	 * Ghost prompt painted muted on the first row while the buffer is empty
+	 * (e.g. `Ask anything…`). Rendered after the cursor so typing replaces it
+	 * from column zero; never submitted, never stored in history/undo.
+	 */
+	placeholder: string | undefined;
+	/** Style for the placeholder; defaults to the dim inline-hint style. */
+	placeholderStyle?: (text: string) => string;
 	/** Optional hook that decorates displayed user text after source-text layout.
 	 *  Width-changing output is allowed on lines without the cursor; it is truncated
 	 *  to the content width rather than reflowed. Cursor glyphs and inline hints are excluded. */
@@ -1278,6 +1286,25 @@ export class Editor implements Component, Focusable {
 			// the cursor still satisfies its right-boundary lookahead.
 			if (!decorated) {
 				displayText = this.#decorate(displayText, decorationContext);
+			}
+			// Empty-buffer placeholder: muted ghost prompt after the cursor so
+			// the box never renders blank. First row only, and only when the
+			// buffer is truly empty (whitespace counts as content).
+			if (visibleIndex === 0 && this.placeholder !== undefined && this.getText() === "") {
+				const stylePlaceholder =
+					this.placeholderStyle ?? this.#theme.hintStyle ?? ((t: string) => `\x1b[2m${t}\x1b[0m`);
+				const availWidth = Math.max(0, lineContentWidth - displayWidth);
+				if (availWidth > 0) {
+					const ghost = stylePlaceholder(
+						truncateToWidth(replaceTabs(this.placeholder).replace(/[\r\n]+/g, " "), availWidth),
+					);
+					const markerAt = displayText.indexOf(CURSOR_MARKER);
+					displayText =
+						markerAt === -1
+							? `${ghost}${displayText}`
+							: `${displayText.slice(0, markerAt + CURSOR_MARKER.length)}${ghost}${displayText.slice(markerAt + CURSOR_MARKER.length)}`;
+					displayWidth += Math.min(visibleWidth(this.placeholder), availWidth);
+				}
 			}
 			if (!hasCursor) {
 				// Undecorated, unsliced lines keep their carried width; any

@@ -3,8 +3,7 @@ import type { AgentMessage } from "@harvest/pi-agent-core";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createMarkdownBrain, MarkdownBrain, BRAIN_RERANK_PROMPT_REVISION } from "../src/core/harvest/brain";
-import { LayaClient } from "../src/core/harvest/laya-client";
+import { createMarkdownBrain, MarkdownBrain } from "../src/core/harvest/brain";
 
 let root: string;
 beforeEach(async () => {
@@ -80,97 +79,16 @@ describe("Markdown brains", () => {
 		expect(await brain.retrieve("events")).toEqual([]);
 	});
 
-	it("uses one batched Laya call to rerank and keeps lexical ordering when the sidecar fails", async () => {
+	it("keeps deterministic lexical/graph ordering with no model round trip", async () => {
 		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
 		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
 		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
 		const lexical = await brain.retrieve("database");
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: {
-				brain_0: { type: "score", score: 0, confidence: 1 },
-				brain_1: { type: "score", score: 3, confidence: 1 },
-			},
-		});
-		expect((await brain.retrieve("database", { client, rerank: true }))[0].id).toBe(lexical[1].id);
-		expect(decide).toHaveBeenCalledTimes(1);
-		// Fallback and malformed paths keep lexical order when nothing is
-		// cached: a fresh brain has no ranking to replay.
-		const fresh = new MarkdownBrain([{ scope: "project", directory: root }]);
-		decide.mockResolvedValue({ success: false, fallback: true, fallbackReason: "timeout", latencyMs: 1 });
-		expect((await fresh.retrieve("database", { client, rerank: true })).map(page => page.id)).toEqual(
+		expect(lexical.length).toBeGreaterThan(0);
+		// The deprecated rerank flag is accepted but ignored: identical order.
+		expect((await brain.retrieve("database", { rerank: true })).map(page => page.id)).toEqual(
 			lexical.map(page => page.id),
 		);
-		decide.mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: { brain_0: { type: "score", score: Number.NaN, confidence: 1 } },
-		});
-		expect((await fresh.retrieve("database", { client, rerank: true })).map(page => page.id)).toEqual(
-			lexical.map(page => page.id),
-		);
-	});
-
-	it("reuses a cached ranking for an unchanged query without another sidecar call", async () => {
-		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
-		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
-		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: {
-				brain_0: { type: "score", score: 0, confidence: 1 },
-				brain_1: { type: "score", score: 3, confidence: 1 },
-			},
-		});
-		const lexical = await brain.retrieve("database");
-		const first = await brain.retrieve("database", { client, rerank: true });
-		expect(first[0].id).toBe(lexical[1].id);
-		expect(decide).toHaveBeenCalledTimes(1);
-		// Identical query and unchanged pages: ranking replays from cache.
-		const second = await brain.retrieve("database", { client, rerank: true });
-		expect(second.map(page => page.id)).toEqual(first.map(page => page.id));
-		expect(decide).toHaveBeenCalledTimes(1);
-	});
-
-	it("invalidates the cached ranking when a page is edited", async () => {
-		const file = path.join(root, "a.md");
-		await Bun.write(file, "## Database\nDatabase database database transactions.");
-		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
-		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: {
-				brain_0: { type: "score", score: 0, confidence: 1 },
-				brain_1: { type: "score", score: 3, confidence: 1 },
-			},
-		});
-		await brain.retrieve("database", { client, rerank: true });
-		expect(decide).toHaveBeenCalledTimes(1);
-		await Bun.write(file, "## Database\nDatabase database database completely rewritten content here.");
-		await brain.refresh();
-		await brain.retrieve("database", { client, rerank: true });
-		expect(decide).toHaveBeenCalledTimes(2);
-	});
-
-	it("keeps lexical retrieval without a sidecar call when reranking is off", async () => {
-		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
-		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
-		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const lexical = await brain.retrieve("database");
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide");
-		expect((await brain.retrieve("database", { client })).map(page => page.id)).toEqual(lexical.map(page => page.id));
-		expect(decide).not.toHaveBeenCalled();
 	});
 
 	it("excludes out-of-scope knowledge when scopes are restricted", async () => {
@@ -189,23 +107,14 @@ describe("Markdown brains", () => {
 		expect(projectOnly.every(page => page.scope === "project")).toBe(true);
 	});
 
-	it("passes the rerank latency budget through to the sidecar call", async () => {
+	it("ignores the removed rerank latency budget and keeps lexical order", async () => {
 		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
 		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
 		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: {
-				brain_0: { type: "score", score: 3, confidence: 1 },
-				brain_1: { type: "score", score: 0, confidence: 1 },
-			},
-		});
-		await brain.retrieve("database", { client, rerank: true, rerankTimeoutMs: 137 });
-		expect(decide).toHaveBeenCalledTimes(1);
-		expect((decide.mock.calls[0][2] as { timeoutMs?: number }).timeoutMs).toBe(137);
+		const lexical = await brain.retrieve("database");
+		expect((await brain.retrieve("database", { rerank: true, rerankTimeoutMs: 137 })).map(page => page.id)).toEqual(
+			lexical.map(page => page.id),
+		);
 	});
 
 	it("bounds injected context and preserves user images and tool protocol without modifying the transcript", async () => {
@@ -261,105 +170,20 @@ describe("Markdown brains", () => {
 		expect(secondPages.map(page => page.scope)).toEqual(["user"]);
 	});
 
-	it("cancellation bypasses sidecar work and secret sanitization applies to scoring payloads", async () => {
+	it("returns no pages for an aborted signal and keeps indexed content retrievable", async () => {
 		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase secret-value alpha.");
 		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase secret-value beta.");
 		const brain = new MarkdownBrain([{ scope: "user", directory: root }]);
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({ success: false, fallback: true, latencyMs: 0 });
-		expect(await brain.retrieve("database", { rerank: true, client, signal: AbortSignal.abort() })).toEqual([]);
-		expect(decide).not.toHaveBeenCalled();
-		await brain.retrieve("database secret-value", {
-			rerank: true,
-			client,
+		expect(await brain.retrieve("database", { rerank: true, signal: AbortSignal.abort() })).toEqual([]);
+		const pages = await brain.retrieve("database secret-value", {
 			sanitize: text => text.replaceAll("secret-value", "redacted"),
 		});
-		expect(JSON.stringify(decide.mock.calls[0][0])).not.toContain("secret-value");
-		expect(JSON.stringify(decide.mock.calls[0][0])).toContain("redacted");
+		expect(pages.length).toBeGreaterThan(0);
 	});
 
-	it("misses the cached ranking when the prompt revision changes", async () => {
-		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
-		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
+	it("keeps the removed rerank-cache hook as a harmless no-op", async () => {
 		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: {
-				brain_0: { type: "score", score: 0, confidence: 1 },
-				brain_1: { type: "score", score: 3, confidence: 1 },
-			},
-		});
-		await brain.retrieve("database", { client, rerank: true, promptRevision: "rev-a" });
-		expect(decide).toHaveBeenCalledTimes(1);
-		// Same revision replays from cache.
-		await brain.retrieve("database", { client, rerank: true, promptRevision: "rev-a" });
-		expect(decide).toHaveBeenCalledTimes(1);
-		// New prompt revision misses and scores afresh, even for identical
-		// query and page content.
-		await brain.retrieve("database", { client, rerank: true, promptRevision: "rev-b" });
-		expect(decide).toHaveBeenCalledTimes(2);
-		expect(BRAIN_RERANK_PROMPT_REVISION.length).toBeGreaterThan(0);
-	});
-
-	it("caps the rerank round trip at the shared budget remainder and skips when exhausted", async () => {
-		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
-		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
-		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: {
-				brain_0: { type: "score", score: 3, confidence: 1 },
-				brain_1: { type: "score", score: 0, confidence: 1 },
-			},
-		});
-		// Generous remainder: the explicit timeout wins, sidecar is consulted.
-		const lexical = await brain.retrieve("database");
-		const fresh = new MarkdownBrain([{ scope: "project", directory: root }]);
-		await fresh.retrieve("database", {
-			client,
-			rerank: true,
-			rerankTimeoutMs: 300,
-			contextBudget: { totalMs: 600, deadline: performance.now() + 600, remainingMs: () => 137 },
-		});
-		expect(decide).toHaveBeenCalledTimes(1);
-		expect((decide.mock.calls[0][2] as { timeoutMs?: number }).timeoutMs).toBe(137);
-
-		// Exhausted budget: no round trip, lexical order preserved (fail-open).
-		const exhausted = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const callsBefore = decide.mock.calls.length;
-		const result = await exhausted.retrieve("database", {
-			client,
-			rerank: true,
-			contextBudget: { totalMs: 600, deadline: 0, remainingMs: () => 0 },
-		});
-		expect(decide.mock.calls.length).toBe(callsBefore);
-		expect(result.map(page => page.id)).toEqual(lexical.map(page => page.id));
-	});
-
-	it("drops cached rankings on history-rewrite invalidation", async () => {
-		await Bun.write(path.join(root, "a.md"), "## Database\nDatabase database database transactions.");
-		await Bun.write(path.join(root, "b.md"), "## Database\nDatabase backups restore recovery.");
-		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
-		const client = new LayaClient();
-		const decide = vi.spyOn(client, "decide").mockResolvedValue({
-			success: true,
-			fallback: false,
-			latencyMs: 1,
-			data: {
-				brain_0: { type: "score", score: 0, confidence: 1 },
-				brain_1: { type: "score", score: 3, confidence: 1 },
-			},
-		});
-		await brain.retrieve("database", { client, rerank: true });
-		expect(decide).toHaveBeenCalledTimes(1);
 		brain.clearRerankCache();
-		await brain.retrieve("database", { client, rerank: true });
-		expect(decide).toHaveBeenCalledTimes(2);
+		expect(await brain.retrieve("database")).toEqual([]);
 	});
 });
