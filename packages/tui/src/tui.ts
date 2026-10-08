@@ -19,6 +19,7 @@ import { DEFAULT_MAX_INLINE_IMAGES, ImageBudget } from "./components/image";
 import { TuiDebugServer } from "./debug-server";
 import { isKeyRelease, matchesKey } from "./keys";
 import { LoopWatchdog } from "./loop-watchdog";
+import { type MouseRoutable, parseSgrMouse } from "./mouse";
 import { STDOUT_BACKLOG_CLEAR_BYTES, setAltScreenActive, type Terminal } from "./terminal";
 import {
 	encodeKittyDeleteAllImages,
@@ -391,6 +392,14 @@ export interface OverlayOptions {
 /**
  * Handle returned by showOverlay for controlling the overlay
  */
+/** Screen cells occupied by the most recently composed overlay. */
+export interface OverlayBounds {
+	readonly row: number;
+	readonly col: number;
+	readonly width: number;
+	readonly height: number;
+}
+
 export interface OverlayHandle {
 	/** Permanently remove the overlay (cannot be shown again) */
 	hide(): void;
@@ -846,6 +855,10 @@ export class TUI extends Container {
 		preFocus: Component | null;
 		hidden: boolean;
 	}[] = [];
+	#overlayBounds = new WeakMap<
+		Component,
+		OverlayBounds & { epoch: number; columns: number; rows: number; contentOffset: number }
+	>();
 
 	constructor(terminal: Terminal, showHardwareCursor?: boolean, options?: TUIOptions) {
 		super();
@@ -1015,6 +1028,7 @@ export class TUI extends Container {
 	 * Returns a handle to control the overlay's visibility.
 	 */
 	showOverlay(component: Component, options?: OverlayOptions): OverlayHandle {
+		this.#overlayBounds.delete(component);
 		component.setIgnoreTight?.(true);
 		const entry = { component, options, preFocus: this.#focusedComponent, hidden: false };
 		this.overlayStack.push(entry);
@@ -1083,6 +1097,22 @@ export class TUI extends Container {
 	/** Check if there are any visible overlays */
 	hasOverlay(): boolean {
 		return this.overlayStack.some(o => this.#isOverlayVisible(o));
+	}
+
+	/** Current overlay geometry; absent before composition, while hidden, or after a resize. */
+	getOverlayBounds(component: Component): OverlayBounds | undefined {
+		const entry = this.overlayStack.find(overlay => overlay.component === component);
+		const bounds = this.#overlayBounds.get(component);
+		if (
+			!entry ||
+			!this.#isOverlayVisible(entry) ||
+			!bounds ||
+			bounds.epoch !== this.#geometryEpoch ||
+			bounds.columns !== this.terminal.columns ||
+			bounds.rows !== this.terminal.rows
+		)
+			return undefined;
+		return { row: bounds.row, col: bounds.col, width: bounds.width, height: bounds.height };
 	}
 
 	/** Check if an overlay entry is currently visible */
@@ -2003,6 +2033,30 @@ export class TUI extends Container {
 		// components retain the legacy full compose because their callbacks may
 		// mutate siblings; focus changes also require the new surface to paint.
 		const focused = this.#focusedComponent;
+		const mouse = data.startsWith("\x1b[<") ? parseSgrMouse(data) : null;
+		const mouseOverlay = mouse ? this.#getTopmostVisibleOverlay() : undefined;
+		if (mouse && mouseOverlay) {
+			const bounds = this.getOverlayBounds(mouseOverlay.component);
+			// Stale geometry and clicks outside a modal cannot activate obscured controls.
+			if (
+				!bounds ||
+				mouse.row < bounds.row ||
+				mouse.row >= bounds.row + bounds.height ||
+				mouse.col < bounds.col ||
+				mouse.col >= bounds.col + bounds.width
+			)
+				return;
+			const offset = this.#overlayBounds.get(mouseOverlay.component)?.contentOffset ?? 0;
+			const local = { ...mouse, row: mouse.row - bounds.row + offset, col: mouse.col - bounds.col };
+			const owner = mouseOverlay.component as Component & Partial<MouseRoutable>;
+			if (owner.routeMouse) owner.routeMouse(local, local.row, local.col);
+			else
+				focused?.handleInput?.(
+					`\x1b[<${local.button};${local.col + 1};${local.row + 1}${local.release ? "m" : "M"}`,
+				);
+			this.#requestInputRender();
+			return;
+		}
 		if (focused?.handleInput) {
 			// Filter out key release events unless component opts in
 			if (isKeyRelease(data) && !focused.wantsKeyRelease) {
@@ -2050,10 +2104,13 @@ export class TUI extends Container {
 			typeof opt.margin === "number"
 				? { top: opt.margin, right: opt.margin, bottom: opt.margin, left: opt.margin }
 				: (opt.margin ?? {});
-		const marginTop = Math.max(0, margin.top ?? 0);
-		const marginRight = Math.max(0, margin.right ?? 0);
-		const marginBottom = Math.max(0, margin.bottom ?? 0);
-		const marginLeft = Math.max(0, margin.left ?? 0);
+		const marginTop = Math.min(Math.max(0, Math.floor(margin.top ?? 0)), Math.max(0, termHeight - 1));
+		const marginBottom = Math.min(
+			Math.max(0, Math.floor(margin.bottom ?? 0)),
+			Math.max(0, termHeight - marginTop - 1),
+		);
+		const marginLeft = Math.min(Math.max(0, Math.floor(margin.left ?? 0)), Math.max(0, termWidth - 1));
+		const marginRight = Math.min(Math.max(0, Math.floor(margin.right ?? 0)), Math.max(0, termWidth - marginLeft - 1));
 
 		// Available space after margins
 		const availWidth = Math.max(1, termWidth - marginLeft - marginRight);
@@ -2181,6 +2238,7 @@ export class TUI extends Container {
 	 */
 	#compositeOverlaysIntoWindow(window: string[], termWidth: number, termHeight: number): string[] {
 		const result = [...window];
+		this.#overlayBounds = new WeakMap();
 		for (const entry of this.overlayStack) {
 			if (!this.#isOverlayVisible(entry)) continue;
 			const { component, options } = entry;
@@ -2189,14 +2247,28 @@ export class TUI extends Container {
 			const { width, maxHeight } = this.#resolveOverlayLayout(options, 0, termWidth, termHeight);
 			component.setMaxHeight?.(maxHeight);
 			let overlayLines = component.render(width);
+			let contentOffset = 0;
 			if (overlayLines.length > maxHeight) {
 				const anchor = options?.anchor ?? "center";
+				if (anchor === "bottom-left" || anchor === "bottom-center" || anchor === "bottom-right") {
+					contentOffset = overlayLines.length - maxHeight;
+				}
 				overlayLines =
 					anchor === "bottom-left" || anchor === "bottom-center" || anchor === "bottom-right"
 						? overlayLines.slice(overlayLines.length - maxHeight)
 						: overlayLines.slice(0, maxHeight);
 			}
 			const { row, col } = this.#resolveOverlayLayout(options, overlayLines.length, termWidth, termHeight);
+			this.#overlayBounds.set(component, {
+				row,
+				col,
+				width,
+				height: overlayLines.length,
+				epoch: this.#geometryEpoch,
+				columns: termWidth,
+				rows: termHeight,
+				contentOffset,
+			});
 			for (let i = 0; i < overlayLines.length; i++) {
 				const idx = row + i;
 				if (idx < 0 || idx >= result.length) continue;

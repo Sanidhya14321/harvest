@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Capped overlays resize with their controls and translate mouse coordinates to the visible dialog; outside clicks cannot select hidden controls.
 - Editors, menus, and scrollbars share surface styling and support consistent ASCII and color-free presentation.
 - Typing and navigation no longer wait behind a slow animation's adaptive repaint delay.
 - Long transcripts no longer scan every historical child to render a short viewport.
