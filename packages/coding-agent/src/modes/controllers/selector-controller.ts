@@ -94,6 +94,9 @@ import { getAssistantMessageLinkTargets } from "../utils/interactive-context-hel
 import { type AdvisorConfigDeps, AdvisorConfigOverlayComponent } from "../components/advisor-config";
 import { AgentHubOverlayComponent } from "../components/agent-hub";
 import { AgentsHubComponent } from "../components/agents-hub";
+import { SkillRevisionsComponent } from "../components/skill-revisions";
+import { listManagedSkillNames } from "../../autolearn/managed-skills";
+import { getToolSessionForAgentSession } from "../../sdk";
 import { AssistantMessageComponent } from "../components/assistant-message";
 import { CopySelectorComponent } from "../components/copy-selector";
 import { ExtensionDashboard } from "../components/extensions";
@@ -127,7 +130,9 @@ export class SelectorController {
 	constructor(private ctx: InteractiveModeContext) {
 		const current = ctx.sessionManager.getSessionFile();
 		if (current) {
-			this.sessionTabs.open(current, ctx.sessionManager.getSessionName());
+			const currentId = ctx.sessionManager.getSessionId?.();
+			if (currentId) this.sessionTabs.ensureTabId(current, currentId, ctx.sessionManager.getSessionName());
+			else this.sessionTabs.open(current, ctx.sessionManager.getSessionName());
 			this.sessionTabs.visit(current);
 		}
 	}
@@ -142,7 +147,7 @@ export class SelectorController {
 		if (previousFile && !removePrevious && (await Bun.file(previousFile).exists()))
 			this.sessionTabs.open(previousFile);
 		else if (previousFile) this.sessionTabs.close(previousFile, false);
-		this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
+		this.#noteActiveTabId(activeFile, this.ctx.sessionManager.getSessionName());
 		this.sessionTabs.visit(activeFile);
 		this.#persistTabs();
 		this.ctx.liveSessions?.trackCurrent(this.ctx.session);
@@ -171,6 +176,17 @@ export class SelectorController {
 	/** Public persist seam for tab mutations owned outside this controller (strip × close). */
 	persistSessionTabs(): void {
 		this.#persistTabs();
+	}
+
+	/**
+	 * Record the active tab with its stable session UUID when the context
+	 * exposes one; unit-test doubles without session IDs keep path-only
+	 * behavior. Never invents an ID.
+	 */
+	#noteActiveTabId(path: string, label?: string): void {
+		const id = this.ctx.sessionManager.getSessionId?.();
+		if (id) this.sessionTabs.ensureTabId(path, id, label);
+		else this.sessionTabs.open(path, label);
 	}
 
 	/**
@@ -241,7 +257,7 @@ export class SelectorController {
 			if (!match) return `Session "${value}" not found`;
 			const target = match.session.path;
 			const wasOpen = this.sessionTabs.indexOf(target) >= 0;
-			this.sessionTabs.open(target, match.session.title ?? match.session.firstMessage);
+			this.sessionTabs.ensureTabId(target, match.session.id, match.session.title ?? match.session.firstMessage);
 			this.#persistTabs();
 			if (!current || normalizePathForComparison(current) !== normalizePathForComparison(target)) {
 				await this.ctx.handleResumeSession(target);
@@ -260,7 +276,8 @@ export class SelectorController {
 			const target = Number.isInteger(index) ? this.sessionTabs.paths[index] : undefined;
 			if (!target) return `No tab ${value ?? "is active"}.`;
 			if (current && normalizePathForComparison(current) === normalizePathForComparison(target)) {
-				const next = this.sessionTabs.neighbor(current, 1);
+				// Close policy (S7): right neighbor, else left — never wrap.
+				const next = this.sessionTabs.closeNeighbor(current);
 				if (!next) {
 					// Last tab: close the view and display Home. The session
 					// and its ongoing work are preserved and stay reachable
@@ -369,6 +386,21 @@ export class SelectorController {
 		return handle;
 	}
 
+	/** Mount transient controls at a host-owned cap; the TUI resolves pointer geometry on every resize. */
+	#showDialog(component: Component, cap: 60 | 88 | 116 = 60): OverlayHandle {
+		const handle = this.ctx.ui.showOverlay(component, {
+			anchor: "center",
+			width: "100%",
+			maxWidth: cap,
+			maxHeight: "100%",
+			margin: 0,
+			fullscreen: true,
+		});
+		this.ctx.ui.setFocus(component);
+		this.ctx.ui.requestRender();
+		return handle;
+	}
+
 	#defaultRoleMutationTail = Promise.resolve();
 
 	async #acquireDefaultRoleMutation(): Promise<() => void> {
@@ -431,20 +463,34 @@ export class SelectorController {
 	 * Shows a selector component in place of the editor.
 	 * @param create Factory that receives a `done` callback and returns the component and focus target
 	 */
-	showSelector(create: (done: () => void) => { component: Component; focus: Component }): void {
+	showSelector(
+		create: (done: () => void) => { component: Component; focus: Component },
+		cap: 60 | 88 | 116 = 60,
+	): void {
+		const slotOwner = new Spacer(0);
+		let closed = false;
+		let overlayHandle: OverlayHandle | undefined;
 		const done = () => {
+			if (closed) return;
+			closed = true;
+			overlayHandle?.hide();
 			// Restore the editor only while the selector still owns the slot:
 			// an approval or hook widget mounted meanwhile keeps its place,
 			// and focus retargets to that visible owner below.
-			if (this.ctx.editorContainer.children.includes(component)) {
+			if (this.ctx.editorContainer.children.includes(slotOwner)) {
 				this.ctx.editorContainer.clear();
 				this.ctx.editorContainer.addChild(this.ctx.editor);
 			}
+			component.dispose?.();
 			this.focusActiveEditorArea();
+			this.ctx.ui.requestRender();
 		};
 		const { component, focus } = create(done);
 		this.ctx.editorContainer.clear();
-		this.ctx.editorContainer.addChild(component);
+		// The slot marker retains borrowed-slot ownership without rendering the
+		// same component underneath its capped overlay at a second width.
+		this.ctx.editorContainer.addChild(slotOwner);
+		overlayHandle = this.#showDialog(component, cap);
 		this.ctx.ui.setFocus(focus);
 		this.ctx.ui.requestRender();
 	}
@@ -734,14 +780,23 @@ export class SelectorController {
 		const activeModelPattern = activeModel ? `${activeModel.provider}/${activeModel.id}` : undefined;
 		const defaultModelPattern = this.ctx.settings.getModelRole("default");
 		let closed = false;
+		// Hub-scoped evaluation signal: closing the dashboard (or opening a
+		// newer run) aborts in-flight evaluations, which record nothing (U2).
+		const hubAbort = new AbortController();
 		const done = () => {
 			if (closed) return;
 			closed = true;
+			hubAbort.abort();
 			hub?.dispose();
 			overlayHandle?.hide();
 			this.focusActiveEditorArea();
 			this.ctx.ui.requestRender();
 		};
+		// The owning production ToolSession (real cwd/settings/registry/
+		// credentials/model/restrictions) threads into Hub evaluations (U2).
+		// Without one the hub reports evaluation unavailable — it never runs
+		// unscoped. Resolved live so a session change mid-hub cannot stale it.
+		const parent = getToolSessionForAgentSession(this.ctx.session);
 		const hub = await AgentsHubComponent.create(
 			this.ctx.ui,
 			getProjectDir(),
@@ -753,8 +808,63 @@ export class SelectorController {
 				extensionRoots: () => this.ctx.session.effectiveExtensionRoots,
 			},
 			{ onCancel: () => done() },
+			{ parent, signal: hubAbort.signal },
 		);
 		const overlayHandle = this.#showFullscreenMenu(hub);
+	}
+
+	/**
+	 * Managed-skill revision manager (U4): history/inspect/evaluate/cancel/
+	 * promote/rollback for one skill through the shared revision component.
+	 * With no name, opens the single managed skill or lists names with usage
+	 * when several exist. Evaluations thread the owning production session
+	 * (same contract as the hub); without one they report unavailable.
+	 */
+	async showSkillRevisions(skillName?: string): Promise<void> {
+		let name = skillName?.trim();
+		if (!name) {
+			let names: string[];
+			try {
+				names = await listManagedSkillNames();
+			} catch (error) {
+				this.ctx.showError(error instanceof Error ? error.message : String(error));
+				return;
+			}
+			if (names.length === 0) {
+				this.ctx.showStatus("No managed skills yet. Create one with the manage_skill tool or learn flow.");
+				return;
+			}
+			if (names.length > 1) {
+				this.ctx.showStatus(`Managed skills: ${names.join(", ")}. Use /skills <name>.`);
+				return;
+			}
+			name = names[0];
+		}
+		if (!name) return;
+		let closed = false;
+		const revisionAbort = new AbortController();
+		let component: SkillRevisionsComponent | undefined;
+		const done = () => {
+			if (closed) return;
+			closed = true;
+			revisionAbort.abort();
+			component?.dispose();
+			overlayHandle?.hide();
+			this.focusActiveEditorArea();
+			this.ctx.ui.requestRender();
+		};
+		try {
+			component = await SkillRevisionsComponent.create(
+				this.ctx.ui,
+				name,
+				{ parent: getToolSessionForAgentSession(this.ctx.session), signal: revisionAbort.signal },
+				{ onClose: () => done() },
+			);
+		} catch (error) {
+			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		const overlayHandle = this.#showFullscreenMenu(component);
 	}
 
 	/**
@@ -1202,14 +1312,7 @@ export class SelectorController {
 				currentQuickRole: quickRoleCycle?.models[quickRoleCycle.currentIndex]?.role,
 			},
 		);
-		const overlayHandle = this.ctx.ui.showOverlay(picker, {
-			anchor: "bottom-center",
-			width: "100%",
-			maxHeight: "100%",
-			margin: 0,
-		});
-		this.ctx.ui.setFocus(picker);
-		this.ctx.ui.requestRender();
+		const overlayHandle = this.#showDialog(picker, 88);
 	}
 
 	/**
@@ -1497,7 +1600,7 @@ export class SelectorController {
 					},
 				});
 				return { component: selector, focus: selector.getSelectList() };
-			});
+			}, 88);
 			return;
 		}
 
@@ -1534,7 +1637,7 @@ export class SelectorController {
 				},
 			});
 			return { component: selector, focus: selector.getSelectList() };
-		});
+		}, 88);
 	}
 
 	showUserMessageSelector(): void {
@@ -1904,7 +2007,7 @@ export class SelectorController {
 				settings.get("treeFilterMode"),
 			);
 			return { component: selector, focus: selector };
-		});
+		}, 116);
 	}
 
 	/**
@@ -2144,15 +2247,7 @@ export class SelectorController {
 			},
 		);
 		selector.setOnRequestRender(() => this.ctx.ui.requestRender());
-		const overlayHandle = this.ctx.ui.showOverlay(selector, {
-			anchor: "top-left",
-			width: "100%",
-			maxHeight: "100%",
-			margin: 0,
-			fullscreen: true,
-		});
-		this.ctx.ui.setFocus(selector);
-		this.ctx.ui.requestRender();
+		const overlayHandle = this.#showDialog(selector, 116);
 	}
 
 	#refreshSessionTerminalTitle(): void {
@@ -2191,6 +2286,29 @@ export class SelectorController {
 			await facade.delete(sessionId, opts);
 		} catch (error) {
 			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			if (isActive && this.ctx.selectMainSession) {
+				// A failed delete of the visible session may have retired its
+				// sealed generation and recovered a fresh runtime under the
+				// same UUID (S4): the view still references the disposed
+				// object, so re-point it through the normal selection path.
+				// Skipped when the live object never changed (plain failure).
+				const live = this.ctx.liveSessions?.sessions.find(
+					runtime => runtime.sessionManager.getSessionId() === sessionId,
+				);
+				if (live && live !== this.ctx.session) {
+					try {
+						await this.ctx.selectMainSession(live);
+						this.#refreshSessionTerminalTitle();
+						this.ctx.updateEditorBorderColor();
+						this.#persistTabs();
+						this.ctx.ui.requestRender();
+					} catch (resumeError) {
+						this.ctx.showError(
+							`Session recovery incomplete: ${resumeError instanceof Error ? resumeError.message : String(resumeError)}. Retry delete or reopen the session.`,
+						);
+					}
+				}
+			}
 			return false;
 		}
 		this.#persistTabs();
@@ -2207,9 +2325,49 @@ export class SelectorController {
 		return true;
 	}
 
+	/**
+	 * Archive gate for one tab path: resolve its stable session ID (warm
+	 * runtime, noted tab binding, or cold listing) and enforce the facade's
+	 * authoritative Restore-before-reopen policy. Returns false (with a
+	 * visible error, current session untouched) when archived. Unknown paths
+	 * without any resolvable ID pass through to the normal missing-file
+	 * handling below — an archived session is always listed somewhere, so it
+	 * always resolves.
+	 */
+	async #requirePathRestored(sessionPath: string): Promise<boolean> {
+		const facade = this.ctx.sessions;
+		if (!facade) return true;
+		const warm = this.ctx.liveSessions?.snapshotForPath(sessionPath);
+		const noted = this.sessionTabs.idForPath(sessionPath);
+		let sessionId = warm?.id ?? noted;
+		if (!sessionId) {
+			try {
+				sessionId = (await facade.listAll()).find(
+					entry =>
+						entry.path && normalizePathForComparison(entry.path) === normalizePathForComparison(sessionPath),
+				)?.id;
+			} catch {
+				return true;
+			}
+		}
+		if (!sessionId) return true;
+		try {
+			await facade.requireRestoredForReopen(sessionId);
+			return true;
+		} catch (error) {
+			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			this.ctx.ui.requestRender();
+			return false;
+		}
+	}
+
 	async handleResumeSession(sessionPath: string, options?: { settingsFlushed?: boolean }): Promise<boolean> {
 		const active = this.ctx.sessionManager.getSessionFile();
 		if (active && normalizePathForComparison(active) === normalizePathForComparison(sessionPath)) return true;
+		// Archive policy applies to every resume entry (tabs, strip, picker,
+		// hub, slash): a warm runtime hit is an optimization only. Archived
+		// sessions reopen solely through Restore (S6).
+		if (this.ctx.sessions && !(await this.#requirePathRestored(sessionPath))) return false;
 		if (!this.ctx.liveSessions?.hasRuntimeForPath(sessionPath) && !(await Bun.file(sessionPath).exists())) {
 			this.sessionTabs.close(sessionPath, false);
 			this.#persistTabs();
@@ -2255,7 +2413,7 @@ export class SelectorController {
 		else if (previousFile) this.sessionTabs.close(previousFile, false);
 		const activeFile = this.ctx.sessionManager.getSessionFile();
 		if (activeFile) {
-			this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
+			this.#noteActiveTabId(activeFile, this.ctx.sessionManager.getSessionName());
 			if (
 				!this.#historyNavigationTarget ||
 				normalizePathForComparison(activeFile) !== normalizePathForComparison(this.#historyNavigationTarget)
@@ -2338,7 +2496,7 @@ export class SelectorController {
 		else if (previousFile) this.sessionTabs.close(previousFile, false);
 		const activeFile = this.ctx.sessionManager.getSessionFile();
 		if (activeFile) {
-			this.sessionTabs.open(activeFile, this.ctx.sessionManager.getSessionName());
+			this.#noteActiveTabId(activeFile, this.ctx.sessionManager.getSessionName());
 			if (
 				!this.#historyNavigationTarget ||
 				normalizePathForComparison(activeFile) !== normalizePathForComparison(this.#historyNavigationTarget)
@@ -2409,13 +2567,16 @@ export class SelectorController {
 	async #handleOAuthLogin(providerId: string): Promise<boolean> {
 		this.ctx.showStatus(`Logging in to ${providerId}…`);
 		let restored = false;
+		const slotOwner = new Spacer(0);
+		let overlayHandle: OverlayHandle | undefined;
 		const restoreEditor = () => {
 			if (restored) return;
 			restored = true;
+			overlayHandle?.hide();
 			// Same slot contract as `showSelector`: only evict the dialog when
 			// it still owns the slot, then focus the visible slot owner so a
 			// hook widget mounted meanwhile keeps keyboard focus.
-			if (this.ctx.editorContainer.children.includes(dialog)) {
+			if (this.ctx.editorContainer.children.includes(slotOwner)) {
 				this.ctx.editorContainer.clear();
 				this.ctx.editorContainer.addChild(this.ctx.editor);
 			}
@@ -2429,9 +2590,8 @@ export class SelectorController {
 			if (message) this.ctx.showStatus(message);
 		});
 		this.ctx.editorContainer.clear();
-		this.ctx.editorContainer.addChild(dialog);
-		this.ctx.ui.setFocus(dialog);
-		this.ctx.ui.requestRender();
+		this.ctx.editorContainer.addChild(slotOwner);
+		overlayHandle = this.#showDialog(dialog, 88);
 
 		if (providerId === "custom") {
 			try {
@@ -2781,6 +2941,16 @@ export class SelectorController {
 	 */
 	async #reopenManagedSession(sessionId: string): Promise<void> {
 		const facade = this.ctx.sessions;
+		// Warm lookup is an optimization only: archived sessions reopen
+		// solely through Restore, even when their runtime is live (S6).
+		if (facade) {
+			try {
+				await facade.requireRestoredForReopen(sessionId);
+			} catch (error) {
+				this.ctx.showError(error instanceof Error ? error.message : String(error));
+				return;
+			}
+		}
 		const live = this.ctx.liveSessions?.snapshots.find(entry => entry.id === sessionId);
 		if (live?.path) {
 			this.ctx.clearHomeDetached();

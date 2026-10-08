@@ -5,8 +5,9 @@
  * columns with a dotted outline around the selected target.
  */
 import type { Component } from "@harvest/pi-tui";
-import { visibleWidth } from "@harvest/pi-tui";
+import { Ellipsis, TERMINAL, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
 import type { SessionMessageEntry } from "../../session/session-entries";
+import { getSixelLineMask } from "../../utils/sixel";
 import { type ThemeColor, theme } from "../theme/theme";
 import type { ChatTranscriptBuilder } from "./chat-transcript-builder";
 import { fit } from "./overlay-box";
@@ -37,6 +38,8 @@ export interface ComposedColumn {
 /** Presentation of the dotted outline: stroke color and an optional caption inset into the top rule. */
 export interface OutlineStyle {
 	color?: ThemeColor;
+	/** Omit outline chrome when the allocated viewport cannot show its body. */
+	compact?: boolean;
 	/** Short affordance label (e.g. "3 blocks →") drawn into the top rule's right end. */
 	caption?: string;
 }
@@ -101,7 +104,7 @@ export function appendOutlineEntries(builder: ChatTranscriptBuilder, entries: Se
 	for (const entry of entries) {
 		const children = builder.container.children;
 		const before = children.length;
-		builder.append([entry]);
+		builder.append([entry], { turnComplete: false });
 		const after = children.length;
 		let start = before;
 		while (start < after && isUsageRowBlock(children[start]!)) {
@@ -125,6 +128,10 @@ export function appendOutlineEntries(builder: ChatTranscriptBuilder, entries: Se
 			end: after,
 			entries: [entry],
 		});
+	}
+	if (builder.completeTurn()) {
+		const last = targets.at(-1);
+		if (last) last.end = builder.container.children.length;
 	}
 	return targets;
 }
@@ -150,7 +157,13 @@ export function outlineRule(
 	color: ThemeColor = "accent",
 	caption?: string,
 ): string {
-	const label = caption ? ` ${caption} ` : "";
+	const label = caption
+		? truncateToWidth(
+				` ${caption} `,
+				Math.max(0, innerWidth + 2),
+				theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+			)
+		: "";
 	const fill = Math.max(0, innerWidth + 2 - visibleWidth(label));
 	return (
 		theme.fg(color, left + theme.boxDotted.horizontal.repeat(fill)) +
@@ -186,8 +199,11 @@ export function composeOutlineColumn(
 	header: string[] | undefined,
 	style: OutlineStyle = {},
 ): ComposedColumn {
-	const inner = Math.max(10, columnWidth - 4);
-	const lines: string[] = header ? [...header] : [];
+	const safeWidth = Math.max(0, Math.floor(columnWidth));
+	if (safeWidth === 0) return { lines: [], selStart: -1, selEnd: -1 };
+	const compact = style.compact || safeWidth < 5;
+	const inner = outlineContentWidth(safeWidth, compact);
+	const lines: string[] = header ? header.map(line => fit(line, safeWidth)) : [];
 	let selStart = -1;
 	let selEnd = -1;
 	const target = selected >= 0 ? targets[selected] : undefined;
@@ -198,19 +214,45 @@ export function composeOutlineColumn(
 			// Outline only the non-blank core; edge spacers stay outside.
 			let head = 0;
 			let tail = segment.length;
-			while (head < tail && !/\S/.test(segment[head]!)) head++;
-			while (tail > head && !/\S/.test(segment[tail - 1]!)) tail--;
+			const imageRows = compact && target.isUserTurn ? getSixelLineMask(segment) : undefined;
+			const isPadding = (row: string, index: number): boolean => {
+				if (!compact || !target.isUserTurn) return !/\S/.test(row);
+				if (imageRows?.[index] || TERMINAL.isImageLine(row)) return false;
+				const plain = Bun.stripANSI(row).trim();
+				if (plain.length === 0) return true;
+				// User panels keep their rail in the padding rows. In a one-row
+				// viewport that decoration must not be the selection's first row.
+				return (
+					compact &&
+					target.isUserTurn &&
+					safeWidth > 2 &&
+					plain === (theme.getSymbolPreset() === "ascii" ? "|" : "▎")
+				);
+			};
+			while (head < tail && isPadding(segment[head]!, head)) head++;
+			while (tail > head && isPadding(segment[tail - 1]!, tail - 1)) tail--;
 			for (let row = 0; row < head; row++) lines.push("");
 			selStart = lines.length;
-			lines.push(...outlineRows(segment.slice(head, tail), inner, style));
+			const body = segment.slice(head, tail);
+			lines.push(
+				...(compact
+					? body.map(row => theme.bgFill("selectedBg", fit(row, safeWidth)))
+					: outlineRows(body, inner, style)),
+			);
 			selEnd = lines.length;
 			for (let row = tail; row < segment.length; row++) lines.push("");
 			index = target.end - 1;
 			continue;
 		}
-		for (const row of childRows[index]!) lines.push(row ? `  ${row}` : row);
+		for (const row of childRows[index]!) lines.push(row ? fit(compact ? row : `  ${row}`, safeWidth) : row);
 	}
 	return { lines, selStart, selEnd };
+}
+
+/** Body allocation used by transcript pickers before adding selection chrome. */
+export function outlineContentWidth(columnWidth: number, compact = false): number {
+	const safeWidth = Math.max(0, Math.floor(columnWidth));
+	return compact || safeWidth < 5 ? safeWidth : safeWidth - 4;
 }
 
 /** Centered position rail for horizontally windowed content: `… ○ ◉ ○ …`. */
@@ -225,7 +267,8 @@ export function positionRail(
 	for (let index = 0; index < count; index++) {
 		dots.push(index === active ? theme.fg("accent", theme.radio.selected) : theme.fg("dim", theme.radio.unselected));
 	}
-	const rail = `${moreLeft ? theme.fg("dim", "… ") : "  "}${dots.join(" ")}${moreRight ? theme.fg("dim", " …") : ""}`;
+	const ellipsis = theme.symbol("sep.ellipsis");
+	const rail = `${moreLeft ? theme.fg("dim", `${ellipsis} `) : "  "}${dots.join(" ")}${moreRight ? theme.fg("dim", ` ${ellipsis}`) : ""}`;
 	const pad = Math.max(0, Math.floor((width - visibleWidth(rail)) / 2));
 	return " ".repeat(pad) + rail;
 }

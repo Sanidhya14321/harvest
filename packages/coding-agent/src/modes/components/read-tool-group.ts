@@ -324,7 +324,7 @@ function formatMergedSelectorParts(selectors: string[]): string {
 	const first = selectors[0]!;
 	const second = selectors[1]!;
 	const last = selectors[selectors.length - 1]!;
-	return `${first},${second},…,${last}`;
+	return `${first},${second},${theme.symbol("sep.ellipsis")},${last}`;
 }
 
 export class ReadToolGroupComponent extends Container implements ToolExecutionHandle {
@@ -779,7 +779,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		const selectorSuffix = split.sel ? `:${split.sel}` : "";
 		const baseValue = split.sel ? split.path : value;
 		const filePath = shortenPath(baseValue);
-		let pathDisplay = filePath ? theme.fg("accent", filePath) : theme.fg("toolOutput", "…");
+		let pathDisplay = filePath ? theme.fg("accent", filePath) : theme.fg("toolOutput", theme.symbol("sep.ellipsis"));
 		if (filePath && options.linkPath) {
 			const linkOptions = options.line !== undefined ? { line: options.line } : undefined;
 			pathDisplay = fileHyperlink(options.linkPath, pathDisplay, linkOptions);

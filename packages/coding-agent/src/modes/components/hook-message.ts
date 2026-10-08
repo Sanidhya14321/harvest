@@ -1,8 +1,9 @@
 import type { Component } from "@harvest/pi-tui";
-import { Box, Container } from "@harvest/pi-tui";
+import { Container } from "@harvest/pi-tui";
 import type { HookMessageRenderer } from "../../extensibility/hooks/types";
 import { theme } from "../../modes/theme/theme";
 import type { HookMessage } from "../../session/messages";
+import { OutputPanel } from "../../tui/output-block";
 import { renderFramedMessage } from "./message-frame";
 
 /** Lines of default markdown body shown before the "…" fold when collapsed. */
@@ -13,7 +14,7 @@ const HOOK_COLLAPSED_LINES = 5;
  * Uses distinct styling to differentiate from user messages.
  */
 export class HookMessageComponent extends Container {
-	#box: Box;
+	#box: OutputPanel;
 	#customComponent?: Component;
 	#expanded = false;
 
@@ -24,7 +25,7 @@ export class HookMessageComponent extends Container {
 		super();
 
 		// Create box with purple background (used for default rendering)
-		this.#box = new Box(1, 1, t => theme.bg("customMessageBg", t));
+		this.#box = new OutputPanel(() => theme);
 		this.#box.setIgnoreTight(true);
 
 		this.#rebuild();

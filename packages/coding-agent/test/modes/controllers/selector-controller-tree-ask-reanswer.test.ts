@@ -61,6 +61,7 @@ function plainUserEntry(id: string): SessionEntry {
 }
 
 interface EditorSlot {
+	overlayComponent?: unknown;
 	children: unknown[];
 	clear: () => void;
 	addChild: Mock<(child: unknown) => void>;
@@ -102,12 +103,17 @@ function createCtx(leafEntry: SessionEntry, navigateTreeResult: unknown = { canc
 		editor: { id: "editor", getText: () => "", setText: vi.fn() },
 		editorContainer,
 		sessionManager: {
+			getSessionFile: () => undefined,
 			getTree: () => tree,
 			getLeafId: () => leafEntry.id,
 			getEntry: (id: string) => (id === leafEntry.id ? leafEntry : undefined),
 		},
 		session: { navigateTree, resumeAfterAskReanswer },
 		ui: {
+			showOverlay: vi.fn(component => {
+				editorContainer.overlayComponent = component;
+				return { hide: vi.fn(), setHidden: vi.fn(), isHidden: () => false };
+			}),
 			setFocus: vi.fn(),
 			requestRender: vi.fn(),
 			terminal: { rows: 24 },
@@ -129,7 +135,7 @@ function createCtx(leafEntry: SessionEntry, navigateTreeResult: unknown = { canc
 
 /** Grabs the `TreeSelectorComponent` mounted by the most recent `showTreeSelector()` call and fires its onSelect as if the user pressed Enter on `entryId`. */
 async function pickEntry(editorContainer: EditorSlot, entryId: string): Promise<void> {
-	const mounted = editorContainer.addChild.mock.calls.at(-1)?.[0] as {
+	const mounted = editorContainer.overlayComponent as {
 		getTreeList: () => { onSelect?: (id: string, options: { summarize: boolean }) => unknown };
 	};
 	await mounted.getTreeList().onSelect?.(entryId, { summarize: false });

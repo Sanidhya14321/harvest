@@ -33,11 +33,12 @@ describe("SkillMessageComponent", () => {
 
 	const skillPath = path.join(os.homedir(), ".agent/skills/atomic-commit/SKILL.md");
 
-	it("renders a compact, outlined card instead of the archaic key:value dump", () => {
+	it("shows the skill invocation and clickable path in a compact panel without a metadata dump", () => {
 		const component = new SkillMessageComponent(
 			makeMessage({ name: "atomic-commit", path: skillPath, lineCount: 88 }),
 		);
-		const text = strip(component.render(80));
+		const rows = component.render(80);
+		const text = strip(rows);
 
 		// New look: an icon-tagged "skill" header with the name and a single meta line.
 		expect(text).toContain("skill");
@@ -46,9 +47,10 @@ describe("SkillMessageComponent", () => {
 		expect(text).not.toContain("skill  atomic-commit");
 		expect(text).toContain("88 lines");
 
-		// The card is drawn with an outline.
-		expect(text).toContain(uiTheme.boxRound.topLeft);
-		expect(text).toContain(uiTheme.boxRound.bottomRight);
+		// Routine invocation metadata stays on two railed rows; the body remains folded.
+		expect(rows).toHaveLength(2);
+		expect(rows.every(row => Bun.stripANSI(row).startsWith("▎ "))).toBe(true);
+		expect(rows.every(row => Bun.stringWidth(row, { countAnsiEscapeCodes: false }) <= 80)).toBe(true);
 
 		// Path is home-shortened and never leaks the absolute home dir.
 		expect(text).toContain("~/.agent/skills/atomic-commit/SKILL.md");

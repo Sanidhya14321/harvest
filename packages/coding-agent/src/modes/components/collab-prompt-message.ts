@@ -1,20 +1,15 @@
 import type { TextContent } from "@harvest/pi-ai";
-import { Container, Markdown, Text } from "@harvest/pi-tui";
 import type { CollabPromptDetails } from "../../collab/protocol";
 import type { CustomMessage } from "../../session/messages";
-import { getMarkdownTheme, theme } from "../theme/theme";
+import { UserMessageComponent } from "./user-message";
 
 /**
  * Renders a collab guest prompt on every participant's transcript: a
  * user-message-styled bubble prefixed with the author's name.
  */
-export class CollabPromptMessageComponent extends Container {
+export class CollabPromptMessageComponent extends UserMessageComponent {
 	constructor(message: CustomMessage<CollabPromptDetails>) {
-		super();
 		const from = message.details?.from?.trim() || "guest";
-		const authorText = new Text(theme.fg("accent", `\x1b[1m«${from}»\x1b[22m ›`), 1, 0);
-		authorText.setIgnoreTight(true);
-		this.addChild(authorText);
 		const text =
 			typeof message.content === "string"
 				? message.content
@@ -22,11 +17,6 @@ export class CollabPromptMessageComponent extends Container {
 						.filter((content): content is TextContent => content.type === "text")
 						.map(content => content.text)
 						.join("");
-		const md = new Markdown(text, 1, 1, getMarkdownTheme(), {
-			bgColor: (value: string) => theme.bg("userMessageBg", value),
-			color: (value: string) => theme.fgOnBg("userMessageText", "userMessageBg", value),
-		});
-		md.setIgnoreTight(true);
-		this.addChild(md);
+		super(text, false, undefined, { author: from, shellIntegration: false });
 	}
 }

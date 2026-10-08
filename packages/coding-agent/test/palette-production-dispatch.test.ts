@@ -8,7 +8,7 @@ import { resetSettingsForTest, Settings } from "../src/config/settings";
 import { Composer } from "../src/modes/composer";
 import { resolvePaletteSelection, type CommandPaletteItem } from "../src/modes/components/command-palette";
 import { InteractiveMode } from "../src/modes/interactive-mode";
-import { initTheme } from "../src/modes/theme/theme";
+import { initTheme, theme } from "../src/modes/theme/theme";
 import { AuthStorage } from "../src/session/auth-storage";
 import { AgentSession } from "../src/session/agent-session";
 import { SessionManager } from "../src/session/session-manager";
@@ -107,7 +107,10 @@ describe("palette resize re-budget (U2)", () => {
 				.getViewport()
 				.map(row => Bun.stripANSI(row))
 				.join("\n");
-			const match = before.match(/›\s*(\/\S+)/);
+			// The selection cursor is the central theme symbol (ASCII preset
+			// renders `>`, never a hard-coded glyph) — match it, not `›`.
+			const cursor = theme.nav.cursor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			const match = before.match(new RegExp(`${cursor}\\s*(/\\S+)`));
 			expect(match?.[1]).toBeDefined();
 			const selected = match![1]!;
 			terminal.resize(80, 10);

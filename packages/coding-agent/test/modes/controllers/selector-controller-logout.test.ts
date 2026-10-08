@@ -46,6 +46,7 @@ beforeAll(async () => {
 describe("SelectorController logout", () => {
 	it("opens an account picker and removes only the selected credential", async () => {
 		const editorContainer = createEditorContainer();
+		let mounted: unknown;
 		const credentials = [
 			createStoredCredential(21, "a@example.com", "acct-a"),
 			createStoredCredential(22, "b@example.com", "acct-b"),
@@ -67,9 +68,14 @@ describe("SelectorController logout", () => {
 		const refreshProvider = vi.fn(async (_providerId: string, _mode: string) => undefined);
 		const presented = Promise.withResolvers<void>();
 		const ctx = {
+			sessionManager: { getSessionFile: () => undefined },
 			editorContainer,
 			editor: {},
 			ui: {
+				showOverlay: vi.fn(component => {
+					mounted = component;
+					return { hide: vi.fn(), setHidden: vi.fn(), isHidden: () => false };
+				}),
 				setFocus: vi.fn(),
 				requestRender: vi.fn(),
 			},
@@ -89,7 +95,7 @@ describe("SelectorController logout", () => {
 
 		await controller.showOAuthSelector("logout", "anthropic");
 
-		const selector = editorContainer.children[0];
+		const selector = mounted;
 		if (!(selector instanceof LogoutAccountSelectorComponent)) {
 			throw new Error("Expected logout account selector");
 		}

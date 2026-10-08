@@ -1140,6 +1140,11 @@ export class EventController {
 		if (turnStartedAt !== undefined) this.#turnStartedAt = turnStartedAt;
 	}
 
+	/** Transfer the active turn's rebuilt completion queue without publishing it early. */
+	inheritCompletionEndcaps(endcaps: ReadonlyArray<{ model?: string; elapsedMs?: number }>): void {
+		this.#pendingCompletionEndcaps = endcaps.map(endcap => ({ ...endcap }));
+	}
+
 	/**
 	 * Re-register parked background task cards after a transcript rebuild so a
 	 * detached task's replayed and live progress frames keep routing to the
@@ -1240,9 +1245,24 @@ export class EventController {
 				this.ctx.streamingComponent.setLinkTargets(assistantMessageLinkTargets(timeline.beforeTools, linkTargets));
 				this.ctx.streamingComponent.markTranscriptBlockFinalized();
 			}
+			let previousToolCallId: string | undefined;
 			for (let contentIndex = 0; contentIndex < this.ctx.streamingMessage.content.length; contentIndex++) {
 				const content = this.ctx.streamingMessage.content[contentIndex]!;
 				if (content.type !== "toolCall") continue;
+				// A cumulative delta can include a result already settled on the
+				// server. Mount intervening prose before the next card can finalize
+				// and make insertion into committed history impossible.
+				if (previousToolCallId !== undefined) {
+					const segment = timeline.afterToolCalls.get(previousToolCallId);
+					if (
+						this.#upsertPostToolAssistantSegment(previousToolCallId, segment) &&
+						this.#lastReadGroup &&
+						this.#toolTimelineComponents.get(previousToolCallId) === this.#lastReadGroup
+					) {
+						this.#resetReadGroup();
+					}
+				}
+				previousToolCallId = content.id;
 				// Re-key the live card when a provider rewrites this block's id
 				// across deltas, so the changed id reuses the existing card
 				// instead of spawning a duplicate (#6879).
@@ -1339,8 +1359,8 @@ export class EventController {
 					}
 				}
 			}
-			for (const [toolCallId, segment] of timeline.afterToolCalls) {
-				this.#upsertPostToolAssistantSegment(toolCallId, segment);
+			if (previousToolCallId !== undefined) {
+				this.#upsertPostToolAssistantSegment(previousToolCallId, timeline.afterToolCalls.get(previousToolCallId));
 			}
 
 			// Update working message with intent from streamed tool arguments

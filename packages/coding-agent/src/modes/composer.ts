@@ -2,6 +2,7 @@ import {
 	type Component,
 	Container,
 	CURSOR_MARKER,
+	Ellipsis,
 	type EditorTopBorder,
 	isInsideTerminalMultiplexer,
 	ProcessTerminal,
@@ -19,6 +20,7 @@ import {
 } from "@harvest/pi-tui";
 import { CustomEditor } from "./components/custom-editor";
 import type { SessionTabStrip } from "./components/session-tab-strip";
+import type { TabStripScreenOrigin } from "../session/session-tabs";
 import type { KeybindingsManager } from "../config/keybindings";
 import { type AnimationFrame, TranscriptContainer } from "./components/transcript-container";
 import type { WorkspaceSidebar } from "./components/workspace-sidebar";
@@ -129,6 +131,7 @@ export interface ComposerStartOptions {
 class StatusHost implements Component {
 	#lines: readonly string[] = [];
 	#component: Component | undefined;
+	#maxHeight = Infinity;
 
 	get mounted(): boolean {
 		return this.#component !== undefined;
@@ -143,9 +146,15 @@ class StatusHost implements Component {
 		this.#lines = [];
 	}
 
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(0, height);
+		if (height > 0) this.#component?.setMaxHeight?.(height);
+	}
+
 	render(width: number): readonly string[] {
-		if (this.#component) return this.#component.render(width);
-		return this.#lines.map(line => truncateToWidth(line, width));
+		if (this.#maxHeight === 0) return [];
+		const rows = this.#component ? this.#component.render(width) : this.#lines.map(line => truncateToWidth(line, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode));
+		return rows.slice(-this.#maxHeight);
 	}
 }
 /**
@@ -172,6 +181,16 @@ export class Composer implements TerminalFrameProvider {
 	#headerBefore: readonly Component[] = [];
 	#headerAfter: readonly Component[] = [];
 	#runtimeChildren: readonly Component[] = [];
+	#pinnedErrorContainer: Container | undefined;
+	#attachmentContainer: Component | undefined;
+
+	setPinnedErrorContainer(container: Container | undefined): void {
+		this.#pinnedErrorContainer = container;
+	}
+
+	setAttachmentContainer(container: Component | undefined): void {
+		this.#attachmentContainer = container;
+	}
 	/**
 	 * Zero-tab override: the last tab was closed and its session continues
 	 * hidden. The transcript stays mounted (state is preserved for reopen)
@@ -191,6 +210,16 @@ export class Composer implements TerminalFrameProvider {
 		return this.#forceHome;
 	}
 	#workspaceTabs: SessionTabStrip | undefined;
+	/**
+	 * Screen-space frame of the tab-strip rows in the last composed frame,
+	 * derived from the final placement (offsets, headers, clipping, sidebar
+	 * cover) — never assumed. `undefined` when no strip row is displayed.
+	 * `coverFromCol` marks the sidebar-overlay cover cutoff: strip cells at
+	 * or beyond it are visually hidden and must not hit-test.
+	 */
+	#stripFrame:
+		| { origin: TabStripScreenOrigin; rows: number; coverFromCol: number | undefined }
+		| undefined;
 	#workspaceSidebar: WorkspaceSidebar | undefined;
 	#sidebarOverlayOpen = false;
 	#sidebarOverlayRequestedOnce = false;
@@ -311,11 +340,11 @@ export class Composer implements TerminalFrameProvider {
 			: [this.#header, this.#bootstrapInputGap, this.editor, this.#statusHost];
 		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
 		if (transcriptIndex < 0) {
-			return { viewport: this.#renderRoots(roots, width).slice(-rows) };
+			return { viewport: this.#renderFixedRoots(roots, width, rows) };
 		}
 		const transcript = roots[transcriptIndex] as TranscriptContainer;
 		const preRoots = this.#renderRoots(roots.slice(0, transcriptIndex), width);
-		const after = this.#renderRoots(roots.slice(transcriptIndex + 1), width);
+		const after = this.#renderFixedRoots(roots.slice(transcriptIndex + 1), width, rows);
 		// Offer history under capacity pressure only: blocks stay live (and keep
 		// reflowing to the current width) while the screen has room. A batch
 		// leaves the mutable viewport in the same frame it is appended, so its
@@ -366,7 +395,7 @@ export class Composer implements TerminalFrameProvider {
 		if (this.#preferences.fullscreen) return this.#renderWorkspace(width, rows);
 		const tail = this.#runtimeMounted
 			? this.#renderResizeTail(width, rows)
-			: this.#renderRoots([this.#bootstrapInputGap, this.editor, this.#statusHost], width);
+			: this.#renderFixedRoots([this.#bootstrapInputGap, this.editor, this.#statusHost], width, rows);
 		let header: readonly string[];
 		if (this.#headerRetired) {
 			this.#resizeRetiredHeaderStart ??= Math.max(
@@ -518,6 +547,55 @@ export class Composer implements TerminalFrameProvider {
 		return rows;
 	}
 
+	/** Collapse optional chrome before the current draft/cursor can leave the viewport. */
+	#renderFixedRoots(roots: readonly Component[], width: number, height: number): string[] {
+		if (height <= 0) return [];
+		const containsEditor = (component: Component): boolean => component === this.editor ||
+			(component instanceof Container && component.children.some(containsEditor));
+		const editorRoot = roots.find(containsEditor);
+		this.editor.setMaxHeight(composerMaxHeight(height, 4));
+		const editorRows = editorRoot?.render(width) ?? [];
+		const attachmentRows = this.#attachmentContainer && roots.includes(this.#attachmentContainer) ? this.#attachmentContainer.render(width) : [];
+		const coreEditorRows = this.#trimPaddingRows(editorRows);
+		const errorBudget = Math.min(6, Math.max(0, height - Math.min(height, coreEditorRows.length) - Number(attachmentRows.length > 0)));
+		for (const child of this.#pinnedErrorContainer?.children ?? []) child.setMaxHeight?.(Math.max(1, errorBudget));
+		this.#statusHost.setMaxHeight(height);
+		const records = roots.map(root => ({ root, rows: root === this.#pinnedErrorContainer && errorBudget === 0 ? [] : root === editorRoot ? editorRows : root === this.#attachmentContainer ? attachmentRows : root.render(width) }));
+		if (records.reduce((total, record) => total + record.rows.length, 0) <= height) return records.flatMap(record => [...record.rows]);
+		const retained = new Map<Component, readonly string[]>();
+		let remaining = height;
+		const take = (component: Component | undefined, budget: number, cursor = false): void => {
+			const record = records.find(record => record.root === component);
+			if (!record || remaining <= 0) return;
+			const selected = cursor ? this.#rowsAroundCursor(coreEditorRows, Math.min(remaining, budget)) : record.rows.slice(0, Math.min(remaining, budget));
+			retained.set(record.root, selected);
+			remaining -= selected.length;
+		};
+		take(editorRoot, height, true);
+		take(this.#attachmentContainer, 1);
+		take(this.#pinnedErrorContainer, remaining);
+		for (const record of records.toReversed()) if (!retained.has(record.root)) take(record.root, remaining);
+		return records.flatMap(record => [...(retained.get(record.root) ?? [])]);
+	}
+
+	#trimPaddingRows(rows: readonly string[]): readonly string[] {
+		const blank = (row: string): boolean => !row.includes(CURSOR_MARKER) && Bun.stripANSI(row).trim().length === 0;
+		let start = 0;
+		let end = rows.length;
+		while (start < end && blank(rows[start]!)) start++;
+		while (end > start && blank(rows[end - 1]!)) end--;
+		return rows.slice(start, end);
+	}
+
+	#rowsAroundCursor(rows: readonly string[], height: number): readonly string[] {
+		if (height <= 0) return [];
+		if (rows.length <= height) return rows;
+		const cursor = rows.findIndex(row => row.includes(CURSOR_MARKER));
+		if (cursor < 0) return rows.slice(-height);
+		const start = Math.max(0, Math.min(cursor, rows.length - height));
+		return rows.slice(start, start + height);
+	}
+
 	#workspaceComposerShape(): string {
 		return resolveWorkspaceComposerShape(this.#preferences.fullscreen, this.#preferences.composerShape);
 	}
@@ -570,6 +648,34 @@ export class Composer implements TerminalFrameProvider {
 	setWorkspaceTabs(tabs: SessionTabStrip): void {
 		this.#workspaceTabs = tabs;
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Screen-space frame of the displayed tab-strip rows from the final
+	 * composed frame, for owner-side mouse translation. `undefined` when the
+	 * strip shows no rows (hidden, clipped away, or single-tab Home).
+	 */
+	workspaceStripFrame():
+		| { origin: TabStripScreenOrigin; rows: number; coverFromCol: number | undefined }
+		| undefined {
+		return this.#stripFrame;
+	}
+
+	/**
+	 * Record strip placement for the frame being composed and clip the
+	 * strip's own hit map to the rows actually displayed. Call with the
+	 * placed row/column and surviving row count; `rows <= 0` records no
+	 * frame and clears all hit targets.
+	 */
+	#noteStripFrame(row: number, col: number, rows: number, coverFromCol: number | undefined): void {
+		const tabs = this.#workspaceTabs;
+		const placed = Math.max(0, Math.floor(rows));
+		tabs?.clipDisplayedRows(placed);
+		if (!tabs || placed <= 0) {
+			this.#stripFrame = undefined;
+			return;
+		}
+		this.#stripFrame = { origin: { row, col }, rows: placed, coverFromCol };
 	}
 
 	scrollWorkspace(delta: number): void {
@@ -698,6 +804,12 @@ export class Composer implements TerminalFrameProvider {
 			? Math.max(1, mainWidth)
 			: Math.min(mainWidth, WORKSPACE_LAYOUT.homeCenterCap);
 		const contentInset = hasConversation ? 0 : Math.max(0, Math.floor((mainWidth - contentWidth) / 2));
+		// Sidebar-overlay cover cutoff for strip hit-testing: cells at or
+		// beyond this column are visually hidden (S1). Docked sidebars need
+		// no cutoff (main starts at column zero and strip cells end at its
+		// width by construction).
+		this.#stripFrame = undefined;
+		const stripCoverFromCol = overlayActive ? Math.max(0, safeWidth - sidebarOverlayWidth(safeWidth)) : undefined;
 		// Clamp multiline input growth to ~1/3 of the screen; reserve metadata.
 		try {
 			this.editor.setMaxHeight(composerMaxHeight(safeRows, 4));
@@ -707,9 +819,10 @@ export class Composer implements TerminalFrameProvider {
 		const chromeWidth = hasConversation
 			? Math.max(1, mainWidth - (safeWidth >= 40 ? WORKSPACE_LAYOUT.mainPaddingX * 2 : 0))
 			: Math.min(geometry.homePromptWidth, Math.max(1, mainWidth - 2));
-		const afterContent = this.#renderRoots(
+		const afterContent = this.#renderFixedRoots(
 			roots.filter(root => root !== transcript && root !== this.#workspaceTabs),
 			chromeWidth,
+			safeRows,
 		);
 		const padRow = (row: string): string => {
 			if (contentInset <= 0) return row;
@@ -736,10 +849,15 @@ export class Composer implements TerminalFrameProvider {
 			// Tiny viewport: keep one attention row (warnings/tabs) alongside
 			// the editable tail instead of dropping header/tabs entirely.
 			const attention = [...centeredHeader, ...tabs].slice(0, 1);
+			// The surviving attention row is a tab row only when the headers
+			// contribute nothing before it; otherwise no strip row is
+			// displayed and hit targets clear (S1).
+			const tinyTabShown = centeredHeader.length === 0 && tabs.length > 0;
+			this.#noteStripFrame(0, contentInset, tinyTabShown ? 1 : 0, stripCoverFromCol);
 			const tinyRows =
 				attention.length > 0 && safeRows >= 2
-					? [...attention, ...after.slice(-(safeRows - 1))]
-					: after.slice(-safeRows);
+					? [...attention, ...this.#rowsAroundCursor(after, safeRows - 1)]
+					: this.#rowsAroundCursor(after, safeRows);
 			const mainOnly = this.#composeMainWithSidebar(
 				tinyRows,
 				[],
@@ -758,6 +876,14 @@ export class Composer implements TerminalFrameProvider {
 				const maxHeaderTabs = Math.max(headerTabs.length > 0 ? 1 : 0, safeRows - after.length - 1);
 				if (headerTabs.length > maxHeaderTabs) headerTabs = headerTabs.slice(0, Math.max(0, maxHeaderTabs));
 			}
+			// Strip rows surviving the cap start after the headers; a cap
+			// cutting into the headers leaves no displayed strip row (S1).
+			this.#noteStripFrame(
+				Math.min(centeredHeader.length, headerTabs.length),
+				contentInset,
+				Math.max(0, headerTabs.length - centeredHeader.length),
+				stripCoverFromCol,
+			);
 			const showHints = !this.#preferences.quiet && safeRows >= 8;
 			const available = Math.max(0, safeRows - headerTabs.length - after.length - (showHints ? 1 : 0));
 			const visible = this.#renderSessionTranscript(transcript, mainWidth, available);
@@ -793,6 +919,17 @@ export class Composer implements TerminalFrameProvider {
 			// padding blanks would displace the editable draft.
 			const intro = this.#homeIntro(centeredHeader, tabs, after, wordmarkRows, hints, safeRows);
 			const before = Math.max(0, Math.floor((safeRows - intro.length) / 2));
+			// The intro shows exactly one attention row: the first content
+			// row of headers+tabs. Tabs are displayed only when that row
+			// comes from the tab block (S1).
+			const introSource = [...centeredHeader, ...tabs];
+			const introContent = introSource.findIndex(row => Bun.stripANSI(row).trim().length > 0);
+			this.#noteStripFrame(
+				before + centeredHeader.length,
+				contentInset,
+				introContent >= centeredHeader.length && introContent >= 0 ? 1 : 0,
+				stripCoverFromCol,
+			);
 			const homeRows = [...blank(before), ...intro, ...blank(safeRows - before - intro.length)].slice(0, safeRows);
 			// Version stamp bottom-right when the last row is unused padding.
 			if (this.#version && homeRows.length > 0) {
@@ -816,6 +953,15 @@ export class Composer implements TerminalFrameProvider {
 		const intro = [...centeredHeader, ...tabs, ...after];
 		// Vertically center the bounded home group when space allows.
 		const before = Math.max(0, Math.floor((safeRows - centeredHeader.length - intro.length) / 2));
+		// Quiet home lists every tab row; clamp to the rows that survive the
+		// final viewport slice (S1).
+		const quietTabRow = before + centeredHeader.length;
+		this.#noteStripFrame(
+			quietTabRow,
+			contentInset,
+			Math.max(0, Math.min(tabs.length, safeRows - quietTabRow)),
+			stripCoverFromCol,
+		);
 		const homeRows = [
 			...blank(before),
 			...centeredHeader,
@@ -856,7 +1002,7 @@ export class Composer implements TerminalFrameProvider {
 		// Leading gap spacers (space-padded blank rows) yield to editable rows first.
 		let head = 0;
 		while (head < after.length && Bun.stripANSI(after[head]!).trim().length === 0) head++;
-		const homeAfter = after.slice(head, head + afterBudget);
+		const homeAfter = this.#rowsAroundCursor(after.slice(head), afterBudget);
 		const spare = Math.max(0, afterBudget - homeAfter.length);
 		const homeHints = hints.slice(0, spare);
 		const homeDeco = [...wordmarkRows, ""].slice(0, Math.max(0, spare - homeHints.length));
@@ -917,10 +1063,10 @@ export class Composer implements TerminalFrameProvider {
 			fallback: string,
 			label: string,
 		): string => `${theme.fg("text", display(key, fallback))} ${theme.fg("muted", label)}`;
-		const sep = theme.fg("muted", " · ");
+		const sep = theme.fg("muted", theme.sep.dot);
 		const text = `${pair("tui.input.submit", "Enter", "send")}${sep}${pair("tui.input.newLine", "Ctrl+J", "newline")}${sep}${pair("app.commands.open", "Alt+K", "commands")}`;
 		const centered = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth(text)) / 2)))}${text}`;
-		return truncateToWidth(centered, Math.max(1, safeWidth));
+		return truncateToWidth(centered, Math.max(1, safeWidth), theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode);
 	}
 
 	#composeMainWithSidebar(
@@ -935,7 +1081,7 @@ export class Composer implements TerminalFrameProvider {
 		const fitRow = (row: string, width: number): string => {
 			const w = visibleWidth(row);
 			if (w === width) return row;
-			if (w > width) return truncateToWidth(row, Math.max(0, width));
+			if (w > width) return truncateToWidth(row, Math.max(0, width), theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode);
 			return row + " ".repeat(Math.max(0, width - w));
 		};
 		// The focused editor emits CURSOR_MARKER (a private APC sentinel the
@@ -987,9 +1133,9 @@ export class Composer implements TerminalFrameProvider {
 	#renderResizeTail(width: number, rows: number): string[] {
 		const roots = [...this.#runtimeChildren, this.#statusHost];
 		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
-		if (transcriptIndex < 0) return this.#renderRoots(roots, width);
+		if (transcriptIndex < 0) return this.#renderFixedRoots(roots, width, rows);
 		const transcript = roots[transcriptIndex] as TranscriptContainer;
-		const after = this.#renderRoots(roots.slice(transcriptIndex + 1), width);
+		const after = this.#renderFixedRoots(roots.slice(transcriptIndex + 1), width, rows);
 		const transcriptRows = transcript.renderTail(width, Math.max(0, rows - after.length));
 		const pre =
 			transcriptRows.length + after.length >= rows ? [] : this.#renderRoots(roots.slice(0, transcriptIndex), width);

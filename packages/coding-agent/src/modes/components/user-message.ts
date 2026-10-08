@@ -1,6 +1,16 @@
-import { applyBackgroundToLine, type Component, Container, Markdown, padding, visibleWidth } from "@harvest/pi-tui";
+import {
+	type Component,
+	Container,
+	Ellipsis,
+	Markdown,
+	padding,
+	replaceTabs,
+	truncateToWidth,
+	visibleWidth,
+} from "@harvest/pi-tui";
 import { formatBytes } from "@harvest/pi-utils";
-import { getMarkdownTheme, theme } from "../../modes/theme/theme";
+import { getMarkdownTheme, getThemeEpoch, theme } from "../../modes/theme/theme";
+import { outputPanelContentWidth, renderOutputPanelLines } from "../../tui/output-block";
 import { attachmentSgr, collapseImageMarkers, renderPlaceholders } from "../composer-attachments";
 import { imageReferenceHyperlink } from "../image-references";
 import { highlightMagicKeywords } from "../magic-keywords";
@@ -39,17 +49,22 @@ export class UserMessageComponent extends Container implements ReactionTarget {
 	// never mutates the container's cached array.
 	#zoneSource: readonly string[] | undefined;
 	#zoneLines: string[] | undefined;
-	readonly #bgColor: (value: string) => string;
+	#zoneWidth: number | undefined;
+	#zoneEpoch: number | undefined;
 	#reaction: string | undefined;
 
-	constructor(text: string, synthetic = false, imageLinks?: readonly (string | undefined)[]) {
+	constructor(
+		text: string,
+		synthetic = false,
+		imageLinks?: readonly (string | undefined)[],
+		private readonly presentation: { author?: string; shellIntegration?: boolean } = {},
+	) {
 		super();
 		// Display-only collapse: the stored/wire text carries bracketed `[Image #N, WxH]` markers,
 		// but the transcript shows the same compact `<icon> #N` chip the composer used. Runs before
 		// Markdown layout so wrapping and bubble padding are computed on the visible text.
 		text = collapseImageMarkers(text, Number.POSITIVE_INFINITY, () => {});
 		const bgColor = (value: string) => theme.bg("userMessageBg", value);
-		this.#bgColor = bgColor;
 		// Paint the magic keywords ("ultrathink"/"orchestrate"/"workflowz") inside the rendered
 		// bubble too — matching the live editor glow. The Markdown component routes code spans and
 		// fenced blocks through its own code styling (never `color`), so those are already excluded;
@@ -80,6 +95,24 @@ export class UserMessageComponent extends Container implements ReactionTarget {
 			color,
 		});
 		md.setIgnoreTight(true);
+		if (presentation.author) {
+			const author = replaceTabs(presentation.author).replace(/[\r\n]+/g, " ");
+			this.addChild({
+				render: width => [
+					theme.fg(
+						"accent",
+						theme.bold(
+							truncateToWidth(
+								author,
+								width,
+								theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+							),
+						),
+					),
+				],
+				invalidate: () => {},
+			});
+		}
 		this.addChild(md);
 	}
 
@@ -91,30 +124,42 @@ export class UserMessageComponent extends Container implements ReactionTarget {
 
 	/** The top padding row with the reaction badge right-aligned inside the horizontal padding. */
 	#reactionRow(width: number): string {
-		const emoji = this.#reaction!;
-		return applyBackgroundToLine(padding(width - 1 - visibleWidth(emoji)) + emoji, width, this.#bgColor);
+		const emoji = truncateToWidth(this.#reaction!, width);
+		return padding(Math.max(0, width - 1 - visibleWidth(emoji))) + emoji;
 	}
 
 	override render(width: number): readonly string[] {
-		const safeWidth = Math.max(1, Math.floor(width));
-		const railGlyph = theme.getSymbolPreset() === "ascii" ? "|" : "▎";
-		const rail = theme.fg("accent", railGlyph);
+		const safeWidth = Math.max(0, Math.floor(width));
+		if (safeWidth === 0) return [];
 		// Quiet panel with accent rail: render the bubble inset so the rail
 		// owns two columns without breaking wrapping or hyperlinks.
-		const innerWidth = Math.max(1, safeWidth - 2);
+		const innerWidth = outputPanelContentWidth(safeWidth);
 		const lines = super.render(innerWidth);
 		if (lines.length === 0) {
 			return lines;
 		}
-		const railed = lines.map(line => `${rail} ${line}`);
-		if (this.#zoneSource === lines && this.#zoneLines !== undefined) {
+		const epoch = getThemeEpoch();
+		if (
+			this.#zoneSource === lines &&
+			this.#zoneLines !== undefined &&
+			this.#zoneWidth === safeWidth &&
+			this.#zoneEpoch === epoch
+		) {
 			return this.#zoneLines;
 		}
-		const wrapped = railed.slice();
-		if (this.#reaction !== undefined) wrapped[0] = this.#reactionRow(safeWidth);
-		wrapped[0] = OSC133_ZONE_START + wrapped[0];
-		wrapped[wrapped.length - 1] = wrapped[wrapped.length - 1] + OSC133_ZONE_CLOSE;
+		const source = lines.slice();
+		if (this.#reaction !== undefined) source[0] = this.#reactionRow(innerWidth);
+		const wrapped = renderOutputPanelLines(source, safeWidth, theme, {
+			accent: "accent",
+			background: "userMessageBg",
+		});
+		if (this.presentation.shellIntegration !== false) {
+			wrapped[0] = OSC133_ZONE_START + wrapped[0];
+			wrapped[wrapped.length - 1] = wrapped[wrapped.length - 1] + OSC133_ZONE_CLOSE;
+		}
 		this.#zoneSource = lines;
+		this.#zoneWidth = safeWidth;
+		this.#zoneEpoch = epoch;
 		this.#zoneLines = wrapped;
 		return wrapped;
 	}
@@ -137,7 +182,7 @@ export class CollapsedSyntheticMessageComponent implements Component {
 	#expanded = false;
 	#cache?: { width: number; lines: readonly string[] };
 	#body?: UserMessageComponent;
-	readonly #summary: string;
+	readonly #summary: readonly string[];
 
 	constructor(
 		private readonly text: string,
@@ -177,22 +222,15 @@ export class CollapsedSyntheticMessageComponent implements Component {
 
 	#summaryRow(width: number): string {
 		const hint = `${theme.sep.dot.trim()} ctrl+o`;
-		return theme.fg("dim", truncateSummary(`${this.#summary} ${hint}`, Math.max(10, width - 1)));
+		return theme.fg(
+			"dim",
+			truncateToWidth(
+				`${this.#summary.join(theme.sep.dot)} ${hint}`,
+				Math.max(0, width - 1),
+				theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+			),
+		);
 	}
-}
-
-/** Truncate a plain summary label to `maxWidth` display columns, appending `…`. */
-function truncateSummary(text: string, maxWidth: number): string {
-	if (Bun.stringWidth(text, { countAnsiEscapeCodes: false }) <= maxWidth) return text;
-	let out = "";
-	let w = 0;
-	for (const ch of text) {
-		const cw = Bun.stringWidth(ch, { countAnsiEscapeCodes: false });
-		if (w + cw > maxWidth - 1) break;
-		out += ch;
-		w += cw;
-	}
-	return `${out}…`;
 }
 
 /**
@@ -200,11 +238,10 @@ function truncateSummary(text: string, maxWidth: number): string {
  * lines`. The label is the first Markdown heading's text (e.g. `Session
  * update`), falling back to `Synthetic input` when the body opens with none.
  */
-function summarizeSyntheticInput(text: string): string {
+function summarizeSyntheticInput(text: string): readonly string[] {
 	const size = formatBytes(Buffer.byteLength(text, "utf-8"));
 	const lineCount = text === "" ? 0 : text.split("\n").length;
-	const dot = theme.sep.dot.trim();
-	return `${syntheticInputLabel(text)} ${dot} ${size} ${dot} ${lineCount} line${lineCount === 1 ? "" : "s"}`;
+	return [syntheticInputLabel(text), size, `${lineCount} line${lineCount === 1 ? "" : "s"}`];
 }
 
 /** First Markdown heading text in `text`, else `Synthetic input`. */

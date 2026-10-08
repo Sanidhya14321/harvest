@@ -59,6 +59,7 @@ import {
 import chalk from "@harvest/pi-utils/chalk";
 import { reset as resetCapabilities } from "../capability";
 import { restartArgv } from "../cli/flag-tables";
+import { translateStripHitToLocal } from "../session/session-tabs";
 import type { CollabGuestLink } from "../collab/guest";
 import type { CollabHost } from "../collab/host";
 import { formatKeyHint, KeybindingsManager } from "../config/keybindings";
@@ -123,6 +124,9 @@ import { loadSessionTabs, sessionTabsFile } from "../session/session-tab-persist
 import { LiveSessionRegistry } from "../session/live-session-registry";
 import { SessionManagementFacade } from "../session/session-management-facade";
 import { liveSessionFactoryOptions, openLiveAgentSession } from "../session/live-session-factory";
+import { openLiveAgentSessionFromSnapshot, snapshotTrustedCaller } from "../session/live-session-factory";
+import type { OpenManagedSessionInput, OpenedManagedSession } from "../tools/sessions";
+import { dispatchInitialTaskOnce } from "../tools/sessions";
 import { setSessionToolDeps } from "../tools/sessions";
 import type { ShakeMode } from "../session/shake-types";
 import { SessionViewStateStore } from "../session/session-view-state";
@@ -195,7 +199,12 @@ import { TranscriptContainer } from "./components/transcript-container";
 import type { LspServerInfo as WelcomeLspServerInfo } from "./components/welcome";
 import { Composer, type ComposerStatusSnapshot } from "./composer";
 import { writeComposerStatusCache, writeComposerWelcomeCache } from "./composer-cache";
-import { CommandPaletteComponent, paletteListBudget } from "./components/command-palette";
+import {
+	CommandPaletteComponent,
+	paletteListBudget,
+	paletteOverlayRows,
+	projectPendingSlashCommands,
+} from "./components/command-palette";
 import { WorkspaceSidebar, type WorkspaceSidebarSnapshot } from "./components/workspace-sidebar";
 import { BtwController } from "./controllers/btw-controller";
 import { CleanseCommandController } from "./controllers/cleanse-command-controller";
@@ -573,6 +582,24 @@ export function renderSubagentHudLines(sessions: ObservableSession[], columns: n
 
 const CTRL_L_APPEARANCE_RESPONSE_DEADLINE_MS = 2000;
 
+/**
+ * Owner directory for model-created sessions (S3): one entry per live
+ * interactive owner, keyed by resolved project directory. The single
+ * process-global factory seam routes each creation to the owner that serves
+ * the CALLER's project — two owners with different projects never inherit
+ * each other's registry, tabs, settings, or callbacks. Entries are
+ * registered when an owner initializes its live registry and removed when
+ * it stops. Same-project co-owners are inherently ambiguous and resolve to
+ * the most recently initialized owner (documented; prefer one owner per
+ * project per process).
+ */
+const modelSessionOwners = new Map<string, (input: OpenManagedSessionInput) => Promise<OpenedManagedSession>>();
+let modelSessionRouterInstalled = false;
+
+function modelSessionOwnerKey(cwd: string): string {
+	return normalizePathForComparison(path.resolve(cwd));
+}
+
 export class InteractiveMode implements InteractiveModeContext {
 	readonly #sessionNavigation = new Serial();
 	#sessionNavigationGeneration = 0;
@@ -934,6 +961,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		return openLiveAgentSession(liveSessionFactoryOptions(this, sessionPath));
 	}
 
+	/** Bound factory registered in the owner directory; identity-checked on teardown. */
+	#modelSessionOwnerBinding: ((input: OpenManagedSessionInput) => Promise<OpenedManagedSession>) | undefined;
+
 	/**
 	 * Model-callable session creation seam. Independent sessions the model
 	 * creates go through the same live-session factory as tabs (never
@@ -948,90 +978,149 @@ export class InteractiveMode implements InteractiveModeContext {
 	 * so two concurrent callers never inherit each other's overrides.
 	 */
 	#registerModelSessionFactory(): void {
-		const registry = this.liveSessions;
-		if (!registry) return;
-		setSessionToolDeps({
-			openSession: async input => {
-				const cwd = this.sessionManager.getCwd();
-				if (path.resolve(input.cwd) !== path.resolve(cwd)) {
-					throw new Error(`Session creation is limited to the current project (${cwd}).`);
-				}
-				const live = this.liveSessions;
-				if (!live) throw new Error("Live session registry is unavailable.");
-				// Resolve the caller from trusted runtime facts: live UUID
-				// first, then registry ID. Unknown callers fall back to the
-				// visible session snapshot (documented, never model-chosen).
-				let caller = this.session;
-				let callerRegistryId: string | undefined;
-				if (input.callerId) {
-					const warm = live.sessions.find(s => s.sessionManager.getSessionId() === input.callerId);
-					if (warm) {
-						caller = warm;
-					} else {
-						const ref = AgentRegistry.global()
-							.list()
-							.find(
-								candidate =>
-									candidate.id === input.callerId ||
-									candidate.session?.sessionManager.getSessionId() === input.callerId,
-							);
-						if (ref?.session) caller = ref.session as typeof caller;
-						if (ref) callerRegistryId = ref.id;
-					}
-					if (!callerRegistryId) {
-						callerRegistryId =
-							AgentRegistry.global()
-								.list()
-								.find(candidate => candidate.session === caller)?.id ??
-							(AgentRegistry.global().get(input.callerId) ? input.callerId : undefined);
-					}
-				}
-				const source = {
-					sessionManager: caller.sessionManager,
-					session: caller,
-					mcpManager: this.mcpManager,
-				};
-				const session = await openLiveAgentSession({
-					...liveSessionFactoryOptions(source),
-					background: true,
-					parentAgentId: callerRegistryId,
-					taskDepth: input.taskDepth ?? 1,
-				});
-				registry.adoptBackground(session);
-				const uuid = session.sessionManager.getSessionId();
-				const file = session.sessionManager.getSessionFile();
-				if (file) {
-					this.#selectorController.sessionTabs.open(file, session.sessionManager.getSessionName());
-					registry.notePath(uuid, file);
-				}
-				// Dispatch the initial task exactly once, in the background.
-				// The prompt is fire-and-forget: status/activity stay observable
-				// through inspect, and failures are logged, never silent.
-				let taskAccepted = false;
-				const firstTask = input.task?.trim();
-				if (firstTask) {
-					taskAccepted = true;
-					void session
-						.prompt(firstTask)
-						.catch(error =>
-							logger.warn("Model-created session task failed", { sessionId: uuid, error: String(error) }),
+		if (!this.liveSessions) return;
+		// Owner-scoped binding (S3): this owner's factory serves its own
+		// project through the shared directory. A second owner with another
+		// project registers alongside; neither overwrites the other.
+		modelSessionOwners.set(
+			modelSessionOwnerKey(this.sessionManager.getCwd()),
+			(this.#modelSessionOwnerBinding = input => this.#openManagedSession(input)),
+		);
+		if (!modelSessionRouterInstalled) {
+			modelSessionRouterInstalled = true;
+			// Adapter fallback only: route each creation to the owner serving
+			// the CALLER's project. Projects without a live owner get a
+			// truthful unwired error — never an invented session and never
+			// another owner's authority.
+			setSessionToolDeps({
+				openSession: input => {
+					const owner = modelSessionOwners.get(modelSessionOwnerKey(input.cwd));
+					if (!owner) {
+						throw new Error(
+							`Session creation is unwired for project ${input.cwd}: no live session owner serves it in this host.`,
 						);
-				}
-				return {
-					id: uuid,
-					registryId: `tab:${uuid}`,
-					taskAccepted,
-					session: {
-						getSessionId: () => session.sessionManager.getSessionId(),
-						abort: () => session.abort(),
-						setSessionName: async (title: string, source?: string) => {
-							await session.setSessionName(title, (source as "auto" | "user") ?? "user");
-						},
-						prompt: (message: string) => session.prompt(message),
-					},
-				};
+					}
+					return owner(input);
+				},
+			});
+		}
+	}
+
+	/** Remove this owner's directory entry so a stopped owner routes nothing. */
+	#unregisterModelSessionFactory(): void {
+		const key = modelSessionOwnerKey(this.sessionManager.getCwd());
+		// Identity-checked: a newer same-project owner that registered over
+		// us keeps its binding when we stop.
+		if (this.#modelSessionOwnerBinding && modelSessionOwners.get(key) === this.#modelSessionOwnerBinding) {
+			modelSessionOwners.delete(key);
+		}
+		this.#modelSessionOwnerBinding = undefined;
+	}
+
+	/**
+	 * Owner-bound managed-session creation (S3): resolves the caller from
+	 * this owner's trusted runtime facts only, snapshots its effective
+	 * policy, opens a background runtime carrying this owner's factory for
+	 * its own descendants, and dispatches the initial task exactly once.
+	 * A callerId this owner cannot resolve is rejected truthfully — unknown
+	 * callers never silently inherit the foreground session.
+	 */
+	async #openManagedSession(input: OpenManagedSessionInput): Promise<OpenedManagedSession> {
+		const registry = this.liveSessions;
+		if (!registry) throw new Error("Live session registry is unavailable.");
+		const cwd = this.sessionManager.getCwd();
+		if (path.resolve(input.cwd) !== path.resolve(cwd)) {
+			throw new Error(`Session creation is limited to the current project (${cwd}).`);
+		}
+		const live = this.liveSessions;
+		if (!live) throw new Error("Live session registry is unavailable.");
+		// Resolve the caller from trusted runtime facts: live UUID first,
+		// then registry ID. A set-but-unresolvable caller is rejected —
+		// never silently attributed to the visible session. An absent
+		// callerId keeps the visible session (the host's own context).
+		let caller = this.session;
+		let callerRegistryId: string | undefined;
+		if (input.callerId) {
+			const warm = live.sessions.find(s => s.sessionManager.getSessionId() === input.callerId);
+			if (warm) {
+				caller = warm;
+			} else {
+				const ref = AgentRegistry.global()
+					.list()
+					.find(
+						candidate =>
+							candidate.id === input.callerId ||
+							candidate.session?.sessionManager.getSessionId() === input.callerId,
+					);
+				if (ref?.session) caller = ref.session as typeof caller;
+				else throw new Error(`Calling session ${input.callerId} is not live in this project.`);
+				if (ref) callerRegistryId = ref.id;
+			}
+			if (!callerRegistryId) {
+				callerRegistryId =
+					AgentRegistry.global()
+						.list()
+						.find(candidate => candidate.session === caller)?.id ??
+					(AgentRegistry.global().get(input.callerId) ? input.callerId : undefined);
+			}
+		}
+		const source = {
+			sessionManager: caller.sessionManager,
+			session: caller,
+			mcpManager: this.mcpManager,
+		};
+		const snapshot = snapshotTrustedCaller(
+			{
+				...source,
+				getSessionId: () => caller.sessionManager.getSessionId(),
+				getAgentId: () => callerRegistryId ?? null,
 			},
+			{
+				callerSessionId: caller.sessionManager.getSessionId(),
+				// Registry identity when resolvable; otherwise the caller's
+				// stable UUID — the tool's lineage check accepts raw-UUID
+				// parents (legacy compat), so creator-manages-child holds
+				// even when registry resolution races or collides.
+				callerAgentId: callerRegistryId ?? caller.sessionManager.getSessionId(),
+				taskDepth: input.callerTaskDepth ?? (input.taskDepth ?? 1) - 1,
+				policyFallback: input.callerPolicy ?? undefined,
+			},
+		);
+		// The child carries this owner's factory on its own ToolSession, so
+		// its descendants create through the same owning host even when the
+		// process-global seam later serves another adapter (S3).
+		const session = await openLiveAgentSessionFromSnapshot(snapshot, {
+			background: true,
+			openManagedSession: childInput => this.#openManagedSession(childInput),
 		});
+		registry.adoptBackground(session);
+		const uuid = session.sessionManager.getSessionId();
+		const file = session.sessionManager.getSessionFile();
+		if (file) {
+			this.#selectorController.sessionTabs.ensureTabId(file, uuid, session.sessionManager.getSessionName());
+			registry.notePath(uuid, file);
+		}
+		// Dispatch the initial task exactly once, in the background.
+		// Status/activity stay observable through inspect; failures are
+		// logged, never silent.
+		const taskAccepted = await dispatchInitialTaskOnce(
+			{ prompt: (message: string) => session.prompt(message) },
+			input.task,
+			error => logger.warn("Model-created session task failed", { sessionId: uuid, error: String(error) }),
+		);
+		return {
+			id: uuid,
+			registryId: `tab:${uuid}`,
+			taskAccepted,
+			session: {
+				getSessionId: () => session.sessionManager.getSessionId(),
+				abort: () => session.abort(),
+				setSessionName: async (title: string, source?: string) => {
+					await session.setSessionName(title, (source as "auto" | "user") ?? "user");
+				},
+				prompt: (message: string) => session.prompt(message),
+			},
+		};
 	}
 	clearTransientSessionUi(): void {
 		this.#hideSessionInfo();
@@ -1669,8 +1758,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	/** Re-derive the open palette's list budget from its live overlay allocation. */
 	#rebudgetCommandPalette(): void {
 		if (!this.#commandPaletteOpen) return;
-		const overlayRows = Math.max(8, Math.floor((this.ui.terminal.rows ?? 24) * 0.6));
-		this.#commandPalette.setMaxVisible(paletteListBudget(overlayRows));
+		this.#commandPalette.setMaxVisible(paletteListBudget(paletteOverlayRows(this.ui.terminal.rows)));
 		this.ui.requestRender();
 	}
 
@@ -1714,17 +1802,11 @@ export class InteractiveMode implements InteractiveModeContext {
 			}
 			// Session slash-command state (extensions, custom/MCP prompts,
 			// skills, file commands, templates) without duplicating a manual list.
-			const pendingSources: PaletteCommandSource[] = this.#pendingSlashCommands
-				.filter(command => !builtins.some(b => b.name === command.name))
-				.map(command => ({
-					name: command.name,
-					description: command.description,
-					group: command.name.startsWith("skill:") ? "skill" : "extension",
-					allowArgs: command.allowArgs,
-					// Extension/skill specs lack static subcommand metadata; an
-					// argument-completion factory means the command takes input.
-					hasSubcommands: typeof command.getArgumentCompletions === "function",
-				}));
+			// Unknown metadata stays unknown: only an authoritative
+			// argument-completion factory establishes subcommands (C1).
+			const pendingSources = projectPendingSlashCommands(this.#pendingSlashCommands, name =>
+				builtins.some(b => b.name === name),
+			);
 			const fileSources: PaletteCommandSource[] = this.session.slashCommands.map(command => ({
 				name: command.name,
 				description: command.description,
@@ -1748,7 +1830,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			// Budget the visible window against the actual overlay height so
 			// the selected row, search, and controls stay visible at small
 			// sizes (no fixed ten-item assumption).
-			const overlayRows = Math.max(8, Math.floor((this.ui.terminal.rows ?? 24) * 0.6));
+			const overlayRows = paletteOverlayRows(this.ui.terminal.rows);
 			this.#commandPalette.setMaxVisible(paletteListBudget(overlayRows));
 			const handle = this.ui.showOverlay(this.#commandPalette, {
 				anchor: "top-center",
@@ -1984,9 +2066,15 @@ export class InteractiveMode implements InteractiveModeContext {
 				const isActive =
 					current !== undefined && normalizePathForComparison(current) === normalizePathForComparison(path);
 				if (isActive && tabs.paths.length > 1) {
-					const next = tabs.neighbor(current, 1);
+					// Close policy (S7): right neighbor, else left — never wrap
+					// to the first tab. closeNeighbor encodes exactly that.
+					const next = tabs.closeNeighbor(current);
 					if (next) {
-						await this.handleResumeSession(next);
+						// Already inside the navigation queue: use the internal
+						// transition directly. Calling public handleResumeSession
+						// here would re-enter the same Serial behind ourselves
+						// and deadlock (A1).
+						await this.#resumeSessionView(next);
 						const active = this.sessionManager.getSessionFile();
 						if (!active || normalizePathForComparison(active) !== normalizePathForComparison(next)) {
 							this.showError("Session switch did not complete; the active tab was preserved.");
@@ -2050,6 +2138,13 @@ export class InteractiveMode implements InteractiveModeContext {
 					return { consume: true };
 				}
 				const consumed = routeSgrMouseInput(data, event => {
+					// Modal overlays (palette, dialogs, selectors) own their
+					// input: never hit-test the workspace strip beneath one.
+					// Returning false falls through to the focused overlay.
+					if (this.ui.hasOverlay()) {
+						sessionTabStrip.hoverWorkspace(-1, -1);
+						return false;
+					}
 					if (event.wheel !== null) {
 						// Sidebar wheel must not move the transcript; route through final geometry.
 						const owner = this.composer.routeWorkspaceMouse(event.col);
@@ -2062,8 +2157,22 @@ export class InteractiveMode implements InteractiveModeContext {
 						this.composer.scrollWorkspaceWheel(event.wheel);
 						return true;
 					}
-					if (event.motion && sessionTabStrip.hoverWorkspace(event.row, event.col)) this.ui.requestRender();
-					if (event.leftClick) sessionTabStrip.clickWorkspace(event.row, event.col);
+					// Strip hit regions come from the final composed frame
+					// (S1): translate screen cells to strip-local rows/cols
+					// once here. Outside/covered/clipped hits never reach the
+					// strip, so hidden controls cannot respond.
+					const frame = this.composer.workspaceStripFrame();
+					// No displayed strip row, or a covered/clipped cell:
+					// forward an off-strip hover (clears stale highlight)
+					// and never click a hidden control.
+					let local: { row: number; col: number } | undefined;
+					if (frame && (frame.coverFromCol === undefined || event.col < frame.coverFromCol)) {
+						const translated = translateStripHitToLocal(event.row, event.col, frame.origin);
+						if (translated && translated.row < frame.rows) local = translated;
+					}
+					if (event.motion && sessionTabStrip.hoverWorkspace(local?.row ?? -1, local?.col ?? -1))
+						this.ui.requestRender();
+					if (event.leftClick && local) sessionTabStrip.clickWorkspace(local.row, local.col);
 					return true;
 				});
 				return consumed ? { consume: true } : undefined;
@@ -2091,6 +2200,8 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.editorContainer,
 			this.hookWidgetContainerBelow,
 		]);
+		this.composer.setPinnedErrorContainer(this.errorBannerContainer);
+		this.composer.setAttachmentContainer(this.attachmentChipsContainer);
 		this.ui.setFocus(this.editor);
 		this.syncComposerShape();
 		await this.#restorePersistedSessionTabs();
@@ -5714,6 +5825,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	stop(): void {
 		this.#appearanceRefreshRequest = undefined;
+		this.#unregisterModelSessionFactory();
 		// Last chance to refresh the startup status placeholder for the next launch.
 		this.#persistComposerStatus();
 		if (this.loadingAnimation) {
@@ -6868,6 +6980,10 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	showAgentsDashboard(): void {
 		void this.#selectorController.showAgentsDashboard();
+	}
+
+	showSkillRevisions(skillName?: string): void {
+		void this.#selectorController.showSkillRevisions(skillName);
 	}
 	showGitUi(revision?: string): void {
 		void this.#selectorController.showGitTui(revision);

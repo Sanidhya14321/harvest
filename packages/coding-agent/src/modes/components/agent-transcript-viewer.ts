@@ -234,7 +234,10 @@ export class AgentTranscriptViewer implements Component {
 		}
 		const state = this.#localState;
 		if (state && this.#canAppendLocal(sessionFile, stat, state)) {
-			if (stat.size === state.size && stat.mtimeMs === state.mtimeMs) return;
+			if (stat.size === state.size && stat.mtimeMs === state.mtimeMs) {
+				this.#completeIdleTurn();
+				return;
+			}
 			if (stat.size > state.size) {
 				this.#appendLocal(sessionFile, stat, state);
 				return;
@@ -367,6 +370,7 @@ export class AgentTranscriptViewer implements Component {
 						this.#remoteUnavailable = true;
 						this.deps.requestRender();
 					}
+					this.#completeIdleTurn();
 					return;
 				}
 				if (result.error) {
@@ -409,6 +413,7 @@ export class AgentTranscriptViewer implements Component {
 					}
 				}
 				// First completed fetch (even empty) clears the "Loading…" placeholder.
+				this.#completeIdleTurn();
 				if (firstData) this.deps.requestRender();
 			})
 			.catch((error: unknown) => {
@@ -432,13 +437,21 @@ export class AgentTranscriptViewer implements Component {
 	}
 
 	#rebuild(entries: SessionMessageEntry[]): void {
-		this.#builder.rebuild(entries);
+		this.#builder.rebuild(entries, { turnComplete: this.#turnComplete });
 		this.deps.requestRender();
 	}
 
 	#append(entries: SessionMessageEntry[]): void {
-		this.#builder.append(entries);
+		this.#builder.append(entries, { turnComplete: this.#turnComplete });
 		this.deps.requestRender();
+	}
+
+	get #turnComplete(): boolean {
+		return this.deps.registry.get(this.deps.agentId)?.status !== "running";
+	}
+
+	#completeIdleTurn(): void {
+		if (this.#turnComplete && this.#builder.completeTurn()) this.deps.requestRender();
 	}
 
 	// ========================================================================

@@ -860,6 +860,7 @@ export class ToolExecutionComponent extends Container {
 			if (this.#allocation > 0 && this.#allocation < 3) return this.#renderCompact(width);
 			return this.#renderQuietGenericSuccess(width);
 		}
+		if (!this.#usesContentBox && this.#isRunning() && this.#allocation === 1) return this.#renderCompact(width);
 		let lines = super.render(width);
 		if (this.#allocation < 3) {
 			// A squeezed allocation degrades only blocks that genuinely overflow it.
@@ -898,13 +899,16 @@ export class ToolExecutionComponent extends Container {
 						` ${Math.max(0, Math.floor((this.#presentationFrame.now - this.#executionStartedAtNow) / 1000))}s`,
 					)
 				: "";
-		const styledDetail = detail ? theme.fg("muted", ` · ${detail}`) : "";
+		const styledDetail = detail ? theme.fg("muted", `${theme.sep.dot}${detail}`) : "";
 		const text = truncateToWidth(
 			`${theme.fg("toolTitle", theme.bold(summary.label))}${styledDetail}${elapsed}`,
 			Math.max(1, width - 4),
 		);
 		if (this.#allocation === 1) {
-			const glyph = this.#spinnerFrame === undefined ? "•" : (theme.spinnerFrames[this.#spinnerFrame] ?? "•");
+			const glyph =
+				this.#spinnerFrame === undefined
+					? theme.format.bullet
+					: (theme.spinnerFrames[this.#spinnerFrame] ?? theme.format.bullet);
 			const styledGlyph = theme.fg(this.#spinnerFrame === undefined ? "dim" : "muted", glyph);
 			return [truncateToWidth(`${styledGlyph} ${text}`, width)];
 		}
@@ -946,7 +950,7 @@ export class ToolExecutionComponent extends Container {
 			.map(line => replaceTabs(line));
 		const remaining = output.split("\n").length - previewLines.length;
 		const lines = [...previewLines];
-		if (remaining > 0) lines.push(theme.fg("dim", `… ${remaining} more lines`));
+		if (remaining > 0) lines.push(theme.fg("dim", `${theme.symbol("sep.ellipsis")} ${remaining} more lines`));
 		return renderOutputBlock(
 			{
 				header: summary.label,
@@ -1179,7 +1183,10 @@ export class ToolExecutionComponent extends Container {
 						{
 							iconOverride: spinner,
 							title: "Edit",
-							description: theme.fg("dim", `${remaining} more file${remaining > 1 ? "s" : ""} pending…`),
+							description: theme.fg(
+								"dim",
+								`${remaining} more file${remaining > 1 ? "s" : ""} pending${theme.symbol("sep.ellipsis")}`,
+							),
 						},
 						theme,
 					);

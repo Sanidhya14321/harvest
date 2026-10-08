@@ -56,12 +56,21 @@ export class AttachmentChipsBand implements Component {
 		const rows = ["", "", "", "", "", ""];
 		const gap = " ".repeat(CARD_GAP);
 		let x = 0;
+		let placed = 0;
 		for (const chip of chips) {
-			if (x + CARD_COLS > width) break;
+			// Admission accounts for the gap the card would actually occupy:
+			// the first card starts at 0, every later card pays CARD_GAP.
+			// Without the gap term a 28/29-cell row admits two cards whose
+			// 30-cell span then overflows the frame.
+			if (x + (x > 0 ? CARD_GAP : 0) + CARD_COLS > width) break;
 			const card = this.#card(chip);
 			for (let r = 0; r < rows.length; r++) rows[r] += (x > 0 ? gap : "") + card[r];
 			x += (x > 0 ? CARD_GAP : 0) + CARD_COLS;
+			placed++;
 		}
+		// Nothing fits: reserve no rows (the compositor concatenates, so an
+		// empty render keeps the prompt box flush instead of holding a gap).
+		if (placed === 0) return [];
 		return rows;
 	}
 

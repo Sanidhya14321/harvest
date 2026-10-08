@@ -1,7 +1,7 @@
 import { type Component, Markdown, Spacer, Text, type TUI } from "@harvest/pi-tui";
 import { replaceTabs } from "../../tools/render-utils";
-import { getMarkdownTheme, theme } from "../theme/theme";
-import { OverlayPanel } from "./overlay-box";
+import { getMarkdownTheme, getThemeEpoch, theme } from "../theme/theme";
+import { dialogContentWidth, OverlayPanel, renderDialog } from "./overlay-box";
 
 type BtwPanelState = "running" | "complete" | "branching" | "aborted" | "error";
 
@@ -38,6 +38,8 @@ export class BtwPanelComponent extends OverlayPanel {
 	#errorMessage: string | undefined;
 	#visibleAnswer = "";
 	#closed = false;
+	#body!: Component;
+	#bodyThemeEpoch = -1;
 
 	constructor(options: BtwPanelComponentOptions) {
 		super(`/btw ${replaceTabs(options.question)}`);
@@ -106,10 +108,23 @@ export class BtwPanelComponent extends OverlayPanel {
 		this.#closed = true;
 	}
 
+	override render(width: number): readonly string[] {
+		if (this.#bodyThemeEpoch !== getThemeEpoch()) {
+			this.#body = this.#contentComponent();
+			this.#bodyThemeEpoch = getThemeEpoch();
+		}
+		const height = this.getMaxHeight();
+		const footer = this.#footerLine();
+		const body = height === 1 ? [footer] : this.#body.render(dialogContentWidth(width));
+		return renderDialog(this.title, body, width, height, height > 1 ? footer : "").lines;
+	}
+
 	#rebuild(): void {
 		this.clear();
 		this.addChild(new Spacer(1));
-		this.addChild(this.#contentComponent());
+		this.#body = this.#contentComponent();
+		this.#bodyThemeEpoch = getThemeEpoch();
+		this.addChild(this.#body);
 		this.addChild(new Spacer(1));
 		this.addChild(new BtwFooter(() => this.#footerLine()));
 		// Component-scoped: a rebuild replaces only this panel's own children
@@ -128,14 +143,14 @@ export class BtwPanelComponent extends OverlayPanel {
 				const actions = ["c copy"];
 				if (this.#canBranch?.() ?? this.isBranchable()) actions.push("b branch to chat");
 				actions.push("Esc dismiss");
-				return theme.fg("muted", actions.join(" · "));
+				return theme.fg("muted", actions.join(theme.sep.dot));
 			}
 			case "branching":
-				return theme.fg("muted", `${theme.status.pending} Branching to chat…`);
+				return theme.fg("muted", `${theme.status.pending} Branching to chat${theme.symbol("sep.ellipsis")}`);
 			case "aborted":
-				return theme.fg("warning", `${theme.status.warning} Cancelled · Esc dismiss`);
+				return theme.fg("warning", `${theme.status.warning} Cancelled${theme.sep.dot}Esc dismiss`);
 			case "error":
-				return theme.fg("error", `${theme.status.error} Error · Esc dismiss`);
+				return theme.fg("error", `${theme.status.error} Error${theme.sep.dot}Esc dismiss`);
 		}
 	}
 
@@ -146,7 +161,7 @@ export class BtwPanelComponent extends OverlayPanel {
 		const text = this.#visibleAnswer;
 		if (!text) {
 			const waiting =
-				this.#state === "running" ? `${theme.status.pending} Waiting for response…` : "No text returned.";
+				this.#state === "running" ? `${theme.status.pending} Waiting for response${theme.symbol("sep.ellipsis")}` : "No text returned.";
 			return new Text(theme.fg("dim", waiting), 0, 0);
 		}
 		return new Markdown(text, 0, 0, getMarkdownTheme());

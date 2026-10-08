@@ -13,22 +13,6 @@ import type { Theme } from "../theme/theme";
 const COLLAPSED_NOTES = 3;
 const NOTE_LINE_WIDTH = 110;
 
-function wrapVarying(text: string, w1: number, w2: number): string[] {
-	if (text.length === 0) return [];
-	const firstWrap = wrapTextWithAnsi(text, w1);
-	if (firstWrap.length <= 1) {
-		return firstWrap;
-	}
-	const firstLine = firstWrap[0];
-	const idx = text.indexOf(firstLine);
-	if (idx === -1) {
-		return wrapTextWithAnsi(text, w2);
-	}
-	const remainder = text.slice(idx + firstLine.length).trimStart();
-	const restWrap = wrapTextWithAnsi(remainder, w2);
-	return [firstLine, ...restWrap];
-}
-
 function severityColor(severity: AdvisorSeverity | undefined): ToolUIColor {
 	switch (severity) {
 		case "blocker":
@@ -75,34 +59,39 @@ export function createAdvisorMessageCard(
 						? `${uiTheme.fg("dim", `[${replaceTabs(entry.advisor)}]`)} `
 						: "";
 				const rail = uiTheme.fg(severityColor(entry.severity), railGlyph);
-				const quoteWidth = visibleWidth(`  ${railGlyph} `);
-				const badgeWidth = visibleWidth(badge);
-				const whoWidth = visibleWidth(who);
-				const w1 = Math.max(10, Math.min(NOTE_LINE_WIDTH, width) - quoteWidth - badgeWidth - whoWidth);
-				const w2 = Math.max(10, Math.min(NOTE_LINE_WIDTH, width) - quoteWidth);
-
-				const paragraphs = entry.note.split("\n").filter(p => p.trim());
-				const bodyLines: string[] = [];
-				for (let i = 0; i < paragraphs.length; i++) {
-					const p = paragraphs[i];
-					if (i === 0) {
-						bodyLines.push(...wrapVarying(p, w1, w2));
-					} else {
-						bodyLines.push(...wrapTextWithAnsi(p, w2));
+				const prefix = width > 4 ? `  ${rail} ` : width > 2 ? `${rail} ` : "";
+				const bodyWidth = Math.max(1, Math.min(NOTE_LINE_WIDTH, width) - visibleWidth(prefix));
+				// Attribution owns its row: an arbitrarily long source can never
+				// consume the first note's body allocation and silently erase words.
+				const attribution = `${badge}${who}`.trimEnd();
+				if (attribution) {
+					const attributionLines = expanded
+						? wrapTextWithAnsi(attribution, bodyWidth)
+						: [
+								truncateToWidth(
+									attribution,
+									bodyWidth,
+									uiTheme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+								),
+							];
+					for (const line of attributionLines) lines.push(prefix + line);
+				}
+				for (const paragraph of entry.note.split("\n").filter(p => p.trim())) {
+					for (const line of wrapTextWithAnsi(replaceTabs(paragraph), bodyWidth)) {
+						lines.push(`${prefix}${uiTheme.fg("customMessageText", line)}`);
 					}
 				}
-
-				bodyLines.forEach((line, index) => {
-					const prefix = index === 0 ? `${badge}${who}` : "";
-					lines.push(`  ${rail} ${prefix}${uiTheme.fg("customMessageText", replaceTabs(line))}`);
-				});
 			}
 			const hidden = notes.length - shown.length;
 			if (hidden > 0) {
 				const rail = uiTheme.fg("dim", railGlyph);
-				lines.push(`  ${rail} ${uiTheme.fg("dim", `… +${hidden} more ${hidden === 1 ? "note" : "notes"}`)}`);
+				lines.push(
+					`  ${rail} ${uiTheme.fg("dim", `${uiTheme.symbol("sep.ellipsis")} +${hidden} more ${hidden === 1 ? "note" : "notes"}`)}`,
+				);
 			}
-			return lines.map(line => truncateToWidth(line, width, Ellipsis.Unicode));
+			return lines.map(line =>
+				truncateToWidth(line, width, uiTheme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+			);
 		},
 		{ paddingX: 1 },
 	);

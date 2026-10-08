@@ -1,10 +1,7 @@
-import { type Component, Ellipsis, matchesKey, ScrollView, Text, truncateToWidth } from "@harvest/pi-tui";
-import { theme } from "../theme/theme";
+import { type Component, Ellipsis, matchesKey, replaceTabs, ScrollView, Text, wrapTextWithAnsi } from "@harvest/pi-tui";
+import { getSymbolTheme, theme } from "../theme/theme";
 import { matchesSelectCancel } from "../utils/keybinding-matchers";
-import { OverlayPanel, PanelDivider } from "./overlay-box";
-
-const FOOTER_HINT = "↑/↓ scroll · Esc close";
-const PANEL_CHROME_ROWS = 4;
+import { dialogContentWidth, renderDialog } from "./overlay-box";
 
 /** Terminal surface needed to size the session info viewport. */
 export interface SessionInfoOverlayHost {
@@ -17,18 +14,18 @@ export interface SessionInfoOverlayHost {
 export class SessionInfoOverlay implements Component {
 	readonly #host: SessionInfoOverlayHost;
 	readonly #onClose: () => void;
-	readonly #panel: OverlayPanel;
 	readonly #info: Text;
 	readonly #scrollView: ScrollView;
-	readonly #footer: Text;
-	#lastInfoWidth: number | undefined;
 	#lastInfoLines: readonly string[] | undefined;
+	#lastLayoutWidth: number | undefined;
+	#lastBodyHeight: number | undefined;
 	#lastHeight: number | undefined;
+	#maxHeight: number | undefined;
 
 	constructor(host: SessionInfoOverlayHost, info: string, onClose: () => void) {
 		this.#host = host;
 		this.#onClose = onClose;
-		this.#info = new Text(info, 0, 0);
+		this.#info = new Text(replaceTabs(info), 0, 0);
 		this.#scrollView = new ScrollView([], {
 			height: 0,
 			scrollbar: "auto",
@@ -38,12 +35,6 @@ export class SessionInfoOverlay implements Component {
 				thumb: text => theme.fg("accent", text),
 			},
 		});
-		this.#footer = new Text(FOOTER_HINT, 0, 0);
-		this.#footer.setStyleFn(text => theme.fg("dim", text));
-		this.#panel = new OverlayPanel("Session Info");
-		this.#panel.addChild(this.#scrollView);
-		this.#panel.addChild(new PanelDivider());
-		this.#panel.addChild(this.#footer);
 	}
 
 	handleInput(data: string): void {
@@ -56,41 +47,51 @@ export class SessionInfoOverlay implements Component {
 
 	invalidate(): void {
 		this.#info.invalidate();
-		this.#lastInfoWidth = undefined;
 		this.#lastInfoLines = undefined;
+		this.#lastLayoutWidth = undefined;
+		this.#lastBodyHeight = undefined;
 		this.#lastHeight = undefined;
-		this.#panel.invalidate();
+		this.#scrollView.invalidate();
 	}
 
 	setIgnoreTight(ignore: boolean): this {
 		this.#info.setIgnoreTight(ignore);
-		this.#panel.setIgnoreTight(ignore);
 		return this;
 	}
 
 	dispose(): void {
-		this.#panel.dispose();
+		this.#scrollView.invalidate();
+	}
+
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
 	}
 
 	render(width: number): readonly string[] {
-		const innerWidth = Math.max(1, width - 4);
-		this.#footer.setText(truncateToWidth(FOOTER_HINT, innerWidth));
-
-		const maxBodyHeight = Math.max(1, this.#host.terminal.rows - PANEL_CHROME_ROWS);
-		const fullWidthInfoLines = this.#info.render(innerWidth);
-		const infoWidth = fullWidthInfoLines.length > maxBodyHeight ? Math.max(1, innerWidth - 1) : innerWidth;
-		const infoLines = infoWidth === innerWidth ? fullWidthInfoLines : this.#info.render(infoWidth);
-		if (this.#lastInfoWidth !== infoWidth || this.#lastInfoLines !== infoLines) {
+		const innerWidth = dialogContentWidth(width);
+		const budget = this.#maxHeight ?? Math.max(1, this.#host.terminal.rows);
+		const footer = `${theme.getSymbolPreset() === "ascii" ? "up/down" : "↑/↓"} scroll${theme.sep.dot}Esc close`;
+		const chrome = Number(budget >= 3) + Number(budget >= 2) + Number(budget >= 6);
+		const maxBodyHeight = Math.max(1, budget - chrome);
+		if (this.#lastLayoutWidth !== innerWidth || this.#lastBodyHeight !== maxBodyHeight || !this.#lastInfoLines) {
+			const fullWidthInfoLines = wrapTextWithAnsi(this.#info.getText(), innerWidth, { hard: true });
+			const infoWidth = fullWidthInfoLines.length > maxBodyHeight ? Math.max(1, innerWidth - 1) : innerWidth;
+			const infoLines =
+				infoWidth === innerWidth
+					? fullWidthInfoLines
+					: wrapTextWithAnsi(this.#info.getText(), infoWidth, { hard: true });
 			this.#scrollView.setLines(infoLines);
-			this.#lastInfoWidth = infoWidth;
 			this.#lastInfoLines = infoLines;
+			this.#lastLayoutWidth = innerWidth;
+			this.#lastBodyHeight = maxBodyHeight;
 		}
 
-		const height = Math.max(1, Math.min(infoLines.length, maxBodyHeight));
+		const height = Math.max(1, Math.min(this.#lastInfoLines.length, maxBodyHeight));
 		if (this.#lastHeight !== height) {
 			this.#scrollView.setHeight(height);
 			this.#lastHeight = height;
 		}
-		return this.#panel.render(width);
+		this.#scrollView.setSymbols(getSymbolTheme());
+		return renderDialog("Session Info", this.#scrollView.render(innerWidth), width, budget, footer).lines;
 	}
 }

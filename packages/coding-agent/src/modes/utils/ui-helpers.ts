@@ -398,15 +398,19 @@ export class UiHelpers {
 		let pendingUsageTimestamp: number | undefined;
 		let pendingReadUsageCallIds: string[] | undefined;
 		let pendingUsageTurnElapsed: number | undefined;
-		// Small mode/model/elapsed endcap for the same completion, flushed once
-		// alongside the usage row above — after the turn's tool results have
-		// materialized — so it never repeats per assistant segment and a late
-		// tool result cannot append a second row.
-		let pendingEndcapModel: string | undefined;
-		let pendingEndcapElapsedMs: number | undefined;
+		// Usage stays associated with each completion; compact endcaps share the
+		// live controller's turn-tail order across multi-completion tool loops.
+		const pendingEndcaps: Array<{ model?: string; elapsedMs?: number }> = [];
+		const flushPendingEndcaps = () => {
+			for (const endcap of pendingEndcaps) {
+				const block = createCompletionEndcapBlock(endcap);
+				if (block) this.ctx.chatContainer.addChild(block);
+			}
+			pendingEndcaps.length = 0;
+		};
 		let turnStartedAt: number | undefined;
 		const flushPendingUsage = () => {
-			if (!pendingUsage && pendingEndcapModel === undefined && pendingEndcapElapsedMs === undefined) return;
+			if (!pendingUsage) return;
 			if (pendingUsage) {
 				const usageAttached =
 					pendingReadUsageCallIds !== undefined &&
@@ -433,21 +437,12 @@ export class UiHelpers {
 					);
 				}
 			}
-			if (pendingEndcapModel !== undefined || pendingEndcapElapsedMs !== undefined) {
-				const endcap = createCompletionEndcapBlock({
-					model: pendingEndcapModel,
-					elapsedMs: pendingEndcapElapsedMs,
-				});
-				if (endcap) this.ctx.chatContainer.addChild(endcap);
-			}
 			pendingUsage = undefined;
 			pendingUsageDuration = undefined;
 			pendingUsageTtft = undefined;
 			pendingUsageTimestamp = undefined;
 			pendingReadUsageCallIds = undefined;
 			pendingUsageTurnElapsed = undefined;
-			pendingEndcapModel = undefined;
-			pendingEndcapElapsedMs = undefined;
 		};
 		// Rebuild-time mirror of the event controller's displaceable-poll
 		// bookkeeping: a `hub` wait that found every watched job still running is
@@ -507,6 +502,12 @@ export class UiHelpers {
 			if (i > 0) yield;
 			const message = messages[i]!;
 			if (message.role !== "toolResult") flushPendingUsage();
+			if (
+				(message.role === "user" && message.attribution !== "agent") ||
+				(message.role === "developer" && message.synthetic) ||
+				(message.role === "custom" && isUserTurnInitiator(message as CustomMessage))
+			)
+				flushPendingEndcaps();
 			// Assistant messages need special handling for tool calls
 			if (message.role === "assistant") {
 				const timeline = splitAssistantMessageToolTimeline(message);
@@ -663,18 +664,18 @@ export class UiHelpers {
 					: undefined;
 				if (assistantUsageIsBilled(message.usage)) {
 					const messageModel = (message as { model?: unknown }).model;
-					pendingEndcapModel =
+					const endcapModel =
 						this.ctx.settings.get("display.showTokenUsage") &&
 						typeof messageModel === "string" &&
 						messageModel.trim()
 							? messageModel.trim()
 							: undefined;
-					pendingEndcapElapsedMs = this.ctx.settings.get("display.showTurnTime")
+					const endcapElapsedMs = this.ctx.settings.get("display.showTurnTime")
 						? turnElapsedMs(turnStartedAt, message)
 						: undefined;
-				} else {
-					pendingEndcapModel = undefined;
-					pendingEndcapElapsedMs = undefined;
+					if (endcapModel !== undefined || endcapElapsedMs !== undefined) {
+						pendingEndcaps.push({ model: endcapModel, elapsedMs: endcapElapsedMs });
+					}
 				}
 			} else if (message.role === "toolResult") {
 				if (options.preservedLiveToolCallIds?.has(message.toolCallId)) continue;
@@ -786,6 +787,11 @@ export class UiHelpers {
 			}
 		}
 		flushPendingUsage();
+		if (this.ctx.viewSession.isStreaming && this.ctx.eventController) {
+			this.ctx.eventController.inheritCompletionEndcaps(pendingEndcaps);
+		} else {
+			flushPendingEndcaps();
+		}
 
 		// The trailing read run has no following break to close it; seal so the
 		// rebuilt group can retire as history even with a never-persisted result.

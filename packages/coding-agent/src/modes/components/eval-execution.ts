@@ -7,6 +7,7 @@ import { Container, type Loader, Text, type TUI } from "@harvest/pi-tui";
 import { sanitizeText } from "@harvest/pi-utils";
 import { highlightCode, theme } from "../../modes/theme/theme";
 import type { TruncationMeta } from "../../tools/output-meta";
+import type { OutputPanel } from "../../tui/output-block";
 import {
 	buildExecutionFrame,
 	buildStatusFooter,
@@ -33,7 +34,7 @@ export class EvalExecutionComponent extends Container {
 	// transcript's width-epoch resolution and committed-render bypass must
 	// observe that.
 	#blockVersion = 0;
-	#contentContainer: Container;
+	#contentContainer: OutputPanel;
 
 	#highlightLang(): "python" | "javascript" {
 		return this.language === "js" ? "javascript" : "python";
@@ -46,7 +47,7 @@ export class EvalExecutionComponent extends Container {
 		const headerLines = codeLines.map((line, index) =>
 			index === 0 ? `${prompt} ${line}` : `${continuation}${line}`,
 		);
-		return new Text(headerLines.join("\n"), 1, 0);
+		return new Text(headerLines.join("\n"), 0, 0);
 	}
 
 	constructor(
@@ -132,11 +133,20 @@ export class EvalExecutionComponent extends Container {
 
 		const colorKey: ExecutionColorKey = this.excludeFromContext ? "dim" : "pythonMode";
 		this.#contentContainer.addChild(this.#formatHeader(colorKey));
+		this.#contentContainer.setAccent(
+			this.#status === "error"
+				? "error"
+				: this.#status === "cancelled" || this.#status === "unknown"
+					? "warning"
+					: this.#status === "running"
+						? colorKey
+						: "borderMuted",
+		);
 
 		if (availableLines.length > 0) {
 			if (this.#expanded) {
 				const displayText = availableLines.map(line => theme.fg("muted", line)).join("\n");
-				this.#contentContainer.addChild(new Text(`\n${displayText}`, 1, 0));
+				this.#contentContainer.addChild(new Text(`\n${displayText}`, 0, 0));
 			} else {
 				const styledOutput = previewLogicalLines.map(line => theme.fg("muted", line)).join("\n");
 				this.#contentContainer.addChild(createCollapsedPreview(`\n${styledOutput}`, PREVIEW_LINES));

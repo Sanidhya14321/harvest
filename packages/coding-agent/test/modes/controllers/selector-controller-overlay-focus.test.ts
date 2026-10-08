@@ -40,6 +40,7 @@ function createCtx(slot: EditorSlot, editor: unknown) {
 		editorContainer: slot,
 		sessionManager: { getSessionFile: () => undefined },
 		ui: {
+			showOverlay: vi.fn(() => ({ hide: vi.fn(), setHidden: vi.fn(), isHidden: () => false })),
 			setFocus,
 			requestRender: vi.fn(),
 		},
@@ -111,7 +112,8 @@ describe("SelectorController editor-slot close paths", () => {
 			done = release;
 			return { component: selectorView, focus: focusTarget };
 		});
-		expect(slot.children).toEqual([selectorView]);
+		expect(slot.children).toHaveLength(1);
+		expect((slot.children[0] as Component).render(80)).toEqual([]);
 		expect(setFocus).toHaveBeenLastCalledWith(focusTarget);
 
 		done();

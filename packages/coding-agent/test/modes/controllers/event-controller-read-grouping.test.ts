@@ -102,6 +102,35 @@ function hasImageComponent(component: Component): boolean {
 }
 
 describe("EventController read-group accretion", () => {
+	it("keeps later reads grouped when cumulative updates replay an earlier prose separator", async () => {
+		const { controller, chatContainer } = createFixture();
+		const first = read("before.ts");
+		const second = read("after.ts");
+		const third = read("next.ts");
+		const separator: Block = { type: "text", text: "Reviewing the remaining files" };
+		await streamCompletion(controller, [first]);
+		for (const content of [
+			[first, separator],
+			[first, separator, second],
+			[first, separator, second, third],
+		]) {
+			await controller.handleEvent({
+				type: "message_update",
+				message: assistantMessage(content),
+			} as AgentSessionEvent);
+		}
+
+		const groups = readGroups(chatContainer);
+		expect(groups).toHaveLength(2);
+		expect(header(groups[0]!)).toContain("before.ts");
+		expect(header(groups[1]!)).toContain("Read (2)");
+		const lines = chatContainer.render(120).map(line => Bun.stripANSI(line));
+		const proseIndex = lines.findIndex(line => line.includes("Reviewing the remaining files"));
+		expect(lines.findIndex(line => line.includes("before.ts"))).toBeLessThan(proseIndex);
+		expect(lines.findIndex(line => line.includes("Read (2)"))).toBeGreaterThan(proseIndex);
+		controller.dispose();
+	});
+
 	it("collapses a run of single-read completions into one group (mixed/empty thinking)", async () => {
 		const { controller, chatContainer } = createFixture();
 

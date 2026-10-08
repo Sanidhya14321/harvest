@@ -21,11 +21,13 @@ import {
 	mergePaletteItems,
 	paletteListBudget,
 	PALETTE_CHROME_ROWS,
+	paletteOverlayRows,
+	projectPendingSlashCommands,
 	resolvePaletteSelection,
 	TAB_MANAGEMENT_PALETTE_SOURCES,
 	type PaletteCommandSource,
 } from "@harvest/pi-coding-agent/modes/components/command-palette";
-import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { initTheme, setSymbolPreset, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { setKeybindings } from "@harvest/pi-tui";
 
 beforeAll(() => {
@@ -144,6 +146,215 @@ describe("palette intent classification", () => {
 	});
 });
 
+describe("pending projection preserves unknown metadata (C1)", () => {
+	const isBuiltin = (name: string): boolean => name === "status" || name === "tab close";
+
+	it("never stamps false from absent metadata — unknown stays undefined", () => {
+		// Failure mode: the owner projected `hasSubcommands: <boolean expr>`
+		// (false when no factory), defeating the leaf unknown→draft fallback
+		// so incomplete extension commands bare-executed.
+		const sources = projectPendingSlashCommands(
+			[
+				{ name: "deploy", description: "deploy things" },
+				{ name: "skill:review", description: "review skill" },
+				{ name: "status", description: "builtin" },
+			],
+			isBuiltin,
+		);
+		expect(sources.map(source => source.name)).toEqual(["deploy", "skill:review"]);
+		for (const source of sources) {
+			expect(source.allowArgs).toBeUndefined();
+			expect(source.hasSubcommands).toBeUndefined();
+		}
+		expect(sources[0]?.group).toBe("extension");
+		expect(sources[1]?.group).toBe("skill");
+	});
+
+	it("passes authoritative facts through: explicit allowArgs plus factory-only subcommands", () => {
+		const factory = (): string[] => [];
+		const sources = projectPendingSlashCommands(
+			[
+				{ name: "a", allowArgs: true },
+				{ name: "b", allowArgs: false },
+				{ name: "c", getArgumentCompletions: factory },
+				{ name: "d", getArgumentCompletions: undefined },
+			],
+			() => false,
+		);
+		const byName = new Map(sources.map(source => [source.name, source]));
+		expect(byName.get("a")?.allowArgs).toBe(true);
+		expect(byName.get("b")?.allowArgs).toBe(false);
+		expect(byName.get("b")?.hasSubcommands).toBeUndefined();
+		expect(byName.get("c")?.hasSubcommands).toBe(true);
+		expect(byName.get("d")?.hasSubcommands).toBeUndefined();
+	});
+
+	it("projected sources classify end-to-end: unknown drafts, explicit arg-free runs", () => {
+		const factory = (): string[] => [];
+		const items = mergePaletteItems(
+			projectPendingSlashCommands(
+				[
+					{ name: "unknown-cmd", description: "no metadata" },
+					{ name: "runnable", description: "explicitly arg-free", allowArgs: false },
+					{ name: "takes-args", description: "explicit args", allowArgs: true },
+					{ name: "subbed", description: "factory", getArgumentCompletions: factory },
+				],
+				() => false,
+			),
+		);
+		const map = byId(items);
+		expect(map.get("/unknown-cmd")?.intent).toBe("draft");
+		expect(map.get("/runnable")?.intent ?? "run").toBe("run");
+		expect(map.get("/takes-args")?.intent).toBe("draft");
+		expect(map.get("/subbed")?.intent).toBe("draft");
+	});
+
+	it("selected-item callbacks fire once: unknown selects draft, known selects dispatch", () => {
+		// Failure mode: double-Enter dispatches twice, or Escape after Enter
+		// re-fires close and restores a stale draft over the selection.
+		setKeybindings(KeybindingsManager.inMemory());
+		const items = mergePaletteItems([
+			{ name: "unknown-cmd", description: "no metadata", group: "extension" },
+			{ name: "runnable", description: "arg-free", group: "extension", allowArgs: false },
+		]);
+		const palette = new CommandPaletteComponent();
+		palette.setItems(items);
+		const picked: string[] = [];
+		let closes = 0;
+		palette.onSelect = item => picked.push(item.id);
+		palette.onClose = () => closes++;
+		palette.handleInput("\n");
+		palette.handleInput("\n");
+		palette.handleInput("\x1b");
+		expect(picked).toEqual(["/unknown-cmd"]);
+		expect(closes).toBe(0);
+		expect(palette.isSettled()).toBe(true);
+		expect(resolvePaletteSelection({ id: "/unknown-cmd", title: "/unknown-cmd", intent: "draft" })).toEqual({
+			kind: "draft",
+			text: "/unknown-cmd ",
+		});
+
+		const run = new CommandPaletteComponent();
+		run.setItems(items);
+		run.setQuery("runnable");
+		const dispatched: string[] = [];
+		run.onSelect = item => dispatched.push(item.id);
+		run.handleInput("\n");
+		expect(dispatched).toEqual(["/runnable"]);
+		expect(resolvePaletteSelection({ id: "/runnable", title: "/runnable", group: "extension" })).toEqual({
+			kind: "dispatch",
+			text: "/runnable",
+		});
+	});
+
+	it("escape closes once and repeated escape never re-fires", () => {
+		setKeybindings(KeybindingsManager.inMemory());
+		const palette = new CommandPaletteComponent();
+		palette.setItems([{ id: "/a", title: "/a" }]);
+		let closes = 0;
+		palette.onClose = () => closes++;
+		palette.handleInput("\x1b");
+		palette.handleInput("\x1b");
+		expect(closes).toBe(1);
+		expect(palette.isSettled()).toBe(true);
+	});
+});
+
+describe("palette resize + ascii + edge rendering (C2)", () => {
+	function hinted(count: number) {
+		return Array.from({ length: count }, (_, i) => ({
+			id: `/cmd-${i}`,
+			title: `/cmd-${i}`,
+			hint: `Does thing ${i}`,
+		}));
+	}
+
+	function budgetForTerminal(rows: number): number {
+		return paletteListBudget(paletteOverlayRows(rows));
+	}
+
+	it("keeps selection stable across 100x45 → 80x10 → 60x8 → 24x4 → expand", () => {
+		// Failure mode: the old min-8 overlay floor overstated tiny viewports
+		// so the list budget overflowed and hid every action; single-tier
+		// rendering hid the prompt or the selection at 24x4.
+		setKeybindings(KeybindingsManager.inMemory());
+		const palette = new CommandPaletteComponent();
+		palette.setItems(hinted(25));
+		palette.setMaxVisible(budgetForTerminal(45));
+		for (let i = 0; i < 20; i++) palette.moveSelection(1);
+		expect(palette.selectedItem()?.id).toBe("/cmd-20");
+		for (const rows of [10, 8, 4]) {
+			palette.setMaxVisible(budgetForTerminal(rows));
+			expect(palette.visibleItems().map(item => item.id)).toContain("/cmd-20");
+			const text = Bun.stripANSI(palette.render(rows === 4 ? 24 : rows === 8 ? 60 : 80).join("\n"));
+			// Prompt row (query) and the selected action are always visible.
+			expect(text).toContain("/cmd-20");
+		}
+		// Expand again: the selection survives and the full chrome returns.
+		palette.setMaxVisible(budgetForTerminal(45));
+		expect(palette.selectedItem()?.id).toBe("/cmd-20");
+		const expanded = Bun.stripANSI(palette.render(100).join("\n"));
+		expect(expanded).toContain("/cmd-20");
+		expect(expanded).toContain("Does thing 20");
+	});
+
+	it("renders title/input only at 24x4 without overflow or missing selection", () => {
+		setKeybindings(KeybindingsManager.inMemory());
+		const palette = new CommandPaletteComponent();
+		palette.setItems(hinted(10));
+		palette.setMaxVisible(budgetForTerminal(4));
+		const rendered = palette.render(24);
+		// Ultra-compact: prompt row + at most maxListRows titles, no borders.
+		expect(rendered.length).toBeLessThanOrEqual(1 + budgetForTerminal(4));
+		const text = Bun.stripANSI(rendered.join("\n"));
+		expect(text).toContain("/cmd-0");
+		for (const row of rendered) {
+			expect(Bun.stripANSI(row).length).toBeLessThanOrEqual(24);
+		}
+	});
+
+	it("renders empty search, long descriptions, and paste commits truthfully", () => {
+		setKeybindings(KeybindingsManager.inMemory());
+		const palette = new CommandPaletteComponent();
+		palette.setItems(hinted(5));
+		palette.setQuery("zzz-no-match");
+		palette.setMaxVisible(budgetForTerminal(24));
+		expect(Bun.stripANSI(palette.render(80).join("\n"))).toContain("No matching commands");
+
+		const long = new CommandPaletteComponent();
+		const desc = `Does the thing with ${"very ".repeat(40)}long detail`;
+		long.setItems([{ id: "/deploy", title: "/deploy", hint: desc, intent: "draft" }]);
+		long.setMaxVisible(budgetForTerminal(24));
+		for (const row of long.render(60)) {
+			expect(Bun.stripANSI(row).length).toBeLessThanOrEqual(60);
+		}
+		expect(Bun.stripANSI(long.render(60).join("\n"))).toContain("/deploy");
+
+		const paste = new CommandPaletteComponent();
+		paste.setItems(hinted(5));
+		paste.handleInput("/cmd-1");
+		expect(paste.query).toBe("/cmd-1");
+		expect(paste.selectedItem()?.id).toBe("/cmd-1");
+	});
+
+	it("uses the central cursor symbol — ASCII preset renders > with no unicode cursor", async () => {
+		setKeybindings(KeybindingsManager.inMemory());
+		await setSymbolPreset("ascii");
+		try {
+			expect(theme.nav.cursor).toBe(">");
+			const palette = new CommandPaletteComponent();
+			palette.setItems(hinted(3));
+			palette.setMaxVisible(budgetForTerminal(24));
+			const text = palette.render(80).join("\n");
+			expect(text).not.toContain("❯");
+			expect(text).not.toContain("›");
+			expect(Bun.stripANSI(text)).toContain("> /cmd-0");
+		} finally {
+			await initTheme(false);
+		}
+	});
+});
+
 describe("palette budget sequences", () => {
 	function hinted(count: number) {
 		return Array.from({ length: count }, (_, i) => ({
@@ -165,7 +376,7 @@ describe("palette budget sequences", () => {
 		for (let i = 0; i < 24; i++) palette.moveSelection(1);
 		const rendered = palette.render(80);
 		expect(rendered.length).toBeLessThanOrEqual(PALETTE_CHROME_ROWS + paletteListBudget(14));
-		expect(Bun.stripANSI(rendered.join("\n"))).toContain("› /cmd-24");
+		expect(Bun.stripANSI(rendered.join("\n"))).toContain(`${theme.nav.cursor} /cmd-24`);
 	});
 
 	it("costs an empty-description draft its argument-marker row", () => {

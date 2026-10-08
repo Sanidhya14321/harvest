@@ -1,4 +1,4 @@
-import { replaceTabs, wrapTextWithAnsi } from "@harvest/pi-tui";
+import { Ellipsis, replaceTabs, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@harvest/pi-tui";
 import { expandKeyHint } from "../../tools/render-utils";
 import { theme } from "../theme/theme";
 
@@ -21,25 +21,36 @@ export function formatErrorBlock(
 	maxRows: number,
 	styleLine: (line: string, index: number) => string,
 ): string {
+	contentWidth = Math.max(0, Math.floor(contentWidth));
+	if (contentWidth === 0) return "";
 	const lines = replaceTabs(message)
 		.split("\n")
 		.map(line => line.trim())
 		.filter(line => line.length > 0);
 	if (lines.length === 0) lines.push("Unknown error");
-	const wrapWidth = Math.max(1, contentWidth - CONTINUATION_INDENT.length);
+	const indent = CONTINUATION_INDENT.slice(0, Math.max(0, contentWidth - 1));
+	const wrapWidth = contentWidth - indent.length;
 	const rows: string[] = [];
 	for (let index = 0; index < lines.length; index++) {
-		for (const row of wrapTextWithAnsi(styleLine(lines[index]!, index), wrapWidth)) {
-			rows.push(rows.length === 0 ? row : `${CONTINUATION_INDENT}${row}`);
+		for (const row of wrapTextWithAnsi(styleLine(lines[index]!, index), wrapWidth, { hard: true })) {
+			rows.push(rows.length === 0 ? row : `${indent}${row}`);
 		}
 	}
 	if (rows.length > maxRows) {
 		const hidden = rows.length - maxRows;
 		rows.length = maxRows;
+		const expandKey = expandKeyHint();
+		const fullHint = `${indent}${theme.symbol("sep.ellipsis")} +${hidden} more line${hidden === 1 ? "" : "s"} (${expandKey} to expand)`;
+		// Keep the action key reachable when explanation cannot fit the row.
+		const hint = visibleWidth(fullHint) > contentWidth ? `${expandKey} expand` : fullHint;
 		rows.push(
 			theme.fg(
 				"dim",
-				`${CONTINUATION_INDENT}… +${hidden} more line${hidden === 1 ? "" : "s"} (${expandKeyHint()} to expand)`,
+				truncateToWidth(
+					hint,
+					contentWidth,
+					theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+				),
 			),
 		);
 	}

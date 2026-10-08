@@ -35,6 +35,7 @@ describe("SelectorController login", () => {
 		const refresh = vi.fn(() => new Promise<void>(() => {}));
 		const refreshProvider = vi.fn(async () => {});
 		const ctx = {
+			sessionManager: { getSessionFile: () => undefined },
 			oauthManualInput: {
 				waitForInput: vi.fn(),
 				clear: vi.fn(),
@@ -50,7 +51,11 @@ describe("SelectorController login", () => {
 			// and restores it when the flow settles.
 			editorContainer: { clear: vi.fn(), addChild: vi.fn(), children: [] },
 			editor: {},
-			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
+			ui: {
+				showOverlay: vi.fn(() => ({ hide: vi.fn(), setHidden: vi.fn(), isHidden: () => false })),
+				setFocus: vi.fn(),
+				requestRender: vi.fn(),
+			},
 			showStatus: vi.fn(),
 			showError: vi.fn(),
 			present: vi.fn((block: unknown) => {
@@ -84,9 +89,11 @@ describe("SelectorController login", () => {
 		);
 		const authStorage = { login } as unknown as AuthStorage;
 		const editorSlot: unknown[] = [];
+		let mountedDialog: unknown;
 		const editor = {};
 		const presentedBlocks: unknown[] = [];
 		const ctx = {
+			sessionManager: { getSessionFile: () => undefined },
 			oauthManualInput: { waitForInput: vi.fn(), clear: vi.fn() },
 			session: { modelRegistry: { authStorage, refreshProvider: vi.fn(async () => {}) } },
 			editorContainer: {
@@ -95,7 +102,14 @@ describe("SelectorController login", () => {
 				children: editorSlot,
 			},
 			editor,
-			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
+			ui: {
+				showOverlay: vi.fn(component => {
+					mountedDialog = component;
+					return { hide: vi.fn(), setHidden: vi.fn(), isHidden: () => false };
+				}),
+				setFocus: vi.fn(),
+				requestRender: vi.fn(),
+			},
 			showStatus: vi.fn(),
 			showError: vi.fn(),
 			present: vi.fn((block: unknown) => {
@@ -106,7 +120,7 @@ describe("SelectorController login", () => {
 		const controller = new SelectorController(ctx);
 
 		const loginDone = controller.showOAuthSelector("login", "xai-oauth");
-		const dialog = editorSlot[0] as { handleInput(data: string): void };
+		const dialog = mountedDialog as { handleInput(data: string): void };
 		expect(dialog).toBeDefined();
 		expect(dialog).not.toBe(editor);
 

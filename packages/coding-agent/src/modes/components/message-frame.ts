@@ -1,17 +1,18 @@
 /**
  * Shared rendering for extension/hook custom message frames.
  *
- * Both `CustomMessageComponent` and `HookMessageComponent` wrap a
- * `Spacer(1) + Box` layout, try a user-supplied renderer first, and fall
+ * Both `CustomMessageComponent` and `HookMessageComponent` use a quiet
+ * output panel, try a user-supplied renderer first, and fall
  * back to a label + markdown body when the renderer returns nothing or
  * throws. The only meaningful difference is that hook messages collapse to
  * the first N lines when not expanded; extension messages render in full.
  */
 
 import type { TextContent } from "@harvest/pi-ai";
-import type { Box, Component } from "@harvest/pi-tui";
+import type { Component, Container } from "@harvest/pi-tui";
 import { Markdown, Spacer, Text } from "@harvest/pi-tui";
 import { getMarkdownTheme, type Theme, type ThemeColor, theme } from "../../modes/theme/theme";
+import { OutputPanel } from "../../tui/output-block";
 
 /** Message shape consumed by the shared frame. */
 export interface FramedMessage {
@@ -32,13 +33,13 @@ export type FramedRenderer<M extends FramedMessage> = (
 
 export interface RebuildFrameOptions<M extends FramedMessage> {
 	message: M;
-	box: Box;
+	box: Container;
 	expanded: boolean;
 	/** Icon glyph shown before the customType in the default header (e.g. a hook/extension icon). */
 	icon?: string;
 	/** Hide the default type header while retaining the message body. */
 	hideHeader?: boolean;
-	/** Semantic color for the outline, defaulting to the muted border. */
+	/** Semantic color for the notice rail, defaulting to the muted border. */
 	borderColor?: ThemeColor;
 	/** Collapse the markdown body to this many lines when `expanded` is false. Omit to never collapse. */
 	collapseAfterLines?: number;
@@ -47,7 +48,7 @@ export interface RebuildFrameOptions<M extends FramedMessage> {
 
 /**
  * Attempt the custom renderer; on failure or undefined return, populate `box`
- * with the configured outline, optional type header, and markdown body. When
+ * with the configured rail, optional type header, and markdown body. When
  * the custom renderer succeeds, return its Component so the caller can mount
  * it and skip the default box.
  */
@@ -62,9 +63,7 @@ export function renderFramedMessage<M extends FramedMessage>(opts: RebuildFrameO
 	}
 
 	opts.box.clear();
-	// Match the skill card: a subtle rounded outline so injected messages read as cards.
-	opts.box.setBorder({ chars: theme.boxRound, color: t => theme.fg(opts.borderColor ?? "borderMuted", t) });
-
+	if (opts.box instanceof OutputPanel) opts.box.setAccent(opts.borderColor ?? "borderMuted");
 	if (!opts.hideHeader) {
 		const tag = opts.icon ? `${opts.icon} ${opts.message.customType}` : opts.message.customType;
 		opts.box.addChild(new Text(theme.fg("customMessageLabel", theme.bold(tag)), 0, 0));
@@ -84,7 +83,7 @@ export function renderFramedMessage<M extends FramedMessage>(opts: RebuildFrameO
 	if (!opts.expanded && opts.collapseAfterLines !== undefined) {
 		const lines = text.split("\n");
 		if (lines.length > opts.collapseAfterLines) {
-			text = `${lines.slice(0, opts.collapseAfterLines).join("\n")}\n…`;
+			text = `${lines.slice(0, opts.collapseAfterLines).join("\n")}\n${theme.symbol("sep.ellipsis")} (ctrl+o to expand)`;
 		}
 	}
 

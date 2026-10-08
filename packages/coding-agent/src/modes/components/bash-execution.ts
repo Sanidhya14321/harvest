@@ -23,12 +23,14 @@ import { theme } from "../../modes/theme/theme";
 import { loadXtermTerminal } from "../../tools/bash-interactive";
 import type { TruncationMeta } from "../../tools/output-meta";
 import { resolveImageOptions } from "../../tools/render-utils";
+import type { OutputPanel } from "../../tui/output-block";
 import { readTerminalRows, styleTerminalRow } from "../../tools/terminal-output";
 import { getSixelLineMask, isSixelPassthroughEnabled, sanitizeWithOptionalSixelPassthrough } from "../../utils/sixel";
 import {
 	buildExecutionFrame,
 	buildStatusFooter,
 	createCollapsedPreview,
+	type ExecutionColorKey,
 	type ExecutionStatus,
 	resolveExecutionStatus,
 } from "./execution-shared";
@@ -69,7 +71,7 @@ export class BashExecutionComponent extends Container {
 	#blockVersion = 0;
 	#displayDirty = false;
 	#chunkGate = false;
-	#contentContainer: Container;
+	#contentContainer: OutputPanel;
 	#headerText: Text;
 	#ui: TUI;
 	// PTY replay state: raw terminal bytes stream into a headless xterm and the
@@ -84,6 +86,7 @@ export class BashExecutionComponent extends Container {
 	#images: readonly ImageContent[] = [];
 	#showImages = true;
 	readonly #instanceId = nextBashExecutionId++;
+	readonly #colorKey: ExecutionColorKey;
 
 	constructor(
 		private readonly command: string,
@@ -95,12 +98,13 @@ export class BashExecutionComponent extends Container {
 
 		// Use dim border for excluded-from-context commands (!! prefix)
 		const colorKey = excludeFromContext ? "dim" : "bashMode";
+		this.#colorKey = colorKey;
 		const { contentContainer, loader } = buildExecutionFrame(this, ui, colorKey);
 		this.#contentContainer = contentContainer;
 		this.#loader = loader;
 
 		// Command header
-		this.#headerText = new Text(theme.fg(colorKey, theme.bold(`$ ${command}`)), 1, 0);
+		this.#headerText = new Text(theme.fg(colorKey, theme.bold(`$ ${command}`)), 0, 0);
 		this.#contentContainer.addChild(this.#headerText);
 		this.#contentContainer.addChild(this.#loader);
 	}
@@ -288,6 +292,16 @@ export class BashExecutionComponent extends Container {
 
 	#updateDisplay(): void {
 		const availableLines = this.#outputLines;
+		this.#contentContainer.setAccent(
+			this.#status === "error"
+				? "error"
+				: this.#status === "cancelled" || this.#status === "unknown"
+					? "warning"
+					: this.#status === "running"
+						? this.#colorKey
+						: "borderMuted",
+		);
+		this.#headerText.setText(theme.fg(this.#colorKey, theme.bold(`$ ${this.command}`)));
 
 		// Full output is shown when expanded or when sixel passthrough renders
 		// the raw payload; the collapsed preview shows only the tail window.
@@ -314,7 +328,7 @@ export class BashExecutionComponent extends Container {
 				const displayText = availableLines
 					.map((line, index) => (sixelLineMask?.[index] ? line : this.#styleDisplayLine(line)))
 					.join("\n");
-				this.#contentContainer.addChild(new Text(`\n${displayText}`, 1, 0));
+				this.#contentContainer.addChild(new Text(`\n${displayText}`, 0, 0));
 			} else {
 				// Use shared visual truncation utility, recomputed per render width
 				const styledOutput = previewLogicalLines.map(line => this.#styleDisplayLine(line)).join("\n");
@@ -340,7 +354,7 @@ export class BashExecutionComponent extends Container {
 			} else {
 				const dimensions = getImageDimensions(image.data, image.mimeType) ?? undefined;
 				this.#contentContainer.addChild(
-					new Text(theme.fg("muted", imageFallback(image.mimeType, dimensions)), 1, 0),
+					new Text(theme.fg("muted", imageFallback(image.mimeType, dimensions)), 0, 0),
 				);
 			}
 		}

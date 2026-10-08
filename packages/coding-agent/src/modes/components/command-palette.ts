@@ -37,6 +37,45 @@ export interface PaletteCommandSource {
 }
 
 /**
+ * Session slash-command shape the owner projects into palette sources. Only
+ * the fields the registry authoritatively reports are read: `allowArgs` when
+ * the command declares it, and a static-argument factory only when one
+ * exists. Absence is never stamped as `false` here — unknown metadata must
+ * reach {@link mergePaletteItems} as `undefined` so the fail-safe draft
+ * fallback applies.
+ */
+export interface PendingSlashCommandLike {
+	readonly name: string;
+	readonly description?: string;
+	readonly allowArgs?: boolean;
+	readonly getArgumentCompletions?: unknown;
+}
+
+/**
+ * Project live session slash commands (extensions, skills, custom/MCP) into
+ * palette sources without defeating the unknown-metadata draft fallback.
+ * Builtins (and tab verbs) are filtered by `isBuiltin`; skills group by their
+ * `skill:` prefix, everything else is an extension command. `allowArgs`
+ * passes through only when explicitly declared; `hasSubcommands` is set only
+ * on the authoritative fact of an argument-completion factory — never `false`
+ * from its absence.
+ */
+export function projectPendingSlashCommands(
+	commands: readonly PendingSlashCommandLike[],
+	isBuiltin: (name: string) => boolean,
+): PaletteCommandSource[] {
+	return commands
+		.filter(command => !isBuiltin(command.name))
+		.map(command => ({
+			name: command.name,
+			description: command.description,
+			group: command.name.startsWith("skill:") ? "skill" : "extension",
+			...(command.allowArgs !== undefined ? { allowArgs: command.allowArgs } : {}),
+			...(typeof command.getArgumentCompletions === "function" ? { hasSubcommands: true as const } : {}),
+		}));
+}
+
+/**
  * Merge registry sources into palette items, first source winning on
  * duplicate names. Argument/subcommand metadata survives as invocation
  * intent: commands that take arguments prepare a draft instead of
@@ -230,6 +269,20 @@ const CONTROL_COMMAND_KEYBINDINGS: Readonly<Record<string, AppKeybinding>> = {
 export const PALETTE_CHROME_ROWS = 3;
 /** Reserved rows below the list so the selected row never sits flush on the frame edge. */
 const PALETTE_RESERVE_ROWS = 1;
+/** Overlay share of the terminal devoted to the palette panel. */
+const PALETTE_OVERLAY_FRACTION = 0.6;
+
+/**
+ * Overlay row allocation for a terminal height: the panel's share of the
+ * viewport with no minimum-size assumption. The old `Math.max(8, …)` floor
+ * overstated tiny viewports (a 4-row terminal cannot host an 8-row overlay),
+ * so the list budget overflowed and hid every action. Callers derive the list
+ * budget with {@link paletteListBudget} and let the component collapse to its
+ * compact tiers when the allocation is short.
+ */
+export function paletteOverlayRows(terminalRows: number | undefined, fraction = PALETTE_OVERLAY_FRACTION): number {
+	return Math.max(1, Math.floor((terminalRows ?? 24) * fraction));
+}
 
 /**
  * List-body row budget for a viewport height, accounting the chrome rows above.
@@ -456,15 +509,38 @@ export class CommandPaletteComponent implements Component {
 	render(width: number): readonly string[] {
 		const w = clampDialogWidth(width, 60);
 		const inner = Math.max(1, w - 4);
+		const cursor = theme.nav.cursor;
+		// Collapse order before hiding the selection: descriptions/hint rows
+		// first (compact), then borders (ultra-compact). The prompt row and the
+		// selected action are always visible and keyboard behavior is
+		// unchanged, so controls stay reachable at any height.
+		if (this.#maxListRows <= 2) {
+			const full = this.filtered();
+			this.#clampSelection(full.length);
+			const rows: string[] = [truncateToWidth(replaceTabs(`${cursor} ${this.#query}`), w)];
+			if (full.length === 0) {
+				rows.push(truncateToWidth(theme.fg("muted", "No matching commands"), w));
+				return rows;
+			}
+			for (let i = this.#selected; i < Math.min(full.length, this.#selected + this.#maxListRows); i++) {
+				const item = full[i]!;
+				const label = i === this.#selected ? theme.fg("accent", `${cursor} ${item.title}`) : `  ${item.title}`;
+				rows.push(truncateToWidth(label, w));
+			}
+			this.#lastPageSize = Math.max(1, rows.length - 1);
+			return rows;
+		}
+		const compact = this.#maxListRows === 3;
 		const rows: string[] = [topBorder(w, "Commands")];
-		const prompt = replaceTabs(`› ${this.#query}`);
+		const prompt = replaceTabs(`${cursor} ${this.#query}`);
 		rows.push(row(truncateToWidth(prompt, inner), w, "accent"));
 		const full = this.filtered();
 		this.#clampSelection(full.length);
 		// Viewport-budgeted window: grow around the selection until the list
 		// body budget is spent, so the selected row is always visible without a
-		// fixed page-size assumption. Items with a description row cost two.
-		const { list, start } = this.#windowItems(full);
+		// fixed page-size assumption. Items with a description row cost two
+		// (one in compact mode, where descriptions collapse first).
+		const { list, start } = this.#windowItems(full, compact);
 		this.#lastPageSize = Math.max(1, list.length);
 		const windowStart = start;
 		if (list.length === 0) {
@@ -476,8 +552,8 @@ export class CommandPaletteComponent implements Component {
 			const argMarker = item.argHint ?? (item.intent === "draft" ? "takes arguments" : undefined);
 			const hintParts = [item.hint, argMarker, key].filter((part): part is string => !!part);
 			const hintText = hintParts.length > 0 ? hintParts.join(" · ") : undefined;
-			const label = active ? theme.fg("accent", `› ${item.title}`) : `  ${item.title}`;
-			const hint = hintText ? theme.fg("muted", ` ${hintText}`) : "";
+			const label = active ? theme.fg("accent", `${cursor} ${item.title}`) : `  ${item.title}`;
+			const hint = !compact && hintText ? theme.fg("muted", ` ${hintText}`) : "";
 			const combined = truncateToWidth(`${label}${visibleWidth(hint) > 0 ? "" : ""}`, inner);
 			rows.push(row(active ? theme.bg("selectedBg", combined) : combined, w, active ? "accent" : undefined));
 			if (hint) rows.push(row(theme.fg("muted", truncateToWidth(replaceTabs(`    ${hintText ?? ""}`), inner)), w));
@@ -490,12 +566,16 @@ export class CommandPaletteComponent implements Component {
 	 * Budget window over `full` (or the current filter) centered on the
 	 * selection: alternate growth below/above until the row budget is spent.
 	 * Returns the visible items plus the window's start index in `full`.
+	 * Compact windows cost every item one row (descriptions collapsed).
 	 */
-	#windowItems(full?: CommandPaletteItem[]): { list: CommandPaletteItem[]; start: number } {
+	#windowItems(
+		full?: CommandPaletteItem[],
+		compact = this.#maxListRows <= 3,
+	): { list: CommandPaletteItem[]; start: number } {
 		const items = full ?? this.filtered();
 		this.#clampSelection(items.length);
 		if (items.length === 0) return { list: [], start: 0 };
-		const cost = (item: CommandPaletteItem): number => (this.#hasHintRow(item) ? 2 : 1);
+		const cost = (item: CommandPaletteItem): number => (compact || !this.#hasHintRow(item) ? 1 : 2);
 		let start = this.#selected;
 		let end = this.#selected + 1;
 		let used = cost(items[this.#selected]!);

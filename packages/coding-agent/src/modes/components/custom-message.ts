@@ -1,8 +1,9 @@
 import type { Component } from "@harvest/pi-tui";
-import { Box, Container } from "@harvest/pi-tui";
+import { Container } from "@harvest/pi-tui";
 import type { MessageRenderer } from "../../extensibility/extensions/types";
 import { theme } from "../../modes/theme/theme";
 import { type CustomMessage, LIVE_DELEGATION_MESSAGE_TYPE } from "../../session/messages";
+import { OutputPanel } from "../../tui/output-block";
 import { renderFramedMessage } from "./message-frame";
 
 /**
@@ -10,7 +11,7 @@ import { renderFramedMessage } from "./message-frame";
  * Uses distinct styling to differentiate from user messages.
  */
 export class CustomMessageComponent extends Container {
-	#box: Box;
+	#box: OutputPanel;
 	#customComponent?: Component;
 	#expanded = false;
 
@@ -21,7 +22,7 @@ export class CustomMessageComponent extends Container {
 		super();
 
 		// Create box with custom background (used for default rendering)
-		this.#box = new Box(1, 1, t => theme.bg("customMessageBg", t));
+		this.#box = new OutputPanel(() => theme);
 		this.#box.setIgnoreTight(true);
 
 		this.#rebuild();

@@ -1,7 +1,8 @@
-import { Box, type Component, Markdown } from "@harvest/pi-tui";
+import { type Component, Ellipsis, Markdown, truncateToWidth } from "@harvest/pi-tui";
 import { formatNumber } from "@harvest/pi-utils";
 import { getMarkdownTheme, theme } from "../../modes/theme/theme";
 import type { BranchSummaryMessage, CompactionSummaryMessage, CustomMessage } from "../../session/messages";
+import { OutputPanel } from "../../tui/output-block";
 
 /** Divider labels per compaction method; unknown/legacy methods fall back to "compacted". */
 const COMPACTION_METHOD_LABELS: Record<string, string> = {
@@ -15,7 +16,8 @@ const COMPACTION_METHOD_LABELS: Record<string, string> = {
 /** `256K→20K` amount badge, or undefined when the entry predates `tokensAfter`. */
 function compactionAmount(message: CompactionSummaryMessage): string | undefined {
 	if (message.tokensAfter === undefined || message.tokensBefore <= 0) return undefined;
-	return `${formatNumber(message.tokensBefore)}→${formatNumber(message.tokensAfter)}`;
+	const arrow = theme.getSymbolPreset() === "ascii" ? "->" : "→";
+	return `${formatNumber(message.tokensBefore)}${arrow}${formatNumber(message.tokensAfter)}`;
 }
 
 interface SummaryDividerOptions {
@@ -26,7 +28,7 @@ interface SummaryDividerOptions {
 class SummaryDividerComponent implements Component {
 	#expanded = false;
 	#cache?: { width: number; lines: string[] };
-	#detail?: Box;
+	#detail?: OutputPanel;
 
 	constructor(private readonly options: SummaryDividerOptions) {}
 
@@ -64,7 +66,10 @@ class SummaryDividerComponent implements Component {
 		const remaining = width - plainWidth - 2;
 		if (remaining < 4) {
 			// Too narrow for a framed rule — emit the bare label.
-			return theme.fg("muted", label);
+			return theme.fg(
+				"muted",
+				truncateToWidth(label, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+			);
 		}
 		const left = Math.floor(remaining / 2);
 		const right = remaining - left;
@@ -75,9 +80,9 @@ class SummaryDividerComponent implements Component {
 		);
 	}
 
-	#detailBox(): Box {
+	#detailBox(): OutputPanel {
 		if (this.#detail) return this.#detail;
-		const box = new Box(1, 1, t => theme.bg("customMessageBg", t));
+		const box = new OutputPanel(() => theme);
 		box.setIgnoreTight(true);
 		box.addChild(
 			new Markdown(this.options.detailMarkdown(), 0, 0, getMarkdownTheme(), {

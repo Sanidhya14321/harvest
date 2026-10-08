@@ -1,20 +1,21 @@
 import type { TextContent } from "@harvest/pi-ai";
 import type { Component } from "@harvest/pi-tui";
-import { Box, Container, Markdown, Spacer, Text } from "@harvest/pi-tui";
+import { Container, Markdown, Spacer, Text } from "@harvest/pi-tui";
 import { getMarkdownTheme, theme } from "../../modes/theme/theme";
 import type { CustomMessage, SkillPromptDetails } from "../../session/messages";
 import { shortenPath } from "../../tools/render-utils";
 import { fileHyperlink } from "../../tui";
+import { OutputPanel } from "../../tui/output-block";
 
 export class SkillMessageComponent extends Container {
-	#box: Box;
+	#box: OutputPanel;
 	#contentComponent?: Component;
 	#expanded = false;
 
 	constructor(private readonly message: CustomMessage<SkillPromptDetails>) {
 		super();
 
-		this.#box = new Box(1, 1, t => theme.bg("customMessageBg", t));
+		this.#box = new OutputPanel(() => theme);
 		this.#box.setIgnoreTight(true);
 		this.#rebuild();
 	}
@@ -40,8 +41,6 @@ export class SkillMessageComponent extends Container {
 		this.removeChild(this.#box);
 		this.addChild(this.#box);
 		this.#box.clear();
-		// Re-read symbols every rebuild so a runtime theme/preset switch refreshes the outline.
-		this.#box.setBorder({ chars: theme.boxRound, color: t => theme.fg("borderMuted", t) });
 
 		const details = this.message.details;
 		const name = details?.name?.trim() || "unknown";
@@ -95,7 +94,7 @@ export class SkillMessageComponent extends Container {
 		if (parts.length === 0) {
 			return undefined;
 		}
-		return `  ${parts.join(theme.fg("muted", theme.sep.dot))}`;
+		return parts.join(theme.fg("muted", theme.sep.dot));
 	}
 
 	#extractText(): string {

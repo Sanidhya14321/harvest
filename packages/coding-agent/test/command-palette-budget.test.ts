@@ -8,7 +8,7 @@ import {
 	paletteListBudget,
 	TAB_MANAGEMENT_PALETTE_SOURCES,
 } from "@harvest/pi-coding-agent/modes/components/command-palette";
-import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { setKeybindings } from "@harvest/pi-tui";
 
 beforeAll(() => {
@@ -43,7 +43,7 @@ describe("command palette viewport budget", () => {
 		// Chrome (top/prompt/bottom) + budgeted list body.
 		expect(rendered.length).toBeLessThanOrEqual(3 + paletteListBudget(14));
 		const text = Bun.stripANSI(rendered.join("\n"));
-		expect(text).toContain("› /cmd-24");
+		expect(text).toContain(`${theme.nav.cursor} /cmd-24`);
 		expect(text).toContain("/cmd-24");
 	});
 

@@ -13,10 +13,13 @@ import * as AIError from "@harvest/pi-ai/error";
 import { resetSettingsForTest, Settings, settings } from "@harvest/pi-coding-agent/config/settings";
 import { AssistantMessageComponent } from "@harvest/pi-coding-agent/modes/components/assistant-message";
 import { ErrorBannerComponent } from "@harvest/pi-coding-agent/modes/components/error-banner";
+import { formatErrorBlock } from "@harvest/pi-coding-agent/modes/components/error-block";
 import { EventController } from "@harvest/pi-coding-agent/modes/controllers/event-controller";
-import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { initTheme, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { AgentSessionEvent } from "@harvest/pi-coding-agent/session/agent-session";
-import { Loader } from "@harvest/pi-tui";
+import { Loader, visibleWidth } from "@harvest/pi-tui";
+import { VirtualTerminal } from "../../tui/test/virtual-terminal";
 import { createInteractiveModeContext } from "./helpers/interactive-mode-context";
 
 function makeAssistantMessage(overrides: Partial<AssistantMessage> = {}): AssistantMessage {
@@ -520,6 +523,58 @@ describe("EventController working loader reconciliation", () => {
 });
 
 describe("ErrorBannerComponent", () => {
+	it("bounds the pinned reminder after resize while expansion retains the full provider error", () => {
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const body = Array.from({ length: 30 }, (_, i) => `error detail line ${i}`).join("\n");
+		const banner = new ErrorBannerComponent(body);
+		try {
+			banner.setMaxHeight(1);
+			const compact = banner.render(2);
+			expect(compact).toHaveLength(1);
+			expect(compact[0]).toBe("e ");
+			banner.setMaxHeight(4);
+			const resized = banner.render(80);
+			expect(resized).toHaveLength(4);
+			expect(resized.every(row => visibleWidth(row) <= 80)).toBe(true);
+			expect(resized.join("\n")).toContain("error detail line 0");
+			expect(resized.join("\n")).toContain("+28 more lines");
+			expect(resized.join("\n")).not.toMatch(/[^\x00-\x7f]/);
+			const inline = new AssistantMessageComponent(
+				makeAssistantMessage({ content: [], stopReason: "error", errorMessage: body }),
+			);
+			inline.setErrorPinned(true);
+			inline.setExpanded(true);
+			expect(Bun.stripANSI(inline.render(80).join("\n"))).toContain("error detail line 29");
+			setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "truecolor" }));
+			const colored = banner.render(80);
+			const terminal = new VirtualTerminal(80, 5);
+			terminal.write(colored.join("\r\n"));
+			for (let row = 0; row < 4; row++)
+				expect(terminal.getViewportRowBackgroundColumns(row)).toEqual(Array.from({ length: 80 }, (_, col) => col));
+		} finally {
+			setThemeInstance(previousTheme);
+		}
+	});
+
+	it("wraps long error tokens at tiny widths without dropping the final character or overflowing hanging indents", () => {
+		const payload = "ABCDEFGHIJKLMNOPQRSTUVWXYZ_END";
+		const tiny = formatErrorBlock(payload, 1, Infinity, line => line).split("\n");
+		expect(tiny.every(row => visibleWidth(row) <= 1)).toBe(true);
+		expect(tiny.join("")).toBe(payload);
+		const wrapped = formatErrorBlock(`\t${payload}`, 7, Infinity, line => `\x1b[31m${line}\x1b[0m`).split("\n");
+		expect(wrapped.every(row => visibleWidth(row) <= 7)).toBe(true);
+		expect(wrapped.map(row => Bun.stripANSI(row).trim()).join("")).toBe(payload);
+		const collapsed = formatErrorBlock(
+			Array.from({ length: 8 }, () => payload).join("\n"),
+			24,
+			2,
+			line => line,
+		).split("\n");
+		expect(collapsed.map(row => Bun.stripANSI(row)).at(-1)).toMatch(/ctrl\+o expand/i);
+		expect(collapsed.every(row => visibleWidth(row) <= 24)).toBe(true);
+	});
+
 	it("renders the provider error message", () => {
 		const banner = new ErrorBannerComponent("Output blocked by content filtering policy");
 		const rendered = Bun.stripANSI(banner.render(120).join("\n"));

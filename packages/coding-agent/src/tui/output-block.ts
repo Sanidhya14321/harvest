@@ -2,8 +2,17 @@
  * Bordered output container with optional header and sections.
  */
 import type { Component } from "@harvest/pi-tui";
-import { ImageProtocol, padding, TERMINAL, visibleWidth, wrapTextWithAnsi } from "@harvest/pi-tui";
-import type { Theme, ThemeColor } from "../modes/theme/theme";
+import {
+	applyBackgroundToLine,
+	Container,
+	Ellipsis,
+	ImageProtocol,
+	padding,
+	TERMINAL,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@harvest/pi-tui";
+import { getThemeEpoch, type Theme, type ThemeBg, type ThemeColor } from "../modes/theme/theme";
 import { getSixelLineMask } from "../utils/sixel";
 import type { State } from "./types";
 import type { RenderCache } from "./utils";
@@ -70,8 +79,11 @@ export function outputBlockContentWidth(
 }
 
 export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): string[] {
+	if (options.width <= 0) return [];
+	if (options.width < 5) return renderRailPanel(options, theme);
 	if (options.variant === "rail" || options.variant === "plain") return renderRailPanel(options, theme);
 	const { header, headerMeta, state, sections = [], width, applyBg = true } = options;
+	const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
 	const h = theme.boxRound.horizontal;
 	const v = theme.boxRound.vertical;
 	const cap = h.repeat(3);
@@ -90,6 +102,7 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 	const bgFn = (() => {
 		if (!state || !applyBg) return undefined;
 		const bgAnsi = theme.getBgAnsi(getStateBgColor(state));
+		if (!bgAnsi) return undefined;
 		// Keep block background stable even if inner content contains SGR resets (e.g. "\x1b[0m"),
 		// which would otherwise clear the outer background mid-line.
 		return (text: string) => {
@@ -173,7 +186,7 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
 		const leftWidth = visibleWidth(leftGlyphs);
 		const rightWidth = visibleWidth(rightGlyph);
 		const maxLabelWidth = Math.max(0, lineWidth - leftWidth - rightWidth);
-		const trimmedLabel = truncateToWidth(rawLabel, maxLabelWidth);
+		const trimmedLabel = truncateToWidth(rawLabel, maxLabelWidth, ellipsis);
 		const labelWidth = visibleWidth(trimmedLabel);
 		const fillCount = Math.max(0, lineWidth - leftWidth - labelWidth - rightWidth);
 		const fillGlyphs = h.repeat(fillCount);
@@ -214,7 +227,8 @@ export function renderOutputBlock(options: OutputBlockOptions, theme: Theme): st
  */
 export function renderRailPanel(options: OutputBlockOptions, theme: Theme): string[] {
 	const { header, headerMeta, state, sections = [], width } = options;
-	const lineWidth = Math.max(1, width);
+	const lineWidth = Math.max(0, Math.floor(width));
+	if (lineWidth === 0) return [];
 	const accent: ThemeColor =
 		options.borderColor ??
 		(state === "error"
@@ -224,27 +238,116 @@ export function renderRailPanel(options: OutputBlockOptions, theme: Theme): stri
 				: state === "running" || state === "pending"
 					? "accent"
 					: "borderMuted");
-	const railGlyph = theme.getSymbolPreset() === "ascii" ? "|" : "▎";
-	const rail = theme.fg(accent, railGlyph);
-	const contentWidth = Math.max(1, lineWidth - 2);
+	const contentWidth = outputPanelContentWidth(lineWidth);
+	const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
 	const out: string[] = [];
-	const title = [header, headerMeta].filter(Boolean).join(" · ");
+	const title = [header, headerMeta].filter(Boolean).join(theme.sep.dot);
 	if (title) {
 		for (const wrapped of wrapTextWithAnsi(title, contentWidth)) {
-			out.push(`${rail} ${theme.fg("toolTitle", truncateToWidth(wrapped, contentWidth))}`);
+			out.push(theme.fg("toolTitle", truncateToWidth(wrapped, contentWidth, ellipsis)));
 		}
 	}
 	for (const section of sections) {
-		if (section.label) out.push(`${rail} ${theme.fg("muted", truncateToWidth(section.label, contentWidth))}`);
-		for (const line of section.lines.flatMap(l => l.split("\n"))) {
+		if (section.label) out.push(theme.fg("muted", truncateToWidth(section.label, contentWidth, ellipsis)));
+		const lines = section.lines.flatMap(l => l.split("\n"));
+		const sixelMask = getSixelLineMask(lines);
+		for (let index = 0; index < lines.length; index++) {
+			const line = lines[index]!;
+			if (sixelMask[index]) {
+				out.push(line);
+				continue;
+			}
 			for (const wrapped of wrapTextWithAnsi(line.trimEnd(), contentWidth)) {
-				const inner = wrapped + padding(Math.max(0, contentWidth - visibleWidth(wrapped)));
-				out.push(options.variant === "plain" ? `  ${inner}` : `${rail} ${inner}`);
+				out.push(truncateToWidth(wrapped, contentWidth, ellipsis));
 			}
 		}
 	}
-	if (out.length === 0) out.push(`${rail} `);
-	return out.map(l => padToWidth(l, lineWidth));
+	if (out.length === 0) out.push("");
+	return renderOutputPanelLines(out, lineWidth, theme, {
+		accent,
+		plain: options.variant === "plain",
+		background: options.applyBg === false ? undefined : "panelBg",
+	});
+}
+
+/** Body allocation shared by Markdown, execution previews and quiet output panels. */
+export function outputPanelContentWidth(width: number): number {
+	const safeWidth = Math.max(0, Math.floor(width));
+	return safeWidth > 2 ? safeWidth - 2 : safeWidth;
+}
+
+/** Paint already laid-out content, preserving image protocol rows byte-for-byte. */
+export function renderOutputPanelLines(
+	lines: readonly string[],
+	width: number,
+	theme: Theme,
+	options: { accent?: ThemeColor; background?: ThemeBg; plain?: boolean } = {},
+): string[] {
+	const safeWidth = Math.max(0, Math.floor(width));
+	if (safeWidth === 0) return [];
+	const glyph = theme.getSymbolPreset() === "ascii" ? "|" : "▎";
+	const prefix = safeWidth > 2 ? (options.plain ? "  " : `${theme.fg(options.accent ?? "borderMuted", glyph)} `) : "";
+	const contentWidth = outputPanelContentWidth(safeWidth);
+	const sixelMask = getSixelLineMask(lines.slice());
+	const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
+	return lines.map((line, index) => {
+		if (sixelMask[index]) return line;
+		const row = prefix + truncateToWidth(line, contentWidth, ellipsis);
+		const background = options.background;
+		return background
+			? applyBackgroundToLine(row, safeWidth, text => theme.bgFill(background, text))
+			: padToWidth(row, safeWidth);
+	});
+}
+
+/** Shared notice/manual-output surface; child components retain their own layout and expansion. */
+export class OutputPanel extends Container {
+	#source?: readonly string[];
+	#cachedTheme?: Theme;
+	#cache?: { width: number; epoch: number; lines: readonly string[] };
+
+	constructor(
+		private readonly themeSource: Theme | (() => Theme),
+		private accent: ThemeColor = "borderMuted",
+		private readonly background: ThemeBg = "panelBg",
+	) {
+		super();
+	}
+
+	setAccent(accent: ThemeColor): void {
+		if (this.accent === accent) return;
+		this.accent = accent;
+		this.#cache = undefined;
+	}
+
+	override invalidate(): void {
+		super.invalidate();
+		this.#cache = undefined;
+	}
+
+	override render(width: number): readonly string[] {
+		const safeWidth = Math.max(0, Math.floor(width));
+		if (safeWidth === 0) return [];
+		const source = super.render(outputPanelContentWidth(safeWidth));
+		const epoch = getThemeEpoch();
+		const uiTheme = typeof this.themeSource === "function" ? this.themeSource() : this.themeSource;
+		if (
+			source === this.#source &&
+			this.#cachedTheme === uiTheme &&
+			this.#cache?.width === safeWidth &&
+			this.#cache.epoch === epoch
+		) {
+			return this.#cache.lines;
+		}
+		const lines = renderOutputPanelLines(source, safeWidth, uiTheme, {
+			accent: this.accent,
+			background: this.background,
+		});
+		this.#source = source;
+		this.#cachedTheme = uiTheme;
+		this.#cache = { width: safeWidth, epoch, lines };
+		return lines;
+	}
 }
 
 /**
@@ -259,7 +362,8 @@ export function renderInlineActivity(
 	state: State | undefined,
 	width: number,
 ): string[] {
-	const lineWidth = Math.max(1, width);
+	const lineWidth = Math.max(0, Math.floor(width));
+	if (lineWidth === 0) return [];
 	const color: ThemeColor =
 		state === "error"
 			? "error"
@@ -269,9 +373,23 @@ export function renderInlineActivity(
 					? "accent"
 					: "muted";
 	const glyph =
-		state === "error" ? theme.status.error : state === "running" || state === "pending" ? theme.status.running : "›";
-	const text = detail ? `${label} · ${detail}` : label;
-	const rowText = `${theme.fg(color, glyph)} ${theme.fg("muted", truncateToWidth(text, Math.max(1, lineWidth - 3)))}`;
+		state === "error"
+			? theme.status.error
+			: state === "running" || state === "pending"
+				? theme.status.running
+				: theme.nav.cursor;
+	const text = detail ? `${label}${theme.sep.dot}${detail}` : label;
+	const prefix = lineWidth > visibleWidth(glyph) + 1 ? `${theme.fg(color, glyph)} ` : "";
+	const rowText =
+		prefix +
+		theme.fg(
+			"muted",
+			truncateToWidth(
+				text,
+				lineWidth - visibleWidth(prefix),
+				theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+			),
+		);
 	return [padToWidth(rowText, lineWidth)];
 }
 
@@ -284,13 +402,15 @@ export function renderInlineActivity(
  */
 export class CachedOutputBlock {
 	#cache?: RenderCache;
+	#cachedTheme?: Theme;
 
 	/** Render with caching. Returns the cached (shared, caller-immutable) lines if options haven't changed. */
 	render(options: OutputBlockOptions, theme: Theme): readonly string[] {
 		const key = this.#buildKey(options);
-		if (this.#cache?.key === key) return this.#cache.lines;
+		if (this.#cachedTheme === theme && this.#cache?.key === key) return this.#cache.lines;
 		const lines = renderOutputBlock(options, theme);
 		this.#cache = { key, lines };
+		this.#cachedTheme = theme;
 		return lines;
 	}
 
@@ -301,6 +421,7 @@ export class CachedOutputBlock {
 
 	#buildKey(options: OutputBlockOptions): bigint {
 		const h = new Hasher();
+		h.u32(getThemeEpoch());
 		h.u32(options.width);
 		h.u32(normalizeContentPaddingLeft(options.contentPaddingLeft));
 		h.u32(

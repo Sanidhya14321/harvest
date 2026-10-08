@@ -113,13 +113,11 @@ export class ChatTranscriptBuilder {
 	#pendingReadUsageCallIds: string[] | undefined;
 	#pendingUsageElapsedMs: number | undefined;
 	/**
-	 * Small mode/model/elapsed endcap for the same completion, flushed once
-	 * alongside the usage row — after the turn's tool results have materialized —
-	 * so it never repeats per assistant segment and a late tool result cannot
-	 * append a second row.
+	 * One endcap per billed completion, retained in request order at the turn
+	 * tail. Usage is attributed independently to read groups or request rows;
+	 * assistant segments and poll batches never manufacture extra completions.
 	 */
-	#pendingEndcapModel: string | undefined;
-	#pendingEndcapElapsedMs: number | undefined;
+	#pendingCompletionEndcaps: Array<{ model?: string; elapsedMs?: number }> = [];
 	#turnStartedAt: number | undefined;
 	#lastAssistantUsage: Usage | undefined;
 	#waitingPoll: ToolExecutionComponent | null = null;
@@ -145,7 +143,7 @@ export class ChatTranscriptBuilder {
 	}
 
 	/** Discard all components and rebuild the whole transcript from `entries`. */
-	rebuild(entries: SessionMessageEntry[]): void {
+	rebuild(entries: SessionMessageEntry[], options: { turnComplete?: boolean } = {}): void {
 		this.reset();
 		for (const entry of entries) this.#appendEntry(entry);
 		// Trailing dangling calls (toolCall persisted without any result) can never
@@ -168,13 +166,28 @@ export class ChatTranscriptBuilder {
 		// Flush the trailing turn's usage row only once its tools are materialized
 		// (a read whose result has not arrived stays pending); otherwise the row
 		// would sit above its tools. Parked background retention does not block it.
-		if (this.#readArgs.size === 0 && !this.#hasUnsettledPending()) this.#flushPendingUsage();
+		if (this.#readArgs.size === 0 && !this.#hasUnsettledPending()) {
+			this.#flushPendingUsage();
+			if (options.turnComplete !== false) this.#flushPendingCompletionEndcaps();
+		}
 	}
 
 	/** Append newly persisted entries without rebuilding already rendered rows. */
-	append(entries: SessionMessageEntry[]): void {
+	append(entries: SessionMessageEntry[], options: { turnComplete?: boolean } = {}): void {
 		for (const entry of entries) this.#appendEntry(entry);
-		if (this.#readArgs.size === 0 && !this.#hasUnsettledPending()) this.#flushPendingUsage();
+		if (this.#readArgs.size === 0 && !this.#hasUnsettledPending()) {
+			this.#flushPendingUsage();
+			if (options.turnComplete !== false) this.#flushPendingCompletionEndcaps();
+		}
+	}
+
+	/** Finish a live viewer's turn even when the idle transition persisted no new message bytes. */
+	completeTurn(): boolean {
+		if (this.#readArgs.size > 0 || this.#hasUnsettledPending() || this.#pendingCompletionEndcaps.length === 0)
+			return false;
+		this.#flushPendingUsage();
+		this.#flushPendingCompletionEndcaps();
+		return true;
 	}
 
 	/** Pending tool calls excluding parked background tasks (which never block a flush). */
@@ -242,8 +255,7 @@ export class ChatTranscriptBuilder {
 		this.#pendingUsageTimestamp = undefined;
 		this.#pendingReadUsageCallIds = undefined;
 		this.#pendingUsageElapsedMs = undefined;
-		this.#pendingEndcapModel = undefined;
-		this.#pendingEndcapElapsedMs = undefined;
+		this.#pendingCompletionEndcaps = [];
 		this.#turnStartedAt = undefined;
 		this.#lastAssistantUsage = undefined;
 		this.#waitingPoll?.seal();
@@ -317,12 +329,10 @@ export class ChatTranscriptBuilder {
 	// Defer per-turn metrics until the turn's tool results have materialized.
 	// Read-only invisible turns attach the metrics to their shared compact
 	// group; every other turn keeps the standalone row below its tool blocks.
-	// The completion endcap rides the same flush so it lands once, after
-	// tools/post-tool prose, never per assistant segment.
+	// Completion metadata is flushed separately at turn boundaries so multiple
+	// requests do not move their compact endcaps between live/rebuilt views.
 	#flushPendingUsage(): void {
-		if (!this.#pendingUsage && this.#pendingEndcapModel === undefined && this.#pendingEndcapElapsedMs === undefined) {
-			return;
-		}
+		if (!this.#pendingUsage) return;
 		if (this.#pendingUsage) {
 			const usageAttached =
 				this.#pendingReadUsageCallIds !== undefined &&
@@ -349,25 +359,32 @@ export class ChatTranscriptBuilder {
 				);
 			}
 		}
-		if (this.#pendingEndcapModel !== undefined || this.#pendingEndcapElapsedMs !== undefined) {
-			const endcap = createCompletionEndcapBlock({
-				model: this.#pendingEndcapModel,
-				elapsedMs: this.#pendingEndcapElapsedMs,
-			});
-			if (endcap) this.container.addChild(endcap);
-		}
 		this.#pendingUsage = undefined;
 		this.#pendingUsageDuration = undefined;
 		this.#pendingUsageTtft = undefined;
 		this.#pendingUsageTimestamp = undefined;
 		this.#pendingReadUsageCallIds = undefined;
 		this.#pendingUsageElapsedMs = undefined;
-		this.#pendingEndcapModel = undefined;
-		this.#pendingEndcapElapsedMs = undefined;
+	}
+
+	/** Completion metadata belongs to the turn tail, independently of per-request usage attribution. */
+	#flushPendingCompletionEndcaps(): void {
+		for (const options of this.#pendingCompletionEndcaps) {
+			const endcap = createCompletionEndcapBlock(options);
+			if (endcap) this.container.addChild(endcap);
+		}
+		this.#pendingCompletionEndcaps = [];
 	}
 
 	#appendChatMessage(message: AgentMessage): void {
 		if (message.role !== "toolResult") this.#flushPendingUsage();
+		if (
+			(message.role === "user" && message.attribution !== "agent") ||
+			(message.role === "developer" && message.synthetic) ||
+			(message.role === "custom" && isUserTurnInitiator(message as CustomMessage))
+		) {
+			this.#flushPendingCompletionEndcaps();
+		}
 		if (message.role !== "assistant" && message.role !== "toolResult") {
 			this.#readGroup?.seal();
 			this.#readGroup = null;
@@ -596,14 +613,12 @@ export class ChatTranscriptBuilder {
 			this.#pendingUsage && settings.get("display.showTurnTime") ? this.#turnElapsedMs(message) : undefined;
 		if (assistantUsageIsBilled(message.usage)) {
 			const messageModel = (message as { model?: unknown }).model;
-			this.#pendingEndcapModel =
+			const model =
 				settings.get("display.showTokenUsage") && typeof messageModel === "string" && messageModel.trim()
 					? messageModel.trim()
 					: undefined;
-			this.#pendingEndcapElapsedMs = settings.get("display.showTurnTime") ? this.#turnElapsedMs(message) : undefined;
-		} else {
-			this.#pendingEndcapModel = undefined;
-			this.#pendingEndcapElapsedMs = undefined;
+			const elapsedMs = settings.get("display.showTurnTime") ? this.#turnElapsedMs(message) : undefined;
+			if (model !== undefined || elapsedMs !== undefined) this.#pendingCompletionEndcaps.push({ model, elapsedMs });
 		}
 	}
 

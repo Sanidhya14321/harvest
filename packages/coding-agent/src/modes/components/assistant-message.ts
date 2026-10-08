@@ -449,7 +449,8 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	#thinkingDotsLabel(): string {
-		const glyph = THINKING_DOTS_FRAMES[this.#thinkingDotsFrame % THINKING_DOTS_FRAMES.length] ?? "…";
+		const frames = theme.getSymbolPreset() === "ascii" ? theme.spinnerFrames : THINKING_DOTS_FRAMES;
+		const glyph = frames[this.#thinkingDotsFrame % frames.length] ?? theme.status.running;
 		const coloredGlyph = theme.fg("thinkingText", glyph);
 		const thinkingLabel = theme.fg("muted", " Thinking");
 		const rate = Math.min(SPEED_MAX, sharedSpeedTracker.getSpeed());
@@ -462,14 +463,15 @@ export class AssistantMessageComponent extends Container {
 		// turn's rate onto a fresh token-less block.
 		if (!this.#thinkingRateLive || rate < 0.05) return coloredGlyph + thinkingLabel;
 		// Total provider tokens, dimmed, sit next to the pulse.
-		const totalSpan = this.#thinkingTokens > 0 ? theme.fg("dim", ` · ${formatNumber(this.#thinkingTokens)}`) : "";
+		const totalSpan =
+			this.#thinkingTokens > 0 ? theme.fg("dim", `${theme.sep.dot}${formatNumber(this.#thinkingTokens)}`) : "";
 		// Speed badge color: dim gray at rest, brightening toward the theme accent as
 		// streaming speed climbs (gray → bright accent). Ease (sqrt) so typical
 		// mid-stream rates already read as clearly accent-tinted instead of staying
 		// gray until the rarely-hit SPEED_MAX ceiling.
 		const ratio = Math.sqrt(rate / SPEED_MAX);
 		const hex = lerpHex(theme.getColorHex("dim"), theme.getAccentColorHex(), ratio);
-		const rateText = ` · ${rate.toFixed(1)} toks/s`;
+		const rateText = `${theme.sep.dot}${rate.toFixed(1)} toks/s`;
 		const rateSpan = theme.getColorMode() === "truecolor" ? chalk.hex(hex)(rateText) : theme.fg("muted", rateText);
 		return coloredGlyph + thinkingLabel + totalSpan + rateSpan;
 	}

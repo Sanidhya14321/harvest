@@ -9,16 +9,14 @@
  */
 import {
 	type Component,
-	type ComposerChromeContext,
+	Editor,
+	Ellipsis,
 	type EditorTopBorder,
 	getComposerStyle,
-	isFilledComposerStyle,
-	padding,
 	truncateToWidth,
-	visibleWidth,
 } from "@harvest/pi-tui";
 import type { ComposerShape } from "../../config/settings-schema";
-import { theme } from "../theme/theme";
+import { getEditorTheme, theme } from "../theme/theme";
 
 /**
  * Real status renderer the preview borrows rows from — structurally satisfied
@@ -49,7 +47,8 @@ export function renderComposerShapePreview(
 	width: number,
 	status?: ComposerPreviewStatusSource,
 ): readonly string[] {
-	const previewWidth = Math.max(24, Math.min(width, 96));
+	const previewWidth = Math.max(0, Math.min(Math.floor(width), 96));
+	if (previewWidth === 0) return [];
 	const style = getComposerStyle(shape);
 	const paddingX = style.defaultPaddingX(undefined);
 	const chromeWidth = style.sideChromeWidth(paddingX);
@@ -65,45 +64,14 @@ export function renderComposerShapePreview(
 		}
 	}
 
-	const ctx: ComposerChromeContext = {
-		width: previewWidth,
-		paddingX,
-		borderColor: (str: string) => theme.fg("borderAccent", str),
-		accentColor: (str: string) => theme.fg("accent", str),
-		surfaceColor: (str: string) =>
-			theme.bgFill("userMessageBg", theme.fgOnBg("userMessageText", "userMessageBg", str)),
-		box: theme.boxRound,
-		topBorder,
-	};
-
-	const gutter = style.defaultPromptGutter ?? "";
-	const contentWidth = Math.max(1, previewWidth - chromeWidth * 2 - visibleWidth(gutter));
-	const promptText = truncateToWidth("Ask anything, edit files, run tools", Math.max(1, contentWidth - 1));
-	// Mirror the live editor: filled shapes let `surfaceColor` paint their own
-	// foreground, while transparent shapes resolve `text` to a contrast-safe
-	// color so an empty token never falls back to the terminal default.
-	const promptRow = `${promptText}${theme.inverse(" ")}`;
-	const text = isFilledComposerStyle(style) ? promptRow : theme.fgResolved("text", promptRow);
-	const pad = padding(Math.max(0, contentWidth - visibleWidth(promptText) - 1));
-	const styledGutter = gutter ? theme.fg("accent", gutter) : "";
-
-	const lines: string[] = [];
-	const top = style.renderTop(ctx);
-	if (top !== undefined) lines.push(top);
-	lines.push(
-		...style.renderRow({
-			...ctx,
-			text,
-			pad,
-			gutter: styledGutter,
-			isLastRow: true,
-			cursorOverflow: 0,
-			imeSafeCursorTail: false,
-			scrollbarThumb: false,
-		}),
-	);
-	const bottom = style.renderBottom(ctx);
-	if (bottom !== undefined) lines.push(bottom);
+	// Borrow the complete editor layout, including tiny-width chrome collapse,
+	// symbol gutters and composer surface colors, without claiming UI focus.
+	const editor = new Editor(getEditorTheme());
+	editor.setBorderStyle(shape);
+	editor.setMaxHeight(previewWidth < 5 ? 1 : style.verticalChrome + 1);
+	editor.setTopBorder(topBorder);
+	editor.setText("Ask anything, edit files, run tools");
+	const lines = [...editor.render(previewWidth)];
 
 	if (style.bottomBar !== "none" && status) {
 		const bar = status.renderBottomBar(previewWidth, style.bottomBar, PREVIEW_TITLE);
@@ -112,7 +80,7 @@ export function renderComposerShapePreview(
 			lines.push(bar);
 		}
 	}
-	return lines;
+	return lines.map(line => truncateToWidth(line, previewWidth, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode));
 }
 
 export class ComposerShapePreview implements Component {
@@ -131,7 +99,8 @@ export class ComposerShapePreview implements Component {
 	}
 
 	render(width: number): readonly string[] {
+		if (width <= 0) return [];
 		const lines = renderComposerShapePreview(this.#shape, width, this.#options.status);
-		return ["", theme.fg("muted", "Preview:"), ...lines];
+		return ["", theme.fg("muted", truncateToWidth("Preview:", width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode)), ...lines];
 	}
 }
