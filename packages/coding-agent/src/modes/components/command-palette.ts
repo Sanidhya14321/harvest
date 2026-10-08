@@ -1,5 +1,5 @@
 import type { Component } from "@harvest/pi-tui";
-import { getKeybindings, matchesKey, replaceTabs, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
+import { getKeybindings, matchesKey, replaceTabs } from "@harvest/pi-tui";
 import { formatKeyHints, type AppKeybinding, type KeybindingsManager } from "../../config/keybindings";
 import { theme } from "../theme/theme";
 import {
@@ -8,8 +8,7 @@ import {
 	matchesSelectPageUp,
 	matchesSelectUp,
 } from "../utils/keybinding-matchers";
-import { clampDialogWidth } from "../workspace-layout";
-import { bottomBorder, row, topBorder } from "./overlay-box";
+import { dialogContentWidth, fit, row, topBorder } from "./overlay-box";
 
 export interface CommandPaletteItem {
 	readonly id: string;
@@ -318,6 +317,7 @@ export class CommandPaletteComponent implements Component {
 	#keybindings: Pick<KeybindingsManager, "getDisplayString" | "getKeys"> | undefined;
 	/** Maximum list-body rows per render; items with description rows cost two. */
 	#maxListRows = paletteListBudget(14);
+	#maxHeight: number | undefined;
 	/**
 	 * Items fully visible in the last render; page jumps move by this count.
 	 * Defaults to the full budget (single-row items) so paging before the
@@ -346,6 +346,14 @@ export class CommandPaletteComponent implements Component {
 		this.#maxListRows = Math.max(2, Math.trunc(rows));
 		this.#lastPageSize = this.#maxListRows;
 		this.#clampSelection(this.filtered().length);
+	}
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+		this.#lastPageSize = this.#listBudget();
+	}
+	#listBudget(): number {
+		if (this.#maxHeight === undefined) return this.#maxListRows;
+		return Math.max(1, this.#maxHeight - (this.#maxHeight >= 5 ? PALETTE_CHROME_ROWS : 1));
 	}
 
 	/** Items fully visible in the last render window, selection included. */
@@ -507,33 +515,34 @@ export class CommandPaletteComponent implements Component {
 	}
 
 	render(width: number): readonly string[] {
-		const w = clampDialogWidth(width, 60);
-		const inner = Math.max(1, w - 4);
+		const w = Math.max(1, Math.floor(width));
+		const inner = dialogContentWidth(w);
 		const cursor = theme.nav.cursor;
+		const listBudget = this.#listBudget();
 		// Collapse order before hiding the selection: descriptions/hint rows
 		// first (compact), then borders (ultra-compact). The prompt row and the
 		// selected action are always visible and keyboard behavior is
 		// unchanged, so controls stay reachable at any height.
-		if (this.#maxListRows <= 2) {
+		if (listBudget <= 2 || (this.#maxHeight !== undefined && this.#maxHeight <= 4)) {
 			const full = this.filtered();
 			this.#clampSelection(full.length);
-			const rows: string[] = [truncateToWidth(replaceTabs(`${cursor} ${this.#query}`), w)];
+			const rows: string[] = this.#maxHeight === 1 ? [] : [row(replaceTabs(`${cursor} ${this.#query}`), w)];
 			if (full.length === 0) {
-				rows.push(truncateToWidth(theme.fg("muted", "No matching commands"), w));
+				rows.push(row(theme.fg("muted", "No matching commands"), w));
 				return rows;
 			}
-			for (let i = this.#selected; i < Math.min(full.length, this.#selected + this.#maxListRows); i++) {
+			for (let i = this.#selected; i < Math.min(full.length, this.#selected + listBudget); i++) {
 				const item = full[i]!;
 				const label = i === this.#selected ? theme.fg("accent", `${cursor} ${item.title}`) : `  ${item.title}`;
-				rows.push(truncateToWidth(label, w));
+				rows.push(row(label, w, undefined, i === this.#selected ? "selectedBg" : "modalBg"));
 			}
-			this.#lastPageSize = Math.max(1, rows.length - 1);
+			this.#lastPageSize = Math.max(1, rows.length - Number(this.#maxHeight !== 1));
 			return rows;
 		}
-		const compact = this.#maxListRows === 3;
+		const compact = listBudget <= 3;
 		const rows: string[] = [topBorder(w, "Commands")];
 		const prompt = replaceTabs(`${cursor} ${this.#query}`);
-		rows.push(row(truncateToWidth(prompt, inner), w, "accent"));
+		rows.push(row(fit(prompt, inner), w, "accent"));
 		const full = this.filtered();
 		this.#clampSelection(full.length);
 		// Viewport-budgeted window: grow around the selection until the list
@@ -551,14 +560,22 @@ export class CommandPaletteComponent implements Component {
 			const key = this.#keyHint(item);
 			const argMarker = item.argHint ?? (item.intent === "draft" ? "takes arguments" : undefined);
 			const hintParts = [item.hint, argMarker, key].filter((part): part is string => !!part);
-			const hintText = hintParts.length > 0 ? hintParts.join(" · ") : undefined;
+			const hintText = hintParts.length > 0 ? hintParts.join(theme.sep.dot) : undefined;
 			const label = active ? theme.fg("accent", `${cursor} ${item.title}`) : `  ${item.title}`;
 			const hint = !compact && hintText ? theme.fg("muted", ` ${hintText}`) : "";
-			const combined = truncateToWidth(`${label}${visibleWidth(hint) > 0 ? "" : ""}`, inner);
-			rows.push(row(active ? theme.bg("selectedBg", combined) : combined, w, active ? "accent" : undefined));
-			if (hint) rows.push(row(theme.fg("muted", truncateToWidth(replaceTabs(`    ${hintText ?? ""}`), inner)), w));
+			const combined = fit(replaceTabs(label), inner);
+			rows.push(row(combined, w, undefined, active ? "selectedBg" : "modalBg"));
+			if (hint)
+				rows.push(
+					row(
+						theme.fg("muted", fit(replaceTabs(`    ${hintText ?? ""}`), inner)),
+						w,
+						undefined,
+						active ? "selectedBg" : "modalBg",
+					),
+				);
 		});
-		rows.push(bottomBorder(w));
+		rows.push(row(theme.fg("dim", ["Enter run", "Esc close", "Up/Down choose"].join(theme.sep.dot)), w));
 		return rows;
 	}
 
@@ -570,7 +587,7 @@ export class CommandPaletteComponent implements Component {
 	 */
 	#windowItems(
 		full?: CommandPaletteItem[],
-		compact = this.#maxListRows <= 3,
+		compact = this.#listBudget() <= 3,
 	): { list: CommandPaletteItem[]; start: number } {
 		const items = full ?? this.filtered();
 		this.#clampSelection(items.length);
@@ -579,9 +596,10 @@ export class CommandPaletteComponent implements Component {
 		let start = this.#selected;
 		let end = this.#selected + 1;
 		let used = cost(items[this.#selected]!);
+		const budget = this.#listBudget();
 		for (let preferDown = true; ; preferDown = !preferDown) {
-			const canDown = end < items.length && used + cost(items[end]!) <= this.#maxListRows;
-			const canUp = start > 0 && used + cost(items[start - 1]!) <= this.#maxListRows;
+			const canDown = end < items.length && used + cost(items[end]!) <= budget;
+			const canUp = start > 0 && used + cost(items[start - 1]!) <= budget;
 			if (!canDown && !canUp) break;
 			if (canDown && (preferDown || !canUp)) {
 				used += cost(items[end]!);

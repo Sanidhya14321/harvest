@@ -122,6 +122,7 @@ function makeHarness(options: { renderInitialMessages?: () => void | Promise<voi
 		clearTransientSessionUi: () => {
 			clearTransientSessionUi++;
 		},
+		clearHomeDetached() {},
 		renderInitialMessages: async () => {
 			renderInitialMessages++;
 			await options.renderInitialMessages?.();

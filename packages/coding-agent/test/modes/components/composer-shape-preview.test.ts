@@ -10,7 +10,8 @@ import {
 	installExtensionComposerShape,
 } from "@harvest/pi-coding-agent/modes/components/composer-shape-registry";
 import { SettingsSelectorComponent } from "@harvest/pi-coding-agent/modes/components/settings-selector";
-import { initTheme, setTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { initTheme, setTheme, setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import type { ComposerStyle } from "@harvest/pi-tui";
 
 beforeAll(async () => {
@@ -18,12 +19,15 @@ beforeAll(async () => {
 });
 
 describe("composer shape preview", () => {
+	let previousTheme: Theme;
 	beforeEach(async () => {
+		previousTheme = theme;
 		resetSettingsForTest();
 		await Settings.init({ inMemory: true });
 	});
 
 	afterEach(() => {
+		setThemeInstance(previousTheme);
 		resetSettingsForTest();
 	});
 
@@ -49,7 +53,7 @@ describe("composer shape preview", () => {
 		// The built-in `light` theme leaves `text` empty; a transparent shape must
 		// still emit an explicit contrast foreground instead of ESC[39m, matching
 		// the live editor so the preview stays readable on a light terminal.
-		await setTheme("light");
+		setThemeInstance(createTheme(getBuiltinThemes().light!, { mode: "truecolor" }));
 		const box = renderComposerShapePreview("box", 80).join("\n");
 		expect(box).not.toContain("\x1b[39mAsk anything");
 		expect(box).toMatch(/\x1b\[38[;0-9]*mAsk anything/);
@@ -95,38 +99,38 @@ describe("composer shape preview", () => {
 
 		const box = renderComposerShapePreview("box", 80, status).join("\n");
 		expect(box).toContain("TOPBAR"); // embedded in the top border
-		expect(box).toContain("omp"); // stand-in title forwarded to the status source
+		expect(box).toContain("harvest"); // stand-in title forwarded to the status source
 		expect(box).not.toContain("BOTTOM"); // box has no standalone bottom bar
 		const band = renderComposerShapePreview("band", 80, status).join("\n");
 		expect(band).toContain("BAND"); // flush band row above the prompt
-		expect(band).toContain("omp");
+		expect(band).toContain("harvest");
 		expect(band).not.toContain("BOTTOM"); // the band replaces the bottom bar
 
 		const claude = renderComposerShapePreview("claude", 80, status).join("\n");
 		expect(claude).toContain("CHIP"); // right group chips onto the top rule
-		expect(claude).toContain("omp");
+		expect(claude).toContain("harvest");
 		expect(claude).toContain("BOTTOM-LEFT"); // left group only on the bottom bar
 
 		const rule = renderComposerShapePreview("rule", 80, status);
 		expect(rule.join("\n")).toContain("CHIP");
-		expect(rule.join("\n")).toContain("omp");
+		expect(rule.join("\n")).toContain("harvest");
 		expect(rule.join("\n")).toContain("BOTTOM-LEFT");
 		expect(rule[rule.length - 2]).toBe(""); // spacer row: rule has no bottom chrome
 
 		const pi = renderComposerShapePreview("pi", 80, status);
 		expect(pi.join("\n")).not.toContain("CHIP");
-		expect(pi.join("\n")).toContain("omp");
+		expect(pi.join("\n")).toContain("harvest");
 		expect(pi.join("\n")).toContain("BOTTOM-FULL"); // both groups on the bottom bar
 		expect(pi[pi.length - 2]).not.toBe(""); // bottom rule already separates the bar
 
 		const borderless = renderComposerShapePreview("borderless", 80, status).join("\n");
-		expect(borderless).toContain("omp");
+		expect(borderless).toContain("harvest");
 		expect(borderless).toContain("BOTTOM-FULL");
 
 		for (const shape of ["field", "rail"]) {
 			const rendered = renderComposerShapePreview(shape, 80, status);
 			expect(rendered.join("\n")).not.toContain("CHIP");
-			expect(rendered.join("\n")).toContain("omp");
+			expect(rendered.join("\n")).toContain("harvest");
 			expect(rendered.join("\n")).toContain("BOTTOM-FULL");
 			expect(rendered[rendered.length - 2]).toBe(""); // spacer row before the bar
 		}

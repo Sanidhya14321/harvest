@@ -1,15 +1,52 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import {
 	describeSelectedSession,
 	mergeRegistrySnapshot,
 	SessionTabStrip,
 } from "../../../src/modes/components/session-tab-strip";
-import { initTheme, theme } from "../../../src/modes/theme/theme";
+import { initTheme, setThemeInstance, type Theme, theme } from "../../../src/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "../../../src/modes/theme/loader";
 import { SessionTabs } from "../../../src/session/session-tabs";
 
 beforeAll(async () => {
 	await initTheme(false);
+});
+let previousTheme: Theme;
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "256color", symbolPresetOverride: "unicode" }));
+});
+afterEach(() => setThemeInstance(previousTheme));
+
+it("uses ASCII overflow targets without changing selection identity and fits Home into its allocated width and height", () => {
+	setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+	const tabs = new SessionTabs();
+	for (let index = 1; index <= 12; index++) tabs.open(`/work/${index}.jsonl`, `Task ${index}`);
+	const selected: string[] = [];
+	const strip = new SessionTabStrip(
+		tabs,
+		() => "/work/6.jsonl",
+		() => "Task 6",
+		async path => {
+			selected.push(path);
+		},
+	);
+	const row = strip.renderWorkspace(200, true)[0]!;
+	expect(row).toContain("<");
+	expect(row).toContain(">");
+	expect(row).not.toMatch(/[^\x20-\x7e]/u);
+	expect(strip.clickWorkspace(0, row.indexOf("<"))).toBe(true);
+	expect(selected).toEqual(["/work/3.jsonl"]);
+	strip.setMaxHeight(0);
+	expect(strip.renderWorkspace(200, true)).toEqual([]);
+	expect(strip.clickWorkspace(0, row.indexOf("<"))).toBe(false);
+	strip.setMaxHeight(1);
+	const home = strip.renderHome(3);
+	expect(home).toHaveLength(1);
+	expect(Bun.stringWidth(home[0]!)).toBeLessThanOrEqual(3);
+	strip.setMaxHeight(4);
+	expect(strip.renderHome(24).join("\n")).toContain("Ctrl+Shift+T");
 });
 
 it("does not switch hidden or clipped workspace tabs and clears their hover target", () => {
@@ -104,7 +141,7 @@ it("shows each live session's title and distinct activity state after switching"
 				: { id: "second", path, title: "Second task", status: "waiting", unread: true, selected: true },
 	);
 	const text = stripVTControlCharacters(strip.renderWorkspace(100, true).join(""));
-	expect(text).toContain("● Generated title");
+	expect(text).toContain(`${theme.status.running} Generated title`);
 	expect(text).toContain("? Second task");
 	expect(text).not.toContain("Old title");
 });
@@ -219,7 +256,7 @@ describe("describeSelectedSession", () => {
 			path => describeSelectedSession({ ...base, path, isStreaming: path === "/work/active.jsonl" }),
 		);
 		const text = stripVTControlCharacters(strip.renderWorkspace(100, true).join(""));
-		expect(text).toContain("● Active task");
+		expect(text).toContain(`${theme.status.running} Active task`);
 		expect(text).toContain("Other task");
 		expect(text).not.toContain("? Active task");
 	});

@@ -1,6 +1,7 @@
 import type { ImageContent } from "@harvest/pi-ai";
 import {
 	type Component,
+	Ellipsis,
 	getImageDimensions,
 	getKittyGraphics,
 	type ImageBudget,
@@ -44,6 +45,10 @@ interface ImageContentWithPng extends ImageContent {
  * are omitted rather than wrapped. Renders to nothing while no attachment is staged.
  */
 export class AttachmentChipsBand implements Component {
+	#maxHeight = Number.POSITIVE_INFINITY;
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(0, Math.floor(height));
+	}
 	constructor(
 		private readonly editor: CustomEditor,
 		private readonly budget: ImageBudget,
@@ -51,6 +56,7 @@ export class AttachmentChipsBand implements Component {
 	) {}
 
 	render(width: number): readonly string[] {
+		if (this.#maxHeight < INNER_ROWS + 2) return [];
 		const chips = this.editor.composerChips();
 		if (chips.length === 0) return [];
 		const rows = ["", "", "", "", "", ""];
@@ -75,7 +81,8 @@ export class AttachmentChipsBand implements Component {
 	}
 
 	#card(chip: ComposerChipDescriptor): string[] {
-		const sgr = attachmentSgr(chip.kind, chip.n);
+		const sgr = theme.getColorMode() === "none" ? "" : attachmentSgr(chip.kind, chip.n);
+		const reset = sgr ? RESET_FG : "";
 		const icon = theme.symbol(
 			chip.kind === "paste" ? "chip.paste" : chip.kind === "video" ? "chip.video" : "chip.image",
 		);
@@ -89,14 +96,14 @@ export class AttachmentChipsBand implements Component {
 			bottomCaption = chip.text.lineCount > 1 ? `+${chip.text.lineCount} lines` : `${chip.text.charCount} chars`;
 			interior = this.#textInterior(chip.text);
 		}
-		const vertical = `${sgr}${theme.symbol("boxRound.vertical")}${RESET_FG}`;
+		const vertical = `${sgr}${theme.symbol("boxRound.vertical")}${reset}`;
 		const title =
 			chip.kind === "paste" || !chip.link ? `${icon} #${chip.n}` : fileHyperlink(chip.link, `${icon} #${chip.n}`);
 		return [
 			this.#borderRow(sgr, title, "top"),
 			...interior.map(row => vertical + row + vertical),
 			this.#borderRow(sgr, bottomCaption, "bottom"),
-		];
+		].map(line => theme.bgFill("panelBg", line));
 	}
 
 	/** Horizontal border with an optional centered, bold caption padded by one space per side. */
@@ -104,12 +111,17 @@ export class AttachmentChipsBand implements Component {
 		const left = theme.symbol(edge === "top" ? "boxRound.topLeft" : "boxRound.bottomLeft");
 		const right = theme.symbol(edge === "top" ? "boxRound.topRight" : "boxRound.bottomRight");
 		const horizontal = theme.symbol("boxRound.horizontal");
-		if (!caption) return `${sgr}${left}${horizontal.repeat(INNER_COLS)}${right}${RESET_FG}`;
-		const cut = truncateToWidth(caption, INNER_COLS - 2);
+		const reset = sgr ? RESET_FG : "";
+		if (!caption) return `${sgr}${left}${horizontal.repeat(INNER_COLS)}${right}${reset}`;
+		const cut = truncateToWidth(
+			caption,
+			INNER_COLS - 2,
+			theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+		);
 		const fill = INNER_COLS - visibleWidth(cut) - 2;
 		const leftFill = Math.max(0, Math.floor(fill / 2));
 		const rightFill = Math.max(0, fill - leftFill);
-		return `${sgr}${left}${horizontal.repeat(leftFill)} \x1b[1m${cut}\x1b[22m ${horizontal.repeat(rightFill)}${right}${RESET_FG}`;
+		return `${sgr}${left}${horizontal.repeat(leftFill)} ${theme.bold(cut)} ${horizontal.repeat(rightFill)}${right}${reset}`;
 	}
 
 	/** Pixel dimensions for the caption/thumbnail fit, probed once from the header bytes and
@@ -201,7 +213,11 @@ export class AttachmentChipsBand implements Component {
 		const lines = entry.content.split("\n");
 		const rows: string[] = [];
 		for (let r = 0; r < INNER_ROWS; r++) {
-			const cut = truncateToWidth(replaceTabs(lines[r] ?? ""), INNER_COLS);
+			const cut = truncateToWidth(
+				replaceTabs(lines[r] ?? ""),
+				INNER_COLS,
+				theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+			);
 			const pad = INNER_COLS - visibleWidth(cut);
 			rows.push(theme.fg("muted", cut) + " ".repeat(Math.max(0, pad)));
 		}

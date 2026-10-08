@@ -154,6 +154,8 @@ async function createContext() {
 	};
 	focused = editor;
 	const ctx = {
+		isHomeDetached: () => false,
+		createSessionFromHomeDetached: async () => false,
 		editor: editor as unknown as InteractiveModeContext["editor"],
 		resetDisplayAfterAppearanceRefresh,
 		ui: {

@@ -153,7 +153,11 @@ class StatusHost implements Component {
 
 	render(width: number): readonly string[] {
 		if (this.#maxHeight === 0) return [];
-		const rows = this.#component ? this.#component.render(width) : this.#lines.map(line => truncateToWidth(line, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode));
+		const rows = this.#component
+			? this.#component.render(width)
+			: this.#lines.map(line =>
+					truncateToWidth(line, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+				);
 		return rows.slice(-this.#maxHeight);
 	}
 }
@@ -217,9 +221,7 @@ export class Composer implements TerminalFrameProvider {
 	 * `coverFromCol` marks the sidebar-overlay cover cutoff: strip cells at
 	 * or beyond it are visually hidden and must not hit-test.
 	 */
-	#stripFrame:
-		| { origin: TabStripScreenOrigin; rows: number; coverFromCol: number | undefined }
-		| undefined;
+	#stripFrame: { origin: TabStripScreenOrigin; rows: number; coverFromCol: number | undefined } | undefined;
 	#workspaceSidebar: WorkspaceSidebar | undefined;
 	#sidebarOverlayOpen = false;
 	#sidebarOverlayRequestedOnce = false;
@@ -550,29 +552,48 @@ export class Composer implements TerminalFrameProvider {
 	/** Collapse optional chrome before the current draft/cursor can leave the viewport. */
 	#renderFixedRoots(roots: readonly Component[], width: number, height: number): string[] {
 		if (height <= 0) return [];
-		const containsEditor = (component: Component): boolean => component === this.editor ||
-			(component instanceof Container && component.children.some(containsEditor));
+		const containsEditor = (component: Component): boolean =>
+			component === this.editor || (component instanceof Container && component.children.some(containsEditor));
 		const editorRoot = roots.find(containsEditor);
 		this.editor.setMaxHeight(composerMaxHeight(height, 4));
 		const editorRows = editorRoot?.render(width) ?? [];
-		const attachmentRows = this.#attachmentContainer && roots.includes(this.#attachmentContainer) ? this.#attachmentContainer.render(width) : [];
+		const attachmentRows =
+			this.#attachmentContainer && roots.includes(this.#attachmentContainer)
+				? this.#attachmentContainer.render(width)
+				: [];
 		const coreEditorRows = this.#trimPaddingRows(editorRows);
-		const errorBudget = Math.min(6, Math.max(0, height - Math.min(height, coreEditorRows.length) - Number(attachmentRows.length > 0)));
+		const errorBudget = Math.min(
+			6,
+			Math.max(0, height - Math.min(height, coreEditorRows.length) - Number(attachmentRows.length > 0)),
+		);
 		for (const child of this.#pinnedErrorContainer?.children ?? []) child.setMaxHeight?.(Math.max(1, errorBudget));
 		this.#statusHost.setMaxHeight(height);
-		const records = roots.map(root => ({ root, rows: root === this.#pinnedErrorContainer && errorBudget === 0 ? [] : root === editorRoot ? editorRows : root === this.#attachmentContainer ? attachmentRows : root.render(width) }));
-		if (records.reduce((total, record) => total + record.rows.length, 0) <= height) return records.flatMap(record => [...record.rows]);
+		const records = roots.map(root => ({
+			root,
+			rows:
+				root === this.#pinnedErrorContainer && errorBudget === 0
+					? []
+					: root === editorRoot
+						? editorRows
+						: root === this.#attachmentContainer
+							? attachmentRows
+							: root.render(width),
+		}));
+		if (records.reduce((total, record) => total + record.rows.length, 0) <= height)
+			return records.flatMap(record => [...record.rows]);
 		const retained = new Map<Component, readonly string[]>();
 		let remaining = height;
 		const take = (component: Component | undefined, budget: number, cursor = false): void => {
 			const record = records.find(record => record.root === component);
 			if (!record || remaining <= 0) return;
-			const selected = cursor ? this.#rowsAroundCursor(coreEditorRows, Math.min(remaining, budget)) : record.rows.slice(0, Math.min(remaining, budget));
+			const selected = cursor
+				? this.#rowsAroundCursor(coreEditorRows, Math.min(remaining, budget))
+				: record.rows.slice(0, Math.min(remaining, budget));
 			retained.set(record.root, selected);
 			remaining -= selected.length;
 		};
 		take(editorRoot, height, true);
-		take(this.#attachmentContainer, 1);
+		take(this.#attachmentContainer, Math.max(1, remaining - errorBudget));
 		take(this.#pinnedErrorContainer, remaining);
 		for (const record of records.toReversed()) if (!retained.has(record.root)) take(record.root, remaining);
 		return records.flatMap(record => [...(retained.get(record.root) ?? [])]);
@@ -655,9 +676,7 @@ export class Composer implements TerminalFrameProvider {
 	 * composed frame, for owner-side mouse translation. `undefined` when the
 	 * strip shows no rows (hidden, clipped away, or single-tab Home).
 	 */
-	workspaceStripFrame():
-		| { origin: TabStripScreenOrigin; rows: number; coverFromCol: number | undefined }
-		| undefined {
+	workspaceStripFrame(): { origin: TabStripScreenOrigin; rows: number; coverFromCol: number | undefined } | undefined {
 		return this.#stripFrame;
 	}
 
@@ -1066,7 +1085,11 @@ export class Composer implements TerminalFrameProvider {
 		const sep = theme.fg("muted", theme.sep.dot);
 		const text = `${pair("tui.input.submit", "Enter", "send")}${sep}${pair("tui.input.newLine", "Ctrl+J", "newline")}${sep}${pair("app.commands.open", "Alt+K", "commands")}`;
 		const centered = `${" ".repeat(Math.max(0, Math.floor((safeWidth - visibleWidth(text)) / 2)))}${text}`;
-		return truncateToWidth(centered, Math.max(1, safeWidth), theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode);
+		return truncateToWidth(
+			centered,
+			Math.max(1, safeWidth),
+			theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+		);
 	}
 
 	#composeMainWithSidebar(
@@ -1081,7 +1104,12 @@ export class Composer implements TerminalFrameProvider {
 		const fitRow = (row: string, width: number): string => {
 			const w = visibleWidth(row);
 			if (w === width) return row;
-			if (w > width) return truncateToWidth(row, Math.max(0, width), theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode);
+			if (w > width)
+				return truncateToWidth(
+					row,
+					Math.max(0, width),
+					theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+				);
 			return row + " ".repeat(Math.max(0, width - w));
 		};
 		// The focused editor emits CURSOR_MARKER (a private APC sentinel the

@@ -10,6 +10,7 @@ import {
 	Input,
 	matchesKey,
 	type MouseRoutable,
+	type OverlayFocusOwner,
 	padding,
 	parseSgrMouse,
 	replaceTabs,
@@ -205,7 +206,7 @@ function collapseTitle(title: string): string {
  * is exactly one row — `routeMouse` offsets written for a one-line top rule
  * stay valid — and content is inset two columns on each side.
  */
-export class OverlayPanel implements Component {
+export class OverlayPanel implements Component, OverlayFocusOwner {
 	children: Component[] = [];
 	#title: string;
 	#memo: OverlayPanelMemo | undefined;
@@ -215,6 +216,21 @@ export class OverlayPanel implements Component {
 
 	constructor(title = "") {
 		this.#title = collapseTitle(title);
+	}
+
+	/** Permit child controls to receive modal focus without opening the background focus fence. */
+	ownsOverlayFocusTarget(component: Component): boolean {
+		const pending = [...this.children];
+		const visited = new Set<Component>();
+		while (pending.length > 0) {
+			const child = pending.pop()!;
+			if (child === component) return true;
+			if (visited.has(child)) continue;
+			visited.add(child);
+			if (child instanceof Container || child instanceof OverlayPanel) pending.push(...child.children);
+			else if (child.debugChildren) pending.push(...child.debugChildren);
+		}
+		return false;
 	}
 
 	/** The mounting owner supplies the current allocated height on every resize. */
@@ -303,17 +319,20 @@ export class OverlayPanel implements Component {
 			const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
 			onlyChild.setMaxVisible(Math.max(1, height - chrome - 1));
 			const body = onlyChild.render(innerWidth);
-			const selected = onlyChild.getSelectedItem()?.label;
-			const activeRow = selected
-				? Math.max(
-						0,
-						body.findIndex(line => Bun.stripANSI(line).includes(selected)),
-					)
-				: 0;
+			const selectedIndex = onlyChild.debugState().selectedIndex;
+			const activeRow = Math.max(
+				0,
+				body.findIndex((_line, index) => onlyChild.hitTest(index) === selectedIndex),
+			);
 			const footer = [`${editorKey("tui.select.cancel") || "Esc"} cancel`, "Enter select"].join(theme.sep.dot);
 			const layout = renderDialog(this.#title, body, width, height, footer, activeRow);
 			this.#contentRowStart = layout.bodyRowStart;
 			this.#contentWindowStart = layout.bodyWindowStart;
+			for (let index = 0; index < layout.bodyRows; index++) {
+				const bodyIndex = layout.bodyWindowStart + index;
+				if (onlyChild.hitTest(bodyIndex) === selectedIndex)
+					layout.lines[layout.bodyRowStart + index] = row(body[bodyIndex] ?? "", width, undefined, "selectedBg");
+			}
 			return layout.lines;
 		}
 		this.#contentRowStart = 1;
@@ -506,9 +525,21 @@ export class InteractiveDialogPanel extends OverlayPanel implements Focusable {
 		this.#bodyRows = layout.bodyRows;
 		this.#bodyWindowStart = layout.bodyWindowStart;
 		if (!this.#details && (control instanceof SelectList || control instanceof SettingsList)) {
-			const line = active - layout.bodyWindowStart;
-			if (line >= 0 && line < layout.bodyRows)
-				layout.lines[layout.bodyRowStart + line] = row(display[active] ?? "", width, undefined, "selectedBg");
+			for (let index = 0; index < layout.bodyRows; index++) {
+				const displayIndex = layout.bodyWindowStart + index;
+				const controlIndex = displayIndex - this.#controlOffset;
+				const selected =
+					control instanceof SelectList
+						? control.hitTest(controlIndex) === selectedIndex
+						: selectedId !== undefined && control.hitTest(controlIndex, innerWidth - 1) === selectedId;
+				if (selected)
+					layout.lines[layout.bodyRowStart + index] = row(
+						display[displayIndex] ?? "",
+						width,
+						undefined,
+						"selectedBg",
+					);
+			}
 		}
 		return layout.lines;
 	}

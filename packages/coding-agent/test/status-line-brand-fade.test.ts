@@ -6,10 +6,11 @@
  * fades back from the color currently on screen. Regression: the first cut of
  * the working brand swapped colors instantly with no tween.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import { resetSettingsForTest, Settings } from "@harvest/pi-coding-agent/config/settings";
 import { StatusLineComponent } from "@harvest/pi-coding-agent/modes/components/status-line";
-import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { initTheme, setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import type { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import { getSessionAccentAnsi } from "@harvest/pi-coding-agent/utils/session-color";
 
@@ -23,7 +24,13 @@ afterAll(() => {
 	resetSettingsForTest();
 });
 
+let previousTheme: Theme;
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor", symbolPresetOverride: "unicode" }));
+});
 afterEach(() => {
+	setThemeInstance(previousTheme);
 	vi.restoreAllMocks();
 });
 
@@ -79,8 +86,8 @@ describe("status line brand fade", () => {
 	it("fades the brand from dim into the accent when a turn starts", () => {
 		let now = 1_000_000;
 		vi.spyOn(Date, "now").mockImplementation(() => now);
-		const dimAnsi = getSessionAccentAnsi(theme.getColorHex("dim"));
-		const accentAnsi = getSessionAccentAnsi(theme.getColorHex("accent"));
+		const dimAnsi = getSessionAccentAnsi(theme.getColorHex("dim"), theme.getColorMode());
+		const accentAnsi = getSessionAccentAnsi(theme.getColorHex("accent"), theme.getColorMode());
 		if (!dimAnsi || !accentAnsi) throw new Error("expected resolvable dim/accent theme colors");
 		const component = makeComponent();
 		try {
@@ -114,8 +121,8 @@ describe("status line brand fade", () => {
 	it("fades back to dim from the on-screen accent when the turn ends", () => {
 		let now = 2_000_000;
 		vi.spyOn(Date, "now").mockImplementation(() => now);
-		const dimAnsi = getSessionAccentAnsi(theme.getColorHex("dim"));
-		const accentAnsi = getSessionAccentAnsi(theme.getColorHex("accent"));
+		const dimAnsi = getSessionAccentAnsi(theme.getColorHex("dim"), theme.getColorMode());
+		const accentAnsi = getSessionAccentAnsi(theme.getColorHex("accent"), theme.getColorMode());
 		if (!dimAnsi || !accentAnsi) throw new Error("expected resolvable dim/accent theme colors");
 		const component = makeComponent();
 		try {

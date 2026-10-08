@@ -460,7 +460,7 @@ export class SelectorController {
 	}
 
 	/**
-	 * Shows a selector component in place of the editor.
+	 * Borrows the editor slot while displaying a capped selector on the alternate screen.
 	 * @param create Factory that receives a `done` callback and returns the component and focus target
 	 */
 	showSelector(
@@ -469,7 +469,6 @@ export class SelectorController {
 	): void {
 		const slotOwner = new Spacer(0);
 		let closed = false;
-		let overlayHandle: OverlayHandle | undefined;
 		const done = () => {
 			if (closed) return;
 			closed = true;
@@ -490,7 +489,7 @@ export class SelectorController {
 		// The slot marker retains borrowed-slot ownership without rendering the
 		// same component underneath its capped overlay at a second width.
 		this.ctx.editorContainer.addChild(slotOwner);
-		overlayHandle = this.#showDialog(component, cap);
+		const overlayHandle = this.#showDialog(component, cap);
 		this.ctx.ui.setFocus(focus);
 		this.ctx.ui.requestRender();
 	}
@@ -2568,7 +2567,6 @@ export class SelectorController {
 		this.ctx.showStatus(`Logging in to ${providerId}…`);
 		let restored = false;
 		const slotOwner = new Spacer(0);
-		let overlayHandle: OverlayHandle | undefined;
 		const restoreEditor = () => {
 			if (restored) return;
 			restored = true;
@@ -2591,7 +2589,7 @@ export class SelectorController {
 		});
 		this.ctx.editorContainer.clear();
 		this.ctx.editorContainer.addChild(slotOwner);
-		overlayHandle = this.#showDialog(dialog, 88);
+		const overlayHandle = this.#showDialog(dialog, 88);
 
 		if (providerId === "custom") {
 			try {

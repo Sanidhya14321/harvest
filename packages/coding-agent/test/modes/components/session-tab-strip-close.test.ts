@@ -1,11 +1,18 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { SessionTabStrip, TAB_CLOSE_GLYPH } from "../../../src/modes/components/session-tab-strip";
-import { initTheme, theme } from "../../../src/modes/theme/theme";
+import { initTheme, setThemeInstance, type Theme, theme } from "../../../src/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "../../../src/modes/theme/loader";
 import { SessionTabs } from "../../../src/session/session-tabs";
 
 beforeAll(async () => {
 	await initTheme(false);
 });
+let previousTheme: Theme;
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "256color", symbolPresetOverride: "unicode" }));
+});
+afterEach(() => setThemeInstance(previousTheme));
 
 function twoTabStrip(callbacks: { selected?: string[]; closed?: string[]; targets?: unknown[] } = {}) {
 	const tabs = new SessionTabs();

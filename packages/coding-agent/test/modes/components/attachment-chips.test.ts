@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { AttachmentChipsBand } from "@harvest/pi-coding-agent/modes/components/attachment-chips";
 import { CustomEditor } from "@harvest/pi-coding-agent/modes/components/custom-editor";
 import { chipLabel } from "@harvest/pi-coding-agent/modes/composer-attachments";
-import { getEditorTheme, initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { getEditorTheme, initTheme, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import { ImageBudget } from "@harvest/pi-tui";
 import { setKittyGraphics } from "@harvest/pi-tui/kitty-graphics";
 import { getCellDimensions, ImageProtocol, setCellDimensions, TERMINAL } from "@harvest/pi-tui/terminal-capabilities";
@@ -22,6 +23,33 @@ beforeAll(async () => {
 });
 
 describe("AttachmentChipsBand", () => {
+	it("omits a height-clipped card without losing its paste and respects disabled and low color capabilities", () => {
+		const previousTheme = theme;
+		try {
+			setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+			const { editor, band } = makeBand();
+			const payload = "long pasted content that must survive preview clipping\nsecond line";
+			editor.insertTextAttachment(payload);
+			band.setMaxHeight(5);
+			expect(band.render(80)).toEqual([]);
+			expect(editor.getExpandedText()).toContain(payload);
+			band.setMaxHeight(6);
+			const plain = band.render(80);
+			expect(plain).toHaveLength(6);
+			expect(plain.every(line => visibleWidth(line) === 14 && !/[^\x20-\x7e]/u.test(line))).toBe(true);
+			setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "256color", symbolPresetOverride: "ascii" }));
+			const lowColor = band.render(80).join("\n");
+			expect(lowColor).toContain("\x1b[38;5;");
+			expect(lowColor).not.toContain("\x1b[38;2;");
+			setThemeInstance(
+				createTheme(getBuiltinThemes().harvest, { mode: "truecolor", symbolPresetOverride: "ascii" }),
+			);
+			expect(band.render(80).join("\n")).toContain("\x1b[38;2;");
+			expect(editor.getExpandedText()).toContain(payload);
+		} finally {
+			setThemeInstance(previousTheme);
+		}
+	});
 	it("renders nothing while no attachment is staged", () => {
 		const { band } = makeBand();
 		expect(band.render(80)).toEqual([]);

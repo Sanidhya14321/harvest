@@ -8,8 +8,9 @@ import {
 	paletteListBudget,
 	TAB_MANAGEMENT_PALETTE_SOURCES,
 } from "@harvest/pi-coding-agent/modes/components/command-palette";
-import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
-import { setKeybindings } from "@harvest/pi-tui";
+import { initTheme, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setKeybindings, visibleWidth } from "@harvest/pi-tui";
 
 beforeAll(() => {
 	initTheme();
@@ -28,6 +29,35 @@ function hintedItems(count: number) {
 }
 
 describe("command palette viewport budget", () => {
+	it("keeps the selected action and full dispatch payload through one-cell allocation and expansion", () => {
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		try {
+			const palette = new CommandPaletteComponent();
+			palette.setItems(hintedItems(25));
+			palette.moveSelection(24);
+			palette.setMaxHeight(4);
+			const short = palette.render(24);
+			expect(short.length).toBeLessThanOrEqual(4);
+			expect(short.join("\n")).toContain("> /cmd-24");
+			palette.setMaxHeight(1);
+			const oneCell = palette.render(1);
+			expect(oneCell).toHaveLength(1);
+			expect(visibleWidth(oneCell[0]!)).toBe(1);
+			palette.setMaxHeight(14);
+			const expanded = palette.render(80);
+			expect(expanded.length).toBeLessThanOrEqual(14);
+			expect(expanded.join("\n")).toContain("> /cmd-24");
+			expect(expanded.every(line => visibleWidth(line) === 80 && !/[^\x20-\x7e]/u.test(line))).toBe(true);
+			const selected: string[] = [];
+			palette.onSelect = item => selected.push(item.id);
+			palette.handleInput("\r");
+			palette.handleInput("\r");
+			expect(selected).toEqual(["/cmd-24"]);
+		} finally {
+			setThemeInstance(previousTheme);
+		}
+	});
 	it("caps the rendered panel at a 24-row viewport instead of a fixed ten", () => {
 		// Failure mode: a fixed PAGE_SIZE=10 window plus description rows and
 		// chrome overflows an 80x24 terminal, pushing the search prompt and

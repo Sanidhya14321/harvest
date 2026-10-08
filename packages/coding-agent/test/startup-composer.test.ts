@@ -480,15 +480,11 @@ describe("Composer prepaint", () => {
 			.map(r => Bun.stripANSI(r))
 			.join("\n");
 		expect(output).toContain("Welcome back!");
-		expect(output).toContain("omp");
+		expect(output).toContain("harvest v9.9.9");
 		expect(output).toContain("9.9.9");
 		expect(output).toContain("prior work");
 		expect(output).not.toContain("Starting OMP");
-		expect(output).toContain("╭");
-		const initialEditorRow = terminal
-			.getViewport()
-			.map(row => Bun.stripANSI(row))
-			.findLastIndex(row => row.startsWith("╭"));
+		const initialEditorRow = terminal.getCursor().row;
 		composer.updateWelcome({
 			modelName: "provider/model-with-an-authoritative-name-that-is-longer-than-the-left-column",
 			providerName: "provider-with-a-long-name",
@@ -497,10 +493,7 @@ describe("Composer prepaint", () => {
 		await terminal.waitForRender(() =>
 			terminal.getViewport().some(row => Bun.stripANSI(row).includes("rust-analyzer")),
 		);
-		const updatedEditorRow = terminal
-			.getViewport()
-			.map(row => Bun.stripANSI(row))
-			.findLastIndex(row => row.startsWith("╭"));
+		const updatedEditorRow = terminal.getCursor().row;
 		expect(updatedEditorRow).toBe(initialEditorRow);
 		composer.stop();
 	});

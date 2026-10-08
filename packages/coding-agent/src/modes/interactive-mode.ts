@@ -163,6 +163,7 @@ import type { EventBus } from "../utils/event-bus";
 import { getEditorCommand, openInEditor } from "../utils/external-editor";
 import { resumeCommand } from "../utils/resume-command";
 import { getSessionAccentAnsi, getSessionAccentHex } from "../utils/session-color";
+import type { ColorMode } from "./theme/schema";
 import { messageHasDisplayableThinking } from "../utils/thinking-display";
 import {
 	disposeTerminalTitleState,
@@ -290,6 +291,7 @@ interface WorkingMessageAccentCacheKey {
 	sessionName: string | undefined;
 	accentSurfaceLuminance: number | undefined;
 	sessionAccentEnabled: boolean;
+	colorMode: ColorMode;
 }
 
 function renderWorkingMessage(message: string, accent?: WorkingMessageAccent): string {
@@ -3298,7 +3300,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			const accentEnabled = !isSettingsInitialized() || settings.get("statusLine.sessionAccent") !== false;
 			const sessionName = accentEnabled ? this.sessionManager.getSessionName() : undefined;
 			const hex = sessionName ? getSessionAccentHex(sessionName, theme.sessionAccentInputs) : undefined;
-			const ansi = getSessionAccentAnsi(hex);
+			const ansi = getSessionAccentAnsi(hex, theme.getColorMode());
 			if (ansi) {
 				this.editor.borderColor = (str: string) => `${ansi}${str}\x1b[39m`;
 			} else {
@@ -6299,6 +6301,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			sessionAccentEnabled,
 			sessionName: sessionAccentEnabled ? this.sessionManager.getSessionName() : undefined,
 			accentSurfaceLuminance: theme.accentSurfaceLuminance,
+			colorMode: theme.getColorMode(),
 		};
 	}
 
@@ -6306,7 +6309,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		return (
 			a.sessionName === b.sessionName &&
 			a.accentSurfaceLuminance === b.accentSurfaceLuminance &&
-			a.sessionAccentEnabled === b.sessionAccentEnabled
+			a.sessionAccentEnabled === b.sessionAccentEnabled &&
+			a.colorMode === b.colorMode
 		);
 	}
 
@@ -6333,8 +6337,8 @@ export class InteractiveMode implements InteractiveModeContext {
 			return this.#cacheWorkingMessageAccent(key, undefined);
 		}
 		const hex = getSessionAccentHex(key.sessionName, theme.sessionAccentInputs);
-		const main = getSessionAccentAnsi(hex);
-		const dim = getSessionAccentAnsi(adjustHsv(hex, { s: 0.55, v: 0.65 }));
+		const main = getSessionAccentAnsi(hex, key.colorMode);
+		const dim = getSessionAccentAnsi(adjustHsv(hex, { s: 0.55, v: 0.65 }), key.colorMode);
 		return this.#cacheWorkingMessageAccent(key, main && dim ? { main, dim } : undefined);
 	}
 

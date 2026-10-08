@@ -11,6 +11,7 @@ import {
 	type Component,
 	type ComposerStyle,
 	claudeComposerStyle,
+	Ellipsis,
 	padding,
 	truncateToWidth,
 	visibleWidth,
@@ -26,7 +27,7 @@ import { GH_COMMAND_TIMEOUT_MS, github } from "../../../utils/github";
 import { getSessionAccentAnsi, getSessionAccentHex } from "../../../utils/session-color";
 import { calculateTokensPerSecond } from "../../../utils/token-rate";
 import { sanitizeStatusText } from "../../shared";
-import { theme } from "../../theme/theme";
+import { getSymbolTheme, theme } from "../../theme/theme";
 import { type CompactionBoundaries, computeCompactionBoundaries } from "../../utils/context-usage";
 import {
 	type CodexResetFireworksEvent,
@@ -879,7 +880,7 @@ export class StatusLineComponent implements Component {
 			this.#startBrandFadeTimer();
 		}
 		const hex = this.#sampleBrandHex(working ? workingHex : idleHex, now);
-		return getSessionAccentAnsi(hex) ?? theme.getFgAnsi(working ? "accent" : "dim");
+		return getSessionAccentAnsi(hex, theme.getColorMode()) ?? theme.getFgAnsi(working ? "accent" : "dim");
 	}
 
 	/**
@@ -2023,7 +2024,7 @@ export class StatusLineComponent implements Component {
 		);
 		const ctx: SegmentContext = placeholders ? { ...liveCtx, startupPlaceholder: true } : liveCtx;
 		const separatorDef = plain
-			? { left: "·", right: "·" }
+			? { left: theme.sep.dot.trim(), right: theme.sep.dot.trim() }
 			: getSeparator(effectiveSettings.separator ?? "powerline-thin", theme);
 
 		// `transparent` reuses the empty-string sentinel (`\x1b[49m`) so the bar
@@ -2094,11 +2095,13 @@ export class StatusLineComponent implements Component {
 						job => job.type !== "task" || job.agentId === undefined || !this.#runningSubagentIds.has(job.agentId),
 					).length ?? 0;
 			if (runningBackgroundJobs > 0) {
-				const count = placeholders ? "…" : `${runningBackgroundJobs}`;
+				const count = placeholders ? theme.symbol("sep.ellipsis") : `${runningBackgroundJobs}`;
 				rightParts.unshift(theme.fg("statusLineSubagents", `${theme.icon.job} ${count}`));
 			}
 			if (subagentBadge) {
-				const content = placeholders ? [theme.icon.agents, "…"].filter(Boolean).join(" ") : subagentBadge;
+				const content = placeholders
+					? [theme.icon.agents, theme.symbol("sep.ellipsis")].filter(Boolean).join(" ")
+					: subagentBadge;
 				rightParts.unshift(placeholders ? theme.fg("statusLineSubagents", content) : content);
 			}
 		}
@@ -2133,7 +2136,7 @@ export class StatusLineComponent implements Component {
 		// context segment is gone, and the gauge silently omits its labels too.
 		const embeddedContextWidth = embedContext
 			? ctx.startupPlaceholder
-				? "…%".length + "…".length + 4
+				? visibleWidth(theme.symbol("sep.ellipsis")) * 2 + 5
 				: embeddedContextGaugeMinWidth(ctx.contextPercent ?? 0, ctx.contextWindow)
 			: 0;
 		const minimumGapWidth = (): number => {
@@ -2161,7 +2164,11 @@ export class StatusLineComponent implements Component {
 				const minNameVW = 8;
 				const shrinkBy = Math.min(Math.max(0, currentNameVW - minNameVW), totalWidth() - topFillWidth);
 				if (shrinkBy > 0) {
-					right[nameIdx] = truncateToWidth(right[nameIdx], currentNameVW - shrinkBy);
+					right[nameIdx] = truncateToWidth(
+						right[nameIdx],
+						currentNameVW - shrinkBy,
+						theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+					);
 					rightWidth = groupWidth(right, rightCapWidth, rightSepWidth);
 				}
 			}
@@ -2284,7 +2291,7 @@ export class StatusLineComponent implements Component {
 		const sessionName =
 			effectiveSettings.sessionAccent !== false ? this.session.sessionManager?.getSessionName() : undefined;
 		const accentHex = sessionName ? getSessionAccentHex(sessionName, theme.sessionAccentInputs) : undefined;
-		const usedColor = getSessionAccentAnsi(accentHex) ?? theme.getFgAnsi("borderAccent");
+		const usedColor = getSessionAccentAnsi(accentHex, theme.getColorMode()) ?? theme.getFgAnsi("borderAccent");
 		const horizontal = theme.boxRound.horizontal;
 		const mode = effectiveSettings.contextLine ?? "embedded";
 		const pct = ctx.contextPercent;
@@ -2304,9 +2311,11 @@ export class StatusLineComponent implements Component {
 		const percentOverflow = pct > 100;
 		if (embedContext) {
 			const candidatePercent = ctx.startupPlaceholder
-				? "…%"
+				? `${theme.symbol("sep.ellipsis")}%`
 				: formatEmbeddedContextPercent(percentOverflow ? pct : clampedPct);
-			const candidateWindow = ctx.startupPlaceholder ? "…" : formatNumber(ctx.contextWindow);
+			const candidateWindow = ctx.startupPlaceholder
+				? theme.symbol("sep.ellipsis")
+				: formatNumber(ctx.contextWindow);
 			const minimumLabelWidth = candidatePercent.length + candidateWindow.length + 4;
 			if (gapWidth >= minimumLabelWidth) {
 				percentLabel = candidatePercent;
@@ -2371,7 +2380,7 @@ export class StatusLineComponent implements Component {
 		const overflowColor = theme.getFgAnsi("error");
 		const rawAccentHex = accentHex ?? theme.getColorHex("borderAccent");
 		const dimmedAccentHex = adjustHsv(rawAccentHex, { s: 0.7, v: 0.75 });
-		const thresholdColor = getSessionAccentAnsi(dimmedAccentHex) ?? usedColor;
+		const thresholdColor = getSessionAccentAnsi(dimmedAccentHex, theme.getColorMode()) ?? usedColor;
 
 		let out = "\x1b[49m";
 		let activeColor = "";
@@ -2417,7 +2426,7 @@ export class StatusLineComponent implements Component {
 
 	/** Render startup ellipses inside each segment's normal icon, color, and static chrome. */
 	renderStartupPlaceholder(width: number, layout: StatusLineLayout): string {
-		return this.#buildStatusLine(width, layout, undefined, { placeholders: true });
+		return this.#dimWhileFocusProxied(this.#buildStatusLine(width, layout, undefined, { placeholders: true }));
 	}
 
 	getTopBorder(width: number, previewTitle?: string): { content: string; width: number; revision: number } {
@@ -2442,6 +2451,7 @@ export class StatusLineComponent implements Component {
 	/** Dim the whole bar while focus-proxied. Group/cap terminators emit full
 	 * `\x1b[0m` resets that would cancel faint mid-bar, so re-open it after each. */
 	#dimWhileFocusProxied(content: string): string {
+		if (theme.getColorMode() === "none") return Bun.stripANSI(content);
 		if (!this.#focusedAgentId || !content) return content;
 		return `\x1b[2m${content.replaceAll("\x1b[0m", "\x1b[0m\x1b[2m")}\x1b[22m`;
 	}
@@ -2494,6 +2504,7 @@ export class StatusLineComponent implements Component {
 	 * render.
 	 */
 	getPreviewLines(width: number, style?: Pick<ComposerStyle, "statusAttachment" | "bottomBar">): string[] {
+		if (width <= 0) return [];
 		const attachment = style?.statusAttachment ?? this.#topAttachment;
 		const bottomBar =
 			style?.bottomBar ?? (this.#standalone === false ? "none" : this.#standalone === "left-only" ? "left" : "full");
@@ -2511,8 +2522,9 @@ export class StatusLineComponent implements Component {
 				paddingX: 0,
 				borderColor: str => theme.fg("border", str),
 				accentColor: str => theme.fg("accent", str),
-				surfaceColor: str => theme.bgFill("userMessageBg", theme.fgOnBg("userMessageText", "userMessageBg", str)),
+				surfaceColor: str => theme.bgFill("composerBg", theme.fgOnBg("text", "composerBg", str)),
 				box: theme.boxRound,
+				symbols: getSymbolTheme(),
 				topBorder: this.getStandaloneTopBorder(width),
 			});
 			if (rule !== undefined) lines.push(rule);
@@ -2521,10 +2533,13 @@ export class StatusLineComponent implements Component {
 			const main = this.renderBottomBar(width, bottomBar);
 			if (main) lines.push(main);
 		}
-		return lines;
+		return lines.map(line =>
+			truncateToWidth(line, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+		);
 	}
 
 	render(width: number): readonly string[] {
+		if (width <= 0) return [];
 		const lines: string[] = [];
 		if (this.#standalone && !this.#autocompleteActiveProbe?.()) {
 			const content = this.renderBottomBar(width, this.#standalone === "left-only" ? "left" : "full");
@@ -2535,7 +2550,15 @@ export class StatusLineComponent implements Component {
 		}
 		const showHooks = this.#settings.showHookStatus ?? true;
 		if (showHooks && this.#sortedHookStatuses.length > 0) {
-			lines.push(...this.#sortedHookStatuses.map(text => truncateToWidth(sanitizeStatusText(text), width)));
+			lines.push(
+				...this.#sortedHookStatuses.map(text =>
+					truncateToWidth(
+						sanitizeStatusText(text),
+						width,
+						theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+					),
+				),
+			);
 		}
 		return lines;
 	}

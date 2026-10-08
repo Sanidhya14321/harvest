@@ -25,7 +25,13 @@ export class BorderedLoader extends Container {
 
 	override render(width: number): readonly string[] {
 		const body = this.#loader.render(dialogContentWidth(width)).filter(line => line.trim().length > 0);
-		return renderDialog("Working", this.#maxHeight === 1 ? ["Esc cancel"] : body, width, this.#maxHeight, "Esc cancel").lines;
+		return renderDialog(
+			"Working",
+			this.#maxHeight === 1 ? ["Esc cancel"] : body,
+			width,
+			this.#maxHeight,
+			"Esc cancel",
+		).lines;
 	}
 
 	get signal(): AbortSignal {

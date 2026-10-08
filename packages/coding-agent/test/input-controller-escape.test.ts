@@ -135,6 +135,8 @@ function createContext(): {
 	});
 
 	const ctx = {
+		isHomeDetached: () => false,
+		createSessionFromHomeDetached: async () => false,
 		editor: editor as unknown as InteractiveModeContext["editor"],
 		ui: {
 			requestRender,

@@ -1,9 +1,22 @@
-import { beforeAll, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { renderWelcomeTip, WelcomeComponent } from "@harvest/pi-coding-agent/modes/components/welcome";
-import { initTheme, setSymbolPreset, setTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import {
+	initTheme,
+	setSymbolPreset,
+	setThemeInstance,
+	theme,
+	type Theme,
+} from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import { visibleWidth } from "@harvest/pi-tui";
 
 describe("renderWelcomeTip", () => {
+	let previousTheme: Theme;
+	beforeEach(() => {
+		previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor", symbolPresetOverride: "unicode" }));
+	});
+	afterEach(() => setThemeInstance(previousTheme));
 	beforeAll(async () => {
 		await initTheme(false);
 	});
@@ -66,12 +79,12 @@ describe("renderWelcomeTip", () => {
 	it("derives label and body colors from the active theme, with no manual dim layer", async () => {
 		// Regression for #3337: hardcoded #b48cff/#9ccfff plus a manual `\x1b[2m`
 		// dropped the body to ~1.5:1 contrast on any light-theme background.
-		await setTheme("dark");
+		setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor" }));
 		const darkLabelAnsi = theme.getFgAnsi("customMessageLabel");
 		const darkMutedAnsi = theme.getFgAnsi("muted");
 		const dark = renderWelcomeTip("Welcome aboard friend", 60).join("\n");
 
-		await setTheme("light");
+		setThemeInstance(createTheme(getBuiltinThemes().light!, { mode: "truecolor" }));
 		const lightLabelAnsi = theme.getFgAnsi("customMessageLabel");
 		const lightMutedAnsi = theme.getFgAnsi("muted");
 		const light = renderWelcomeTip("Welcome aboard friend", 60).join("\n");
@@ -98,9 +111,9 @@ describe("renderWelcomeTip", () => {
 		const rand = spyOn(Math, "random").mockReturnValue(0.05);
 		try {
 			const welcome = new WelcomeComponent("1.0.0", "model", "provider");
-			expect(welcome.tip).toBe("Please use nerdfont 😭.");
+			expect(welcome.tip).toBe("Please use a Nerd Font.");
 			await setSymbolPreset("nerd");
-			expect(welcome.tip).not.toBe("Please use nerdfont 😭.");
+			expect(welcome.tip).not.toBe("Please use a Nerd Font.");
 		} finally {
 			rand.mockRestore();
 			await setSymbolPreset("unicode");

@@ -22,6 +22,7 @@ function compactionAmount(message: CompactionSummaryMessage): string | undefined
 
 interface SummaryDividerOptions {
 	label: () => string;
+	compactLabel?: () => string;
 	detailMarkdown: () => string;
 }
 
@@ -66,9 +67,10 @@ class SummaryDividerComponent implements Component {
 		const remaining = width - plainWidth - 2;
 		if (remaining < 4) {
 			// Too narrow for a framed rule — emit the bare label.
+			const compact = Bun.stringWidth(label) > width ? (this.options.compactLabel?.() ?? label) : label;
 			return theme.fg(
 				"muted",
-				truncateToWidth(label, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+				truncateToWidth(compact, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
 			);
 		}
 		const left = Math.floor(remaining / 2);
@@ -114,6 +116,7 @@ export class CompactionSummaryMessageComponent implements Component {
 			// A dead-end warning stamped by the progress guard badges the bar;
 			// the full text lives in the ctrl+o detail block below.
 			label: () => this.#label(),
+			compactLabel: () => (this.message.method && COMPACTION_METHOD_LABELS[this.message.method]) || "compacted",
 			detailMarkdown: () => this.#detailMarkdown(),
 		});
 	}
@@ -167,6 +170,7 @@ export class HandoffSummaryMessageComponent implements Component {
 	constructor(private readonly message: CustomMessage<unknown>) {
 		this.#divider = new SummaryDividerComponent({
 			label: () => `${theme.icon.context} handed-off`,
+			compactLabel: () => "handed-off",
 			detailMarkdown: () => this.#detailMarkdown(),
 		});
 	}

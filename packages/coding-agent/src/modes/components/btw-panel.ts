@@ -161,7 +161,9 @@ export class BtwPanelComponent extends OverlayPanel {
 		const text = this.#visibleAnswer;
 		if (!text) {
 			const waiting =
-				this.#state === "running" ? `${theme.status.pending} Waiting for response${theme.symbol("sep.ellipsis")}` : "No text returned.";
+				this.#state === "running"
+					? `${theme.status.pending} Waiting for response${theme.symbol("sep.ellipsis")}`
+					: "No text returned.";
 			return new Text(theme.fg("dim", waiting), 0, 0);
 		}
 		return new Markdown(text, 0, 0, getMarkdownTheme());

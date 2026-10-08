@@ -82,7 +82,10 @@ export class WebSearchTab implements SetupTab {
 	}
 
 	render(width: number, maxLines?: number): readonly string[] {
-		const lines = maxLines === undefined || maxLines >= 8 ? [theme.fg("muted", "Choose the provider the web_search tool should prefer."), ""] : [];
+		const lines =
+			maxLines === undefined || maxLines >= 8
+				? [theme.fg("muted", "Choose the provider the web_search tool should prefer."), ""]
+				: [];
 		this.#listRowStart = lines.length;
 		if (maxLines !== undefined) {
 			// Above: hint + blank. Below: the list's own search-status row plus

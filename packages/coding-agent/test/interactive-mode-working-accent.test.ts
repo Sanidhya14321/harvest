@@ -1,8 +1,9 @@
-import { afterAll, afterEach, describe, expect, it, vi } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { resetSettingsForTest, Settings, settings } from "@harvest/pi-coding-agent/config/settings";
 import { InteractiveMode } from "@harvest/pi-coding-agent/modes/interactive-mode";
-import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import type { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import { SessionManager } from "@harvest/pi-coding-agent/session/session-manager";
 import { executeBuiltinSlashCommand } from "@harvest/pi-coding-agent/slash-commands/builtin-registry";
@@ -16,6 +17,11 @@ type Harness = {
 };
 
 let harness: Harness | undefined;
+let previousTheme = theme;
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().harvest!, { mode: "truecolor" }));
+});
 
 function defined<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error("Expected value to be defined");
@@ -29,7 +35,7 @@ function defined<T>(value: T | undefined): T {
  */
 function accentGlyphAnsi(sessionName: string): string {
 	const hex = sessionColor.getSessionAccentHex(sessionName, theme.sessionAccentInputs);
-	return defined(sessionColor.getSessionAccentAnsi(adjustHsv(hex, { s: 0.55, v: 0.65 })));
+	return defined(sessionColor.getSessionAccentAnsi(adjustHsv(hex, { s: 0.55, v: 0.65 }), theme.getColorMode()));
 }
 
 async function createHarness(sessionName: string): Promise<Harness> {
@@ -43,7 +49,6 @@ async function createHarness(sessionName: string): Promise<Harness> {
 
 	const tempDir = TempDir.createSync("@pi-working-accent-");
 	await Settings.init({ inMemory: true, cwd: tempDir.path() });
-	await initTheme(false);
 	const sessionManager = SessionManager.inMemory(tempDir.path());
 	await sessionManager.setSessionName(sessionName, "user");
 	const session = {
@@ -89,6 +94,7 @@ function shadowAccentSurfaceLuminance(value: number | undefined): () => void {
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	setThemeInstance(previousTheme);
 });
 
 afterAll(() => {
@@ -99,6 +105,17 @@ afterAll(() => {
 });
 
 describe("InteractiveMode working-message session accent cache", () => {
+	it("drops cached color accents when the active theme disables color and restores them when color returns", async () => {
+		const { mode } = await createHarness("Color depth session");
+		startStableLoader(mode);
+		expect(renderLoader(mode)).toContain("\x1b[38;2;");
+		setThemeInstance(createTheme(getBuiltinThemes().harvest!, { mode: "none", symbolPresetOverride: "ascii" }));
+		mode.loadingAnimation?.setMessage("Plain working message");
+		expect(renderLoader(mode)).not.toMatch(/\x1b\[(?:38|48);/);
+		setThemeInstance(createTheme(getBuiltinThemes().harvest!, { mode: "truecolor" }));
+		mode.loadingAnimation?.setMessage("Color working message");
+		expect(renderLoader(mode)).toContain("\x1b[38;2;");
+	});
 	it("reuses one computed accent across loader spinner and message colorizers", async () => {
 		const { mode } = await createHarness("Cached session");
 		const getHex = vi.spyOn(sessionColor, "getSessionAccentHex");

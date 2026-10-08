@@ -7,23 +7,40 @@ import type { SessionInfo } from "@harvest/pi-coding-agent/session/session-listi
 import { visibleWidth } from "@harvest/pi-tui";
 
 let previousTheme = theme;
+let sessions: SessionInfo[];
 beforeEach(() => {
 	previousTheme = theme;
 	setThemeInstance(createTheme(getBuiltinThemes().harvest!, { mode: "truecolor", symbolPresetOverride: "ascii" }));
+	sessions = makeSessions();
 });
 afterEach(() => setThemeInstance(previousTheme));
 
-const sessions: SessionInfo[] = Array.from({ length: 12 }, (_, index) => ({
-	id: `s${index}`, path: `/work/session-${index}.jsonl`, cwd: "/work", title: `Choice ${index}`,
-	created: new Date("2026-01-01"), modified: new Date("2026-01-02"), size: 1024, messageCount: 2,
-	firstMessage: `Prompt ${index}`, allMessagesText: `Prompt ${index}`, status: "complete",
-}));
+const makeSessions = (): SessionInfo[] =>
+	Array.from({ length: 12 }, (_, index) => ({
+		id: `s${index}`,
+		path: `/work/session-${index}.jsonl`,
+		cwd: "/work",
+		title: `Choice ${index}`,
+		created: new Date("2026-01-01"),
+		modified: new Date("2026-01-02"),
+		size: 1024,
+		messageCount: 2,
+		firstMessage: `Prompt ${index}`,
+		allMessagesText: `Prompt ${index}`,
+		status: "complete",
+	}));
 const plain = (lines: readonly string[]): string => stripVTControlCharacters(lines.join("\n"));
 
 describe("session picker allocation", () => {
 	test("one to four allocated rows keep the selected session reachable after navigation and resizing", () => {
 		const selected = vi.fn();
-		const selector = new SessionSelectorComponent(sessions, selected, () => {}, () => {}, { getTerminalRows: () => 40, fillHeight: true });
+		const selector = new SessionSelectorComponent(
+			sessions,
+			selected,
+			() => {},
+			() => {},
+			{ getTerminalRows: () => 40, fillHeight: true },
+		);
 		for (let i = 0; i < 7; i++) selector.handleInput("\x1b[B");
 		for (const height of [4, 3, 2, 1]) {
 			selector.setMaxHeight(height);
@@ -41,7 +58,13 @@ describe("session picker allocation", () => {
 
 	test("the compact physical row map rejects a footer click and returns the complete visible session", () => {
 		const selected = vi.fn();
-		const selector = new SessionSelectorComponent(sessions, selected, () => {}, () => {}, { fillHeight: true });
+		const selector = new SessionSelectorComponent(
+			sessions,
+			selected,
+			() => {},
+			() => {},
+			{ fillHeight: true },
+		);
 		selector.handleInput("\x1b[B");
 		selector.setMaxHeight(4);
 		const lines = selector.render(24);
@@ -54,7 +77,13 @@ describe("session picker allocation", () => {
 
 	test("widths one through three collapse scrollbar and inset while retaining the selected session", () => {
 		const selected = vi.fn();
-		const selector = new SessionSelectorComponent(sessions, selected, () => {}, () => {}, { pinnedIds: new Set(["s0"]) });
+		const selector = new SessionSelectorComponent(
+			sessions,
+			selected,
+			() => {},
+			() => {},
+			{ pinnedIds: new Set(["s0"]) },
+		);
 		selector.setMaxHeight(1);
 		for (const width of [1, 2, 3]) {
 			const lines = selector.render(width);
@@ -69,9 +98,16 @@ describe("session picker allocation", () => {
 	});
 
 	test("short delete confirmations expose the action and preserve the explicit busy-session stop gate", async () => {
+		const target = sessions[0]!;
 		const remove = vi.fn(async () => true);
 		const stopAndDelete = vi.fn(async () => true);
-		const selector = new SessionSelectorComponent(sessions, () => {}, () => {}, () => {}, { onDelete: remove, isSessionBusy: () => true, onStopAndDelete: stopAndDelete });
+		const selector = new SessionSelectorComponent(
+			sessions,
+			() => {},
+			() => {},
+			() => {},
+			{ onDelete: remove, isSessionBusy: () => true, onStopAndDelete: stopAndDelete },
+		);
 		selector.setMaxHeight(1);
 		selector.handleInput("\x1b[3~");
 		const lines = selector.render(24);
@@ -81,14 +117,20 @@ describe("session picker allocation", () => {
 		expect(stopAndDelete).not.toHaveBeenCalled();
 		selector.handleInput("\r");
 		await Promise.resolve();
-		expect(stopAndDelete).toHaveBeenCalledWith(sessions[0]);
+		expect(stopAndDelete).toHaveBeenCalledWith(target);
 		expect(remove).not.toHaveBeenCalled();
 	});
 
 	test("Ctrl+N creates a session even when there is no row available for the mouse action", () => {
 		const create = vi.fn();
 		const select = vi.fn();
-		const selector = new SessionSelectorComponent(sessions, select, () => {}, () => {}, { onNewSession: create });
+		const selector = new SessionSelectorComponent(
+			sessions,
+			select,
+			() => {},
+			() => {},
+			{ onNewSession: create },
+		);
 		selector.setMaxHeight(1);
 		selector.render(24);
 		selector.handleInput("\x0e");
@@ -98,7 +140,13 @@ describe("session picker allocation", () => {
 
 	test("navigating an empty result then changing scope never leaves a negative selection", async () => {
 		const select = vi.fn();
-		const selector = new SessionSelectorComponent([], select, () => {}, () => {}, { allSessions: sessions });
+		const selector = new SessionSelectorComponent(
+			[],
+			select,
+			() => {},
+			() => {},
+			{ allSessions: sessions },
+		);
 		selector.handleInput("\x1b[B");
 		selector.handleInput("\t");
 		await Promise.resolve();

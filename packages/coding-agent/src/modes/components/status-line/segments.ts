@@ -1,7 +1,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import { ThinkingLevel } from "@harvest/pi-agent-core";
-import { SPINNER_ADVANCE_MS, TERMINAL } from "@harvest/pi-tui";
+import { Ellipsis, sliceByColumn, SPINNER_ADVANCE_MS, TERMINAL, visibleWidth } from "@harvest/pi-tui";
 import { formatDuration, formatNumber, getProjectDir, pathIsWithin, relativePathWithinRoot } from "@harvest/pi-utils";
 import { type Theme, type ThemeColor, theme } from "../../../modes/theme/theme";
 import { shortenPath, TRUNCATE_LENGTHS, truncateToWidth } from "../../../tools/render-utils";
@@ -17,14 +17,16 @@ export type { SegmentContext } from "./types";
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
-const STARTUP_PLACEHOLDER = "…";
+function startupPlaceholder(): string {
+	return theme.symbol("sep.ellipsis");
+}
 
 function withIcon(icon: string, text: string): string {
 	return icon ? `${icon} ${text}` : text;
 }
 
 function statusValue(ctx: SegmentContext, value: string): string {
-	return ctx.startupPlaceholder ? STARTUP_PLACEHOLDER : value;
+	return ctx.startupPlaceholder ? startupPlaceholder() : value;
 }
 /**
  * Hash-derived accent ANSI for the session title (or preview stand-in title).
@@ -32,10 +34,11 @@ function statusValue(ctx: SegmentContext, value: string): string {
  * so callers fall back to their theme color.
  */
 function sessionAccentAnsi(ctx: SegmentContext): string | undefined {
+	if (theme.getColorMode() === "none") return undefined;
 	if (ctx.sessionAccent === false) return undefined;
 	const name = ctx.session?.sessionManager?.getSessionName() || ctx.previewTitle;
 	if (!name) return undefined;
-	return getSessionAccentAnsi(getSessionAccentHex(name, theme.sessionAccentInputs));
+	return getSessionAccentAnsi(getSessionAccentHex(name, theme.sessionAccentInputs), theme.getColorMode());
 }
 /**
  * `theme.fg` for accent-role text: the hash-derived session accent when
@@ -44,14 +47,18 @@ function sessionAccentAnsi(ctx: SegmentContext): string | undefined {
  * PR link, mode badges, session title) — status colors stay `theme.fg`.
  */
 function accentFg(ctx: SegmentContext, color: ThemeColor, text: string): string {
-	return `${sessionAccentAnsi(ctx) ?? theme.getFgAnsi(color)}${text}\x1b[39m`;
+	const ansi = sessionAccentAnsi(ctx) ?? theme.getFgAnsi(color);
+	return ansi ? `${ansi}${text}\x1b[39m` : text;
 }
 
 /** Left-truncate a path/label to `maxLen`, prefixing an ellipsis when clipped. */
 function clampPathLength(pwd: string, maxLen: number): string {
-	if (pwd.length <= maxLen) return pwd;
-	const ellipsis = "…";
-	return `${ellipsis}${pwd.slice(-Math.max(0, maxLen - ellipsis.length))}`;
+	const width = Math.max(0, maxLen);
+	const pwdWidth = visibleWidth(pwd);
+	if (pwdWidth <= width) return pwd;
+	const ellipsis = truncateToWidth(theme.symbol("sep.ellipsis"), width, "");
+	const tailWidth = Math.max(0, width - visibleWidth(ellipsis));
+	return `${ellipsis}${sliceByColumn(pwd, pwdWidth - tailWidth, tailWidth, true)}`;
 }
 
 /**
@@ -95,11 +102,11 @@ function formatAdvisorSpend(amount: number, usingSubscription: boolean, uiTheme:
 }
 
 function formatSpendPlaceholder(usingSubscription: boolean, uiTheme: Theme): string {
-	if (!usingSubscription) return "$…";
+	if (!usingSubscription) return `$${uiTheme.symbol("sep.ellipsis")}`;
 	if (uiTheme.getSymbolPreset() === "nerd" && uiTheme.icon.subscription) {
-		return `${uiTheme.icon.subscription} …`;
+		return `${uiTheme.icon.subscription} ${uiTheme.symbol("sep.ellipsis")}`;
 	}
-	return "S…";
+	return `S${uiTheme.symbol("sep.ellipsis")}`;
 }
 
 function formatAdvisorSpendPlaceholder(usingSubscription: boolean, uiTheme: Theme): string {
@@ -161,7 +168,7 @@ const piSegment: StatusLineSegment = {
 				: theme.icon.omp
 					? `${theme.icon.omp} `
 					: "";
-		return { content: `${fgAnsi}${content}\x1b[39m`, visible: true };
+		return { content: fgAnsi ? `${fgAnsi}${content}\x1b[39m` : content, visible: true };
 	},
 };
 /** Current braille-spinner glyph on the shared clock, at the Loader's 80ms cadence. */
@@ -227,7 +234,7 @@ const modelSegment: StatusLineSegment = {
 		}
 
 		if (ctx.startupPlaceholder && thinkingDisplay) {
-			thinkingDisplay = withIcon(thinkingGlyph(thinkingDisplay), STARTUP_PLACEHOLDER);
+			thinkingDisplay = withIcon(thinkingGlyph(thinkingDisplay), startupPlaceholder());
 		}
 
 		// Compact mode swaps the model icon for the thinking-level glyph and drops
@@ -405,7 +412,7 @@ const pathSegment: StatusLineSegment = {
 			const { projectName, worktreeName } = ctx.worktree;
 			const label = ctx.git.branch === worktreeName ? projectName : `${projectName}/${worktreeName}`;
 			const text = ctx.startupPlaceholder
-				? STARTUP_PLACEHOLDER
+				? startupPlaceholder()
 				: fileHyperlink(getProjectDir(), clampPathLength(label, opts.maxLength ?? 40));
 			const content = withIcon(theme.icon.worktree, text);
 			return { content: theme.fg("statusLinePath", content), visible: true };
@@ -422,7 +429,9 @@ const pathSegment: StatusLineSegment = {
 				pwd = stripDisplayRoot(pwd);
 			}
 		}
-		const repoSuffix = ctx.activeRepo ? ` ↳ ${ctx.activeRepo.relativeRepoRoot}` : "";
+		const repoSuffix = ctx.activeRepo
+			? ` ${theme.getSymbolPreset() === "ascii" ? theme.tree.hook : "↳"} ${sanitizeStatusText(ctx.activeRepo.relativeRepoRoot)}`
+			: "";
 		if (opts.abbreviate !== false) {
 			pwd = shortenPath(pwd);
 		}
@@ -431,7 +440,7 @@ const pathSegment: StatusLineSegment = {
 
 		const showScratchIcon = scratch && stripPrefix;
 		const icon = showScratchIcon ? theme.icon.scratchFolder : theme.icon.folder;
-		const text = ctx.startupPlaceholder ? STARTUP_PLACEHOLDER : `${fileHyperlink(projectDir, pwd)}${repoSuffix}`;
+		const text = ctx.startupPlaceholder ? startupPlaceholder() : `${fileHyperlink(projectDir, pwd)}${repoSuffix}`;
 		const content = withIcon(icon, text);
 		return { content: theme.fg("statusLinePath", content), visible: true };
 	},
@@ -581,7 +590,9 @@ const costSegment: StatusLineSegment = {
 			);
 		}
 		if (normalizedPremiumRequests) {
-			billingParts.push(`★ ${statusValue(ctx, formatNumber(normalizedPremiumRequests))}`);
+			billingParts.push(
+				`${theme.getSymbolPreset() === "ascii" ? "*" : "★"} ${statusValue(ctx, formatNumber(normalizedPremiumRequests))}`,
+			);
 		}
 		if (advisorCost) {
 			const prefix = billingParts.length ? "+ " : "";
@@ -626,7 +637,7 @@ const contextPctSegment: StatusLineSegment = {
 		}
 		const text = theme.fg(
 			color,
-			ctx.startupPlaceholder ? STARTUP_PLACEHOLDER : formatContextUsage(pct, window, ctx.contextTokens),
+			ctx.startupPlaceholder ? startupPlaceholder() : formatContextUsage(pct, window, ctx.contextTokens),
 		);
 		const content = withIcon(theme.icon.context, `${text}${autoIcon}`);
 
@@ -760,7 +771,7 @@ const sessionNameSegment: StatusLineSegment = {
 		const name = sessionManager?.getSessionName() || ctx.previewTitle;
 		if (!name) return { content: "", visible: false };
 
-		const content = ctx.startupPlaceholder ? STARTUP_PLACEHOLDER : sanitizeStatusText(name);
+		const content = ctx.startupPlaceholder ? startupPlaceholder() : sanitizeStatusText(name);
 		return { content: accentFg(ctx, "accent", content), visible: true };
 	},
 };
@@ -782,7 +793,14 @@ const runSegment: StatusLineSegment = {
 		if (!run) return { content: "", visible: false };
 		if (run.stage === "idle" && !run.failure) return { content: "", visible: false };
 		if (run.stage === "idle") {
-			const label = statusValue(ctx, truncateToWidth(sanitizeStatusText(run.failure ?? ""), TRUNCATE_LENGTHS.LINE));
+			const label = statusValue(
+				ctx,
+				truncateToWidth(
+					sanitizeStatusText(run.failure ?? ""),
+					TRUNCATE_LENGTHS.LINE,
+					theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+				),
+			);
 			if (!label) return { content: "", visible: false };
 			return { content: theme.fg("error", withIcon("!", label)), visible: true };
 		}
@@ -790,16 +808,22 @@ const runSegment: StatusLineSegment = {
 		switch (run.stage) {
 			case "tool": {
 				const tool = run.activeTool ? ` ${sanitizeStatusText(run.activeTool)}` : "";
-				return { content: theme.fg("accent", withIcon("●", `working${tool}${elapsed}`)), visible: true };
+				return {
+					content: theme.fg("accent", withIcon(theme.status.running, `working${tool}${elapsed}`)),
+					visible: true,
+				};
 			}
 			case "retry":
 				return { content: theme.fg("warning", withIcon("?", `retry${elapsed}`)), visible: true };
 			case "compaction":
-				return { content: theme.fg("accent", withIcon("●", `compacting${elapsed}`)), visible: true };
+				return {
+					content: theme.fg("accent", withIcon(theme.status.running, `compacting${elapsed}`)),
+					visible: true,
+				};
 			case "awaitingDelivery":
 				return { content: theme.fg("warning", withIcon("?", `waiting${elapsed}`)), visible: true };
 			default:
-				return { content: theme.fg("accent", withIcon("●", `working${elapsed}`)), visible: true };
+				return { content: theme.fg("accent", withIcon(theme.status.running, `working${elapsed}`)), visible: true };
 		}
 	},
 };
@@ -839,8 +863,12 @@ const usageSegment: StatusLineSegment = {
 		const parts: string[] = [];
 		if (u.tier) {
 			const tier = ctx.startupPlaceholder
-				? STARTUP_PLACEHOLDER
-				: truncateToWidth(sanitizeStatusText(u.tier), TRUNCATE_LENGTHS.SHORT);
+				? startupPlaceholder()
+				: truncateToWidth(
+						sanitizeStatusText(u.tier),
+						TRUNCATE_LENGTHS.SHORT,
+						theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+					);
 			if (tier) parts.push(accentFg(ctx, "accent", tier));
 		}
 		if (u.fiveHour) {
@@ -850,7 +878,9 @@ const usageSegment: StatusLineSegment = {
 				u.fiveHour.resetMinutes !== undefined
 					? theme.fg(
 							"muted",
-							ctx.startupPlaceholder ? " (…)" : ` (${formatUsageReset(u.fiveHour.resetMinutes, "m")})`,
+							ctx.startupPlaceholder
+								? ` (${startupPlaceholder()})`
+								: ` (${formatUsageReset(u.fiveHour.resetMinutes, "m")})`,
 						)
 					: "";
 			parts.push(`5h ${pctText}${reset}`);
@@ -862,7 +892,9 @@ const usageSegment: StatusLineSegment = {
 				u.daily.resetMinutes !== undefined
 					? theme.fg(
 							"muted",
-							ctx.startupPlaceholder ? " (…)" : ` (${formatUsageReset(u.daily.resetMinutes, "m")})`,
+							ctx.startupPlaceholder
+								? ` (${startupPlaceholder()})`
+								: ` (${formatUsageReset(u.daily.resetMinutes, "m")})`,
 						)
 					: "";
 			parts.push(`1d ${pctText}${reset}`);
@@ -874,7 +906,9 @@ const usageSegment: StatusLineSegment = {
 				u.sevenDay.resetHours !== undefined
 					? theme.fg(
 							"muted",
-							ctx.startupPlaceholder ? " (…)" : ` (${formatUsageReset(u.sevenDay.resetHours, "h")})`,
+							ctx.startupPlaceholder
+								? ` (${startupPlaceholder()})`
+								: ` (${formatUsageReset(u.sevenDay.resetHours, "h")})`,
 						)
 					: "";
 			parts.push(`7d ${pctText}${reset}`);
@@ -889,7 +923,9 @@ const usageSegment: StatusLineSegment = {
 				u.monthly.resetHours !== undefined
 					? theme.fg(
 							"muted",
-							ctx.startupPlaceholder ? " (…)" : ` (${formatUsageReset(u.monthly.resetHours, "h")})`,
+							ctx.startupPlaceholder
+								? ` (${startupPlaceholder()})`
+								: ` (${formatUsageReset(u.monthly.resetHours, "h")})`,
 						)
 					: "";
 			parts.push(`mo ${pctText}${reset}`);

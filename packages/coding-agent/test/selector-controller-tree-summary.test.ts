@@ -67,6 +67,7 @@ function createHarness(summaryChoice = "No summary"): TreeSummaryHarness {
 	let selector: { handleInput(key: string): void } | undefined;
 	const ctx = {
 		sessionManager: {
+			getSessionFile: () => undefined,
 			getTree: () => [root],
 			getLeafId: () => null,
 			appendLabelChange: vi.fn(),

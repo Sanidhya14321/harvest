@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
 import { ThinkingLevel } from "@harvest/pi-agent-core";
 import * as vcs from "@harvest/pi-natives/vcs";
-import { type Component, padding, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
+import { type Component, Ellipsis, padding, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
 import { formatNumber, getProjectDir } from "@harvest/pi-utils";
 import { settings } from "../../config/settings";
 import { theme } from "../../modes/theme/theme";
@@ -155,6 +155,8 @@ export class FooterComponent implements Component {
 	}
 
 	render(width: number): readonly string[] {
+		if (width <= 0) return [];
+		const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
 		const state = this.session.state;
 
 		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
@@ -193,21 +195,12 @@ export class FooterComponent implements Component {
 		}
 
 		// Truncate path if too long to fit width
-		if (pwd.length > width) {
-			const half = Math.floor(width / 2) - 1;
-			if (half > 1) {
-				const start = pwd.slice(0, half);
-				const end = pwd.slice(-(half - 1));
-				pwd = `${start}…${end}`;
-			} else {
-				pwd = pwd.slice(0, Math.max(1, width));
-			}
-		}
+		pwd = truncateToWidth(sanitizeStatusText(pwd), width, ellipsis);
 
 		// Build stats line
 		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatNumber(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatNumber(totalOutput)}`);
+		if (totalInput) statsParts.push(`${theme.icon.input}${formatNumber(totalInput)}`);
+		if (totalOutput) statsParts.push(`${theme.icon.output}${formatNumber(totalOutput)}`);
 		if (totalCacheRead) statsParts.push(`R${formatNumber(totalCacheRead)}`);
 		if (totalCacheWrite) statsParts.push(`W${formatNumber(totalCacheWrite)}`);
 
@@ -231,7 +224,10 @@ export class FooterComponent implements Component {
 			} else if (usingSubscription) {
 				billingParts.push(theme.getSymbolPreset() === "nerd" && subscriptionIcon ? subscriptionIcon : "(sub)");
 			}
-			if (normalizedPremiumRequests) billingParts.push(`★ ${formatNumber(normalizedPremiumRequests)}`);
+			if (normalizedPremiumRequests)
+				billingParts.push(
+					`${theme.getSymbolPreset() === "ascii" ? "*" : "★"} ${formatNumber(normalizedPremiumRequests)}`,
+				);
 			if (billingParts.length > 0) statsParts.push(billingParts.join(" "));
 		}
 		// Colorize context percentage based on usage
@@ -259,10 +255,10 @@ export class FooterComponent implements Component {
 				// Pending (no turn classified yet / classifying) shows a symbol-theme
 				// question-box marker; once resolved it shows `<level>`.
 				const resolved = this.session.autoResolvedThinkingLevel();
-				rightSide = `${modelName} • ${resolved ? resolved : `${theme.thinking.autoPending} auto`}`;
+				rightSide = `${modelName}${theme.sep.dot}${resolved ? resolved : `${theme.thinking.autoPending} auto`}`;
 			} else {
 				const thinkingLevel = state.thinkingLevel ?? ThinkingLevel.Off;
-				rightSide = `${modelName} • ${thinkingLevel}`;
+				rightSide = `${modelName}${theme.sep.dot}${thinkingLevel}`;
 			}
 		}
 
@@ -273,7 +269,7 @@ export class FooterComponent implements Component {
 		if (statsLeftWidth > width) {
 			// Drop styling and truncate by terminal cells (not code points) so wide
 			// glyphs and non-SGR escapes can't overflow the line.
-			statsLeft = truncateToWidth(stripVTControlCharacters(statsLeft), width);
+			statsLeft = truncateToWidth(stripVTControlCharacters(statsLeft), width, ellipsis);
 			statsLeftWidth = visibleWidth(statsLeft);
 		}
 
@@ -291,7 +287,7 @@ export class FooterComponent implements Component {
 			const availableForRight = width - statsLeftWidth - minPadding;
 			if (availableForRight > 3) {
 				// Drop styling and truncate by terminal cells so the right side fits.
-				const truncatedRight = truncateToWidth(stripVTControlCharacters(rightSide), availableForRight);
+				const truncatedRight = truncateToWidth(stripVTControlCharacters(rightSide), availableForRight, ellipsis);
 				const pad = padding(width - statsLeftWidth - visibleWidth(truncatedRight));
 				statsLine = statsLeft + pad + truncatedRight;
 			} else {
@@ -316,7 +312,7 @@ export class FooterComponent implements Component {
 				.map(([, text]) => sanitizeStatusText(text));
 			const statusLine = sortedStatuses.join(" ");
 			// Truncate to terminal width with dim ellipsis for consistency with footer style
-			lines.push(truncateToWidth(statusLine, width));
+			lines.push(truncateToWidth(statusLine, width, ellipsis));
 		}
 
 		return lines;

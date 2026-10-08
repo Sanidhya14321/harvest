@@ -17,7 +17,7 @@ describe("WelcomeComponent", () => {
 		vi.spyOn(theme, "getSymbolPreset").mockReturnValue("nerd");
 
 		const welcome = new WelcomeComponent("1.0.0", "model", "provider");
-		expect(welcome.tip).not.toBe("Please use nerdfont 😭.");
+		expect(welcome.tip).not.toBe("Please use a Nerd Font.");
 		expect(welcome.tip).toBeDefined();
 	});
 
@@ -27,12 +27,12 @@ describe("WelcomeComponent", () => {
 		// 9% chance => selects special tip
 		vi.spyOn(Math, "random").mockReturnValue(0.09);
 		const welcomeSpecial = new WelcomeComponent("1.0.0", "model", "provider");
-		expect(welcomeSpecial.tip).toBe("Please use nerdfont 😭.");
+		expect(welcomeSpecial.tip).toBe("Please use a Nerd Font.");
 
 		// 10% chance => selects regular tip
 		vi.spyOn(Math, "random").mockReturnValue(0.1);
 		const welcomeRegular = new WelcomeComponent("1.0.0", "model", "provider");
-		expect(welcomeRegular.tip).not.toBe("Please use nerdfont 😭.");
+		expect(welcomeRegular.tip).not.toBe("Please use a Nerd Font.");
 		expect(welcomeRegular.tip).toBeDefined();
 	});
 

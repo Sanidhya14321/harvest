@@ -18,7 +18,11 @@ import { renderComposerShapePreview } from "../../components/composer-shape-prev
 type ThemeMode = "curated" | "all";
 
 const CURATED_ITEMS: readonly SelectItem[] = [
-	{ value: "auto", label: "Match terminal", description: "Harvest in dark terminals, Harvest Light in light terminals" },
+	{
+		value: "auto",
+		label: "Match terminal",
+		description: "Harvest in dark terminals, Harvest Light in light terminals",
+	},
 	{ value: "theme:harvest", label: "Harvest", description: "Default dark theme" },
 	{ value: "theme:harvest-light", label: "Harvest Light", description: "Default light theme" },
 	{ value: "theme:titanium", label: "Titanium", description: "Classic dark theme" },
@@ -78,13 +82,16 @@ class ThemeSceneController implements SetupSceneController {
 
 	render(width: number, maxLines?: number): readonly string[] {
 		const budget = maxLines ?? Number.POSITIVE_INFINITY;
-		const lines = budget >= CURATED_ITEMS.length + 3 ? [
-			theme.fg("muted", "Theme changes preview live. Nothing is saved until you press Enter."),
-			this.#mode === "all"
-				? theme.fg("dim", "Browsing all themes · Esc returns to curated choices")
-				: theme.fg("dim", "Esc skips this step"),
-			"",
-		] : [];
+		const lines =
+			budget >= CURATED_ITEMS.length + 3
+				? [
+						theme.fg("muted", "Theme changes preview live. Nothing is saved until you press Enter."),
+						this.#mode === "all"
+							? theme.fg("dim", "Browsing all themes · Esc returns to curated choices")
+							: theme.fg("dim", "Esc skips this step"),
+						"",
+					]
+				: [];
 		// The live status-line/composer block below renders through the same
 		// real pipeline as runtime (the wizard itself also re-renders in the
 		// highlighted theme) — so it yields to the list when it would squeeze

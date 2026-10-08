@@ -100,6 +100,8 @@ function createContext(sessionOverride?: InteractiveModeContext["session"]) {
 		} as unknown as InteractiveModeContext["session"]);
 
 	const ctx = {
+		isHomeDetached: () => false,
+		createSessionFromHomeDetached: async () => false,
 		editor: editor as unknown as InteractiveModeContext["editor"],
 		ui: { requestRender } as unknown as InteractiveModeContext["ui"],
 		session,

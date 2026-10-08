@@ -12,7 +12,7 @@ import type { SubmittedUserInput } from "@harvest/pi-coding-agent/modes/types";
 import type { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import type { CreateAgentSessionOptions } from "@harvest/pi-coding-agent/sdk";
 import { discoverTitleSystemPromptFile } from "@harvest/pi-coding-agent/system-prompt";
-import { removeWithRetries } from "@harvest/pi-utils";
+import { CONFIG_DIR_NAME, removeWithRetries } from "@harvest/pi-utils";
 
 const cleanupDirs: string[] = [];
 
@@ -32,10 +32,10 @@ function createInput(overrides: Partial<SubmittedUserInput> = {}): SubmittedUser
 }
 
 describe("discoverTitleSystemPromptFile", () => {
-	it("discovers TITLE_SYSTEM.md from the project omp config directory", async () => {
+	it("discovers TITLE_SYSTEM.md from the active project config directory", async () => {
 		const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-title-system-"));
 		cleanupDirs.push(projectDir);
-		const configDir = path.join(projectDir, ".omp");
+		const configDir = path.join(projectDir, CONFIG_DIR_NAME);
 		await fs.mkdir(configDir, { recursive: true });
 		const promptPath = path.join(configDir, "TITLE_SYSTEM.md");
 		await fs.writeFile(promptPath, "custom title prompt");
@@ -387,7 +387,7 @@ describe("submitInteractiveInput", () => {
 		await submitInteractiveInput(mode, session, input);
 
 		expect(mode.pauseLoop).toHaveBeenCalledTimes(1);
-		expect(mode.showError).toHaveBeenCalledWith("attachment too large");
+		expect(mode.showError).toHaveBeenCalledWith("attachment too large", { owner: input.ownerSession });
 		expect(mode.finishPendingSubmission).toHaveBeenCalledWith(input);
 	});
 
@@ -412,7 +412,7 @@ describe("submitInteractiveInput", () => {
 		await submitInteractiveInput(mode, session, input);
 
 		expect(mode.pauseLoop).not.toHaveBeenCalled();
-		expect(mode.showError).toHaveBeenCalledWith("attachment too large");
+		expect(mode.showError).toHaveBeenCalledWith("attachment too large", { owner: input.ownerSession });
 		expect(mode.finishPendingSubmission).toHaveBeenCalledWith(input);
 	});
 });

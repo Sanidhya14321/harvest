@@ -56,10 +56,14 @@ class ModelSceneController implements SetupSceneController {
 	}
 
 	render(width: number, maxLines?: number): readonly string[] {
-		const lines = maxLines === undefined || maxLines >= 8 ? [
-			this.#status ?? theme.fg("muted", "Type to search. Enter saves the highlighted model as your default."),
-			"",
-		] : [];
+		const lines =
+			maxLines === undefined || maxLines >= 8
+				? [
+						this.#status ??
+							theme.fg("muted", "Type to search. Enter saves the highlighted model as your default."),
+						"",
+					]
+				: [];
 		const budget = maxLines === undefined ? MAX_VISIBLE_MODELS : maxLines - lines.length - BROWSER_FRAME_ROWS;
 		this.#browser.setMaxVisible(Math.max(1, Math.min(MAX_VISIBLE_MODELS, budget)));
 		this.#browser.setMaxHeight(maxLines === undefined ? undefined : Math.max(1, maxLines - lines.length));

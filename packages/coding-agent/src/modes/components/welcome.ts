@@ -114,7 +114,7 @@ export function renderWelcomeTip(tip: string, boxWidth: number, phase = 0): stri
 		// Append the rainbow tag to the final body line when it fits within the
 		// box; otherwise drop it onto its own indented continuation line so the
 		// styled glyphs never overflow or reflow the wrapped body.
-		const encoding: ColorEncoding = TERMINAL.trueColor ? "ansi-16m" : "ansi-256";
+		const encoding: ColorEncoding = theme.getColorMode() === "truecolor" ? "ansi-16m" : "ansi-256";
 		const tag = renderNewTag(phase, encoding);
 		const tagWidth = 1 + visibleWidth(NEW_TAG_TEXT); // 1 = space separator
 		const lastLine = lines[lines.length - 1];
@@ -269,9 +269,13 @@ export class WelcomeComponent implements Component {
 		}
 		let lines = this.#renderLines(termWidth);
 		if (this.#maxHeight !== undefined && lines.length > this.#maxHeight) {
-			lines = [topBorder(termWidth, `${APP_NAME} v${this.version}`),
-				...(this.#maxHeight >= 2 ? [surfaceRow(`${this.modelName}${theme.sep.dot}${this.providerName}`, termWidth)] : []),
-				...(this.#maxHeight >= 3 ? [surfaceRow("/ commands  ! bash  $ python", termWidth)] : [])].slice(0, this.#maxHeight);
+			lines = [
+				topBorder(termWidth, `${APP_NAME} v${this.version}`),
+				...(this.#maxHeight >= 2
+					? [surfaceRow(`${this.modelName}${theme.sep.dot}${this.providerName}`, termWidth)]
+					: []),
+				...(this.#maxHeight >= 3 ? [surfaceRow("/ commands  ! bash  $ python", termWidth)] : []),
+			].slice(0, this.#maxHeight);
 		}
 		if (animating) {
 			this.#cachedLines = undefined;
@@ -345,7 +349,14 @@ export class WelcomeComponent implements Component {
 				const timeWidth = visibleWidth(timeSuffixRaw);
 				const nameBudget = Math.max(1, rightCol - prefixWidth - timeWidth);
 				const nameVis = visibleWidth(session.name);
-				const name = nameVis > nameBudget ? truncateToWidth(session.name, nameBudget) : session.name;
+				const name =
+					nameVis > nameBudget
+						? truncateToWidth(
+								session.name,
+								nameBudget,
+								theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+							)
+						: session.name;
 				sessionLines.push(
 					`${theme.fg("dim", bulletPrefix)}${theme.fg("muted", name)}${theme.fg("dim", timeSuffixRaw)}`,
 				);
@@ -492,10 +503,14 @@ export interface ShineConfig {
  * color-identical (truecolor when available, 256-color ramp otherwise).
  */
 export function gradientEscape(t: number, shine?: ShineConfig): string {
-	if ((typeof theme === "undefined" && detectColorLevel(process.env, true) === 0) || (typeof theme !== "undefined" && theme.getColorMode() === "none")) return "";
+	if (
+		(typeof theme === "undefined" && detectColorLevel(process.env, true) === 0) ||
+		(typeof theme !== "undefined" && theme.getColorMode() === "none")
+	)
+		return "";
 	const shineStrength = shine && shine.strength > 0 ? shine.strength : 0;
 	const shinePos = shine ? shine.pos : 0;
-	if (TERMINAL.trueColor) {
+	if (typeof theme === "undefined" ? TERMINAL.trueColor : theme.getColorMode() === "truecolor") {
 		// 5-stop palette widens the visible color range and avoids the
 		// deep-blue valley a naive HSL lerp falls into.
 		const stops = GRADIENT_STOPS;
@@ -536,7 +551,9 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
  * white highlight is composited on top, centered at `shine.pos`.
  */
 export function gradientLogo(lines: readonly string[], phase = 0, shine?: ShineConfig): string[] {
-	const reset = typeof theme !== "undefined" && theme.getColorMode() === "none" ? "" : "\x1b[0m";
+	const noColor =
+		typeof theme === "undefined" ? detectColorLevel(process.env, true) === 0 : theme.getColorMode() === "none";
+	const reset = noColor ? "" : "\x1b[0m";
 	const rows = lines.length;
 	const cols = Math.max(...lines.map(l => l.length));
 	const xSpan = Math.max(1, cols - 1);
@@ -545,7 +562,8 @@ export function gradientLogo(lines: readonly string[], phase = 0, shine?: ShineC
 	return lines.map((line, y) => {
 		let result = "";
 		for (let x = 0; x < line.length; x++) {
-			const char = typeof theme !== "undefined" && theme.getSymbolPreset() === "ascii" && line[x] === "█" ? "#" : line[x];
+			const char =
+				typeof theme !== "undefined" && theme.getSymbolPreset() === "ascii" && line[x] === "█" ? "#" : line[x];
 			if (char === " ") {
 				result += char;
 				continue;

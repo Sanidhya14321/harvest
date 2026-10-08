@@ -37,6 +37,8 @@ function createLoopContext(options: {
 		setCollapsedText: vi.fn(),
 	} as unknown as InteractiveModeContext["editor"];
 	const ctx = {
+		isHomeDetached: () => false,
+		createSessionFromHomeDetached: async () => false,
 		editor,
 		ui: { requestRender: vi.fn() },
 		session: {

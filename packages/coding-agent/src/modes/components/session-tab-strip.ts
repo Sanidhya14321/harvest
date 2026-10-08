@@ -1,11 +1,11 @@
 import { stripVTControlCharacters } from "node:util";
-import { type Component, type Tab, TabBar, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
+import { type Component, Ellipsis, type Tab, TabBar, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
 import { normalizePathForComparison } from "@harvest/pi-utils";
 import { resolveNavigationTarget, type NavigationTarget, type SessionTabs } from "../../session/session-tabs";
 import type { LiveSessionSnapshot } from "../../session/live-session-registry";
 import { sanitizeStatusText, getTabBarTheme } from "../shared";
 import { theme } from "../theme/theme";
-import { bottomBorder, row, topBorder } from "./overlay-box";
+import { bottomBorder, dialogContentWidth, renderDialog, row, topBorder } from "./overlay-box";
 
 /** Grapheme segmenter for terminal-cell budgeting (wide/emoji/combining-safe). */
 const closeCellSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -52,6 +52,11 @@ export class SessionTabStrip implements Component {
 	#lastSelectedKey: string | undefined;
 	/** `row:col` → tab path for rendered close (`x`) cells, rebuilt every render. */
 	#closeCells = new Map<string, string>();
+	#maxHeight = Number.POSITIVE_INFINITY;
+
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(0, Math.floor(height));
+	}
 
 	constructor(
 		private readonly tabs: SessionTabs,
@@ -126,15 +131,15 @@ export class SessionTabStrip implements Component {
 		);
 		const indicator =
 			snapshot?.status === "running"
-				? "● "
+				? `${theme.status.running} `
 				: snapshot?.status === "waiting"
 					? "? "
 					: snapshot?.status === "error"
 						? "! "
 						: snapshot?.unread
-							? "✓ "
+							? `${theme.status.done} `
 							: "";
-		return `${indicator}${truncateToWidth(title, Math.max(1, limit - Bun.stringWidth(indicator)))}`;
+		return `${indicator}${truncateToWidth(title, Math.max(1, limit - Bun.stringWidth(indicator)), theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode)}`;
 	}
 
 	/**
@@ -229,9 +234,11 @@ export class SessionTabStrip implements Component {
 			label: this.#closableLabel(sessionPath, current, 22),
 			short: `${start + index + 1}`,
 		}));
-		if (start > 0) displayed.unshift({ id: paths[start - 1], label: "‹", short: "‹" });
+		const previous = theme.getSymbolPreset() === "ascii" ? "<" : "‹";
+		const next = theme.getSymbolPreset() === "ascii" ? ">" : "›";
+		if (start > 0) displayed.unshift({ id: paths[start - 1], label: previous, short: previous });
 		if (paths.length > start + visible.length)
-			displayed.push({ id: paths[start + visible.length], label: "›", short: "›" });
+			displayed.push({ id: paths[start + visible.length], label: next, short: next });
 		displayed.push({ id: "new-session", label: "+ New session", short: "+" });
 		// Newly opened tabs flash with the hover highlight until the next
 		// selection change, so opening/closing reads as a visible transition
@@ -254,7 +261,7 @@ export class SessionTabStrip implements Component {
 				? visible.find(item => normalizePathForComparison(item) === normalizePathForComparison(current))
 				: undefined,
 		);
-		const rows = this.#workspaceBar.render(width).slice(0, Math.max(0, maxRows));
+		const rows = this.#workspaceBar.render(width).slice(0, Math.max(0, Math.min(maxRows, this.#maxHeight)));
 		this.#rebuildCloseCells(rows, closeableIds, current);
 		this.#workspaceVisibleRows = rows.length;
 		return rows;
@@ -321,11 +328,15 @@ export class SessionTabStrip implements Component {
 	 * hidden session.
 	 */
 	renderHome(width: number): readonly string[] {
-		const w = Math.max(20, Math.min(60, Math.max(1, width)));
+		const w = Math.max(1, Math.min(60, Math.floor(width)));
+		const fullHint = ["Reopen: Ctrl+Shift+T", "New: +", "Resume: /tab open <id>"].join(theme.sep.dot);
+		const hint = visibleWidth(fullHint) <= dialogContentWidth(w) ? fullHint : "Ctrl+Shift+T reopen";
+		if (this.#maxHeight === 0) return [];
+		if (this.#maxHeight < 4) return renderDialog("Home", [hint, "No open sessions"], w, this.#maxHeight).lines;
 		return [
 			topBorder(w, "Home"),
-			row(theme.fg("muted", "No open sessions — background runtimes keep running."), w),
-			row(theme.fg("dim", "Reopen: Ctrl+Shift+T · New: + · Resume: /tab open <id>"), w),
+			row(theme.fg("muted", "No open sessions; background runtimes keep running."), w),
+			row(theme.fg("dim", hint), w),
 			bottomBorder(w),
 		];
 	}
@@ -344,16 +355,20 @@ export class SessionTabStrip implements Component {
 			label: `${start + index + 1} ${this.#closableLabel(sessionPath, current, 20)}`,
 			short: `${start + index + 1}`,
 		}));
-		if (start > 0) displayed.unshift({ id: "hidden-before", label: `‹ ${start} more`, short: "‹", muted: true });
+		const previous = theme.getSymbolPreset() === "ascii" ? "<" : "‹";
+		const next = theme.getSymbolPreset() === "ascii" ? ">" : "›";
+		if (start > 0)
+			displayed.unshift({ id: "hidden-before", label: `${previous} ${start} more`, short: previous, muted: true });
 		const remaining = paths.length - start - visible.length;
-		if (remaining > 0) displayed.push({ id: "hidden-after", label: `${remaining} more ›`, short: "›", muted: true });
+		if (remaining > 0)
+			displayed.push({ id: "hidden-after", label: `${remaining} more ${next}`, short: next, muted: true });
 		this.#bar.setTabs(
 			displayed,
 			current
 				? visible.find(item => normalizePathForComparison(item) === normalizePathForComparison(current))
 				: undefined,
 		);
-		return this.#bar.render(width);
+		return this.#bar.render(width).slice(0, this.#maxHeight);
 	}
 }
 

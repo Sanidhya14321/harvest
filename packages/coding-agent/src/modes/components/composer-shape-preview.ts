@@ -80,7 +80,9 @@ export function renderComposerShapePreview(
 			lines.push(bar);
 		}
 	}
-	return lines.map(line => truncateToWidth(line, previewWidth, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode));
+	return lines.map(line =>
+		truncateToWidth(line, previewWidth, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+	);
 }
 
 export class ComposerShapePreview implements Component {
@@ -101,6 +103,13 @@ export class ComposerShapePreview implements Component {
 	render(width: number): readonly string[] {
 		if (width <= 0) return [];
 		const lines = renderComposerShapePreview(this.#shape, width, this.#options.status);
-		return ["", theme.fg("muted", truncateToWidth("Preview:", width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode)), ...lines];
+		return [
+			"",
+			theme.fg(
+				"muted",
+				truncateToWidth("Preview:", width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+			),
+			...lines,
+		];
 	}
 }

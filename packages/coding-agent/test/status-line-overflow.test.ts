@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -7,12 +7,19 @@ import type { StatusLineSegmentId } from "@harvest/pi-coding-agent/config/settin
 import { StatusLineComponent } from "@harvest/pi-coding-agent/modes/components/status-line";
 import type { SegmentContext } from "@harvest/pi-coding-agent/modes/components/status-line/segments";
 import { renderSegment } from "@harvest/pi-coding-agent/modes/components/status-line/segments";
-import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { initTheme, setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import { getSessionAccentAnsi, getSessionAccentHex } from "@harvest/pi-coding-agent/utils/session-color";
 import { visibleWidth } from "@harvest/pi-tui";
 import { getProjectDir, setProjectDir } from "@harvest/pi-utils";
 
 const originalProjectDir = getProjectDir();
+let previousTheme: Theme;
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor", symbolPresetOverride: "unicode" }));
+});
+afterEach(() => setThemeInstance(previousTheme));
 
 beforeAll(async () => {
 	resetSettingsForTest();
@@ -150,7 +157,10 @@ describe("status line session accent", () => {
 
 	// Computed lazily: `theme` is assigned by initTheme() in beforeAll, after module evaluation.
 	const accentAnsi = (): string => {
-		const ansi = getSessionAccentAnsi(getSessionAccentHex("Named session", theme.sessionAccentInputs));
+		const ansi = getSessionAccentAnsi(
+			getSessionAccentHex("Named session", theme.sessionAccentInputs),
+			theme.getColorMode(),
+		);
 		if (!ansi) throw new Error("expected a session accent ANSI sequence for the test theme");
 		return ansi;
 	};

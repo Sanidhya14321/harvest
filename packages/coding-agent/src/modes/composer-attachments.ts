@@ -1,4 +1,5 @@
 import { SYMBOL_PRESETS } from "./theme/symbols";
+import { detectColorMode, fgAnsi } from "./theme/color";
 import { theme } from "./theme/theme";
 
 /** Attachment chip kinds staged in the composer: images, video previews, and large text pastes. */
@@ -51,10 +52,11 @@ export function attachmentRgb(kind: ChipKind, n: number): readonly [number, numb
 	return ATTACHMENT_PALETTE[index];
 }
 
-/** ANSI truecolor foreground sequence for the color assigned by {@link attachmentRgb}. */
+/** Foreground sequence for an attachment, honoring the configured color capability. */
 export function attachmentSgr(kind: ChipKind, n: number): string {
 	const [r, g, b] = attachmentRgb(kind, n);
-	return `\x1b[38;2;${r};${g};${b}m`;
+	const hex = `#${[r, g, b].map(value => value.toString(16).padStart(2, "0")).join("")}`;
+	return fgAnsi(hex, typeof theme === "undefined" ? detectColorMode() : theme.getColorMode());
 }
 
 /** Matches expanded image, video, and paste markers, including optional marker metadata. */

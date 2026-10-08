@@ -100,7 +100,8 @@ export class OmfgPanelComponent extends OverlayPanel {
 		const height = this.getMaxHeight();
 		const footer = this.#footerLine();
 		const content = this.#body.render(dialogContentWidth(width));
-		const body = height === 1 ? [footer] : height < 5 ? content : [theme.fg("muted", replaceTabs(this.#status)), ...content];
+		const body =
+			height === 1 ? [footer] : height < 5 ? content : [theme.fg("muted", replaceTabs(this.#status)), ...content];
 		return renderDialog(this.title, body, width, height, height > 1 ? footer : "").lines;
 	}
 
@@ -144,7 +145,11 @@ export class OmfgPanelComponent extends OverlayPanel {
 		}
 		const text = replaceTabs(this.#preview).trim();
 		if (!text) {
-			return new Text(theme.fg("dim", `${theme.status.pending} Waiting for candidate rule${theme.symbol("sep.ellipsis")}`), 0, 0);
+			return new Text(
+				theme.fg("dim", `${theme.status.pending} Waiting for candidate rule${theme.symbol("sep.ellipsis")}`),
+				0,
+				0,
+			);
 		}
 		return new Markdown(text, 0, 0, getMarkdownTheme());
 	}

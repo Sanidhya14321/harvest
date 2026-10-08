@@ -1,6 +1,7 @@
 import { TERMINAL } from "@harvest/pi-tui";
 import { hexToOklch, oklchCusp, oklchToHex, relativeLuminance } from "@harvest/pi-utils";
 import { detectColorLevel } from "@harvest/pi-utils/chalk";
+import type { ColorMode } from "../modes/theme/schema";
 
 /**
  * Derive a stable 32-bit hash from a string using djb2.
@@ -244,12 +245,15 @@ export function getSessionAccentHex(name: string, theme: SessionAccentTheme): st
 }
 
 /**
- * Convert a hex accent color to an ANSI foreground escape sequence matching
- * the detected terminal color depth.
- * Returns `undefined` if `hex` is nullish or Bun.color conversion fails.
+ * Convert a hex accent to the supplied theme color depth, or the detected
+ * terminal depth when the caller has no active theme.
+ * Returns `undefined` for no-color mode, nullish hex, or a failed conversion.
  */
-export function getSessionAccentAnsi(hex: string | undefined): string | undefined {
+export function getSessionAccentAnsi(hex: string | undefined, mode?: ColorMode): string | undefined {
 	if (!hex) return undefined;
-	if (detectColorLevel(Bun.env, true) === 0) return undefined;
-	return Bun.color(hex, TERMINAL.trueColor ? "ansi-16m" : "ansi-256") ?? undefined;
+	if (mode === "none" || (mode === undefined && detectColorLevel(Bun.env, true) === 0)) return undefined;
+	return (
+		Bun.color(hex, (mode === undefined ? TERMINAL.trueColor : mode === "truecolor") ? "ansi-16m" : "ansi-256") ??
+		undefined
+	);
 }

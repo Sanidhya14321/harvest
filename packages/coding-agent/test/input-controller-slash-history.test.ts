@@ -41,6 +41,8 @@ function makeCtx(isStreaming = false) {
 		},
 	};
 	const ctx = {
+		isHomeDetached: () => false,
+		createSessionFromHomeDetached: async () => false,
 		editor,
 		session: {
 			isStreaming,
