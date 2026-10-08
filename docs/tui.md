@@ -104,6 +104,8 @@ Then use `isKeyRelease()` / `isKeyRepeat()` if needed.
 
 Before rendering an overlay, the engine calls its optional `setMaxHeight(height)` with the actual resolved allocation, including viewport margins and percentage caps. Responsive components should reserve input, selection and dismissal controls before decoration. A repeated allocation should be a no-op for cached components. This hook applies to overlays; components replacing the editor area still receive their height from the coding-agent integration.
 
+Set `OverlayOptions.maxWidth` to cap a percentage-width dialog without breaking resize geometry. Margins shrink when the viewport is too small to retain them, preserving at least one visible cell. `getOverlayBounds(component)` reports the last composed screen bounds, or `undefined` before composition, after resizing, or while hidden. Mouse reports are translated by the engine once to the top overlay's local coordinates; outside and stale reports are ignored. A component with `routeMouse(event, line, col)` receives the local event directly; a raw-input component receives an equivalent local SGR report. Bottom-clipped legacy overlays retain their original content-row offset.
+
 ### Built-in full-screen surfaces
 
 The coding-agent integration also mounts built-in full-screen surfaces outside `ctx.ui.custom(...)`. [Agent Hub](./agent-hub.md) is the live roster and control surface for subagents. Its file-backed transcript viewer borrows the alternate screen while it is open, then restores the Hub beneath it on close.

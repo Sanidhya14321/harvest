@@ -42,6 +42,7 @@ tui-debug.log
 coverage/
 .nyc_output/
 packages/ai/test/.temp-images/
+*.json.lock
 
 # Project specific
 !.omp/

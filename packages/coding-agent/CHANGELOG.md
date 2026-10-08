@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Centered dialogs now select the correct item with the mouse, keep nested controls focused, and remain visible in very small terminals.
+- Skill revision evaluations show editable task and outcome fields; revision inspection scrolls through all content and closing the view cancels its running evaluation.
+- Working indicators and attachment colors follow the current terminal color setting when themes change.
 - Active tab mouse-close no longer deadlocks navigation: the neighbor switch runs as the same queued operation and is verified before the tab closes.
 - Deleting a saved-but-not-live session now removes its exact persisted file and artifacts (cold UUID resolution with project validation); unknown IDs reject and storage failures retain discoverability. The deletion tombstone publishes only after storage removal succeeds.
 - Archive migration publishes replacement metadata before removing the legacy input, keeps per-project attribution, and survives concurrent loads and write failures.

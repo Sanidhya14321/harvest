@@ -34,7 +34,29 @@ The most capable agent surface that ships. Continuously tuned by real-world use 
 
 These commands will work once this repository is public and its first tagged GitHub release has completed. They install the latest [GitHub release](https://github.com/Sanidhya14321/Harvest-Agent/releases/latest) for your operating system and CPU. They verify its SHA-256 checksum and check that the downloaded binary starts before replacing an existing installation. Re-run the same command to update. Use `--source` (PowerShell: `-Source`) only if you want the Bun package install.
 
-**macOS · Linux**
+**macOS**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.sh | sh
+```
+
+The installer detects your architecture (**Apple Silicon M-series ARM64** or **Intel x64**) even inside a Rosetta terminal, downloads the verified binary, checks its SHA-256 checksum, and installs `omp` (along with a `harvest` symlink) into `~/.local/bin`.
+
+If `~/.local/bin` is not yet in your `PATH` (default in fresh macOS zsh), add it to your `~/.zshrc`:
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+> **Gatekeeper:** The `curl` installer does not set the quarantine attribute. If you manually download prebuilt binaries via a browser, clear the quarantine flag: `xattr -d com.apple.quarantine ~/.local/bin/omp`.
+
+**Homebrew (macOS)**
+
+```sh
+brew install harvest/tap/harvest
+```
+
+**Linux**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.sh | sh
@@ -42,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/sc
 
 > **Alpine / musl:** the prebuilt musl binary links `libstdc++`/`libgcc` dynamically, which stock Alpine does not ship. Install them first: `apk add libstdc++ libgcc`.
 
-**Ubuntu:** the Linux binary needs no Bun or Rust installation. The installer places `omp` in `~/.local/bin`; if your shell cannot find it, add that directory to `PATH` or run `~/.local/bin/omp`.
+**Ubuntu / Debian / Fedora:** the Linux binary needs no Bun or Rust installation. The installer places `omp` in `~/.local/bin`; if your shell cannot find it, add that directory to `PATH` or run `~/.local/bin/omp`.
 
 **Bun (developer install)**
 
@@ -639,7 +661,7 @@ Key ideas:
 
 ### Getting started from source
 
-Fresh clones need both workspace dependencies and the local Rust/N-API addon before the source CLI can start.
+Fresh clones need both workspace dependencies and the local Rust/N-API addon before the source CLI can start. On macOS, make sure Xcode Command Line Tools are installed (`xcode-select --install`).
 
 ```sh
 bun setup
