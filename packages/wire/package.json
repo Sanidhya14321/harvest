@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "@harvest/pi-wire",
-  "version": "18.1.14",
+  "version": "0.1.0",
   "description": "Shared wire protocol types for Oh My Pi packages",
   "author": "Harvest Contributors",
   "license": "MIT",

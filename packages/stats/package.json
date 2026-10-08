@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "@harvest/omp-stats",
-  "version": "18.1.14",
+  "version": "0.1.0",
   "description": "Local observability dashboard for pi AI usage statistics",
   "author": "Harvest Contributors",
   "license": "MIT",

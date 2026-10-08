@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "@harvest/omptype",
-  "version": "18.1.14",
+  "version": "0.1.0",
   "description": "ArkType-compatible runtime schema validation with lazy JIT compilation",
   "author": "Harvest Contributors",
   "license": "MIT",

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
 ### Fixed
 
 - Multi-result memory recall and reflection no longer throw when the native ranking kernel is unavailable; ranking falls back to the TypeScript selection instead of failing the recall.

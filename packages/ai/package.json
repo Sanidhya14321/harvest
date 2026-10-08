@@ -1,6 +1,6 @@
 {
   "name": "@harvest/pi-ai",
-  "version": "18.1.14",
+  "version": "0.1.0",
   "description": "Unified LLM API with automatic model discovery and provider configuration",
   "keywords": [
     "ai",

@@ -2306,7 +2306,7 @@ export function loadNative() {
 
 	const fallback = {
 		__ompInstallTokioRuntime: () => {},
-		__piNativesV18_1_14: true,
+		__piNativesV0_1_0: true,
 		Ellipsis: "…",
 		ProcessStatus: { Running: 0, Sleeping: 1, Stopped: 2, Zombie: 3, Dead: 4 },
 		FileType: { File: 1, Dir: 2, Directory: 2, Symlink: 3, Unknown: 0 },

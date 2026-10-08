@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
 ### Changed
 
 - Legacy Laya provider metadata decodes as an inert unknown record and never affects approval or computer-safety behavior.

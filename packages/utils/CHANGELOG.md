@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
 ### Fixed
 
 - File locks share ownership across canonical path aliases, including missing files beneath symlinked directories.

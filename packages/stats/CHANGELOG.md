@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
 ### Fixed
 
 - Non-loopback dashboard binds now require a bearer token (`--token` or HARVEST_STATS_TOKEN), and API reads reject unauthenticated requests with 401 when a token is set. Loopback use is unchanged.

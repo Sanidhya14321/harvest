@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
 ### Changed
 
 - Capped overlays resize with their controls and translate mouse coordinates to the visible dialog; outside clicks cannot select hidden controls.

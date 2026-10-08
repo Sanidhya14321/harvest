@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
 ### Fixed
 
 - Object validators now treat inherited properties as absent in boolean checks, matching normal validation.

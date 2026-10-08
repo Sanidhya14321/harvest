@@ -1,6 +1,6 @@
 {
   "name": "@harvest/pi-natives",
-  "version": "18.1.14",
+  "version": "0.1.0",
   "description": "Native Rust bindings for PDF conversion, audio, WebRTC, grep, clipboard, image processing, syntax highlighting, PTY, and shell operations via N-API",
   "type": "module",
   "author": "Harvest Contributors",

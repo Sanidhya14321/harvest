@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-08
+
 ### Fixed
 
 - Centered dialogs now select the correct item with the mouse, keep nested controls focused, and remain visible in very small terminals.

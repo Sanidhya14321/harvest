@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "@harvest/pi-agent-core",
-  "version": "18.1.14",
+  "version": "0.1.0",
   "description": "General-purpose agent with transport abstraction, state management, and attachment support",
   "author": "Harvest Contributors",
   "contributors": [
