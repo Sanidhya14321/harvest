@@ -13,7 +13,11 @@ describe("optional-prop own-property presence", () => {
 	it("treats Object.prototype members as absent for optional props (interp + JIT)", () => {
 		const schema = type({ "toString?": "string", "constructor?": "number" });
 		for (let i = 0; i < JIT; i++) {
-			expect(schema({})).toEqual({});
+			// Untyped: TS carries Object.prototype's `constructor: Function`
+			// on every object type, so `{}` can never satisfy a schema type
+			// that narrows those props. The contract here is runtime
+			// own-property presence, not assignability.
+			expect(schema({}) as unknown).toEqual({});
 			expect(schema.allows({})).toBe(true);
 		}
 	});

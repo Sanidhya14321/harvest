@@ -98,6 +98,12 @@ impl ApplyFailure {
 	}
 }
 
+impl From<ApplyFailure> for Error {
+	fn from(failure: ApplyFailure) -> Self {
+		failure.into_error()
+	}
+}
+
 impl GitRepo {
 	/// Apply a git-format patch to the worktree or index.
 	pub fn apply_patch(&self, patch_text: &str, options: &ApplyOptions) -> Result<()> {
