@@ -21,13 +21,13 @@ import {
 	matchesKey,
 	replaceTabs,
 	routeSgrMouseInput,
+	ScrollView,
 	type SgrMouseEvent,
 	type TUI,
-	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@harvest/pi-tui";
-import { isEnoent, prompt } from "@harvest/pi-utils";
+import { isEnoent, prompt, sanitizeText } from "@harvest/pi-utils";
 import { YAML } from "bun";
 import type { EffectiveExtensionRoots } from "../../capability/types";
 import { getConfigDirs } from "../../config";
@@ -64,7 +64,7 @@ import { resolveAgentPrewalkDefault } from "../../task/prewalk";
 import type { ToolSession } from "../../tools/index";
 import type { AgentDefinition, AgentSource } from "../../task/types";
 import { shortenPath } from "../../tools/render-utils";
-import { getEditorTheme, theme } from "../theme/theme";
+import { getEditorTheme, getSymbolTheme, theme } from "../theme/theme";
 import {
 	matchesAppFollowUp,
 	matchesSelectCancel,
@@ -72,7 +72,7 @@ import {
 	matchesSelectUp,
 } from "../utils/keybinding-matchers";
 import { buildBrowserItems, ModelBrowser, type ModelBrowserItem, sortModelItems } from "./model-browser";
-import { canSplitPane, dialogContentWidth, renderDialog, row, splitBodyWidth, splitRow } from "./overlay-box";
+import { canSplitPane, dialogContentWidth, fit, renderDialog, row, splitBodyWidth, splitRow } from "./overlay-box";
 import { formatEvaluationLines, formatPromotedNotice, revisionEvalStatus } from "./revision-views";
 
 /** One agent with its per-agent settings overrides resolved for display. */
@@ -410,6 +410,11 @@ export class AgentsHubComponent implements Component {
 	#createSpec: GeneratedAgentSpec | null = null;
 	#createError: string | null = null;
 	#createStreamingText = "";
+	#createReview = new ScrollView([], {
+		height: 1,
+		theme: { track: text => theme.fg("dim", text), thumb: text => theme.fg("accent", text) },
+	});
+	#createReviewLayout: { spec: GeneratedAgentSpec; width: number; scope: string; error: string | null } | undefined;
 
 	// Managed-preset revision management (isolated managed-presets store only;
 	// authored/bundled agents never enter this flow).
@@ -440,6 +445,11 @@ export class AgentsHubComponent implements Component {
 	#evalGeneration = 0;
 	/** Revision under inspection (read-only detail: content, evals, restrictions). */
 	#inspectingRevision: { agent: HubAgent; revId: string; error: string | null; body: string[] } | null = null;
+	#inspectionView = new ScrollView([], {
+		height: 1,
+		theme: { track: text => theme.fg("dim", text), thumb: text => theme.fg("accent", text) },
+	});
+	#inspectionLayout: { body: readonly string[]; width: number } | undefined;
 	/** Last fallible hub-action failure, rendered distinctly from notices. */
 	#actionError: string | null = null;
 
@@ -723,7 +733,7 @@ export class AgentsHubComponent implements Component {
 				const patterns = this.#effectiveModelPatterns(agent);
 				const resolved = this.#resolvePatterns(patterns);
 				const base = agent.overrideModel ?? (patterns.length > 0 ? patterns.join(",") : "session model");
-				return `${agent.name} model: ${base}${resolved ? ` → ${resolved}` : ""}`;
+				return `${agent.name} model: ${base}${resolved ? ` ${theme.getSymbolPreset() === "ascii" ? "->" : "→"} ${resolved}` : ""}`;
 			}
 			case "prewalk": {
 				const pattern = this.#effectivePrewalkPattern(agent);
@@ -783,8 +793,8 @@ export class AgentsHubComponent implements Component {
 				...(isManagedPresetAgent(agent)
 					? [
 							{
-								label: "revisions…",
-								styled: theme.fg("accent", "revisions…"),
+								label: `revisions${theme.symbol("sep.ellipsis")}`,
+								styled: theme.fg("accent", `revisions${theme.symbol("sep.ellipsis")}`),
 								action: { kind: "revisions" as const },
 							} satisfies StripChip,
 						]
@@ -802,13 +812,13 @@ export class AgentsHubComponent implements Component {
 			active ? theme.fg("accent", `${theme.status.enabled} ${label}`) : theme.fg(color, label);
 		if (property === "model") {
 			chips.push({
-				label: "pick model…",
-				styled: theme.fg("accent", "pick model…"),
+				label: `pick model${theme.symbol("sep.ellipsis")}`,
+				styled: theme.fg("accent", `pick model${theme.symbol("sep.ellipsis")}`),
 				action: { kind: "pick", property },
 			});
 			chips.push({
-				label: "pattern…",
-				styled: theme.fg("muted", "pattern…"),
+				label: `pattern${theme.symbol("sep.ellipsis")}`,
+				styled: theme.fg("muted", `pattern${theme.symbol("sep.ellipsis")}`),
 				action: { kind: "pattern", property },
 			});
 			if (agent.overrideModel) {
@@ -835,13 +845,13 @@ export class AgentsHubComponent implements Component {
 				action: { kind: "set", property, value: "off" },
 			});
 			chips.push({
-				label: "pick model…",
-				styled: theme.fg("accent", "pick model…"),
+				label: `pick model${theme.symbol("sep.ellipsis")}`,
+				styled: theme.fg("accent", `pick model${theme.symbol("sep.ellipsis")}`),
 				action: { kind: "pick", property },
 			});
 			chips.push({
-				label: "pattern…",
-				styled: theme.fg("muted", "pattern…"),
+				label: `pattern${theme.symbol("sep.ellipsis")}`,
+				styled: theme.fg("muted", `pattern${theme.symbol("sep.ellipsis")}`),
 				action: { kind: "pattern", property },
 			});
 		}
@@ -1205,8 +1215,8 @@ export class AgentsHubComponent implements Component {
 				]
 			: [
 					{
-						label: "evaluate…",
-						styled: theme.fg("accent", "evaluate…"),
+						label: `evaluate${theme.symbol("sep.ellipsis")}`,
+						styled: theme.fg("accent", `evaluate${theme.symbol("sep.ellipsis")}`),
 						action: { kind: "rev-evaluate", revId: rev.id },
 					},
 					{
@@ -1220,8 +1230,8 @@ export class AgentsHubComponent implements Component {
 						action: { kind: "rev-rollback", revId: rev.id },
 					},
 					{
-						label: "inspect…",
-						styled: theme.fg("muted", "inspect…"),
+						label: `inspect${theme.symbol("sep.ellipsis")}`,
+						styled: theme.fg("muted", `inspect${theme.symbol("sep.ellipsis")}`),
 						action: { kind: "rev-inspect", revId: rev.id },
 					},
 				];
@@ -1415,6 +1425,8 @@ export class AgentsHubComponent implements Component {
 	 */
 	async #inspectManagedRevision(agent: HubAgent, revId: string): Promise<void> {
 		this.#inspectingRevision = { agent, revId, error: null, body: [] };
+		this.#inspectionView.scrollToTop();
+		this.#inspectionLayout = undefined;
 		this.#tui.requestRender();
 		try {
 			const { active, revisions } = await listPresetRevisions(agent.name);
@@ -1454,7 +1466,7 @@ export class AgentsHubComponent implements Component {
 					lines.push(...formatEvaluationLines(evaluation));
 				}
 				lines.push(`content (${Buffer.byteLength(rev.content, "utf8")} bytes):`);
-				for (const contentLine of rev.content.split("\n").slice(0, 8)) {
+				for (const contentLine of rev.content.split("\n")) {
 					lines.push(`  ${contentLine}`);
 				}
 				current.body = lines;
@@ -1674,7 +1686,7 @@ export class AgentsHubComponent implements Component {
 					this.#createError = error instanceof Error ? error.message : String(error);
 					this.#tui.requestRender();
 				});
-			}
+			} else this.#createReview.handleScrollKey(data);
 			return;
 		}
 		if (matchesSelectCancel(data)) {
@@ -1725,6 +1737,7 @@ export class AgentsHubComponent implements Component {
 		if (!manager) return;
 		if (this.#inspectingRevision) {
 			if (matchesSelectCancel(data)) this.#inspectingRevision = null;
+			else this.#inspectionView.handleScrollKey(data);
 			return;
 		}
 		if (matchesSelectCancel(data)) {
@@ -1774,7 +1787,8 @@ export class AgentsHubComponent implements Component {
 		const overContent = contentLine >= 0 && contentLine < this.#contentRowCount;
 		const sidebarColEnd = this.#splitVisible ? 2 + this.#sidebarWidthLast : Infinity;
 		const bodyColStart = this.#splitVisible ? this.#sidebarWidthLast + 5 : this.#contentInset;
-		const overSidebar = overContent && (this.#splitVisible || this.#scopeOnly) && event.col >= 0 && event.col < sidebarColEnd;
+		const overSidebar =
+			overContent && (this.#splitVisible || this.#scopeOnly) && event.col >= 0 && event.col < sidebarColEnd;
 		const overBody = overContent && !this.#scopeOnly && event.col >= bodyColStart;
 		const bodyLine = contentLine - this.#bodyHeaderRows;
 
@@ -1794,6 +1808,14 @@ export class AgentsHubComponent implements Component {
 
 		if (this.#assigning) {
 			if (overBody) this.#browser.routeMouse(event, bodyLine);
+			return true;
+		}
+		if (this.#inspectingRevision && overBody && event.wheel !== null) {
+			this.#inspectionView.scroll(event.wheel);
+			return true;
+		}
+		if (this.#createSpec && overBody && event.wheel !== null) {
+			this.#createReview.scroll(event.wheel);
 			return true;
 		}
 		if (this.#createActive || this.#strip || this.#managingRevisions || this.#presetEvalInput) return true;
@@ -1894,7 +1916,7 @@ export class AgentsHubComponent implements Component {
 			if (leftWidth + annWidth + 1 <= width) {
 				line = `${left}${" ".repeat(width - leftWidth - annWidth)}${annotation}`;
 			} else {
-				line = truncateToWidth(left, width);
+				line = fit(left, width);
 			}
 			lines.push(line);
 		}
@@ -1902,40 +1924,37 @@ export class AgentsHubComponent implements Component {
 	}
 
 	#statusRow(width: number): string {
-		if (this.#loadError) return truncateToWidth(theme.fg("error", ` ${this.#loadError}`), width);
+		if (this.#loadError) return fit(theme.fg("error", ` ${this.#loadError}`), width);
 		if (this.#assigning) {
 			const { agent, property } = this.#assigning;
 			const what = property === "model" ? "model override" : `${property} model`;
-			return truncateToWidth(
-				theme.fg("accent", ` Picking ${what} for ${theme.bold(agent.name)} — Enter assigns, Esc cancels`),
+			return fit(
+				theme.fg("accent", ` Picking ${what} for ${theme.bold(agent.name)}; Enter assigns, Esc cancels`),
 				width,
 			);
 		}
 		if (this.#createActive) {
-			return truncateToWidth(theme.fg("accent", " New agent — describe it and let the architect draft it"), width);
+			return fit(theme.fg("accent", " New agent: describe it and let the architect draft it"), width);
 		}
 		if (this.#managingRevisions) {
 			const manager = this.#managingRevisions;
 			const error = manager.error ?? this.#actionError;
-			if (error) return truncateToWidth(theme.fg("error", ` ${error}`), width);
+			if (error) return fit(theme.fg("error", ` ${error}`), width);
 			const active = manager.active ? `active ${manager.active}` : "no active revision";
-			return truncateToWidth(
-				theme.fg("accent", ` Revisions for ${theme.bold(manager.agent.name)} — ${active}`),
-				width,
-			);
+			return fit(theme.fg("accent", ` Revisions for ${theme.bold(manager.agent.name)}; ${active}`), width);
 		}
-		if (this.#actionError) return truncateToWidth(theme.fg("error", ` ${this.#actionError}`), width);
-		if (this.#notice) return truncateToWidth(theme.fg("success", ` ${this.#notice}`), width);
+		if (this.#actionError) return fit(theme.fg("error", ` ${this.#actionError}`), width);
+		if (this.#notice) return fit(theme.fg("success", ` ${this.#notice}`), width);
 		const entry = this.#activeEntry();
 		const scopeLabel = entry.kind === "source" ? `${entry.label} agents` : "All agents";
 		const count = this.#rows.filter(rowDef => rowDef.kind === "agent").length;
-		return truncateToWidth(theme.fg("muted", ` ${scopeLabel} · ${count}`), width);
+		return fit(theme.fg("muted", ` ${scopeLabel}${theme.sep.dot}${count}`), width);
 	}
 
 	#renderList(width: number, rows: number): string[] {
 		const lines: string[] = [];
 		const searchText = this.#searchQuery ? theme.fg("accent", this.#searchQuery) : theme.fg("dim", "type to filter");
-		if (rows >= 3) lines.push(truncateToWidth(` ${theme.fg("muted", "search:")} ${searchText}`, width));
+		if (rows >= 3) lines.push(fit(` ${theme.fg("muted", "search:")} ${searchText}`, width));
 		if (rows >= 8) lines.push("");
 		this.#listRowStart = lines.length;
 
@@ -1962,8 +1981,8 @@ export class AgentsHubComponent implements Component {
 			const cursor = selected && listFocused ? theme.fg("accent", theme.nav.cursor) : " ";
 			if (rowDef.kind === "new") {
 				let line = ` ${cursor} ${theme.fg(selected ? "accent" : "dim", `+ New agent${theme.symbol("sep.ellipsis")}`)}`;
-				if (selected || hovered) line = theme.bgFill("selectedBg", truncateToWidth(line, width).padEnd(width));
-				lines.push(truncateToWidth(line, width));
+				if (selected || hovered) line = theme.bgFill("selectedBg", fit(line, width));
+				lines.push(fit(line, width));
 				continue;
 			}
 			const agent = rowDef.agent;
@@ -1991,7 +2010,7 @@ export class AgentsHubComponent implements Component {
 			if (rightWidth > 0 && lineWidth + rightWidth + 2 <= width) {
 				line = `${line}${" ".repeat(width - lineWidth - rightWidth - 1)}${right}`;
 			}
-			line = truncateToWidth(line, width);
+			line = fit(line, width);
 			if (selected || hovered) {
 				const w = visibleWidth(line);
 				if (w < width) line += " ".repeat(width - w);
@@ -2005,11 +2024,11 @@ export class AgentsHubComponent implements Component {
 		const agent = this.#selectedAgent();
 		lines.push(theme.fg("border", theme.symbol("boxRound.horizontal").repeat(Math.max(1, width))));
 		if (agent) {
-			lines.push(truncateToWidth(` ${theme.fg("dim", replaceTabs(agent.description))}`, width));
+			lines.push(fit(` ${theme.fg("dim", replaceTabs(agent.description))}`, width));
 			const patterns = this.#effectiveModelPatterns(agent);
 			const resolved = this.#resolvePatterns(patterns);
-			const modelLine = `${theme.fg("muted", "model:")} ${patterns.length > 0 ? replaceTabs(patterns.join(",")) : theme.fg("dim", "(session model)")}${resolved ? ` ${theme.fg("dim", "→")} ${theme.fg("success", resolved)}` : ""}`;
-			lines.push(truncateToWidth(` ${modelLine}`, width));
+			const modelLine = `${theme.fg("muted", "model:")} ${patterns.length > 0 ? replaceTabs(patterns.join(",")) : theme.fg("dim", "(session model)")}${resolved ? ` ${theme.fg("dim", theme.getSymbolPreset() === "ascii" ? "->" : "→")} ${theme.fg("success", resolved)}` : ""}`;
+			lines.push(fit(` ${modelLine}`, width));
 			const prewalk = this.#effectivePrewalkPattern(agent);
 			const advisor = this.#effectiveAdvisorPattern(agent);
 			const flagLine = [
@@ -2019,7 +2038,7 @@ export class AgentsHubComponent implements Component {
 			]
 				.filter(Boolean)
 				.join("   ");
-			lines.push(truncateToWidth(` ${flagLine}`, width));
+			lines.push(fit(` ${flagLine}`, width));
 		} else {
 			lines.push(theme.fg("dim", " Select an agent to inspect"));
 			lines.push("");
@@ -2035,26 +2054,31 @@ export class AgentsHubComponent implements Component {
 		const inspecting = this.#inspectingRevision;
 		if (inspecting && inspecting.agent.name === manager.agent.name) {
 			if (inspecting.error) {
-				lines.push(truncateToWidth(theme.fg("error", ` ${replaceTabs(inspecting.error)}`), width));
+				lines.push(fit(theme.fg("error", ` ${replaceTabs(inspecting.error)}`), width));
 			} else if (inspecting.body.length === 0) {
-				lines.push(truncateToWidth(theme.fg("dim", " Loading revision…"), width));
+				lines.push(fit(theme.fg("dim", ` Loading revision${theme.symbol("sep.ellipsis")}`), width));
 			} else {
-				for (const bodyLine of inspecting.body.slice(0, Math.max(1, rows))) {
-					lines.push(truncateToWidth(` ${replaceTabs(bodyLine)}`, width));
+				if (this.#inspectionLayout?.body !== inspecting.body || this.#inspectionLayout.width !== width) {
+					const wrapWidth = Math.max(1, width - 1);
+					const wrapped = inspecting.body.flatMap(bodyLine =>
+						wrapTextWithAnsi(replaceTabs(sanitizeText(bodyLine)), wrapWidth),
+					);
+					this.#inspectionView.setLines(wrapped);
+					this.#inspectionLayout = { body: inspecting.body, width };
 				}
+				this.#inspectionView.setSymbols(getSymbolTheme());
+				this.#inspectionView.setHeight(rows);
+				lines.push(...this.#inspectionView.render(width));
 			}
 			while (lines.length < rows) lines.push("");
 			return lines.slice(0, rows);
 		}
 		if (manager.error) {
-			lines.push(truncateToWidth(theme.fg("error", ` ${replaceTabs(manager.error)}`), width));
+			lines.push(fit(theme.fg("error", ` ${replaceTabs(manager.error)}`), width));
 		}
 		if (manager.items.length === 0 && !manager.error) {
 			lines.push(
-				truncateToWidth(
-					theme.fg("dim", " No revisions yet — generate a draft from + New agent… (managed scope)"),
-					width,
-				),
+				fit(theme.fg("dim", " No revisions yet — generate a draft from + New agent… (managed scope)"), width),
 			);
 		}
 		const visibleRows = Math.max(1, rows - lines.length);
@@ -2069,7 +2093,7 @@ export class AgentsHubComponent implements Component {
 			const running =
 				this.#presetEvalRunning?.agentName === manager.agent.name && this.#presetEvalRunning.revId === rev.id;
 			const evalStyled = running
-				? theme.fg("accent", "evaluating…")
+				? theme.fg("accent", `evaluating${theme.symbol("sep.ellipsis")}`)
 				: rev.evalStatus === "passing"
 					? theme.fg("success", `passing (${rev.evaluations})`)
 					: rev.evalStatus === "failing"
@@ -2077,12 +2101,7 @@ export class AgentsHubComponent implements Component {
 						: theme.fg("dim", "unevaluated");
 			const activeMark = rev.active ? theme.fg("success", " [active]") : "";
 			const idStyled = rev.active ? theme.bold(theme.fg("accent", rev.id)) : rev.id;
-			lines.push(
-				truncateToWidth(
-					` ${cursor} ${idStyled}  ${theme.fg("muted", rev.state)}  ${evalStyled}${activeMark}`,
-					width,
-				),
-			);
+			lines.push(fit(` ${cursor} ${idStyled}  ${theme.fg("muted", rev.state)}  ${evalStyled}${activeMark}`, width));
 		}
 		while (lines.length < rows) lines.push("");
 		return lines.slice(0, rows);
@@ -2091,101 +2110,101 @@ export class AgentsHubComponent implements Component {
 	#renderCreate(width: number, rows: number): string[] {
 		if (!this.#createSpec && !this.#createGenerating && this.#createInput) {
 			this.#createInput.setMaxHeight(Math.max(1, rows));
-			return this.#createInput.render(Math.max(1, width)).slice(0, rows).map(line => truncateToWidth(line, width));
+			return this.#createInput
+				.render(Math.max(1, width))
+				.slice(0, rows)
+				.map(line => fit(line, width));
 		}
-		const lines: string[] = [];
 		if (this.#createSpec) {
 			const spec = this.#createSpec;
-			lines.push(truncateToWidth(theme.bold(theme.fg("accent", " Review generated agent")), width));
-			lines.push("");
-			lines.push(truncateToWidth(theme.fg("muted", ` Identifier: ${spec.identifier}`), width));
-			lines.push(truncateToWidth(theme.fg("muted", ` Scope: ${this.#createScope}`), width));
-			lines.push("");
-			lines.push(theme.fg("muted", " whenToUse:"));
-			for (const line of wrapTextWithAnsi(replaceTabs(spec.whenToUse), Math.max(1, width - 2)).slice(0, 6)) {
-				lines.push(truncateToWidth(` ${line}`, width));
+			const cache = this.#createReviewLayout;
+			if (
+				cache?.spec !== spec ||
+				cache.width !== width ||
+				cache.scope !== this.#createScope ||
+				cache.error !== this.#createError
+			) {
+				if (cache?.spec !== spec) this.#createReview.scrollToTop();
+				const content = [
+					"Review generated agent",
+					`Identifier: ${spec.identifier}`,
+					`Scope: ${this.#createScope}`,
+					...(this.#createError ? [`Error: ${this.#createError}`] : []),
+					"",
+					"whenToUse:",
+					...spec.whenToUse.split("\n"),
+					"",
+					"systemPrompt:",
+					...spec.systemPrompt.split("\n"),
+				];
+				this.#createReview.setLines(
+					content.flatMap(line => wrapTextWithAnsi(replaceTabs(sanitizeText(line)), Math.max(1, width - 1))),
+				);
+				this.#createReviewLayout = { spec, width, scope: this.#createScope, error: this.#createError };
 			}
-			lines.push("");
-			lines.push(theme.fg("muted", " systemPrompt preview:"));
-			const promptWidth = Math.max(1, width - 4);
-			const wrapped: string[] = [];
-			for (const raw of spec.systemPrompt.split("\n")) {
-				for (const w of wrapTextWithAnsi(replaceTabs(raw), promptWidth)) wrapped.push(w);
-			}
-			const budget = Math.max(3, rows - lines.length - 3);
-			for (const line of wrapped.slice(0, budget)) {
-				lines.push(truncateToWidth(`   ${theme.fg("dim", line)}`, width));
-			}
-			if (wrapped.length > budget) {
-				lines.push(theme.fg("dim", `   … ${wrapped.length - budget} more lines`));
-			}
-		} else {
-			lines.push(truncateToWidth(theme.bold(theme.fg("accent", " Create new agent")), width));
-			lines.push("");
-			lines.push(
-				truncateToWidth(
-					theme.fg("muted", " Describe what the agent should do; scope: ") + theme.fg("accent", this.#createScope),
-					width,
-				),
-			);
-			lines.push("");
-			if (this.#createInput && !this.#createGenerating) {
-				for (const line of this.#createInput.render(Math.max(1, width - 2))) {
-					lines.push(truncateToWidth(line, width));
-				}
-			}
-			if (this.#createGenerating) {
-				lines.push(theme.fg("muted", " Generating…"));
-				lines.push("");
-				const contentWidth = Math.max(1, width - 4);
-				const wrapped: string[] = [];
-				for (const raw of this.#createStreamingText.split("\n")) {
-					for (const w of wrapTextWithAnsi(replaceTabs(raw), contentWidth)) wrapped.push(w);
-				}
-				const budget = Math.max(3, rows - lines.length - 2);
-				for (const line of wrapped.slice(-budget)) {
-					lines.push(truncateToWidth(`  ${theme.fg("dim", line)}`, width));
-				}
-			}
+			this.#createReview.setSymbols(getSymbolTheme());
+			this.#createReview.setHeight(rows);
+			return [...this.#createReview.render(width)];
 		}
+		const lines = [theme.fg("muted", `Generating${theme.symbol("sep.ellipsis")}`)];
+		const wrapped = this.#createStreamingText
+			.split("\n")
+			.flatMap(line => wrapTextWithAnsi(replaceTabs(sanitizeText(line)), Math.max(1, width)));
+		if (rows > 1) lines.push(...wrapped.slice(-(rows - 1)));
 		if (this.#createError) {
-			lines.push("");
-			lines.push(truncateToWidth(theme.fg("error", ` ${replaceTabs(this.#createError)}`), width));
+			lines[0] = fit(theme.fg("error", replaceTabs(sanitizeText(this.#createError))), width);
 		}
 		while (lines.length < rows) lines.push("");
 		return lines.slice(0, rows);
 	}
 
 	#footerHint(): string {
+		const hint = (...parts: string[]): string => parts.join(theme.sep.dot);
 		if (this.#strip) {
 			if (this.#strip.kind === "pattern") {
 				const property = this.#strip.property;
 				const values = property === "model" ? "a model pattern" : '"on", "off", or a model pattern';
-				return `Enter ${values} (role aliases like @smol and :level suffixes work; empty clears) · Esc back`;
+				return hint("Esc back", `Enter ${values} (@smol and :level suffixes work; empty clears)`);
 			}
-			return this.#strip.property ? "←/→ choose · Enter apply · Esc back" : "←/→ choose · Enter open · Esc cancel";
+			return hint("Esc back", "Left/Right choose", this.#strip.property ? "Enter apply" : "Enter open");
 		}
 		if (this.#presetEvalInput) {
 			return this.#presetEvalInput.step === "task"
-				? "Enter task · Esc back (evaluation task for this revision)"
-				: "Enter run evaluation · Esc back (expected observable outcome)";
+				? hint("Esc back", "Enter task for this revision")
+				: hint("Esc back", "Enter run evaluation", "expected observable outcome");
 		}
 		if (this.#assigning) {
-			return "Enter pick · ↑/↓ models · type to search · Esc cancel";
+			return hint("Esc cancel", "Enter pick", "Up/Down models", "type to search");
 		}
 		if (this.#createActive) {
-			if (this.#createSpec) return "Enter save · Tab scope (project/user/managed) · r regenerate · Esc cancel";
-			if (this.#createGenerating) return "Generating…";
-			return "Ctrl+Q/Ctrl+Enter generate · Enter newline · Tab scope · Esc cancel";
+			if (this.#createSpec)
+				return hint(
+					"Esc cancel",
+					"Enter save",
+					"PgUp/PgDn scroll",
+					"Home/End limits",
+					"Tab scope (project/user/managed)",
+					"r regenerate",
+				);
+			if (this.#createGenerating) return `Generating${theme.symbol("sep.ellipsis")}`;
+			return hint("Esc cancel", "Ctrl+Q/Ctrl+Enter generate", "Enter newline", "Tab scope");
 		}
 		if (this.#managingRevisions) {
-			if (this.#inspectingRevision) return "Esc back to revisions";
-			return "↑/↓ revisions · Enter actions (inspect/evaluate/promote/rollback) · Esc back";
+			if (this.#inspectingRevision) return hint("Esc back", "Up/Down scroll", "PgUp/PgDn page", "Home/End limits");
+			return hint("Esc back", "Up/Down revisions", "Enter actions (inspect/evaluate/promote/rollback)");
 		}
 		if (this.#focus === "scope") {
-			return "↑/↓ scopes · →/Enter agents · Esc close";
+			return hint("Esc close", "Right/Enter agents", "Up/Down scopes");
 		}
-		return "Enter configure · Space enable/disable · ↑/↓ rows · type to search · Ctrl+R reload · Esc close";
+		return hint(
+			"Esc close",
+			"Enter configure",
+			"Space enable/disable",
+			"Up/Down rows",
+			"Left scopes",
+			"type to search",
+			"Ctrl+R reload",
+		);
 	}
 
 	#renderFooter(width: number): string {
@@ -2198,11 +2217,11 @@ export class AgentsHubComponent implements Component {
 			const showLabel = width >= labelWidth + 8;
 			const inputWidth = Math.max(1, width - (showLabel ? labelWidth + 1 : 0));
 			const inputLine = evalInput.input.render(inputWidth)[0] ?? "";
-			return truncateToWidth(`${showLabel ? `${label} ` : ""}${inputLine}`, width);
+			return fit(`${showLabel ? `${label} ` : ""}${inputLine}`, width);
 		}
 		const strip = this.#strip;
 		if (!strip) {
-			return truncateToWidth(theme.fg("dim", this.#footerHint()), width);
+			return fit(theme.fg("dim", this.#footerHint()), width);
 		}
 		if (strip.kind === "pattern") {
 			const label = theme.fg("accent", `${strip.agent.name} ${strip.property} pattern:`);
@@ -2210,21 +2229,21 @@ export class AgentsHubComponent implements Component {
 			const showLabel = width >= labelWidth + 8;
 			const inputWidth = Math.max(1, width - (showLabel ? labelWidth + 1 : 0));
 			const inputLine = strip.input.render(inputWidth)[0] ?? "";
-			return truncateToWidth(`${showLabel ? `${label} ` : ""}${inputLine}`, width);
+			return fit(`${showLabel ? `${label} ` : ""}${inputLine}`, width);
 		}
 		const arrow = theme.getSymbolPreset() === "ascii" ? "->" : "→";
 		const prefix = strip.property
 			? `${theme.fg("accent", strip.agent.name)}${theme.fg("dim", `${theme.sep.dot}${strip.property} ${arrow}`)} `
 			: `${theme.fg("accent", strip.agent.name)}${theme.fg("dim", ` ${arrow}`)} `;
 		const selectedChip = strip.chips[strip.index];
-		const showPrefix = visibleWidth(prefix) + visibleWidth(selectedChip?.label ?? "") + 4 <= width;
+		const showPrefix = visibleWidth(prefix) + visibleWidth(selectedChip?.styled ?? "") + 4 <= width;
 		let line = showPrefix ? prefix : "";
 		let col = this.#contentInset + visibleWidth(line);
 		let start = strip.index;
 		let remaining = width - visibleWidth(line);
 		for (let i = strip.index - 1; i >= 0; i--) {
-			const cost = visibleWidth(strip.chips[i]?.label ?? "") + 3;
-			const selectedCost = visibleWidth(selectedChip?.label ?? "") + 4;
+			const cost = visibleWidth(strip.chips[i]?.styled ?? "") + 3;
+			const selectedCost = visibleWidth(selectedChip?.styled ?? "") + 4;
 			if (cost + selectedCost > remaining) break;
 			remaining -= cost;
 			start = i;
@@ -2234,11 +2253,12 @@ export class AgentsHubComponent implements Component {
 			if (!chip) continue;
 			const selected = i === strip.index;
 			const available = Math.max(0, width - visibleWidth(line));
-			if (!selected && visibleWidth(chip.label) + 2 > available) break;
-			const body = selected && available < visibleWidth(chip.label) + 4
-				? truncateToWidth(`${theme.nav.cursor} ${chip.styled}`, available)
-				: ` ${chip.styled} `;
-			const bracket = selected && available >= visibleWidth(chip.label) + 4;
+			if (!selected && visibleWidth(chip.styled) + 2 > available) break;
+			const body =
+				selected && available < visibleWidth(chip.styled) + 4
+					? fit(`${theme.nav.cursor} ${chip.styled}`, available)
+					: ` ${chip.styled} `;
+			const bracket = selected && available >= visibleWidth(chip.styled) + 4;
 			const rendered = selected
 				? theme.bgFill("selectedBg", bracket ? `${theme.fg("accent", "[")}${body}${theme.fg("accent", "]")}` : body)
 				: body;
@@ -2249,7 +2269,7 @@ export class AgentsHubComponent implements Component {
 			line += " ";
 			col += 1;
 		}
-		return truncateToWidth(line, width);
+		return fit(line, width);
 	}
 
 	render(width: number): string[] {
@@ -2258,10 +2278,23 @@ export class AgentsHubComponent implements Component {
 		this.#sidebarWidthLast = sidebarWidth;
 		this.#contentInset = Math.floor((width - dialogContentWidth(width)) / 2);
 		this.#splitVisible = canSplitPane(width, sidebarWidth);
-		this.#scopeOnly = !this.#splitVisible && this.#focus === "scope" && !this.#createActive && !this.#strip && !this.#assigning && !this.#managingRevisions && !this.#presetEvalInput;
+		this.#scopeOnly =
+			!this.#splitVisible &&
+			this.#focus === "scope" &&
+			!this.#createActive &&
+			!this.#strip &&
+			!this.#assigning &&
+			!this.#managingRevisions &&
+			!this.#presetEvalInput;
 		const bodyWidth = this.#splitVisible ? splitBodyWidth(width, sidebarWidth) : dialogContentWidth(width);
 		const footer = this.#renderFooter(dialogContentWidth(width));
-		const allocation = renderDialog("Agents", Array.from({ length: height }, () => ""), width, height, footer);
+		const allocation = renderDialog(
+			"Agents",
+			Array.from({ length: height }, () => ""),
+			width,
+			height,
+			footer,
+		);
 		const contentRows = allocation.bodyRows;
 		this.#contentRowCount = contentRows;
 		this.#bodyHeaderRows = contentRows >= 4 ? 1 : 0;
@@ -2291,11 +2324,33 @@ export class AgentsHubComponent implements Component {
 		this.#footerRow = footerAsControl ? layout.bodyRowStart : height >= 2 ? layout.bodyRowStart + contentRows : -1;
 		const activeSidebar = this.#entries.findIndex(entry => entry.id === this.#activeEntryId) - this.#sidebarScroll;
 		for (let i = 0; i < contentRows; i++) {
-			const activeBody = !this.#createActive && !this.#assigning && !this.#managingRevisions && !footerAsControl && i === this.#bodyHeaderRows + this.#listRowStart + this.#rowIndex - this.#listScroll;
+			const activeBody =
+				!this.#createActive &&
+				!this.#assigning &&
+				!this.#managingRevisions &&
+				!footerAsControl &&
+				i === this.#bodyHeaderRows + this.#listRowStart + this.#rowIndex - this.#listScroll;
 			if (this.#splitVisible) {
-				layout.lines[layout.bodyRowStart + i] = splitRow(sidebarLines[i] ?? "", bodyLines[i] ?? "", width, sidebarWidth, i === activeSidebar ? "selectedBg" : "panelBg");
+				layout.lines[layout.bodyRowStart + i] = splitRow(
+					sidebarLines[i] ?? "",
+					bodyLines[i] ?? "",
+					width,
+					sidebarWidth,
+					i === activeSidebar ? "selectedBg" : "panelBg",
+				);
 			} else {
-				layout.lines[layout.bodyRowStart + i] = row(content[i] ?? "", width, undefined, this.#scopeOnly ? i === activeSidebar ? "selectedBg" : "modalBg" : activeBody ? "selectedBg" : "modalBg");
+				layout.lines[layout.bodyRowStart + i] = row(
+					content[i] ?? "",
+					width,
+					undefined,
+					this.#scopeOnly
+						? i === activeSidebar
+							? "selectedBg"
+							: "modalBg"
+						: activeBody
+							? "selectedBg"
+							: "modalBg",
+				);
 			}
 		}
 		return layout.lines;

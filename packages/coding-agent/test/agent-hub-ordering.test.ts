@@ -12,6 +12,8 @@ import { IrcBus } from "@harvest/pi-coding-agent/irc/bus";
 import { type AgentHubDeps, AgentHubOverlayComponent } from "@harvest/pi-coding-agent/modes/components/agent-hub";
 import { SessionObserverRegistry } from "@harvest/pi-coding-agent/modes/session-observer-registry";
 import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { AgentRegistry } from "@harvest/pi-coding-agent/registry/agent-registry";
 import type { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import { visibleWidth } from "@harvest/pi-tui/utils";
@@ -103,6 +105,9 @@ function renderedRosterEntry(hub: AgentHubOverlayComponent, id: string, width: n
 	for (let i = start; i < cells.length; i++) {
 		const cell = cells[i];
 		if (cell === undefined || cell.trim().length === 0) break;
+		// A blank roster row can still carry inspector text in the secondary
+		// pane. It is outside this entry's task and usage continuation rows.
+		if (cell.search(/\S/u) >= width / 2) break;
 		if (i > start && rosterEntryMatch(cell)) break;
 		entry.push(cell.trimEnd());
 	}
@@ -136,6 +141,49 @@ describe("Agent hub row ordering", () => {
 		geometry?.restore();
 		geometry = undefined;
 		AgentRegistry.resetGlobalForTests();
+	});
+
+	it("keeps an allocated single-row activity selection actionable and its search insertion end visible", () => {
+		geometry = stubStdoutGeometry(120);
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const agents = new AgentRegistry();
+		agents.register({ id: "Worker", displayName: "Worker", kind: "sub", session: null });
+		const activity = new AgentActivityIndex();
+		activity.setLive("Worker", [
+			{
+				id: "result",
+				agentId: "Worker",
+				timestamp: 2000,
+				kind: "response",
+				title: "Result",
+				summary: "Full retained result",
+				status: "success",
+				entryId: "entry-final",
+				source: "transcript",
+			},
+		]);
+		const hub = makeHub(agents, { activity, initialSection: "activity" });
+		try {
+			hub.setMaxHeight(1);
+			const oneRow = hub.render(24);
+			expect(oneRow).toHaveLength(1);
+			expect(oneRow.join("\n")).toContain("Worker");
+			expect(oneRow.every(line => visibleWidth(line) === 24 && !/[^\x20-\x7e]/u.test(line))).toBe(true);
+			const open = vi.spyOn(hub, "openChat").mockImplementation(() => {});
+			hub.handleInput("\x1b[<0;4;1M");
+			expect(open).toHaveBeenCalledWith("Worker", "entry-final");
+			hub.handleInput("/");
+			for (const key of "a-long-search-with-final-tail") hub.handleInput(key);
+			expect(hub.render(24).join("\n")).toContain("final-tail_");
+			hub.handleInput("\x1b");
+			hub.handleInput("\x1b"); // leave editing, then clear the retained filter
+			hub.setMaxHeight(24);
+			expect(Bun.stripANSI(hub.render(120).join("\n"))).toContain("Full retained result");
+		} finally {
+			hub.dispose();
+			setThemeInstance(previousTheme);
+		}
 	});
 
 	it("renders a useful empty state before any task agents exist", () => {
@@ -952,6 +1000,8 @@ describe("Agent hub row ordering", () => {
 		}
 	});
 	it("switches between inline Flat and By parent projections with selection preserved", () => {
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "256color", symbolPresetOverride: "unicode" }));
 		vi.useFakeTimers();
 		geometry = stubStdoutGeometry(120);
 		const agents = new AgentRegistry();
@@ -981,13 +1031,14 @@ describe("Agent hub row ordering", () => {
 			expect(byParent).toContain("By parent");
 			expect(byParentIds.indexOf("Parent")).toBeLessThan(byParentIds.indexOf("Child"));
 			expect(renderedRosterHeaderLineRaw(hub, "Parent", 120)).not.toContain(theme.getBgAnsi("selectedBg"));
-			expect(renderedRosterHeaderLineRaw(hub, "Child", 120)).not.toContain(theme.getBgAnsi("selectedBg"));
+			expect(renderedRosterHeaderLineRaw(hub, "Child", 120)).toContain(theme.getBgAnsi("selectedBg"));
 
 			hub.handleInput("t");
 			expect(renderedAgentIds(hub)).toEqual(["Child", "Peer", "Parent"]);
 			expect(selectedAgentId(hub)).toBe("Child");
 		} finally {
 			hub.dispose();
+			setThemeInstance(previousTheme);
 			vi.useRealTimers();
 			setSystemTime();
 		}

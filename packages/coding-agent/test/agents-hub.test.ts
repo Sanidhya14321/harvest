@@ -13,9 +13,10 @@ import { buildModel } from "@harvest/pi-catalog/build";
 import type { ModelRegistry } from "@harvest/pi-coding-agent/config/model-registry";
 import { Settings } from "@harvest/pi-coding-agent/config/settings";
 import { AgentsHubComponent } from "@harvest/pi-coding-agent/modes/components/agents-hub";
-import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { initTheme, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import * as discovery from "@harvest/pi-coding-agent/task/discovery";
-import type { TUI } from "@harvest/pi-tui";
+import { type TUI, visibleWidth } from "@harvest/pi-tui";
 import { removeWithRetries } from "@harvest/pi-utils";
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
@@ -90,6 +91,61 @@ afterEach(() => {
 });
 
 describe("AgentsHub layout", () => {
+	test("keeps the selected agent and pointer actions inside the allocated single pane after shrinking", async () => {
+		mockAgents();
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const settings = Settings.isolated();
+		const { hub } = await createHub(settings);
+		try {
+			hub.setMaxHeight(4);
+			const rows = hub.render(24);
+			expect(rows).toHaveLength(4);
+			expect(rows.map(Bun.stripANSI).join("\n")).toContain("dev");
+			expect(rows.every(line => visibleWidth(line) === 24)).toBe(true);
+			hub.handleInput("\x1b[<0;4;4M"); // footer is not an agent
+			expect(settings.get("task.disabledAgents") ?? []).toEqual([]);
+			const scoutRow = rows.findIndex(line => Bun.stripANSI(line).includes("scout"));
+			expect(scoutRow).toBeGreaterThan(0);
+			hub.handleInput(`\x1b[<0;4;${scoutRow + 1}M`);
+			hub.handleInput(" ");
+			expect(settings.get("task.disabledAgents")).toEqual(["scout"]);
+			hub.setMaxHeight(1);
+			expect(Bun.stripANSI(hub.render(24).join("\n"))).toContain("scout");
+			hub.handleInput("\x1b[D");
+			expect(Bun.stripANSI(hub.render(24).join("\n"))).toContain("All agents");
+			hub.handleInput("\x1b[C");
+			hub.setMaxHeight(30);
+			expect(Bun.stripANSI(hub.render(120).join("\n"))).toContain("scout");
+		} finally {
+			hub.dispose();
+			setThemeInstance(previousTheme);
+		}
+	});
+
+	test("shows the insertion end in a one-row pattern prompt and saves the full pattern after expansion", async () => {
+		mockAgents();
+		const settings = Settings.isolated();
+		const { hub, type } = await createHub(settings);
+		try {
+			hub.handleInput("\r");
+			hub.handleInput("\r");
+			hub.handleInput("\x1b[C");
+			hub.handleInput("\r");
+			const pattern = "provider/model-with-a-long-identifier-final-tail";
+			type(pattern);
+			hub.setMaxHeight(1);
+			const tiny = hub.render(24);
+			expect(tiny).toHaveLength(1);
+			expect(Bun.stripANSI(tiny[0]!)).toContain("final-tail");
+			hub.setMaxHeight(30);
+			expect(Bun.stripANSI(hub.render(120).join("\n"))).toContain(pattern);
+			hub.handleInput("\r");
+			expect(settings.get("task.agentModelOverrides")).toEqual({ dev: pattern });
+		} finally {
+			hub.dispose();
+		}
+	});
 	test("renders the full-height split frame with sidebar scopes and agent rows", async () => {
 		mockAgents();
 		const { hub, strip } = await createHub(Settings.isolated());

@@ -10,7 +10,17 @@
  * itself is fully operable and tested standalone.
  */
 
-import { type Component, Input, matchesKey, replaceTabs, type TUI, truncateToWidth } from "@harvest/pi-tui";
+import {
+	type Component,
+	Ellipsis,
+	Input,
+	matchesKey,
+	replaceTabs,
+	ScrollView,
+	type SgrMouseEvent,
+	type TUI,
+	wrapTextWithAnsi,
+} from "@harvest/pi-tui";
 import { EVAL_DEFAULT_MODEL_PATTERN } from "../../autolearn/eval-executor";
 import {
 	evaluateSkillRevision,
@@ -21,7 +31,8 @@ import {
 } from "../../autolearn/managed-skills";
 import type { ToolSession } from "../../tools/index";
 import { matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../utils/keybinding-matchers";
-import { theme } from "../theme/theme";
+import { getSymbolTheme, theme } from "../theme/theme";
+import { dialogContentWidth, type DialogLayout, renderChoiceDialog, renderDialog } from "./overlay-box";
 import {
 	formatEvaluationLines,
 	formatPromotedNotice,
@@ -68,7 +79,13 @@ export class SkillRevisionsComponent implements Component {
 	#items: SkillRevisionView[] = [];
 	#active: string | null = null;
 	#index = 0;
-	#scroll = 0;
+	#maxHeight: number | undefined;
+	#disposed = false;
+	#layout: DialogLayout | undefined;
+	#inspectionScroll = new ScrollView([], { height: 1, scrollbar: "never", ellipsis: Ellipsis.Omit });
+	#inspectionLines: readonly string[] | undefined;
+	#inspectionWidth = 0;
+	#inspectionError: string | null = null;
 	#error: string | null = null;
 	#notice: string | null = null;
 	#actionError: string | null = null;
@@ -103,19 +120,31 @@ export class SkillRevisionsComponent implements Component {
 
 	dispose(): void {
 		// Fence late evaluation callbacks on teardown.
+		if (this.#disposed) return;
+		this.#disposed = true;
 		this.#generation++;
+		this.#running?.cancel();
 		this.#running = null;
+		this.#inspecting = null;
 	}
-	invalidate(): void {}
+	invalidate(): void {
+		this.#inspectionLines = undefined;
+	}
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
 
 	#selected(): SkillRevisionView | undefined {
 		return this.#items[this.#index];
 	}
 
 	async #reload(): Promise<void> {
+		if (this.#disposed) return;
+		const generation = this.#generation;
 		this.#error = null;
 		try {
 			const { active, revisions } = await listSkillRevisions(this.#name);
+			if (this.#disposed || generation !== this.#generation) return;
 			this.#items = revisions.map(rev => ({
 				id: rev.id,
 				state: rev.state,
@@ -126,6 +155,7 @@ export class SkillRevisionsComponent implements Component {
 			this.#active = active;
 			this.#index = Math.max(0, Math.min(this.#index, Math.max(0, this.#items.length - 1)));
 		} catch (error) {
+			if (this.#disposed || generation !== this.#generation) return;
 			this.#items = [];
 			this.#error = error instanceof Error ? error.message : String(error);
 		}
@@ -195,6 +225,7 @@ export class SkillRevisionsComponent implements Component {
 		})
 			.then(async result => {
 				cleanup();
+				if (this.#disposed || this.#generation !== generation) return;
 				await this.#reload();
 				if (this.#generation !== generation) return;
 				this.#running = null;
@@ -206,7 +237,9 @@ export class SkillRevisionsComponent implements Component {
 			})
 			.catch(async error => {
 				cleanup();
+				if (this.#disposed || this.#generation !== generation) return;
 				await this.#reload();
+				if (this.#disposed || this.#generation !== generation) return;
 				const message = error instanceof Error ? error.message : String(error);
 				if (/abort/i.test(message)) {
 					if (this.#running?.generation === generation) this.#running = null;
@@ -278,6 +311,7 @@ export class SkillRevisionsComponent implements Component {
 		if (!rev) return;
 		const revId = rev.id;
 		this.#inspecting = { revId, error: null, body: [] };
+		this.#inspectionScroll.scrollToTop();
 		this.#tui.requestRender();
 		try {
 			const { active, revisions } = await listSkillRevisions(this.#name);
@@ -304,7 +338,7 @@ export class SkillRevisionsComponent implements Component {
 					lines.push(...formatEvaluationLines(evaluation));
 				}
 				lines.push(`content (${Buffer.byteLength(found.content, "utf8")} bytes):`);
-				for (const contentLine of found.content.split("\n").slice(0, 8)) {
+				for (const contentLine of found.content.split("\n")) {
 					lines.push(`  ${contentLine}`);
 				}
 				current.body = lines;
@@ -315,12 +349,13 @@ export class SkillRevisionsComponent implements Component {
 				current.error = error instanceof Error ? error.message : String(error);
 			}
 		}
-		this.#tui.requestRender();
+		if (!this.#disposed) this.#tui.requestRender();
 	}
 
 	// ── Input ──────────────────────────────────────────────────────────
 
 	handleInput(data: string): void {
+		if (this.#disposed) return;
 		if (this.#evalInput) {
 			if (matchesSelectCancel(data)) {
 				this.#evalInput = null;
@@ -335,6 +370,7 @@ export class SkillRevisionsComponent implements Component {
 		}
 		if (this.#inspecting) {
 			if (matchesSelectCancel(data)) this.#inspecting = null;
+			else this.#inspectionScroll.handleScrollKey(data);
 			this.#tui.requestRender();
 			return;
 		}
@@ -375,71 +411,91 @@ export class SkillRevisionsComponent implements Component {
 
 	// ── Render ─────────────────────────────────────────────────────────
 
-	#headerRow(width: number): string {
-		if (this.#error) return truncateToWidth(theme.fg("error", ` ${replaceTabs(this.#error)}`), width);
-		if (this.#actionError) return truncateToWidth(theme.fg("error", ` ${replaceTabs(this.#actionError)}`), width);
-		if (this.#notice) return truncateToWidth(theme.fg("success", ` ${replaceTabs(this.#notice)}`), width);
+	routeMouse(event: SgrMouseEvent, line: number, _col: number): void {
+		if (this.#disposed || this.#evalInput) return;
+		if (this.#inspecting) {
+			if (event.wheel !== null) this.#inspectionScroll.scroll(event.wheel);
+		} else if (event.wheel !== null) {
+			this.#index = Math.max(0, Math.min(this.#items.length - 1, this.#index + event.wheel));
+		} else if (event.leftClick && this.#layout) {
+			const bodyRow = line - this.#layout.bodyRowStart;
+			const index = bodyRow + this.#layout.bodyWindowStart;
+			if (bodyRow >= 0 && bodyRow < this.#layout.bodyRows && index < this.#items.length) this.#index = index;
+		}
+		this.#tui.requestRender();
+	}
+
+	#headerRow(): string {
+		if (this.#error) return theme.fg("error", replaceTabs(this.#error));
+		if (this.#actionError) return theme.fg("error", replaceTabs(this.#actionError));
+		if (this.#notice) return theme.fg("success", replaceTabs(this.#notice));
 		const active = this.#active ? `active ${this.#active}` : "no active revision";
-		return truncateToWidth(theme.fg("accent", ` Skill revisions for ${theme.bold(this.#name)} — ${active}`), width);
+		return `Skill revisions for ${theme.bold(this.#name)}${theme.sep.dot}${active}`;
 	}
 
 	render(width: number): string[] {
-		const height = Math.max(6, this.#tui.terminal?.rows || process.stdout.rows || 40);
-		const rows = Math.max(1, height - 3);
-		const lines: string[] = [this.#headerRow(width)];
+		const height = this.#maxHeight ?? Math.max(1, this.#tui.terminal?.rows || process.stdout.rows || 40);
+		const innerWidth = dialogContentWidth(width);
+		const input = this.#evalInput;
+		if (input) {
+			const label = input.step === "task" ? "Evaluation task" : "Expected outcome";
+			const body = [theme.fg("accent", label), ...input.input.render(innerWidth)];
+			const footer = [this.#actionError ? replaceTabs(this.#actionError) : "Enter continue", "Esc back"].join(
+				theme.sep.dot,
+			);
+			this.#layout = undefined;
+			return renderDialog(`${label}${theme.sep.dot}${input.revId}`, body, width, height, footer, 1).lines;
+		}
 		const inspecting = this.#inspecting;
 		if (inspecting) {
-			if (inspecting.error) {
-				lines.push(truncateToWidth(theme.fg("error", ` ${replaceTabs(inspecting.error)}`), width));
-			} else if (inspecting.body.length === 0) {
-				lines.push(truncateToWidth(theme.fg("dim", " Loading revision…"), width));
-			} else {
-				for (const bodyLine of inspecting.body.slice(0, Math.max(1, rows - 1))) {
-					lines.push(truncateToWidth(` ${replaceTabs(bodyLine)}`, width));
-				}
+			const body = inspecting.body;
+			if (
+				this.#inspectionLines !== body ||
+				this.#inspectionWidth !== innerWidth ||
+				this.#inspectionError !== inspecting.error
+			) {
+				const text =
+					inspecting.error ?? (body.length ? body.join("\n") : `Loading revision${theme.symbol("sep.ellipsis")}`);
+				this.#inspectionScroll.setLines(wrapTextWithAnsi(replaceTabs(text), innerWidth, { hard: true }));
+				this.#inspectionLines = body;
+				this.#inspectionWidth = innerWidth;
+				this.#inspectionError = inspecting.error;
 			}
-		} else {
-			if (this.#items.length === 0 && !this.#error) {
-				lines.push(
-					truncateToWidth(theme.fg("dim", " No revisions yet — mint a draft via the manage-skill tool"), width),
-				);
-			}
-			const visibleRows = Math.max(1, rows - 1);
-			if (this.#index < this.#scroll) this.#scroll = this.#index;
-			else if (this.#index >= this.#scroll + visibleRows) this.#scroll = this.#index - visibleRows + 1;
-			this.#scroll = Math.max(0, Math.min(this.#scroll, Math.max(0, this.#items.length - visibleRows)));
-			for (let i = this.#scroll; i < Math.min(this.#items.length, this.#scroll + visibleRows); i++) {
-				const rev = this.#items[i];
-				if (!rev) continue;
-				const selected = i === this.#index;
-				const cursor = selected ? theme.fg("accent", theme.nav.cursor) : " ";
-				const running = this.#running?.revId === rev.id;
-				const evalStyled = running
-					? theme.fg("accent", "evaluating…")
-					: rev.evalStatus === "passing"
-						? theme.fg("success", `passing (${rev.evaluations})`)
-						: rev.evalStatus === "failing"
-							? theme.fg("error", `failing (${rev.evaluations})`)
-							: theme.fg("dim", "unevaluated");
-				const activeMark = rev.active ? theme.fg("success", " [active]") : "";
-				const idStyled = rev.active ? theme.bold(theme.fg("accent", rev.id)) : rev.id;
-				lines.push(
-					truncateToWidth(
-						` ${cursor} ${idStyled}  ${theme.fg("muted", rev.state)}  ${evalStyled}${activeMark}`,
-						width,
-					),
-				);
-			}
+			const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+			this.#inspectionScroll.setHeight(Math.max(1, height - chrome));
+			this.#inspectionScroll.setSymbols(getSymbolTheme());
+			this.#layout = undefined;
+			return renderDialog(
+				`Revision ${inspecting.revId}`,
+				this.#inspectionScroll.render(innerWidth),
+				width,
+				height,
+				["Up/Down scroll", "Esc back"].join(theme.sep.dot),
+			).lines;
 		}
-		while (lines.length < rows) lines.push("");
-		const footer = this.#evalInput
-			? this.#evalInput.step === "task"
-				? "Enter task · Esc back (evaluation task for this revision)"
-				: "Enter run evaluation · Esc back (expected observable outcome)"
-			: this.#inspecting
-				? "Esc back to revisions"
-				: "↑/↓ select · e evaluate · p promote · b rollback · i inspect · x cancel run · r reload · Esc close";
-		lines.push(truncateToWidth(theme.fg("dim", footer), width));
-		return lines.slice(0, rows + 1);
+		const choices = this.#items.map((rev, index) => {
+			const running = this.#running?.revId === rev.id;
+			const status = running ? "evaluating" : `${rev.evalStatus}${rev.evaluations ? ` (${rev.evaluations})` : ""}`;
+			const color = rev.evalStatus === "passing" ? "success" : rev.evalStatus === "failing" ? "error" : "dim";
+			const cursor = innerWidth >= 8 ? `${index === this.#index ? theme.nav.cursor : " "} ` : "";
+			return `${cursor}${rev.id}${theme.sep.dot}${rev.state}${theme.sep.dot}${theme.fg(color, status)}${rev.active ? " [active]" : ""}`;
+		});
+		if (!choices.length)
+			choices.push(
+				this.#error
+					? theme.fg("error", replaceTabs(this.#error))
+					: "No revisions. Create a draft with manage-skill.",
+			);
+		const footer = [
+			"Esc close",
+			"e evaluate",
+			"p promote (discloses unevaluated)",
+			"b rollback",
+			"i inspect",
+			"x cancel run",
+			"r reload",
+		].join(theme.sep.dot);
+		this.#layout = renderChoiceDialog(this.#headerRow(), choices, this.#index, width, height, footer);
+		return this.#layout.lines;
 	}
 }

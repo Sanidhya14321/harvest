@@ -3,7 +3,8 @@ import { Settings } from "@harvest/pi-coding-agent/config/settings";
 import { IrcBus } from "@harvest/pi-coding-agent/irc/bus";
 import { AgentHubOverlayComponent, filterSessionHandles } from "@harvest/pi-coding-agent/modes/components/agent-hub";
 import { SessionObserverRegistry } from "@harvest/pi-coding-agent/modes/session-observer-registry";
-import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { initTheme, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
 import { AgentRegistry } from "@harvest/pi-coding-agent/registry/agent-registry";
 import type { ManagedSessionHandle } from "@harvest/pi-coding-agent/session/session-management-facade";
 
@@ -90,6 +91,35 @@ function sessionsText(hub: AgentHubOverlayComponent, width = 100): string {
 }
 
 describe("agent hub Sessions section", () => {
+	it("keeps tiny-screen sends tied to the selected stable session ID and preserves the full message", async () => {
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const sent: Array<{ id: string; text: string }> = [];
+		const hub = makeHub({
+			onSessionSend: (id, text) => {
+				sent.push({ id, text });
+			},
+		});
+		try {
+			hub.handleInput("3");
+			hub.handleInput("j"); // hidden session still owns its message
+			hub.setMaxHeight(1);
+			hub.handleInput("m");
+			const full = "A long message whose preserved payload ends in final-tail";
+			for (const character of full) hub.handleInput(character);
+			const tiny = hub.render(24);
+			expect(tiny).toHaveLength(1);
+			expect(tiny[0]).toContain("final-tail_");
+			hub.setMaxHeight(24);
+			expect(Bun.stripANSI(hub.render(120).join("\n"))).toContain(full);
+			hub.handleInput("\r");
+			await Bun.sleep(0);
+			expect(sent).toEqual([{ id: "session-hidden", text: full }]);
+		} finally {
+			hub.dispose();
+			setThemeInstance(previousTheme);
+		}
+	});
 	it("filters facade snapshots without dropping hidden or unsaved sessions", () => {
 		// Failure mode: hidden/unsaved sessions vanish from every filter and
 		// become unreachable once their tab closes.

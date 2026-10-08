@@ -1,5 +1,5 @@
 import { ThinkingLevel } from "@harvest/pi-agent-core";
-import { Ellipsis, padding, visibleWidth } from "@harvest/pi-tui";
+import { Ellipsis, padding, sliceByColumn, visibleWidth } from "@harvest/pi-tui";
 import { formatDuration, formatNumber, sanitizeText } from "@harvest/pi-utils";
 import { getRoleInfo } from "../../config/model-roles";
 import type { Settings } from "../../config/settings";
@@ -41,6 +41,16 @@ export function sanitizeLine(text: string, maxWidth?: number): string {
 
 export function clampHubLine(line: string, width: number): string {
 	return truncateToWidth(line.replace(/[\r\n]+/g, " "), Math.max(1, width), Ellipsis.Omit);
+}
+
+/** Keep the insertion end visible while the authoritative input stays intact. */
+export function renderHubTextInput(label: string, value: string, width: number): string {
+	const safeWidth = Math.max(1, width);
+	const prefix = safeWidth >= visibleWidth(label) + 5 ? `${label}: ` : "";
+	const available = Math.max(0, safeWidth - visibleWidth(prefix) - 1);
+	const text = sanitizeDisplayText(value);
+	const tail = sliceByColumn(text, Math.max(0, visibleWidth(text) - available), available, true);
+	return `${prefix}${tail}_`;
 }
 
 /** Status glyph, colored per theme status conventions. The title-line counts spell out the words. */
@@ -297,6 +307,6 @@ export function fuzzyAgentMatch(query: string, target: string): boolean {
 /** Right-align `text` inside a fixed-width cell, truncating overflow. */
 export function alignRightCell(text: string, width: number): string {
 	const visible = visibleWidth(text);
-	if (visible > width) return truncateToWidth(text, width);
+	if (visible > width) return sanitizeLine(text, width);
 	return `${" ".repeat(width - visible)}${text}`;
 }

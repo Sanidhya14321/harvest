@@ -46,7 +46,7 @@ import {
 } from "@harvest/pi-coding-agent/task/agents";
 import type { ToolSession } from "@harvest/pi-coding-agent/tools";
 import type { TUI } from "@harvest/pi-tui";
-import { setKeybindings } from "@harvest/pi-tui";
+import { setKeybindings, visibleWidth } from "@harvest/pi-tui";
 import { removeWithRetries } from "@harvest/pi-utils";
 import { getAgentDir, setAgentDir } from "@harvest/pi-utils/dirs";
 
@@ -177,6 +177,76 @@ afterEach(async () => {
 });
 
 describe("U4a skill revision operator cycle", () => {
+	it("shows evaluation input at one row and keeps the full task/outcome while inspection reaches the last content line", async () => {
+		const name = "visible-revision-input";
+		await createSkillDraft({
+			name,
+			description: "Display regression",
+			body: `${"detail\n".repeat(20)}Final inspection sentinel`,
+		});
+		const observed: { task?: string; expectedOutcome?: string } = {};
+		setSkillEvalRunner(async context => {
+			observed.task = context.task;
+			observed.expectedOutcome = context.expectedOutcome;
+			return { passed: true, summary: "Expected output observed" };
+		});
+		const manager = await SkillRevisionsComponent.create(tuiStub, name);
+		try {
+			manager.setMaxHeight(1);
+			manager.handleInput("e");
+			type(manager, "full evaluation task Z");
+			const tiny = manager.render(1);
+			expect(tiny).toHaveLength(1);
+			expect(visibleWidth(tiny[0]!)).toBeLessThanOrEqual(1);
+			manager.setMaxHeight(4);
+			expect(strip(manager)).toContain("full evaluation task Z");
+			manager.handleInput("\r");
+			type(manager, "complete expected outcome Y");
+			expect(strip(manager)).toContain("complete expected outcome Y");
+			manager.handleInput("\r");
+			await waitFor("evaluation receives untruncated inputs", () => observed.expectedOutcome !== undefined);
+			expect(observed).toEqual({ task: "full evaluation task Z", expectedOutcome: "complete expected outcome Y" });
+			await waitFor("evaluation completed", () => strip(manager).includes("passing"));
+			manager.handleInput("i");
+			await waitFor("inspection loaded", () => strip(manager).includes("description:"));
+			manager.handleInput("\x1b[F");
+			expect(strip(manager)).toContain("Final inspection sentinel");
+			manager.handleInput("\x1b");
+			expect(strip(manager)).toContain("passing");
+		} finally {
+			manager.dispose();
+		}
+	});
+
+	it("closing a running revision view aborts execution, records no result and fences late redraws", async () => {
+		const name = "closed-revision-run";
+		const draft = await createSkillDraft({ name, description: "Cancellation regression", body: "Pending output" });
+		let signal: AbortSignal | undefined;
+		const outcome = Promise.withResolvers<{ passed: boolean; summary: string }>();
+		setSkillEvalRunner(context => {
+			signal = context.signal;
+			return outcome.promise;
+		});
+		let redraws = 0;
+		const host = {
+			terminal: { rows: 12 },
+			requestRender: () => {
+				redraws++;
+			},
+		} as unknown as TUI;
+		const manager = await SkillRevisionsComponent.create(host, name);
+		await driveSkillEval(manager, "run task", "observe output");
+		await waitFor("executor begins", () => signal !== undefined);
+		manager.dispose();
+		const countAtClose = redraws;
+		expect(signal?.aborted).toBe(true);
+		outcome.resolve({ passed: true, summary: "Late output" });
+		const state = await listSkillRevisions(name);
+		expect(state.revisions.find(revision => revision.id === draft.id)?.evaluations).toHaveLength(0);
+		await Bun.sleep(10);
+		expect(redraws).toBe(countAtClose);
+		expect(state.active).toBeNull();
+	});
 	it("draft → evaluate → promote → second draft → promote → rollback tracks the live file", async () => {
 		// Failure mode: the skill surface offers model-callable verbs but no
 		// operable management UI — history, eval state, and rollback are

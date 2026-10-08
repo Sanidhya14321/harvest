@@ -141,6 +141,76 @@ afterEach(async () => {
 });
 
 describe("hub managed-preset operator lifecycle (C3)", () => {
+	it("preserves a one-row creation brief and lets the operator review the generated prompt tail before saving", async () => {
+		mockAgents([]);
+		let receivedBrief: string | undefined;
+		setAgentsHubArchitectRunner(async ({ brief }) => {
+			receivedBrief = brief;
+			return {
+				...SCOUT_SPEC,
+				systemPrompt: Array.from({ length: 24 }, (_, index) => `Instruction ${index}`).join("\n") + "\nREVIEW-TAIL",
+			};
+		});
+		const settings = Settings.isolated();
+		const setSpy = vi.spyOn(settings, "set");
+		const filesBefore = await walkFiles(tempCwd);
+		const hub = await createHub(settings);
+		try {
+			hub.handleInput("\r"); // only row: New agent
+			hub.setMaxHeight(1);
+			const brief = "x".repeat(48) + " final-tail";
+			type(hub, brief);
+			expect(hub.render(24)).toHaveLength(1);
+			expect(Bun.stripANSI(hub.render(24).join("\n"))).toContain("final-tail");
+			hub.handleInput("\x11");
+			await waitFor("generated review", () => strip(hub).includes("Review generated agent"));
+			expect(receivedBrief).toBe(brief);
+			hub.setMaxHeight(4);
+			hub.render(24);
+			hub.handleInput("\x1b[F");
+			expect(Bun.stripANSI(hub.render(24).join("\n"))).toContain("REVIEW-TAIL");
+			hub.handleInput("\x1b");
+			expect(setSpy).not.toHaveBeenCalled();
+			expect(await walkFiles(tempCwd)).toEqual(filesBefore);
+		} finally {
+			hub.dispose();
+		}
+	});
+	it("can inspect the full managed prompt tail at narrow height without evaluating or promoting it", async () => {
+		const name = "hub-inspection-tail";
+		const prompt = Array.from({ length: 24 }, (_, index) => `Instruction ${index}`).join("\n") + "\nTAIL-MARKER";
+		const draft = await createPresetDraft({
+			name,
+			description: "Use this agent when inspecting the complete draft",
+			systemPrompt: prompt,
+		});
+		mockAgents([]);
+		const hub = await createHub(Settings.isolated());
+		try {
+			hub.handleInput("\r");
+			for (let i = 0; i < 3; i++) hub.handleInput("\x1b[C");
+			hub.handleInput("\r");
+			await waitFor("revision row", () => strip(hub).includes(draft.id));
+			hub.handleInput("\r");
+			for (let i = 0; i < 3; i++) hub.handleInput("\x1b[C");
+			hub.handleInput("\r"); // Inspect: evaluation remains unevaluated.
+			await waitFor("revision inspection", () => strip(hub).includes(`revision ${draft.id}`));
+			hub.setMaxHeight(4);
+			expect(hub.render(24)).toHaveLength(4);
+			hub.handleInput("\x1b[F");
+			expect(Bun.stripANSI(hub.render(24).join("\n"))).toContain("TAIL-MARKER");
+			hub.setMaxHeight(30);
+			expect(strip(hub)).toContain("TAIL-MARKER");
+			hub.handleInput("\x1b");
+			expect(strip(hub)).toContain(draft.id);
+			const after = await listPresetRevisions(name);
+			expect(after.active).toBeNull();
+			expect(after.revisions[0]?.content).toContain(prompt);
+			expect(after.revisions[0]?.evaluations).toEqual([]);
+		} finally {
+			hub.dispose();
+		}
+	});
 	it("generate → draft → inspect → evaluate → promote → rollback with authored intact and settings untouched", async () => {
 		// Failure mode: the hub generated on shared Settings and wrote
 		// authored files directly, bypassing revision history, eval state,

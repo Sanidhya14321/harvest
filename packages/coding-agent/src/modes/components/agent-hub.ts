@@ -66,6 +66,7 @@ import {
 	formatRoleBadge,
 	fuzzyAgentMatch,
 	modelBadge,
+	renderHubTextInput,
 	type RosterRender,
 	sanitizeDisplayText,
 	sanitizeLine,
@@ -563,7 +564,9 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		let footer = `Esc close${theme.sep.dot}Enter open${theme.sep.dot}1/2/3 views`;
 		if (this.#section === "agents") {
 			selected = this.#selectedRow;
-			if (this.#narrowDetailsOpen && this.#rows[selected]) {
+			if (this.#agentFilterEditing) {
+				body = [renderHubTextInput("search", this.#agentFilter, innerWidth)];
+			} else if (this.#narrowDetailsOpen && this.#rows[selected]) {
 				body = this.#renderDetailPanel(this.#rows[selected], innerWidth, bodyRows, this.#observedById);
 			} else if (this.#rows.length > 0) {
 				const roster = this.#renderRosterWindow(innerWidth, bodyRows, this.#observedById);
@@ -579,7 +582,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			title = "Activity";
 			selected = this.#selectedActivityRow;
 			footer = `Esc close${theme.sep.dot}Enter transcript${theme.sep.dot}1/2/3 views`;
-			if (this.#activitySearchEditing) body = [`search: ${this.#activitySearch}_`];
+			if (this.#activitySearchEditing) body = [renderHubTextInput("search", this.#activitySearch, innerWidth)];
 			else {
 				const start = Math.max(
 					0,
@@ -597,8 +600,8 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			selected = this.#selectedSessionRow;
 			footer = `Esc close${theme.sep.dot}Enter reopen${theme.sep.dot}x stop${theme.sep.dot}a archive`;
 			this.#ensureSessionAsyncLoad();
-			if (this.#sessionSendEditing) body = [`message: ${this.#sessionSendBuffer}_`];
-			else if (this.#sessionSearchEditing) body = [`search: ${this.#sessionSearch}_`];
+			if (this.#sessionSendEditing) body = [renderHubTextInput("message", this.#sessionSendBuffer, innerWidth)];
+			else if (this.#sessionSearchEditing) body = [renderHubTextInput("search", this.#sessionSearch, innerWidth)];
 			else {
 				const sessions = this.#sessionRows();
 				const start = Math.max(0, Math.min(selected - Math.floor(bodyRows / 2), sessions.length - bodyRows));
@@ -950,10 +953,10 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 					? (selectedAgent ?? "selected agent")
 					: `${selectedAgent ?? "selected"} subtree`;
 		const search = this.#activitySearchEditing
-			? theme.fg("accent", `search: ${this.#activitySearch}▌`)
+			? theme.fg("accent", renderHubTextInput("search", this.#activitySearch, innerWidth))
 			: this.#activitySearch
 				? `search: ${this.#activitySearch}`
-				: "search: —";
+				: "search: -";
 		body.push(
 			theme.fg(
 				"dim",
@@ -972,7 +975,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 				: Math.max(0, Math.min(selected - Math.floor(budget / 2), this.#activityRows.length - budget));
 			const end = Math.min(this.#activityRows.length, start + budget);
 			if (start > 0) {
-				body.push(theme.fg("dim", `… ${start} earlier`));
+				body.push(theme.fg("dim", `${theme.symbol("sep.ellipsis")} ${start} earlier`));
 			}
 			for (let index = start + Number(start > 0); index < end; index++) {
 				this.#hitRows[1 + body.length] = index;
@@ -982,7 +985,17 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		while (body.length < contentRows) body.push("");
 
 		const lines = [topBorder(width, "Agent Hub")];
-		for (const line of body.slice(0, contentRows)) lines.push(row(line, width));
+		for (const line of body.slice(0, contentRows)) {
+			const hit = this.#hitRows[lines.length];
+			lines.push(
+				row(
+					line,
+					width,
+					undefined,
+					hit !== undefined && hit === this.#selectedActivityRow ? "selectedBg" : "modalBg",
+				),
+			);
+		}
 		lines.push(divider(width));
 		lines.push(
 			row(
@@ -1002,14 +1015,14 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const ref = this.#registry.get(activity.agentId);
 		const observed = this.#observedById.get(activity.agentId);
 		const role = observed?.progress?.modelRole ?? ref?.history?.modelRole;
-		const roleBadge = role && this.#settings ? `${formatRoleBadge(role, this.#settings)} ` : "";
+		const roleBadge = width >= 56 && role && this.#settings ? `${formatRoleBadge(role, this.#settings)} ` : "";
 		const agent = sanitizeLine(activity.agentId, Math.max(8, Math.min(18, Math.floor(width * 0.18))));
 		const title = sanitizeLine(
 			activity.kind === "tool" ? (activity.toolName ?? activity.title) : activity.title,
 			width,
 		);
 		const prefix =
-			`${cursor} ${theme.fg("dim", activityClock(activity.timestamp))} ${activityGlyph(activity)} ` +
+			`${cursor} ${width >= 56 ? `${theme.fg("dim", activityClock(activity.timestamp))} ` : ""}${activityGlyph(activity)} ` +
 			`${roleBadge}${theme.bold(agent)} ${theme.fg(activity.kind === "response" ? "success" : "muted", title)}`;
 		const available = Math.max(1, width - visibleWidth(prefix) - visibleWidth(theme.sep.dot));
 		return `${prefix}${theme.fg("dim", theme.sep.dot)}${sanitizeLine(activity.summary, available)}`;
@@ -1088,14 +1101,17 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const contentRows = Math.max(1, termHeight - 4);
 		const body: string[] = [this.#sectionTabs()];
 		const search = this.#sessionSearchEditing
-			? theme.fg("accent", `search: ${this.#sessionSearch}▌`)
+			? theme.fg("accent", renderHubTextInput("search", this.#sessionSearch, innerWidth))
 			: this.#sessionSearch
 				? `search: ${this.#sessionSearch}`
-				: "search: —";
-		const send = this.#sessionSendEditing ? theme.fg("accent", `message: ${this.#sessionSendBuffer}▌`) : undefined;
+				: "search: -";
+		const send = this.#sessionSendEditing
+			? theme.fg("accent", renderHubTextInput("message", this.#sessionSendBuffer, innerWidth))
+			: undefined;
 		body.push(theme.fg("dim", `filter:${this.#sessionFilter}${theme.sep.dot}${search}`));
 		if (send) body.push(send);
-		if (this.#sessionAsyncLoading) body.push(theme.fg("dim", "Loading saved sessions…"));
+		if (this.#sessionAsyncLoading)
+			body.push(theme.fg("dim", `Loading saved sessions${theme.symbol("sep.ellipsis")}`));
 		if (this.#sessionNotice) body.push(theme.fg("error", sanitizeLine(this.#sessionNotice, innerWidth)));
 		if (contentRows >= 8) body.push("");
 
@@ -1109,14 +1125,14 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 					"muted",
 					this.#sessionSearch || this.#sessionFilter !== "all"
 						? "No matching sessions"
-						: "No sessions — hidden and unsaved sessions appear here once created",
+						: "No sessions; hidden and unsaved sessions appear here once created",
 				),
 			);
 		} else if (budget > 0) {
 			const selected = Math.min(this.#selectedSessionRow, rows.length - 1);
 			const start = Math.max(0, Math.min(selected - Math.floor(budget / 2), rows.length - budget));
 			const end = Math.min(rows.length, start + budget);
-			if (start > 0) body.push(theme.fg("dim", `… ${start} earlier`));
+			if (start > 0) body.push(theme.fg("dim", `${theme.symbol("sep.ellipsis")} ${start} earlier`));
 			for (let index = start + Number(start > 0); index < end; index++) {
 				this.#hitRows[1 + body.length] = index;
 				body.push(this.#formatSessionRow(rows[index]!, index === selected, innerWidth));
@@ -1125,7 +1141,17 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		while (body.length < contentRows) body.push("");
 
 		const lines = [topBorder(width, "Agent Hub")];
-		for (const line of body.slice(0, contentRows)) lines.push(row(line, width));
+		for (const line of body.slice(0, contentRows)) {
+			const hit = this.#hitRows[lines.length];
+			lines.push(
+				row(
+					line,
+					width,
+					undefined,
+					hit !== undefined && hit === this.#selectedSessionRow ? "selectedBg" : "modalBg",
+				),
+			);
+		}
 		lines.push(divider(width));
 		lines.push(
 			row(
@@ -1300,7 +1326,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			return;
 		}
 		if (handle.archived) {
-			this.#sessionNotice = "Session is already archived — use u to restore it";
+			this.#sessionNotice = "Session is already archived; use u to restore it";
 			this.#requestRender();
 			return;
 		}
@@ -1325,7 +1351,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			return;
 		}
 		if (!handle.archived) {
-			this.#sessionNotice = "Session is not archived — nothing to restore";
+			this.#sessionNotice = "Session is not archived; nothing to restore";
 			this.#requestRender();
 			return;
 		}
@@ -1375,7 +1401,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const innerWidth = Math.max(1, width - 4);
 		if (this.#narrowDetailsOpen && selected) {
 			const details = this.#renderDetailPanel(selected, innerWidth, contentRows, observedById);
-			lines.push(topBorder(width, `Agent Hub · ${selected.id}`));
+			lines.push(topBorder(width, `Agent Hub${theme.sep.dot}${selected.id}`));
 			for (const detail of details) lines.push(row(detail, width));
 		} else {
 			const roster = this.#renderRosterPanel(innerWidth, contentRows, observedById);
@@ -1410,7 +1436,9 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 	#footer(showingNarrowDetails: boolean, availableWidth: number): string {
 		const nextView = this.#viewMode === "roster" ? "by parent" : "flat";
 		const filter =
-			this.#agentFilter.length > 0 ? `/${this.#agentFilter}${this.#agentFilterEditing ? "▌" : ""}  ·  ` : "";
+			this.#agentFilter.length > 0
+				? `/${this.#agentFilter}${this.#agentFilterEditing ? "_" : ""}${theme.sep.dot}`
+				: "";
 		if (showingNarrowDetails) {
 			return theme.fg(
 				"dim",
@@ -1439,7 +1467,9 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		if (this.#rows.length === 0) {
 			if (this.#loadingPersistedSubagents) {
 				if (budget > 0) {
-					lines.push(`${statusGlyph("running")} ${theme.fg("accent", "Loading saved agents…")}`);
+					lines.push(
+						`${statusGlyph("running")} ${theme.fg("accent", `Loading saved agents${theme.symbol("sep.ellipsis")}`)}`,
+					);
 					hitRows.push(undefined);
 				}
 			} else {
@@ -1546,12 +1576,12 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const showTopOverflow = start > 0 && used < budget;
 		const showBottomOverflow = end < this.#rows.length && used + Number(showTopOverflow) < budget;
 		if (showTopOverflow) {
-			lines.push(theme.fg("dim", `… ${start} more`));
+			lines.push(theme.fg("dim", `${theme.symbol("sep.ellipsis")} ${start} more`));
 			hitRows.push(undefined);
 		}
 		for (let i = start; i < end; i++) appendEntry(i);
 		if (showBottomOverflow) {
-			lines.push(theme.fg("dim", `… ${this.#rows.length - end} more`));
+			lines.push(theme.fg("dim", `${theme.symbol("sep.ellipsis")} ${this.#rows.length - end} more`));
 			hitRows.push(undefined);
 		}
 		return { lines, hitRows };
@@ -1572,7 +1602,10 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		if (metrics.reportedAgents === 0) {
 			lines.push(
 				...wrapTextWithAnsi(
-					theme.fg("dim", `Usage —${theme.sep.dot}0/${this.#rows.length} measured`),
+					theme.fg(
+						"dim",
+						`Usage ${theme.getSymbolPreset() === "ascii" ? "-" : "—"}${theme.sep.dot}0/${this.#rows.length} measured`,
+					),
 					Math.max(1, width),
 				),
 			);
@@ -1581,7 +1614,10 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const activeTime = formatMetricDuration(metrics);
 		const usage = [
 			theme.fg("statusLineCost", formatCost(metrics.cost)),
-			theme.fg("dim", activeTime ? `${activeTime} agent time` : "agent time —"),
+			theme.fg(
+				"dim",
+				activeTime ? `${activeTime} agent time` : `agent time ${theme.getSymbolPreset() === "ascii" ? "-" : "—"}`,
+			),
 			theme.fg("dim", `${formatNumber(metrics.requests)} req`),
 			theme.fg("dim", `${formatNumber(metrics.tools)} tools`),
 			theme.fg("dim", `${formatNumber(metrics.tokens)} tok`),
@@ -1631,7 +1667,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const children = this.#childrenByParent.get(ref.id) ?? [];
 		const lines: string[] = [];
 		const add = (line = ""): void => {
-			lines.push(truncateToWidth(line, width));
+			lines.push(clampHubLine(line, width));
 		};
 		const addWrapped = (text: string, maxRows = 2): void => {
 			for (const wrapped of wrapTextWithAnsi(sanitizeLine(text), Math.max(1, width)).slice(0, maxRows)) add(wrapped);
@@ -1664,7 +1700,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		}
 
 		const current = progress?.currentTool
-			? `${progress.currentTool}${progress.currentToolArgs ? ` · ${progress.currentToolArgs}` : ""}`
+			? `${progress.currentTool}${progress.currentToolArgs ? `${theme.sep.dot}${progress.currentToolArgs}` : ""}`
 			: (progress?.lastIntent ?? ref.activity);
 		if (current) {
 			section("Current");
@@ -1681,12 +1717,12 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 				add(contextGauge(metrics.contextTokens, metrics.contextWindow));
 			}
 		} else {
-			add(theme.fg("dim", "usage —"));
+			add(theme.fg("dim", `usage ${theme.getSymbolPreset() === "ascii" ? "-" : "—"}`));
 		}
 
 		section("Lineage");
 		add(
-			`Spawned by ${sanitizeDisplayText(ref.parentId ?? MAIN_AGENT_ID)}${children.length > 0 ? ` · ${children.length} children` : ""}`,
+			`Spawned by ${sanitizeDisplayText(ref.parentId ?? MAIN_AGENT_ID)}${children.length > 0 ? `${theme.sep.dot}${children.length} children` : ""}`,
 		);
 		if (children.length > 0) add(theme.fg("dim", formatChildIds(children, width)));
 		add(theme.fg("dim", `Registered ${formatLocalDateTimeWithOffset(new Date(ref.createdAt))}`));
@@ -1696,8 +1732,8 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			theme.fg(
 				"dim",
 				ref.kind === "advisor" || ref.history?.readOnly
-					? "Read-only · 0 LoC"
-					: "Shared workspace · per-agent LoC not attributable",
+					? `Read-only${theme.sep.dot}0 LoC`
+					: `Shared workspace${theme.sep.dot}per-agent LoC not attributable`,
 			),
 		);
 		const artifacts = ref.history;
@@ -1781,7 +1817,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		if (rightWidth > 0 && leftWidth + 2 + rightWidth <= max) {
 			entry.push(left + padding(max - leftWidth - rightWidth) + right);
 		} else {
-			entry.push(truncateToWidth(left.replace(/[\r\n]+/g, " "), max));
+			entry.push(clampHubLine(left, max));
 		}
 
 		const ownChildRail = this.#childrenByParent.has(ref.id)
