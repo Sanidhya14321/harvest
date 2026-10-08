@@ -1862,6 +1862,7 @@ export function createShellRenderer<TArgs>(config: ShellRendererConfig<TArgs>) {
 						{
 							header,
 							state: isPartial ? "pending" : isError ? (isTimeout ? "warning" : "error") : "success",
+							variant: !expanded && !isPartial && !isError ? "rail" : "frame",
 							sections: [
 								{
 									// Viewport-sized tail window in every state — streaming and final

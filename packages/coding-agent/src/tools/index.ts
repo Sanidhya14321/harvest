@@ -264,6 +264,18 @@ export interface ToolSession {
 	restrictToolNames?: boolean;
 	/** Task recursion depth (0 = top-level, 1 = first child, etc.) */
 	taskDepth?: number;
+	/**
+	 * Effective explicit tool surface for this session, in caller order.
+	 * Set by the SDK from the session's creation options; `undefined` means
+	 * the full default surface. Consumed (never widened) when this session
+	 * spawns model-created children.
+	 */
+	toolNames?: string[];
+	/**
+	 * Approval auto-approve fact for this session, from creation options.
+	 * Consumed when spawning children; never escalated by the child path.
+	 */
+	autoApprove?: boolean;
 	/** Get shared eval executor session ID. Subagents inherit this to share JS/Python state. */
 	getEvalSessionId?: () => string | null;
 	/** Get session file */
@@ -334,13 +346,33 @@ export interface ToolSession {
 	 * interactive TUI registers its LiveSessionRegistry-backed factory
 	 * (background, no focus steal); headless hosts leave this unset and the
 	 * sessions tool reports creation as unwired instead of inventing one.
+	 *
+	 * Prefer the session-scoped binding: SDK-created sessions carry the
+	 * owning host's factory here, so two owners never share one global.
+	 * The process-global `setSessionToolDeps` fallback remains for
+	 * explicitly supported headless/test adapters only.
 	 */
 	openManagedSession?: (input: {
 		cwd: string;
 		task?: string;
 		callerId: string | null;
 		taskDepth?: number;
+		callerTaskDepth?: number;
+		background?: true;
+		callerPolicy?: {
+			toolNames?: string[];
+			restrictToolNames?: boolean;
+			spawns?: string | null;
+			autoApprove?: boolean;
+			enableMCP?: boolean;
+		};
 	}) => Promise<{ id: string; registryId: string; taskAccepted: boolean; session: unknown }>;
+	/**
+	 * Owner-scoped message delivery for managed sessions (queue/delivery
+	 * semantics of the owning runtime). Falls back to the session-global
+	 * delivery seam when unset.
+	 */
+	deliverManagedMessage?: (target: { prompt?: (message: string) => Promise<unknown> }, message: string) => Promise<string>;
 	/** Idle→parked→revive lifecycle owner; lets the hub kill a non-job-backed agent registration. Default: AgentLifecycleManager.global(). */
 	agentLifecycle?: () => AgentLifecycleManager;
 	/** Get artifacts directory for artifact:// URLs */

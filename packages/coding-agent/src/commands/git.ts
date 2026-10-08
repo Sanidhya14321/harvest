@@ -8,7 +8,7 @@ import { Args, Command, Flags } from "@harvest/pi-utils/cli";
 import { gitHelp as commandHelp } from "../cli/command-help";
 import { runGitTui } from "../cli/git-tui";
 import { Settings, settings } from "../config/settings";
-import { initTheme } from "../modes/theme/theme";
+import { initConfiguredTheme } from "../config/theme";
 
 export default class Git extends Command {
 	static description = commandHelp.description;
@@ -35,13 +35,7 @@ export default class Git extends Command {
 		// Load settings first so the user's configured theme/symbol preset apply
 		// exactly like interactive mode (bare initTheme falls back to built-ins).
 		await Settings.init({ cwd: getProjectDir() });
-		await initTheme(
-			false,
-			settings.get("symbolPreset"),
-			settings.get("colorBlindMode"),
-			settings.get("theme.dark"),
-			settings.get("theme.light"),
-		);
+		await initConfiguredTheme(settings);
 		await runGitTui({ cwd: flags.dir, revision: args.revision });
 	}
 }

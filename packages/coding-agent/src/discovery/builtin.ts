@@ -6,7 +6,11 @@
 import * as path from "node:path";
 import { getAgentDir, logger, parseFrontmatter, tryParseJson } from "@harvest/pi-utils";
 import { YAML } from "bun";
-import { getManagedSkillsDir, MANAGED_SKILLS_PROVIDER_ID } from "../autolearn/managed-skills";
+import {
+	getManagedSkillsDir,
+	MANAGED_SKILLS_PROVIDER_ID,
+	recoverInterruptedSkillTransaction,
+} from "../autolearn/managed-skills";
 import { registerProvider } from "../capability";
 import { type ContextFile, contextFileCapability } from "../capability/context-file";
 import { type Extension, type ExtensionManifest, extensionCapability } from "../capability/extension";
@@ -312,8 +316,16 @@ async function loadSkills(ctx: LoadContext): Promise<LoadResult<Skill>> {
 // managed dir is a no-op); only writing/nudging is gated by `autolearn.enabled`.
 const MANAGED_SKILLS_PRIORITY = 5;
 async function loadManagedSkills(ctx: LoadContext): Promise<LoadResult<Skill>> {
+	const dir = getManagedSkillsDir();
+	// Recover interrupted promote/rollback transactions before the scan
+	// exposes artifacts: each recovery runs briefly in its own per-artifact
+	// transaction (never held across the read), so a live writer is awaited,
+	// never mistaken for a crash. Best-effort per skill; one bad journal
+	// never blocks discovery of the rest.
+	const entries = await readDirEntries(dir).catch(() => []);
+	await Promise.all(entries.map(entry => recoverInterruptedSkillTransaction(entry.name, {}).catch(() => {})));
 	return scanSkillsFromDir(ctx, {
-		dir: getManagedSkillsDir(),
+		dir,
 		providerId: MANAGED_SKILLS_PROVIDER_ID,
 		level: "user",
 		requireDescription: true,

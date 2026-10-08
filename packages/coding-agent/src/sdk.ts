@@ -161,6 +161,21 @@ import {
 	type SecretObfuscator,
 } from "./secrets";
 import { AgentSession, type InitialRetryFallbackState, type PlanYolo, type Prewalk } from "./session/agent-session";
+
+/**
+ * Live ToolSession per AgentSession, registered when `createAgentSession`
+ * succeeds. Lets owner/operator surfaces (Agents Hub evaluation,
+ * model-created session lineage) borrow the session's REAL tool context —
+ * cwd, settings, model registry, credential resolver, active model,
+ * effective restrictions — instead of assembling a partial stand-in.
+ * Entries are weak: disposal drops the only strong reference.
+ */
+const toolSessionsByAgent = new WeakMap<object, ToolSession>();
+
+/** The live ToolSession backing `session`, if this host created it via the SDK. */
+export function getToolSessionForAgentSession(session: AgentSession): ToolSession | undefined {
+	return toolSessionsByAgent.get(session);
+}
 import { discoverAuthStorage as discoverAuthStorageFromConfig } from "./session/auth-broker-config";
 import type { AuthStorage } from "./session/auth-storage";
 import { DateCwdReminderInjector } from "./session/date-cwd-reminder";
@@ -1811,6 +1826,12 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			lspReadOnly,
 			enableIrc: restrictToolNames ? false : options.enableIrc,
 			restrictToolNames,
+			// Effective authority facts for model-created children (S2): the
+			// explicit tool surface and approval mode from creation options.
+			// `undefined` toolNames means the full default surface; children
+			// intersect, never widen.
+			toolNames: options.toolNames ? normalizeToolNames(options.toolNames) : undefined,
+			autoApprove: options.autoApprove,
 			get hasEditTool() {
 				const requestedToolNames = options.toolNames ? normalizeToolNames(options.toolNames) : undefined;
 				return restrictToolNames
@@ -4361,6 +4382,13 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		} catch (error) {
 			logger.warn("Code Mode initialization at session startup failed", { error: String(error) });
 		}
+
+		// Owner/operator surfaces (hub evaluation, managed-session lineage)
+		// resolve the live ToolSession for an AgentSession through this
+		// registry instead of reconstructing a partial context: the stored
+		// object carries the session's real cwd/settings/registry/creds/
+		// model/restrictions. Weakly held; entries vanish with disposal.
+		toolSessionsByAgent.set(session, toolSession);
 
 		return {
 			session,

@@ -188,13 +188,16 @@ import {
 	isEvaluatedPassing,
 	listRevisions,
 	promoteRevision,
-	pruneRevisions,
+	pruneRevisionsLocked,
+	raceWithAbortSignal,
 	readActivePointer,
 	readActiveRevision,
 	readRevision,
 	recordEvaluation,
+	resetFalseActiveRevisionToDraft,
 	rollbackRevision,
 	withRevisionTransaction,
+	withoutRevisionTransactionScope,
 	type ArtifactRevision,
 } from "../autolearn/revisions";
 
@@ -279,26 +282,72 @@ export function validatePresetExpectedActive(value: string | null | undefined): 
 
 /**
  * Single per-artifact serialized transaction for ALL preset mutation verbs.
- * Delegates to the shared revision-service boundary. Expected-revision
- * checks run INSIDE the boundary; null = explicit no-active.
+ * Delegates to the shared revision-service boundary; the key covers
+ * (agentDir, kind, name) so isolated stores never share a chain.
+ * Expected-revision checks run INSIDE the boundary; null = explicit no-active.
  */
-export function withArtifactTransaction<T>(kind: string, name: string, fn: () => Promise<T>): Promise<T> {
+export function withArtifactTransaction<T>(
+	kind: string,
+	name: string,
+	fn: () => Promise<T>,
+	agentDir?: string,
+): Promise<T> {
 	if (kind !== "preset") throw new Error(`withArtifactTransaction(preset): unsupported kind "${kind}"`);
-	return withRevisionTransaction("preset", sanitizePresetName(name), fn);
+	return withRevisionTransaction("preset", sanitizePresetName(name), fn, agentDir);
 }
 
-/** Per-revision evaluation-append chains so concurrent eval appends all survive. */
-const presetEvalChains = new Map<string, Promise<unknown>>();
-function serializePresetEvalAppend<T>(name: string, revId: string, op: () => Promise<T>): Promise<T> {
-	const key = `${sanitizePresetName(name)}:${validatePresetRevisionId(revId)}`;
-	const prev = presetEvalChains.get(key) ?? Promise.resolve();
-	const run = prev.then(op, op);
-	const guarded = run.catch(() => {});
-	presetEvalChains.set(key, guarded);
-	void guarded.finally(() => {
-		if (presetEvalChains.get(key) === guarded) presetEvalChains.delete(key);
-	});
-	return run;
+/** Mint a unique internal lease id for one preset evaluation pin (runId stays provenance only). */
+function newPresetEvalLease(): string {
+	return `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Owner prefix marking live preset evaluation leases (distinct from `run:`/`__manual__` pins). */
+const PRESET_EVAL_LEASE_PREFIX = "eval-lease:";
+
+function pinPresetEvalLease(safe: string, cleanRev: string, lease: string, agentDir?: string): void {
+	const key = presetPinKey(safe, cleanRev, agentDir);
+	let owners = presetPinOwners.get(key);
+	if (!owners) {
+		owners = new Set();
+		presetPinOwners.set(key, owners);
+	}
+	owners.add(`${PRESET_EVAL_LEASE_PREFIX}${lease}`);
+}
+
+function unpinPresetEvalLease(safe: string, cleanRev: string, lease: string, agentDir?: string): void {
+	const key = presetPinKey(safe, cleanRev, agentDir);
+	const owners = presetPinOwners.get(key);
+	if (!owners) return;
+	owners.delete(`${PRESET_EVAL_LEASE_PREFIX}${lease}`);
+	if (owners.size === 0) presetPinOwners.delete(key);
+}
+
+/**
+ * True while a live evaluation lease pins this preset revision. Promotion
+ * must wait for in-flight evaluations to settle (mirror of the skill side).
+ */
+export function hasLivePresetEvalPin(name: string, revId: string, agentDir?: string): boolean {
+	const owners = presetPinOwners.get(presetPinKey(name, revId, agentDir));
+	if (!owners) return false;
+	for (const owner of owners) {
+		if (owner.startsWith(PRESET_EVAL_LEASE_PREFIX)) return true;
+	}
+	return false;
+}
+
+/**
+ * Serialize preset evaluation metadata appends through the same per-artifact
+ * transaction as mutations, recovery, and prune (no disjoint chain), so
+ * concurrent evaluations all survive. Provider execution always runs
+ * OUTSIDE; only the append is serialized.
+ */
+export function serializePresetEvalAppend<T>(
+	name: string,
+	revId: string,
+	fn: () => Promise<T>,
+	agentDir?: string,
+): Promise<T> {
+	return withArtifactTransaction("preset", name, fn, agentDir);
 }
 
 function assertManagedPresetFileSafeForUpdate(name: string, fileStat: Stats): void {
@@ -353,11 +402,40 @@ function presetTxnFile(root: string, safe: string): string {
 	return path.join(root, `${safe}.txn.json`);
 }
 
-async function writePresetTxn(root: string, safe: string, revId: string, previousActive: string | null): Promise<void> {
-	await Bun.write(
-		presetTxnFile(root, safe),
-		JSON.stringify({ kind: "preset", name: safe, revId, previousActive, startedAt: new Date().toISOString() }),
-	);
+/** Versioned preset transaction journal: records op + published/state facts before mutation. */
+interface PresetTxnJournal {
+	version: 2;
+	kind: "preset";
+	name: string;
+	op: "promote" | "rollback";
+	revId: string;
+	previousActive: string | null;
+	targetStateBefore: "draft" | "active";
+	targetWasActiveBefore: boolean;
+	startedAt: string;
+}
+
+async function writePresetTxn(
+	root: string,
+	safe: string,
+	revId: string,
+	previousActive: string | null,
+	op: "promote" | "rollback",
+	targetStateBefore: "draft" | "active",
+	targetWasActiveBefore: boolean,
+): Promise<void> {
+	const journal: PresetTxnJournal = {
+		version: 2,
+		kind: "preset",
+		name: safe,
+		op,
+		revId,
+		previousActive,
+		targetStateBefore,
+		targetWasActiveBefore,
+		startedAt: new Date().toISOString(),
+	};
+	await Bun.write(presetTxnFile(root, safe), JSON.stringify(journal));
 }
 
 async function clearPresetTxn(root: string, safe: string): Promise<void> {
@@ -372,20 +450,59 @@ async function clearPresetTxn(root: string, safe: string): Promise<void> {
  * Recover an interrupted preset promote/rollback before discovery exposes
  * artifacts: the file ahead of the pointer rolls back to the pointer's
  * content (old active stays published).
+ *
+ * Runs inside the per-artifact transaction (same key as writers) so a live
+ * mutation holding the lock is never mistaken for a crash: recovery waits
+ * for the holder instead of rolling its file back mid-write. Failed
+ * coherence retains the journal marker and surfaces: the marker clears only
+ * after file + history state both cohere. A revision that wrote
+ * state:active but never published the pointer was never active and resets
+ * to draft (never-active stays invalid for rollback).
  */
 export async function recoverInterruptedPresetTransaction(name: string, opts?: { agentDir?: string }): Promise<void> {
 	const safe = sanitizePresetName(name);
+	return withArtifactTransaction(
+		"preset",
+		safe,
+		async () => {
+			await recoverInterruptedPresetTransactionInner(safe, opts);
+		},
+		opts?.agentDir,
+	);
+}
+
+async function recoverInterruptedPresetTransactionInner(safe: string, opts?: { agentDir?: string }): Promise<void> {
 	const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
 	const txnPath = presetTxnFile(root, safe);
-	let txn: { revId: string } | undefined;
+	let raw: unknown;
 	try {
-		txn = (await Bun.file(txnPath).json()) as { revId: string };
+		raw = await Bun.file(txnPath).json();
 	} catch (err) {
 		if (isEnoent(err)) return;
 		throw err;
 	}
-	if (!txn) return;
+	const txn = raw as Partial<PresetTxnJournal> & { revId?: unknown; previousActive?: unknown; op?: unknown };
+	if (!txn || typeof txn.revId !== "string" || !txn.revId) {
+		throw new Error(
+			`Preset "${safe}" transaction journal has insufficient evidence (missing revId); retaining marker for manual repair.`,
+		);
+	}
+	const txnRevId = txn.revId;
+	const previousActive =
+		typeof txn.previousActive === "string" || txn.previousActive === null ? txn.previousActive : null;
+	const isVersioned = txn.version === 2 && (txn.op === "promote" || txn.op === "rollback");
 	const pointer = await readActivePointer("preset", safe, opts?.agentDir);
+	// Failed coherence retains the journal and surfaces: a pointer naming a
+	// revision whose history is unreadable must not silently delete the live
+	// file. Keep the marker so the next mutation retries recovery.
+	if (pointer.active) {
+		const activeRevCheck = await readRevision("preset", safe, pointer.active, opts?.agentDir).catch(() => undefined);
+		if (!activeRevCheck) {
+			throw new Error(
+				`Preset "${safe}" pointer names missing revision ${pointer.active}; retaining transaction journal for retry.`,
+			);
+		}
+	}
 	const filePath = path.join(root, `${safe}.md`);
 	const fileContent = await Bun.file(filePath)
 		.text()
@@ -398,19 +515,73 @@ export async function recoverInterruptedPresetTransaction(name: string, opts?: {
 		: undefined;
 	const expected = activeRev?.content;
 	if (fileContent !== expected) {
-		if (expected === undefined) {
-			try {
-				await fs.rm(filePath);
-			} catch (err) {
-				if (!isEnoent(err)) throw err;
+		try {
+			if (expected === undefined) {
+				try {
+					await fs.rm(filePath);
+				} catch (err) {
+					if (!isEnoent(err)) throw err;
+				}
+			} else {
+				const tmp = `${filePath}.recover.tmp`;
+				await Bun.write(tmp, expected);
+				await fs.rename(tmp, filePath);
 			}
-		} else {
-			const tmp = `${filePath}.recover.tmp`;
-			await Bun.write(tmp, expected);
-			await fs.rename(tmp, filePath);
+		} catch (err) {
+			throw new Error(
+				`Preset "${safe}" coherence restoration failed (${err instanceof Error ? err.message : String(err)}); retaining transaction journal for retry.`,
+			);
 		}
 	}
-	await clearPresetTxn(root, safe);
+	if (pointer.active === txnRevId) {
+		await clearPresetTxn(root, safe);
+		return;
+	}
+	if (isVersioned) {
+		const targetWasActiveBefore = (txn as PresetTxnJournal).targetWasActiveBefore;
+		if (targetWasActiveBefore) {
+			await clearPresetTxn(root, safe);
+			return;
+		}
+		try {
+			await resetFalseActiveRevisionToDraft("preset", safe, txnRevId, opts?.agentDir);
+		} catch (err) {
+			throw new Error(
+				`Preset "${safe}" failed to reset false-active revision ${txnRevId} (${err instanceof Error ? err.message : String(err)}); retaining transaction journal for retry.`,
+			);
+		}
+		await clearPresetTxn(root, safe);
+		return;
+	}
+	const targetRev = await readRevision("preset", safe, txnRevId, opts?.agentDir).catch(() => undefined);
+	if (!targetRev) {
+		throw new Error(
+			`Preset "${safe}" transaction journal references missing revision ${txnRevId} with insufficient evidence; retaining marker for manual repair.`,
+		);
+	}
+	if (targetRev.state !== "active") {
+		await clearPresetTxn(root, safe);
+		return;
+	}
+	const parent = (targetRev as ArtifactRevision).parent ?? null;
+	if (previousActive !== null && parent !== null && parent === previousActive) {
+		try {
+			await resetFalseActiveRevisionToDraft("preset", safe, txnRevId, opts?.agentDir);
+		} catch (err) {
+			throw new Error(
+				`Preset "${safe}" failed to reset false-active revision ${txnRevId} (${err instanceof Error ? err.message : String(err)}); retaining transaction journal for retry.`,
+			);
+		}
+		await clearPresetTxn(root, safe);
+		return;
+	}
+	if (previousActive !== null && parent !== null && parent !== previousActive) {
+		await clearPresetTxn(root, safe);
+		return;
+	}
+	throw new Error(
+		`Preset "${safe}" transaction journal has insufficient evidence to distinguish never-published-failed from historically-published (rev ${txnRevId}); retaining marker for manual repair.`,
+	);
 }
 
 async function stageAndReplacePresetFile(file: string, content: string): Promise<void> {
@@ -527,33 +698,38 @@ function validatePresetPolicyFields(
 export async function writeManagedPreset(input: WriteManagedPresetInput): Promise<{ path: string }> {
 	const name = sanitizePresetName(input.name);
 	const expectedActive = validatePresetExpectedActive(input.expectedActive);
-	let description = input.description?.trim();
-	let systemPrompt = input.systemPrompt?.trim();
-	let tools = input.tools;
-	let spawns = input.spawns;
-	let model = input.model;
-	if (input.action === "update") {
-		const current = await loadCurrentPresetSpec(name);
-		if (!current && (description === undefined || systemPrompt === undefined)) {
-			throw new Error(`Managed preset "${name}" does not exist. Use action "create" to add it.`);
-		}
-		if (description === undefined) description = current?.description;
-		if (systemPrompt === undefined) systemPrompt = current?.systemPrompt;
-		if (tools === undefined) tools = current?.tools;
-		if (spawns === undefined) spawns = current?.spawns;
-		if (model === undefined) model = current?.model;
-	}
-	if (!description) throw new Error(`Managed preset "${name}" needs a non-empty description.`);
-	if (!systemPrompt) throw new Error(`Managed preset "${name}" needs a non-empty system prompt.`);
-	if (description.toLowerCase().startsWith("use this agent when") === false) {
-		throw new Error(
-			`Managed preset "${name}" description must start with 'Use this agent when…' (agent discovery trigger).`,
-		);
-	}
-	const policy = validatePresetPolicyFields(name, { tools, spawns, model });
-	const content = buildPresetFileContent({ name, description, systemPrompt, ...policy });
-	prevalidatePresetRevisionContent(name, content);
 	return withArtifactTransaction("preset", name, async () => {
+		// Merge inside the transaction (TOCTOU fix): update with omitted
+		// tools/spawns/model/description/systemPrompt preserves existing
+		// values against the revision/file read under the same lock;
+		// explicit values are validated replacements. Re-entrant reads run
+		// directly on this lock.
+		let description = input.description?.trim();
+		let systemPrompt = input.systemPrompt?.trim();
+		let tools = input.tools;
+		let spawns = input.spawns;
+		let model = input.model;
+		if (input.action === "update") {
+			const current = await loadCurrentPresetSpec(name);
+			if (!current && (description === undefined || systemPrompt === undefined)) {
+				throw new Error(`Managed preset "${name}" does not exist. Use action "create" to add it.`);
+			}
+			if (description === undefined) description = current?.description;
+			if (systemPrompt === undefined) systemPrompt = current?.systemPrompt;
+			if (tools === undefined) tools = current?.tools;
+			if (spawns === undefined) spawns = current?.spawns;
+			if (model === undefined) model = current?.model;
+		}
+		if (!description) throw new Error(`Managed preset "${name}" needs a non-empty description.`);
+		if (!systemPrompt) throw new Error(`Managed preset "${name}" needs a non-empty system prompt.`);
+		if (description.toLowerCase().startsWith("use this agent when") === false) {
+			throw new Error(
+				`Managed preset "${name}" description must start with 'Use this agent when…' (agent discovery trigger).`,
+			);
+		}
+		const policy = validatePresetPolicyFields(name, { tools, spawns, model });
+		const content = buildPresetFileContent({ name, description, systemPrompt, ...policy });
+		prevalidatePresetRevisionContent(name, content);
 		const root = await (async () => {
 			const dir = getManagedPresetsDir();
 			const rootStat = await fs.lstat(dir).catch(err => {
@@ -567,7 +743,7 @@ export async function writeManagedPreset(input: WriteManagedPresetInput): Promis
 			}
 			return dir;
 		})();
-		await recoverInterruptedPresetTransaction(name).catch(() => {});
+		await recoverInterruptedPresetTransaction(name);
 		await ensurePresetHistorySeeded(name);
 		if (expectedActive !== undefined) {
 			const pointer = await readActivePointer("preset", name);
@@ -652,26 +828,32 @@ export async function writeManagedPreset(input: WriteManagedPresetInput): Promis
 /** Delete a managed preset file. Revision history is retained for audit. */
 export async function deleteManagedPreset(name: string, opts?: { agentDir?: string }): Promise<void> {
 	const safe = sanitizePresetName(name);
-	await withArtifactTransaction("preset", safe, async () => {
-		const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
-		const file = path.join(root, `${safe}.md`);
-		assertPresetPathJailed(root, file, `Managed preset "${safe}"`);
-		const stat = await fs.lstat(file).catch(err => {
-			if (isEnoent(err)) return null;
-			throw err;
-		});
-		if (stat === null) throw new Error(`Managed preset "${safe}" does not exist.`);
-		if (stat.isSymbolicLink()) {
-			throw new Error(`Managed preset "${safe}" is a symlink; refusing to delete outside the managed directory.`);
-		}
-		try {
-			await fs.rm(file);
-		} catch (err) {
-			if (isEnoent(err)) throw new Error(`Managed preset "${safe}" does not exist.`);
-			throw err;
-		}
-		await clearPresetTxn(root, safe).catch(() => {});
-	});
+	await withArtifactTransaction(
+		"preset",
+		safe,
+		async () => {
+			await recoverInterruptedPresetTransaction(safe, opts);
+			const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
+			const file = path.join(root, `${safe}.md`);
+			assertPresetPathJailed(root, file, `Managed preset "${safe}"`);
+			const stat = await fs.lstat(file).catch(err => {
+				if (isEnoent(err)) return null;
+				throw err;
+			});
+			if (stat === null) throw new Error(`Managed preset "${safe}" does not exist.`);
+			if (stat.isSymbolicLink()) {
+				throw new Error(`Managed preset "${safe}" is a symlink; refusing to delete outside the managed directory.`);
+			}
+			try {
+				await fs.rm(file);
+			} catch (err) {
+				if (isEnoent(err)) throw new Error(`Managed preset "${safe}" does not exist.`);
+				throw err;
+			}
+			await clearPresetTxn(root, safe).catch(() => {});
+		},
+		opts?.agentDir,
+	);
 }
 
 /** Seed preset history from the materialized file on first managed mutation. */
@@ -704,51 +886,61 @@ export interface PresetDraftInput extends Partial<ManagedPresetSpec> {
 export async function createPresetDraft(input: PresetDraftInput): Promise<ArtifactRevision> {
 	const name = sanitizePresetName(input.name);
 	const expectedActive = validatePresetExpectedActive(input.expectedActive);
-	return withArtifactTransaction("preset", name, async () => {
-		await ensurePresetHistorySeeded(name, { agentDir: input.agentDir });
-		let description = input.description?.trim();
-		let systemPrompt = input.systemPrompt?.trim();
-		let tools = input.tools;
-		let spawns = input.spawns;
-		let model = input.model;
-		if (
-			description === undefined ||
-			systemPrompt === undefined ||
-			tools === undefined ||
-			spawns === undefined ||
-			model === undefined
-		) {
-			const current = await loadCurrentPresetSpec(name, input.agentDir);
-			if (description === undefined) description = current?.description;
-			if (systemPrompt === undefined) systemPrompt = current?.systemPrompt;
-			if (tools === undefined) tools = current?.tools;
-			if (spawns === undefined) spawns = current?.spawns;
-			if (model === undefined) model = current?.model;
-		}
-		if (!description) throw new Error(`Managed preset "${name}" needs a non-empty description.`);
-		if (!systemPrompt) throw new Error(`Managed preset "${name}" needs a non-empty system prompt.`);
-		if (description.toLowerCase().startsWith("use this agent when") === false) {
-			throw new Error(
-				`Managed preset "${name}" description must start with 'Use this agent when…' (agent discovery trigger).`,
-			);
-		}
-		const policy = validatePresetPolicyFields(name, { tools, spawns, model });
-		const content = buildPresetFileContent({ name, description, systemPrompt, ...policy });
-		prevalidatePresetRevisionContent(name, content);
-		return createDraftRevision({
-			kind: "preset",
-			name,
-			content,
-			description,
-			expectedActive,
-			provenance: {
-				sessionId: input.provenance?.sessionId,
-				runId: input.provenance?.runId,
-				actor: input.provenance?.actor ?? "model",
-			},
-			agentDir: input.agentDir,
-		});
-	});
+	return withArtifactTransaction(
+		"preset",
+		name,
+		async () => {
+			await recoverInterruptedPresetTransaction(name, { agentDir: input.agentDir });
+			await ensurePresetHistorySeeded(name, { agentDir: input.agentDir });
+			let description = input.description?.trim();
+			let systemPrompt = input.systemPrompt?.trim();
+			let tools = input.tools;
+			let spawns = input.spawns;
+			let model = input.model;
+			if (
+				description === undefined ||
+				systemPrompt === undefined ||
+				tools === undefined ||
+				spawns === undefined ||
+				model === undefined
+			) {
+				const current = await loadCurrentPresetSpec(name, input.agentDir);
+				if (description === undefined) description = current?.description;
+				if (systemPrompt === undefined) systemPrompt = current?.systemPrompt;
+				if (tools === undefined) tools = current?.tools;
+				if (spawns === undefined) spawns = current?.spawns;
+				if (model === undefined) model = current?.model;
+			}
+			if (!description) throw new Error(`Managed preset "${name}" needs a non-empty description.`);
+			if (!systemPrompt) throw new Error(`Managed preset "${name}" needs a non-empty system prompt.`);
+			if (description.toLowerCase().startsWith("use this agent when") === false) {
+				throw new Error(
+					`Managed preset "${name}" description must start with 'Use this agent when…' (agent discovery trigger).`,
+				);
+			}
+			const policy = validatePresetPolicyFields(name, { tools, spawns, model });
+			const content = buildPresetFileContent({ name, description, systemPrompt, ...policy });
+			prevalidatePresetRevisionContent(name, content);
+			return createDraftRevision({
+				kind: "preset",
+				name,
+				content,
+				description,
+				expectedActive,
+				provenance: {
+					sessionId: input.provenance?.sessionId,
+					runId: input.provenance?.runId,
+					actor: input.provenance?.actor ?? "model",
+				},
+				agentDir: input.agentDir,
+			}).then(async draft => {
+				// Draft creation triggers retention (newest-20 + active + live-pinned).
+				void prunePresetRevisions(name, { agentDir: input.agentDir }).catch(() => {});
+				return draft;
+			});
+		},
+		input.agentDir,
+	);
 }
 
 /** Internal preset materialize without serialization (caller holds the transaction). */
@@ -797,18 +989,25 @@ export async function materializePresetRevision(
 ): Promise<{ path: string }> {
 	const safe = sanitizePresetName(name);
 	const cleanRev = validatePresetRevisionId(revId);
-	return withArtifactTransaction("preset", safe, async () => {
-		const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
-		const rootStat = await fs.lstat(root).catch(err => {
-			if (isEnoent(err)) return null;
-			throw err;
-		});
-		if (rootStat?.isSymbolicLink()) {
-			throw new Error("The managed-presets root is a symlink; refusing to operate outside the managed directory.");
-		}
-		await recoverInterruptedPresetTransaction(safe, opts).catch(() => {});
-		return materializePresetRevisionInner(safe, cleanRev, root, opts?.agentDir);
-	});
+	return withArtifactTransaction(
+		"preset",
+		safe,
+		async () => {
+			const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
+			const rootStat = await fs.lstat(root).catch(err => {
+				if (isEnoent(err)) return null;
+				throw err;
+			});
+			if (rootStat?.isSymbolicLink()) {
+				throw new Error(
+					"The managed-presets root is a symlink; refusing to operate outside the managed directory.",
+				);
+			}
+			await recoverInterruptedPresetTransaction(safe, opts);
+			return materializePresetRevisionInner(safe, cleanRev, root, opts?.agentDir);
+		},
+		opts?.agentDir,
+	);
 }
 
 export interface PromotePresetResult {
@@ -829,48 +1028,69 @@ export async function promotePresetRevision(
 ): Promise<PromotePresetResult> {
 	const safe = sanitizePresetName(name);
 	const cleanRev = validatePresetRevisionId(revId);
-	return withArtifactTransaction("preset", safe, async () => {
-		const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
-		await recoverInterruptedPresetTransaction(safe, opts).catch(() => {});
-		const revision = await readRevision("preset", safe, cleanRev, opts?.agentDir);
-		if (!revision) throw new Error(`Revision ${cleanRev} for preset "${safe}" not found`);
-		assertPresetRevisionIdentity(safe, revision);
-		prevalidatePresetRevisionContent(safe, revision.content);
-		if (revision.evaluations.length > 0 && !isEvaluatedPassing(revision)) {
-			throw new Error(
-				`Revision ${cleanRev} for preset "${safe}" has failing evaluations; it cannot be promoted. Fix the content and evaluate a new draft.`,
+	return withArtifactTransaction(
+		"preset",
+		safe,
+		async () => {
+			const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
+			await recoverInterruptedPresetTransaction(safe, opts);
+			const revision = await readRevision("preset", safe, cleanRev, opts?.agentDir);
+			if (!revision) throw new Error(`Revision ${cleanRev} for preset "${safe}" not found`);
+			assertPresetRevisionIdentity(safe, revision);
+			prevalidatePresetRevisionContent(safe, revision.content);
+			if (revision.evaluations.length > 0 && !isEvaluatedPassing(revision)) {
+				throw new Error(
+					`Revision ${cleanRev} for preset "${safe}" has failing evaluations; it cannot be promoted. Fix the content and evaluate a new draft.`,
+				);
+			}
+			// Never promote on a stale pass while an evaluation is still
+			// in-flight for this revision: the pending run may append a
+			// failing record after our check. Callers retry after settle.
+			if (hasLivePresetEvalPin(safe, cleanRev, opts?.agentDir)) {
+				throw new Error(
+					`Revision ${cleanRev} for preset "${safe}" has a pending evaluation; retry promotion after it settles.`,
+				);
+			}
+			const unevaluated = revision.evaluations.length === 0;
+			const before = await readActivePointer("preset", safe, opts?.agentDir);
+			const filePath = path.join(root, `${safe}.md`);
+			const oldContent = await Bun.file(filePath)
+				.text()
+				.catch(err => {
+					if (isEnoent(err)) return undefined;
+					throw err;
+				});
+			await writePresetTxn(
+				root,
+				safe,
+				cleanRev,
+				before.active,
+				"promote",
+				revision.state === "active" ? "active" : "draft",
+				revision.state === "active",
 			);
-		}
-		const unevaluated = revision.evaluations.length === 0;
-		const before = await readActivePointer("preset", safe, opts?.agentDir);
-		const filePath = path.join(root, `${safe}.md`);
-		const oldContent = await Bun.file(filePath)
-			.text()
-			.catch(err => {
-				if (isEnoent(err)) return undefined;
-				throw err;
-			});
-		await writePresetTxn(root, safe, cleanRev, before.active);
-		await materializePresetRevisionInner(safe, cleanRev, root, opts?.agentDir);
-		try {
-			await promoteRevision("preset", safe, cleanRev, {
-				discloseUnevaluated: opts?.discloseUnevaluated,
-				agentDir: opts?.agentDir,
-			});
-		} catch (err) {
+			await materializePresetRevisionInner(safe, cleanRev, root, opts?.agentDir);
 			try {
-				if (oldContent !== undefined) await stageAndReplacePresetFile(filePath, oldContent);
-				else await fs.rm(filePath);
-			} catch {
-				// Best-effort rollback.
+				await promoteRevision("preset", safe, cleanRev, {
+					discloseUnevaluated: opts?.discloseUnevaluated,
+					agentDir: opts?.agentDir,
+				});
+			} catch (err) {
+				try {
+					if (oldContent !== undefined) await stageAndReplacePresetFile(filePath, oldContent);
+					else await fs.rm(filePath);
+				} catch {
+					// Best-effort rollback.
+				}
+				await clearPresetTxn(root, safe).catch(() => {});
+				throw err;
 			}
 			await clearPresetTxn(root, safe).catch(() => {});
-			throw err;
-		}
-		await clearPresetTxn(root, safe).catch(() => {});
-		void prunePresetRevisions(safe, { agentDir: opts?.agentDir }).catch(() => {});
-		return { path: filePath, revId: cleanRev, disclosedUnevaluated: unevaluated };
-	});
+			void prunePresetRevisions(safe, { agentDir: opts?.agentDir }).catch(() => {});
+			return { path: filePath, revId: cleanRev, disclosedUnevaluated: unevaluated };
+		},
+		opts?.agentDir,
+	);
 }
 
 /** Roll the active preset pointer back to a prior revision and materialize it. */
@@ -881,44 +1101,83 @@ export async function rollbackPresetRevision(
 ): Promise<{ path: string }> {
 	const safe = sanitizePresetName(name);
 	const cleanRev = validatePresetRevisionId(revId);
-	return withArtifactTransaction("preset", safe, async () => {
-		const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
-		await recoverInterruptedPresetTransaction(safe, opts).catch(() => {});
-		const revision = await readRevision("preset", safe, cleanRev, opts?.agentDir);
-		if (!revision) throw new Error(`Revision ${cleanRev} for preset "${safe}" not found`);
-		assertPresetRevisionIdentity(safe, revision);
-		if (revision.state !== "active") {
-			throw new Error(
-				`Cannot rollback preset "${safe}" to revision ${cleanRev}: it was never active (state ${revision.state}). Rollback targets a previously-activated revision.`,
-			);
-		}
-		prevalidatePresetRevisionContent(safe, revision.content);
-		const before = await readActivePointer("preset", safe, opts?.agentDir);
-		const filePath = path.join(root, `${safe}.md`);
-		const oldContent = await Bun.file(filePath)
-			.text()
-			.catch(err => {
-				if (isEnoent(err)) return undefined;
-				throw err;
-			});
-		await writePresetTxn(root, safe, cleanRev, before.active);
-		await materializePresetRevisionInner(safe, cleanRev, root, opts?.agentDir);
-		try {
-			await rollbackRevision("preset", safe, cleanRev, opts?.agentDir);
-		} catch (err) {
+	return withArtifactTransaction(
+		"preset",
+		safe,
+		async () => {
+			const root = opts?.agentDir ? path.join(opts.agentDir, "managed-presets") : getManagedPresetsDir();
+			await recoverInterruptedPresetTransaction(safe, opts);
+			const revision = await readRevision("preset", safe, cleanRev, opts?.agentDir);
+			if (!revision) throw new Error(`Revision ${cleanRev} for preset "${safe}" not found`);
+			assertPresetRevisionIdentity(safe, revision);
+			if (revision.state !== "active") {
+				throw new Error(
+					`Cannot rollback preset "${safe}" to revision ${cleanRev}: it was never active (state ${revision.state}). Rollback targets a previously-activated revision.`,
+				);
+			}
+			prevalidatePresetRevisionContent(safe, revision.content);
+			const before = await readActivePointer("preset", safe, opts?.agentDir);
+			const filePath = path.join(root, `${safe}.md`);
+			const oldContent = await Bun.file(filePath)
+				.text()
+				.catch(err => {
+					if (isEnoent(err)) return undefined;
+					throw err;
+				});
+			await writePresetTxn(root, safe, cleanRev, before.active, "rollback", "active", true);
+			await materializePresetRevisionInner(safe, cleanRev, root, opts?.agentDir);
 			try {
-				if (oldContent !== undefined) await stageAndReplacePresetFile(filePath, oldContent);
-				else await fs.rm(filePath);
-			} catch {
-				// Best-effort rollback.
+				await rollbackRevision("preset", safe, cleanRev, opts?.agentDir);
+			} catch (err) {
+				try {
+					if (oldContent !== undefined) await stageAndReplacePresetFile(filePath, oldContent);
+					else await fs.rm(filePath);
+				} catch {
+					// Best-effort rollback.
+				}
+				await clearPresetTxn(root, safe).catch(() => {});
+				throw err;
 			}
 			await clearPresetTxn(root, safe).catch(() => {});
-			throw err;
+			void prunePresetRevisions(safe, { agentDir: opts?.agentDir }).catch(() => {});
+			return { path: filePath };
+		},
+		opts?.agentDir,
+	);
+}
+
+/** Revision-store root for managed presets; drafts live here with no active file. */
+export function getManagedPresetRevisionsDir(agentDir: string = getAgentDir()): string {
+	return path.join(agentDir, "managed-revisions", "presets");
+}
+
+/**
+ * Names with managed preset revision history, including inactive drafts
+ * that have no materialized agent file (U1). Backs management enumeration
+ * independently of spawn discovery: callers filter out names spawn
+ * discovery already serves and verify the rest through
+ * {@link listPresetRevisions} (stray directories without readable history
+ * never surface). Authored/bundled collision policy stays with callers.
+ */
+export async function listManagedPresetNames(opts?: { agentDir?: string }): Promise<string[]> {
+	let entries: string[];
+	try {
+		entries = await fs.readdir(getManagedPresetRevisionsDir(opts?.agentDir));
+	} catch (err) {
+		if (isEnoent(err)) return [];
+		throw err;
+	}
+	const out: string[] = [];
+	for (const entry of entries.sort()) {
+		if (!isValidPresetName(entry)) continue;
+		try {
+			const { revisions } = await listPresetRevisions(entry, opts);
+			if (revisions.length > 0) out.push(sanitizePresetName(entry));
+		} catch {
+			// Stray directory without readable history: not a managed preset.
 		}
-		await clearPresetTxn(root, safe).catch(() => {});
-		void prunePresetRevisions(safe, { agentDir: opts?.agentDir }).catch(() => {});
-		return { path: filePath };
-	});
+	}
+	return out;
 }
 
 /** List preset revision history with the active pointer. */
@@ -950,35 +1209,80 @@ export async function readActivePresetRevision(
 // ── Preset pinning (promotion affects subsequent work only) ───────────────
 
 const presetPinOwners = new Map<string, Set<string>>();
-const presetPinKey = (name: string, revId: string): string =>
-	`preset:${sanitizePresetName(name)}:${validatePresetRevisionId(revId)}`;
+const presetPinKey = (name: string, revId: string, agentDir?: string): string => {
+	const dir = path.resolve(agentDir ?? getAgentDir());
+	return `${dir}|preset:${sanitizePresetName(name)}:${validatePresetRevisionId(revId)}`;
+};
 
-/** Pin a preset revision so pruning retains it while a run is live. */
-export function pinPresetRevision(name: string, revId: string): void {
-	const key = presetPinKey(name, revId);
+function presetPinPrefix(name: string, agentDir?: string): string {
+	const dir = path.resolve(agentDir ?? getAgentDir());
+	return `${dir}|preset:${sanitizePresetName(name)}:`;
+}
+
+/**
+ * Pin a preset revision so pruning retains it while a run is live.
+ * Extant-or-reject: optimistic insert keeps sync callers working, awaiting
+ * surfaces missing-history rejection.
+ */
+export function pinPresetRevision(name: string, revId: string, agentDir?: string): Promise<void> {
+	const safe = sanitizePresetName(name);
+	const cleanRev = validatePresetRevisionId(revId);
+	const key = presetPinKey(safe, cleanRev, agentDir);
 	let owners = presetPinOwners.get(key);
 	if (!owners) {
 		owners = new Set();
 		presetPinOwners.set(key, owners);
 	}
 	owners.add("__manual__");
+	return withArtifactTransaction(
+		"preset",
+		safe,
+		async () => {
+			const rev = await readRevision("preset", safe, cleanRev, agentDir);
+			if (!rev) {
+				const cur = presetPinOwners.get(key);
+				cur?.delete("__manual__");
+				if (cur && cur.size === 0) presetPinOwners.delete(key);
+				throw new Error(`Cannot pin preset "${safe}" revision ${cleanRev}: revision not found.`);
+			}
+			assertPresetRevisionIdentity(safe, rev);
+		},
+		agentDir,
+	).then(() => undefined);
 }
 
-/** Owner-aware pin for a live run. */
-export function pinPresetRevisionForRun(name: string, revId: string, runId: string): void {
+/** Owner-aware pin for a live run. Extant-or-reject like {@link pinPresetRevision}. */
+export function pinPresetRevisionForRun(name: string, revId: string, runId: string, agentDir?: string): Promise<void> {
 	if (!runId.trim()) throw new Error("pinPresetRevisionForRun needs a non-empty run id");
-	const key = presetPinKey(name, revId);
+	const safe = sanitizePresetName(name);
+	const cleanRev = validatePresetRevisionId(revId);
+	const key = presetPinKey(safe, cleanRev, agentDir);
 	let owners = presetPinOwners.get(key);
 	if (!owners) {
 		owners = new Set();
 		presetPinOwners.set(key, owners);
 	}
 	owners.add(`run:${runId}`);
+	return withArtifactTransaction(
+		"preset",
+		safe,
+		async () => {
+			const rev = await readRevision("preset", safe, cleanRev, agentDir);
+			if (!rev) {
+				const cur = presetPinOwners.get(key);
+				cur?.delete(`run:${runId}`);
+				if (cur && cur.size === 0) presetPinOwners.delete(key);
+				throw new Error(`Cannot pin preset "${safe}" revision ${cleanRev}: revision not found.`);
+			}
+			assertPresetRevisionIdentity(safe, rev);
+		},
+		agentDir,
+	).then(() => undefined);
 }
 
 /** Release a run's pin on a preset revision. */
-export function unpinPresetRevision(name: string, revId: string): void {
-	const key = presetPinKey(name, revId);
+export function unpinPresetRevision(name: string, revId: string, agentDir?: string): void {
+	const key = presetPinKey(name, revId, agentDir);
 	const owners = presetPinOwners.get(key);
 	if (!owners) return;
 	owners.delete("__manual__");
@@ -986,18 +1290,17 @@ export function unpinPresetRevision(name: string, revId: string): void {
 }
 
 /** Release one run's pin; other runs' pins survive. */
-export function unpinPresetRevisionForRun(name: string, revId: string, runId: string): void {
-	const key = presetPinKey(name, revId);
+export function unpinPresetRevisionForRun(name: string, revId: string, runId: string, agentDir?: string): void {
+	const key = presetPinKey(name, revId, agentDir);
 	const owners = presetPinOwners.get(key);
 	if (!owners) return;
 	owners.delete(`run:${runId}`);
 	if (owners.size === 0) presetPinOwners.delete(key);
 }
 
-/** Pins for one preset, for prune integration. */
-export function getPresetPins(name: string): Set<string> {
-	const safe = sanitizePresetName(name);
-	const prefix = `preset:${safe}:`;
+/** Pins for one preset in one store, for prune integration. */
+export function getPresetPins(name: string, agentDir?: string): Set<string> {
+	const prefix = presetPinPrefix(name, agentDir);
 	const out = new Set<string>();
 	for (const key of presetPinOwners.keys()) {
 		if (key.startsWith(prefix)) out.add(key.slice(prefix.length));
@@ -1012,7 +1315,24 @@ export function clearPresetPinsForTests(): void {
 
 /** Prune preset history to the latest twenty, retaining pins and the active revision. */
 export async function prunePresetRevisions(name: string, opts?: { agentDir?: string }): Promise<ArtifactRevision[]> {
-	return pruneRevisions("preset", sanitizePresetName(name), getPresetPins(sanitizePresetName(name)), opts?.agentDir);
+	// Freeze the store at dispatch and detach authority so auto-prune triggers
+	// inside a mutation queue behind the holder, holding ownership through
+	// unlink with a fresh pin snapshot taken INSIDE the lock.
+	const agentDir = opts?.agentDir ?? getAgentDir();
+	const safe = sanitizePresetName(name);
+	return withoutRevisionTransactionScope(() =>
+		withArtifactTransaction(
+			"preset",
+			safe,
+			async () => {
+				const pinned = getPresetPins(safe, agentDir);
+				return pruneRevisionsLocked("preset", safe, pinned, agentDir, revId =>
+					getPresetPins(safe, agentDir).has(revId),
+				);
+			},
+			agentDir,
+		),
+	);
 }
 
 // ── Preset evaluation ─────────────────────────────────────────────────────
@@ -1025,6 +1345,8 @@ export interface PresetEvalRequest {
 	agentDir?: string;
 	/** Parent session context for the production executor (real task execution). */
 	parent?: ToolSession;
+	/** Caller abort signal: aborts the run, records nothing, never passes/promotes. */
+	signal?: AbortSignal;
 }
 
 export interface PresetEvalOutcome {
@@ -1032,6 +1354,10 @@ export interface PresetEvalOutcome {
 	summary: string;
 	runId?: string;
 	sessionId?: string;
+	/** Resolved evaluation model selector (e.g. "provider/id"); recorded for audit. */
+	model?: string;
+	/** How the evaluation model was resolved (exact/role/pattern/fallback basis). */
+	modelBasis?: string;
 }
 
 export type PresetEvalRunner = (
@@ -1056,16 +1382,22 @@ export function isPresetEvalRunActive(): boolean {
  * Evaluate a draft preset revision against an explicit task + expected
  * observable outcome. Records the result; never promotes. Model-role
  * resolution and task execution restrictions are preserved by routing the run
- * through the existing restricted task execution seam. Append serialized so
- * concurrent evals all survive.
+ * through the existing restricted task execution seam. The runner executes
+ * outside the transaction; only the metadata append runs serialized through
+ * the shared per-artifact transaction. Cancellation throws and records
+ * nothing: a cancelled run never passes and can never promote.
  */
 export async function evaluatePresetRevision(
 	name: string,
 	revId: string,
 	request: PresetEvalRequest,
-): Promise<{ passed: boolean; summary: string }> {
+): Promise<{ passed: boolean; summary: string; model?: string; modelBasis?: string }> {
 	const safe = sanitizePresetName(name);
 	const cleanRev = validatePresetRevisionId(revId);
+	const signal = request.signal;
+	if (signal?.aborted) {
+		throw new Error(`Evaluation of preset "${safe}" revision ${cleanRev} aborted before execution.`);
+	}
 	const task = request.task.trim();
 	const expectedOutcome = request.expectedOutcome.trim();
 	if (!task) throw new Error(`Evaluation of preset "${safe}" needs an explicit task.`);
@@ -1073,48 +1405,81 @@ export async function evaluatePresetRevision(
 	const revision = await readRevision("preset", safe, cleanRev, request.agentDir);
 	if (!revision) throw new Error(`Revision ${cleanRev} for preset "${safe}" not found`);
 	assertPresetRevisionIdentity(safe, revision);
-	if (!presetEvalRunner) {
+	const runner = presetEvalRunner;
+	if (!runner) {
 		throw new Error(
 			`No evaluation executor is wired for preset "${safe}" (owner patch: task-execution seam). ` +
 				`The revision stays unevaluated — unevaluated content is never treated as passed.`,
 		);
 	}
 	presetEvalRunDepth++;
-	const evalOwner = request.runId?.trim() || `eval:${safe}:${cleanRev}`;
+	// Unique internal lease per evaluation (mirror of the skill side): runId
+	// stays provenance-only so colliding run ids never release live pins.
+	const lease = newPresetEvalLease();
 	try {
-		pinPresetRevisionForRun(safe, cleanRev, evalOwner);
+		pinPresetEvalLease(safe, cleanRev, lease, request.agentDir);
 	} catch {
 		// Pinning is retention hygiene, never evaluation fate.
 	}
 	try {
-		const outcome = await presetEvalRunner({
-			...request,
-			task,
-			expectedOutcome,
-			name: safe,
-			revId: cleanRev,
-			content: revision.content,
-		});
-		await serializePresetEvalAppend(safe, cleanRev, async () =>
-			recordEvaluation(
-				"preset",
-				safe,
-				cleanRev,
-				{
+		const outcome = await raceWithAbortSignal(
+			signal,
+			async () =>
+				runner({
+					...request,
 					task,
 					expectedOutcome,
-					passed: outcome.passed,
-					summary: outcome.summary,
-					runId: outcome.runId ?? request.runId,
-					sessionId: outcome.sessionId ?? request.sessionId,
-				},
-				request.agentDir,
-			),
+					name: safe,
+					revId: cleanRev,
+					content: revision.content,
+				}),
+			() => new Error(`Evaluation of preset "${safe}" revision ${cleanRev} aborted during execution.`),
 		);
-		return { passed: outcome.passed, summary: outcome.summary };
+		if (signal?.aborted) {
+			throw new Error(
+				`Evaluation of preset "${safe}" revision ${cleanRev} aborted; nothing recorded and nothing promoted.`,
+			);
+		}
+		await serializePresetEvalAppend(
+			safe,
+			cleanRev,
+			async () => {
+				if (signal?.aborted) {
+					throw new Error(
+						`Evaluation of preset "${safe}" revision ${cleanRev} aborted; nothing recorded and nothing promoted.`,
+					);
+				}
+				const current = await readRevision("preset", safe, cleanRev, request.agentDir);
+				if (!current) throw new Error(`Revision ${cleanRev} for preset "${safe}" not found`);
+				assertPresetRevisionIdentity(safe, current);
+				if (signal?.aborted) {
+					throw new Error(
+						`Evaluation of preset "${safe}" revision ${cleanRev} aborted; nothing recorded and nothing promoted.`,
+					);
+				}
+				return recordEvaluation(
+					"preset",
+					safe,
+					cleanRev,
+					{
+						task,
+						expectedOutcome,
+						passed: outcome.passed,
+						summary: outcome.summary,
+						runId: outcome.runId ?? request.runId,
+						sessionId: outcome.sessionId ?? request.sessionId,
+						model: outcome.model,
+						modelBasis: outcome.modelBasis,
+					},
+					request.agentDir,
+				);
+			},
+			request.agentDir,
+		);
+		return { passed: outcome.passed, summary: outcome.summary, model: outcome.model, modelBasis: outcome.modelBasis };
 	} finally {
 		try {
-			unpinPresetRevisionForRun(safe, cleanRev, evalOwner);
+			unpinPresetEvalLease(safe, cleanRev, lease, request.agentDir);
 		} catch {
 			// Best-effort release.
 		}

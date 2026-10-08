@@ -27,11 +27,16 @@ import {
 } from "@harvest/pi-utils/dirs";
 import { fatal, interceptUnhandledRejections } from "@harvest/pi-utils/postmortem";
 import { setProcessName } from "@harvest/pi-utils/process-name";
-import { declareWorkerHostEntry, installWorkerInbox, isWorkerHostSelector } from "@harvest/pi-utils/worker-host";
+import {
+	consumeWorkerInbox,
+	declareWorkerHostEntry,
+	installWorkerInbox,
+	isWorkerHostSelector,
+	type WorkerInbox,
+} from "@harvest/pi-utils/worker-host";
 import { BLOB_BROKER_WORKER_ARG } from "./blob-broker/protocol";
 import { installProfileAlias, resolveProfileAliasCommandFromProcess } from "./cli/profile-alias";
 import { extractProfileFlags } from "./cli/profile-bootstrap";
-import { startJsEvalProcess } from "./eval/js/process-entry";
 import type { WorkerInbound as JsWorkerInbound, WorkerOutbound as JsWorkerOutbound } from "./eval/js/worker-protocol";
 import { DAEMON_BROKER_WORKER_ARG } from "./launch/protocol";
 import { TERMINAL_OUTPUT_WORKER_ARG } from "./launch/terminal-output-worker-protocol";
@@ -210,14 +215,17 @@ async function runWorkerEntrypoint(arg: string | undefined): Promise<boolean> {
 		return true;
 	}
 	if (arg === JS_EVAL_PROCESS_ARG) {
-		// The bootstrap-safe interceptor seam is linked statically so this selector
-		// cannot load profile-scoped environment state after dispatch has begun.
+		// Keep the evaluator graph out of normal startup. Buffer the parent's
+		// immediate init before awaiting its module, as the thread host does.
+		installWorkerInbox(process);
+		const inbox = consumeWorkerInbox();
+		const { startJsEvalProcess } = await import("./eval/js/process-entry");
 		// The JS evaluator forwards user-controlled payloads (tool-call args,
 		// display outputs); a non-serializable one must fail that cell, not
 		// SIGKILL the kernel and erase the eval session's state.
 		await runIpcSubprocessWorker<JsWorkerInbound, JsWorkerOutbound>(
 			transport => startJsEvalProcess(transport, interceptUnhandledRejections),
-			{ rethrowConnectedSendErrors: true },
+			{ rethrowConnectedSendErrors: true, inbox: inbox ?? undefined },
 		);
 		return true;
 	}
@@ -283,6 +291,7 @@ async function runIpcSubprocessWorker<In, Out>(
 		onMessage(handler: (message: In) => void): () => void;
 	}) => void,
 	options?: {
+		inbox?: WorkerInbox;
 		/**
 		 * Rethrow send failures while the IPC channel is still connected instead
 		 * of shutting down. A connected-channel failure means this particular
@@ -339,6 +348,7 @@ async function runIpcSubprocessWorker<In, Out>(
 		sendAndFlush,
 		onMessage(handler) {
 			const wrap = (data: unknown): void => handler(data as In);
+			if (options?.inbox) return options.inbox.bind(wrap);
 			process.on("message", wrap);
 			return () => {
 				process.off("message", wrap);
