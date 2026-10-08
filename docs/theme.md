@@ -22,7 +22,7 @@ Theme files are JSON objects validated against the runtime schema in `theme.ts` 
 Top-level fields:
 
 - `name` (required)
-- `colors` (required; all color tokens required)
+- `colors` (required; legacy tokens required, semantic surfaces optional)
 - `vars` (optional; reusable color variables)
 - `export` (optional; HTML export colors)
 - `symbols` (optional)
@@ -38,7 +38,7 @@ Color values accept:
 
 ## Required and optional color tokens
 
-All tokens below are required in `colors` except `thinkingMax`, which is optional for compatibility and falls back to `thinkingXhigh`.
+Legacy tokens below are required in `colors` except `thinkingMax`, which falls back to `thinkingXhigh`. The semantic surface tokens are optional so existing custom themes remain loadable.
 
 ### Core text and borders (11)
 
@@ -47,6 +47,12 @@ All tokens below are required in `colors` except `thinkingMax`, which is optiona
 ### Background blocks (7)
 
 `selectedBg`, `userMessageBg`, `customMessageBg`, `toolPendingBg`, `toolSuccessBg`, `toolErrorBg`, `statusLineBg`
+
+### Semantic surfaces (optional)
+
+`screenBg` paints the fullscreen workspace, `panelBg` paints sidebars and output panels, `raisedBg` paints hovered/raised rows, `composerBg` paints the prompt editor, and `modalBg` paints dialogs and managers. Selected rows use `selectedBg` across their allocation.
+
+Legacy fallback chains resolve in `src/modes/theme/loader.ts`: screen to terminal default; panel to tool success/status; raised to selection/pending; composer to raised/pending; modal to panel/success. An explicitly empty token retains terminal default and is not treated as missing. Surface fill restores the enclosing background after nested full/background resets, while retaining explicit nested backgrounds, OSC hyperlinks, and cursor/image protocols.
 
 ### Message/tool text (5)
 
@@ -97,11 +103,11 @@ Invalid override keys are ignored and logged (`logger.debug`).
 
 #### Box-drawing borders
 
-All outlined chrome — tool-result frames, overlays, code fences, the editor, the welcome banner — draws with the `boxRound.*` tokens: rounded corners (`╭╮╰╯`) plus tee/cross junctions (`├┤┬┴┼`, which have no rounded Unicode form, so they are sourced from the `boxSharp.*` tokens). Markdown tables are the sole exception and keep the fully sharp `boxSharp.*` set (`┌┐└┘`).
+Outlined detail frames use `boxRound.*` tokens, with junctions from `boxSharp.*`; Markdown tables retain sharp borders. Dialogs use filled surfaces and routine activity uses compact rails. Composer shapes and scrollbars receive the same symbol preset through the TUI adapters. ASCII changes application chrome rather than transliterating message/file content.
 
 Override behavior follows from that split:
 
-- `boxRound.{topLeft,topRight,bottomLeft,bottomRight,horizontal,vertical}` restyle every border's corners and edges.
+- `boxRound.{topLeft,topRight,bottomLeft,bottomRight,horizontal,vertical}` restyle rounded detail frames.
 - `boxSharp.{cross,teeDown,teeUp,teeRight,teeLeft}` restyle dividers/junctions everywhere (rounded frames and tables alike).
 - `boxSharp.{topLeft,topRight,bottomLeft,bottomRight}` now affect markdown table corners only.
 
@@ -143,18 +149,14 @@ Var reference behavior:
 
 ## Terminal color mode behavior
 
-Color mode detection (`detectColorMode`):
-
-- `COLORTERM=truecolor|24bit` => truecolor
-- `WT_SESSION` => truecolor
-- `TERM` in `dumb`, `linux`, or empty => 256color
-- otherwise => truecolor
+Color mode detection (`detectColorMode`) reuses the central terminal capability model and `detectColorLevel` policy. Explicit `FORCE_COLOR` takes precedence; `FORCE_COLOR=0`, the presence of `NO_COLOR`, or `TERM=dumb` disables color. Otherwise terminal capabilities choose truecolor or 256 color. Theme callbacks remain usable in color-free mode, with selection/focus/status conveyed through text and symbols. Markdown color swatches and syntax/Mermaid coloring also follow this policy.
 
 Conversion behavior:
 
 - hex -> `Bun.color(..., "ansi-16m" | "ansi-256")`
 - numeric -> `38;5` / `48;5` ANSI
 - `""` -> default fg/bg reset
+- color-free -> no foreground/background SGR from theme styling
 
 ## Runtime switching behavior
 
@@ -176,10 +178,12 @@ Auto theme slot selection uses terminal appearance in this order:
 
 Current defaults from settings schema:
 
-- `theme.dark = "titanium"`
-- `theme.light = "light"`
+- `theme.dark = "harvest"`
+- `theme.light = "harvest-light"`
 - `symbolPreset = "unicode"`
 - `colorBlindMode = false`
+
+Explicit older/custom theme choices remain selected. Interactive standalone entrypoints use `initConfiguredTheme()` to resolve effective preferences; its read-only settings path does not open the agent database or persist a migration. Startup prepaint uses cached preferences when available and the same fresh default slots otherwise.
 
 ### Explicit switching (`setTheme`)
 

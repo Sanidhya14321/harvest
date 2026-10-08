@@ -4,6 +4,20 @@
 
 ### Fixed
 
+- Active tab mouse-close no longer deadlocks navigation: the neighbor switch runs as the same queued operation and is verified before the tab closes.
+- Deleting a saved-but-not-live session now removes its exact persisted file and artifacts (cold UUID resolution with project validation); unknown IDs reject and storage failures retain discoverability. The deletion tombstone publishes only after storage removal succeeds.
+- Archive migration publishes replacement metadata before removing the legacy input, keeps per-project attribution, and survives concurrent loads and write failures.
+- Every open and recently closed tab records its actual session UUID (including model-created and cold-opened tabs); restart, rename, and requested-ID reopen preserve identity, and legacy path-only records recover without invented IDs.
+- Model-created child sessions inherit the caller's effective tool limits, spawn policy, project scope, permission policy, model/settings, credentials, lineage, and depth; background callers propagate their own snapshot, and capacity reservation is atomic.
+- The sessions tool resolves the creator's trusted registry identity, so a returned child UUID works immediately for inspect/rename/send/stop; foreign denial, grant expiry, and self-stop prohibition are preserved.
+- Palette unknown extension/skill metadata now prepares a draft instead of executing immediately; the visible list budget derives from the actual overlay allocation with a compact fallback at very short heights and central ASCII symbols.
+- The Agents Hub generates managed presets through the isolated architect and revision service (draft/evaluate/promote/rollback with visible restrictions) instead of writing authored directories directly.
+- Skill/preset evaluations resolve credentials through the shared registry contract (stored/OAuth/fallbacks) and models through the shared task resolver (exact/role/pattern/fallbacks); cancellation aborts the child promptly and never passes; evaluation pins use unique leases and recovery coordinates with the mutation transaction.
+- Draft-only managed presets now appear in the Agents Hub with revision history immediately after saving, even before promotion; inactive drafts never execute and authored agents are never shadowed.
+- Hub preset evaluations run with the owning session's model, credentials, and restrictions, render running/cancelled/unavailable states with operator cancel, and never rewrite a closed view with late results; revision inspection shows the effective execution restrictions.
+- Managed skills gained a revision manager (history, inspect, evaluate, cancel, promote, rollback, restriction display) with explicit unevaluated-promotion disclosure; stale active pointers reject as conflicts.
+- Attachment chip cards no longer overflow narrow terminals, omitted attachments stay reachable in the draft, and image-only, large-paste, clipboard-failure, and external-editor flows submit or degrade truthfully through the real input paths.
+
 - Mouse session switching and New session work with the real UI, preserve drafts on failure, and coalesce repeated navigation.
 - Hidden tabs cannot be clicked, overflow arrows open adjacent sessions, and pointer hover highlights tab targets.
 - Failed new-tab creation preserves active runs and releases unopened or unattached session resources.

@@ -1,0 +1,184 @@
+{
+  "profile": "representative",
+  "preset": "unicode",
+  "captures": [
+    {
+      "scene": "home",
+      "theme": "harvest",
+      "file": "home-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "home",
+      "theme": "harvest",
+      "file": "home-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "home",
+      "theme": "harvest",
+      "file": "home-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "session",
+      "theme": "harvest",
+      "file": "session-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "session",
+      "theme": "harvest",
+      "file": "session-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "session",
+      "theme": "harvest",
+      "file": "session-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "palette",
+      "theme": "harvest",
+      "file": "palette-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "palette",
+      "theme": "harvest",
+      "file": "palette-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "palette",
+      "theme": "harvest",
+      "file": "palette-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "settings",
+      "theme": "harvest",
+      "file": "settings-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "settings",
+      "theme": "harvest",
+      "file": "settings-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "settings",
+      "theme": "harvest",
+      "file": "settings-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "models",
+      "theme": "harvest",
+      "file": "models-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "models",
+      "theme": "harvest",
+      "file": "models-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "models",
+      "theme": "harvest",
+      "file": "models-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "sessions",
+      "theme": "harvest",
+      "file": "sessions-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "sessions",
+      "theme": "harvest",
+      "file": "sessions-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "sessions",
+      "theme": "harvest",
+      "file": "sessions-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "tree",
+      "theme": "harvest",
+      "file": "tree-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "tree",
+      "theme": "harvest",
+      "file": "tree-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "tree",
+      "theme": "harvest",
+      "file": "tree-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "agents",
+      "theme": "harvest",
+      "file": "agents-0-100x30.json",
+      "columns": 100,
+      "rows": 30
+    },
+    {
+      "scene": "agents",
+      "theme": "harvest",
+      "file": "agents-1-24x4.json",
+      "columns": 24,
+      "rows": 4
+    },
+    {
+      "scene": "agents",
+      "theme": "harvest",
+      "file": "agents-2-100x30.json",
+      "columns": 100,
+      "rows": 30
+    }
+  ],
+  "retainedFixtures": [
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-HTEdSl",
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-DhJrpt",
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-GcoZUG",
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-mSPd6n",
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-G85c0F",
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-HTCoo7",
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-9TZyNn",
+    "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-visual-capture-DAyEHu"
+  ]
+}

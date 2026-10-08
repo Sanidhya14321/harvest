@@ -1,6 +1,6 @@
 # Autonomous Memory
 
-For separate project/user Markdown knowledge, skill page indexing, graph links, and Laya reranking in the main agent loop, see [Markdown brains](./markdown-brain.md).
+For separate project/user Markdown knowledge, skill page indexing, and graph links, see [Markdown brains](./markdown-brain.md). (The former Laya rerank step was removed; retrieval uses deterministic lexical/graph order.)
 
 Oh My Pi supports five memory modes. Memory is disabled by default; select one backend via `/settings` or `config.yml`:
 

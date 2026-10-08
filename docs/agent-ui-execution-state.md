@@ -191,3 +191,97 @@ Correction progress (2026-10-07):
 - Verifier follow-ups fixed: D1 empty-Enter (isEmptySubmit + test), D2 sessions.md wording, D3 skill run pins + test.
 - Smoke: 10/12 subprobes pass; lspMux + blobBroker stall on win32 socket probe (pre-existing, untouched code).
 - User-data incident: test artifacts leaked into ~/.harvest/agent (5 skills + histories + 1 preset); removed exactly those; budget tests now isolated via setAgentDir(temp).
+
+---
+
+## Latest-review correction phase (2026-10-08, HEAD 5c63880, clean tree)
+
+Recon (3 parallel explore, read-only, completed 2026-10-08):
+- Recon-A ses_ef05baeb6ffeVwC4u68zCpy3dE: A1-A7 ALL CONFIRMED BROKEN (full file:line in handoff).
+- Recon-B ses_ef05baeafffeiIdmDVvtkVMbr1: B1-B7 ALL CONFIRMED BROKEN (B5c retention triggers FIXED but depend on broken pins).
+- Recon-C ses_ef05baea9ffeNy8JKNSuMVxKEU: C1-C5 ALL VERIFIED (C1 projection defeats leaf; C2 budget/ASCII; C3 hub bypass; C4 matrix gaps; C5 memory.md + test path + echo test stale; notices already correct in src).
+
+Ownership lock (one file = one owner):
+- Owner: interactive-mode.ts, sdk.ts, input/selector/focus/command controllers, composer.ts, modes/types.ts, docs ledgers.
+- A: session facade/tabs/persistence/view-state/live-session-factory.ts, tools/sessions.ts + focused session tests. Registry changes need owner coordination.
+- B: autolearn/*, task/agents.ts, tools/presets.ts + manage-skill.ts + learn.ts, static prompts/tests. SDK changes via precise patch requests to owner.
+- C: palette/management components (command-palette.ts, agents-hub.ts), feature UI tests, docs/memory.md + coverage rows for owned flows. Shared-controller changes via patch requests.
+- Verifier (later, read-only): production-flow audit.
+
+Interface decisions pending (owner settles before/during implementation):
+- Navigation: single Serial owner; internal transition for in-queue close (A1).
+- Facade delete/archive: cold resolution + tombstone-after-success + per-project stores + coordinated migration (A2/A3).
+- Tab IDs: noteId at every transition incl. model/cold; no invented IDs (A4).
+- Caller snapshot: explicit trusted snapshot incl. tool/spawn/permission/scope/registry/depth; background caller uses own (A5/A6/A7).
+- Eval: centralized credential contract + model resolver reuse + unique lease pins + signal threading + transaction-coordinated recovery (B1-B7).
+- Palette: preserve undefined metadata; budget from actual allocation + compact fallback + ASCII (C1/C2).
+
+Workers dispatched: A ses_* / B ses_* / C ses_* (record on launch). Next: implement → integrate → verify → correct → handoff.
+
+---
+
+## Latest-review implementation (2026-10-07, owner)
+
+Workers (all completed, no commits):
+- A ses_eeb868f71ffe14VY035xN4UTge: A2 cold delete + A3 atomic migration + A4 ensureTabId/backfill + A5 snapshot/policy + A6 callerRegistryIds + A7 session-scoped seam + dispatchInitialTaskOnce; 4 new test files (22 tests). Pre-existing tree already held partial A2/A3/A4/A5 which worker kept+verified.
+- B ses_eeb78520effe6ON8ZLI96q3wiy: fixed committed HEAD type breakage (missing hasLiveSkillEvalPin/serializeSkillEvalAppend — half-applied B5 edit in dirty tree); AsyncLocalStorage txn re-entrancy (fixed 5-append collapse); raceWithAbortSignal + createToolEvalSignal; unique eval leases; B1 credential fallback; B6 abort threading; B7 shared model resolver; B3 merge-inside-txn; agentDir threading; 23-test lifecycle suite. Gray edit: discovery/builtin.ts loadManagedSkills recovery (+16 lines).
+- C ses_eeb342038ffe4VZVPoEdb157ej: agents-hub managed-preset operator flow (isolated architect + revision manager + setAgentsHubArchitectRunner seam); projectPendingSlashCommands + paletteOverlayRows component helpers; tombstones test corrected to repo walk-up; echo test replaced with real inert assertions; composer attachment tests; memory.md historical; 65/65 across 11 owned files.
+
+Owner applied (this session):
+- A1: close-tab op now calls internal #resumeSessionView instead of public handleResumeSession (Serial deadlock fixed).
+- A P1: factory uses snapshotTrustedCaller + openLiveAgentSessionFromSnapshot + ensureTabId + dispatchInitialTaskOnce (trusted callerId/callerTaskDepth/callerPolicy inputs).
+- A P2: recordSessionTransition + /tab open (match.session.id) + both resume paths + constructor record UUIDs via tolerant #noteActiveTabId helper (no invented IDs; old stubs without getSessionId keep path-only behavior — fixed 8 regressions in session-tabs-controller.test).
+- A type-compat: TrustedCallerSource.session getAgentId widened to string|null|undefined.
+- C patch #1: pendingSources via projectPendingSlashCommands (unknown stays undefined → draft fallback active).
+- C patch #2: overlay budget via paletteOverlayRows at open + rebudget (no min-8 overstatement).
+- B suggestion accepted as-is (lease pins already order prune-vs-append); no change made.
+
+---
+
+## Latest-review close (2026-10-07)
+
+Verifier ses_eeb085cdcffe5hCugGRC9noKtf (read-only): ALL IDs FIXED, ~238 pass / 0 fail across 20 suites. Two minor defects filed — both fixed + re-verified:
+1. Optimistic tab close on failed delete → tab now closes only after storage removal succeeds (facade.delete reorder; 17/17 delete suites pass).
+2. Coverage short-name ambiguity → exact test-path mapping note added under §21.
+Gates: check:types 0 errors; lint 0/0; check red ONLY from 42 pre-existing untouched-file drift (verified zero overlap with changed files). Captures: 18 VT JSON + PNG in $TEMP/opencode/harvest-ui-2026-10-07b (tabs × + hub Sessions inspected; ○ rasterizes as "o", not a defect). Perf: transcript-compose 0.945 / p95 0.44ms / bytes 1.000. User dirs verified clean (no test leaks). No commit/push/publish/release/issues/comments. Changes uncommitted (31 entries).
+
+---
+
+## Independent re-check (2026-10-07, owner, post-handoff audit)
+
+Re-ran everything from scratch against the current tree (HEAD 5c63880 + 32 uncommitted entries):
+- `check:types` exit 0; `lint` 0 warnings/errors; `check` red only from the same 42 pre-existing drift files.
+- Focused suites, all EXIT:0 — A×4 (22), B eval-lifecycle (23), B hardening/revisions/presets/budgets (48), C×5 (35), facade/delete-seal/sessions-tool/laya-removal/home-detached (37), captures/dispatch/budget/tabs-controller/live-tab-nav (31).
+- Captures regenerated with `HARVEST_TERMINAL_CAPTURE_DIR` set (`harvest-ui-check`, 21 JSON → PNG) and PNGs inspected: 24×4 ultra-compact shows selected action + query (C2); hub revision manager shows draft + passing eval + actions (C3); tabs × + hub Sessions rows clean.
+- Wiring spot-checks: A1 internal `#resumeSessionView` (interactive-mode.ts:1996); snapshot factory + `dispatchInitialTaskOnce` + `ensureTabId`; `projectPendingSlashCommands` + `paletteOverlayRows` at open + rebudget; facade seal → delete → tombstone → close-tab order; zero active Laya refs in `src`.
+- Singleton bucket (`ci-test-ts.ts coding-agent-singleton`, clean run): 74 unique failing tests, every one classified — ACP×9 identical at stashed baseline; managed-skills symlinks×4 identical at baseline (Windows privilege); single-test repro of `python-cleanup` fails identically alone at baseline (warmup-dependent flake); all remaining fails in files this diff never touches (tunnels, ttsr, SYSTEM.md, MCP parity, edit-engine, PTY/broker, `*_test` infra). With-changes vs baseline 6-file sample: 12 vs 11 fails, delta = the flaky python-cleanup timeout (26s wall-clock vs 10s test cap under load).
+- `coding-agent-runtime` bucket launched in background; `coding-agent-ui` + full smoke remain host-blocked per baseline (ui timeout; blob/LSP win32 socket stalls in untouched paths — re-documented, not re-run since paths unchanged).
+- Incidental: untracked `docs/opencode-ui-production-repair-prompt.md` appeared 22:34 during verification (not created by this work; no source references it) — left untouched.
+- No commits/pushes/releases/issues/comments; user agent dirs verified empty of test artifacts.
+
+---
+
+## Production integration assignment (2026-10-08, HEAD 5c63880, 33 entries)
+
+Preflight: baseline recorded in `harvest-baseline-20261008/` (HEAD, starting.diff 462KB, starting.stat, 8 new test files). No reset/stash/clean used for baseline (file APIs only; stash used solely for read-only baseline comparisons, always popped; tree verified 33 entries after each).
+
+Recon (3 parallel explore, read-only, all REPRODUCED with file:line):
+- Recon-S ses_ee8a1136effedKI33YJgQcq8j8: S1 mouse geometry untranslated; S2 toolNames dropped (AgentSession has no surface); S3 global factory still normal binding; S4 seal-before-delete with no recovery; S5 stale-cache clobber; S6 warm reopen bypass; S7 neighbor wrap.
+- Recon-R ses_ee8a112d5ffeQqyyl6LmEiVNxS: R1 prune unlocked/stale snapshots/fire-and-forget outliving lock/ALS stale authority/pins-without-existence; R2 append commits after abort (no post-queue cancel check); R3 recovery resets historically-published V1 to draft (journal lacks op/published evidence; callers swallow via .catch(()=>{})).
+- Recon-C ses_ee8a112a1ffe3TalGQ9xb4SSOY: U1 drafts invisible (file-scan discovery, path-substring identity); U2 Hub evaluate throws parent-context, zero evals; U3 gap ignored at 28/29 (wide-label truncation already OK; omitted-chip keyboard + empty-row OK); U4 matrix future/TODO rows, image-only test uses own predicate, tombstones root resolves to packages/ (vacuous), worktree listing overclaimed (single-child resolve + file Changes + CLI list only).
+
+Ownership lock (one file = one owner):
+- Owner: sdk.ts, interactive-mode.ts, input/selector/focus/command controllers, composer.ts, modes/types.ts, ledgers + coverage.
+- A: session-management-facade.ts, live-session-factory.ts, session-tabs.ts, persistence/storage/view-state, tools/sessions.ts + focused session tests.
+- B: autolearn/*, task/agents.ts, presets/manage-skill/learn + static prompts/tests.
+- C: composer.ts(shared with owner — C proposes, owner applies), tab strip, agents-hub/activity, revision components, attachment-chips, feature UI tests/captures, memory.md line.
+- Verifier (later, read-only).
+
+Settled interfaces:
+1. Owner+A: typed trusted caller snapshot from real SDK/runtime authority (must solve AgentSession exposing no toolNames/restrict — sanctioned seam, no guessed props/casts); owner/session-scoped creation binding replacing global as normal path (global fallback only for explicitly supported adapters).
+2. Owner+C: single composed-frame geometry contract (screen→control translation once at owning boundary; hidden/clipped = no hit target).
+3. B+C+owner: management enumeration independent of spawn discovery (inactive drafts listed); revision op APIs; eval gets owning ToolSession + AbortSignal through component/controller boundary.
+4. A+owner: deletion as owned lifecycle/storage transaction (same-UUID usable recovery, tombstone at success boundary); one archive policy with shared-store coordination (stale owners cannot clobber; union must not resurrect).
+5. B: one artifact transaction for mutation/recovery/pins/appends/pruning (no lock through provider execution; reentrant authority expires with owner).
+
+Bucket classification (this session): singleton 74 fails all pre-existing/environmental (ACP×9, symlinks×4, python warmup flake — each stash-proven identical; rest in untouched files). Runtime 36 fails: sdk-credential-disabled 8 identical at baseline; rest timeout-shaped in untouched areas (RpcClient workers, cloud network, model discovery). `check` red only from 42-file pre-existing drift. coding-agent-ui + smoke remain host-blocked (ui timeout; blob/LSP stalls, paths unchanged).

@@ -1,0 +1,332 @@
+[
+  {
+    "name": "thinking",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 5,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\thinking-100x30-unicode.json"
+  },
+  {
+    "name": "queue",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 4,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\queue-100x30-unicode.json"
+  },
+  {
+    "name": "hook-input",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 7,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\hook-input-100x30-unicode.json"
+  },
+  {
+    "name": "hook-editor",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 9,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\hook-editor-100x30-unicode.json"
+  },
+  {
+    "name": "prompt-editor",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 7,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\prompt-editor-100x30-unicode.json"
+  },
+  {
+    "name": "login-manual",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 6,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\login-manual-100x30-unicode.json"
+  },
+  {
+    "name": "oauth-login",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 13,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\oauth-login-100x30-unicode.json"
+  },
+  {
+    "name": "ask",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 12,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\ask-100x30-unicode.json"
+  },
+  {
+    "name": "settings",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 30,
+    "maxWidth": 100,
+    "backgroundCells": 14,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\settings-100x30-unicode.json"
+  },
+  {
+    "name": "move",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 21,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\move-100x30-unicode.json"
+  },
+  {
+    "name": "plan-save",
+    "columns": 100,
+    "rows": 30,
+    "symbols": "unicode",
+    "renderedRows": 4,
+    "maxWidth": 100,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\plan-save-100x30-unicode.json"
+  },
+  {
+    "name": "thinking",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 5,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\thinking-80x10-unicode.json"
+  },
+  {
+    "name": "queue",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 4,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\queue-80x10-unicode.json"
+  },
+  {
+    "name": "hook-input",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 7,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\hook-input-80x10-unicode.json"
+  },
+  {
+    "name": "hook-editor",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 8,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\hook-editor-80x10-unicode.json"
+  },
+  {
+    "name": "prompt-editor",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 7,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\prompt-editor-80x10-unicode.json"
+  },
+  {
+    "name": "login-manual",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 6,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\login-manual-80x10-unicode.json"
+  },
+  {
+    "name": "oauth-login",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 10,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\oauth-login-80x10-unicode.json"
+  },
+  {
+    "name": "ask",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 12,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\ask-80x10-unicode.json"
+  },
+  {
+    "name": "settings",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 10,
+    "maxWidth": 80,
+    "backgroundCells": 14,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\settings-80x10-unicode.json"
+  },
+  {
+    "name": "move",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 21,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\move-80x10-unicode.json"
+  },
+  {
+    "name": "plan-save",
+    "columns": 80,
+    "rows": 10,
+    "symbols": "unicode",
+    "renderedRows": 4,
+    "maxWidth": 80,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\plan-save-80x10-unicode.json"
+  },
+  {
+    "name": "thinking",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 5,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\thinking-24x4-ascii.json"
+  },
+  {
+    "name": "queue",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 4,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\queue-24x4-ascii.json"
+  },
+  {
+    "name": "hook-input",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 8,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\hook-input-24x4-ascii.json"
+  },
+  {
+    "name": "hook-editor",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 11,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\hook-editor-24x4-ascii.json"
+  },
+  {
+    "name": "prompt-editor",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 10,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\prompt-editor-24x4-ascii.json"
+  },
+  {
+    "name": "login-manual",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 8,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\login-manual-24x4-ascii.json"
+  },
+  {
+    "name": "oauth-login",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 5,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\oauth-login-24x4-ascii.json"
+  },
+  {
+    "name": "ask",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 13,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\ask-24x4-ascii.json"
+  },
+  {
+    "name": "settings",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 10,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\settings-24x4-ascii.json"
+  },
+  {
+    "name": "move",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 21,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\move-24x4-ascii.json"
+  },
+  {
+    "name": "plan-save",
+    "columns": 24,
+    "rows": 4,
+    "symbols": "ascii",
+    "renderedRows": 4,
+    "maxWidth": 24,
+    "backgroundCells": 0,
+    "file": "C:\\Users\\sanid\\AppData\\Local\\Temp\\harvest-oct8-ui-audit-78a2608d00834496bfcbe58c3e1c5ec5\\plan-save-24x4-ascii.json"
+  }
+]

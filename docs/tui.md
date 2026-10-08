@@ -29,6 +29,7 @@ export interface Component {
   handleInput?(data: string): void;
   wantsKeyRelease?: boolean;
   invalidate?(): void;
+  setMaxHeight?(height: number): void;
   setIgnoreTight?(ignore: boolean): any;
   dispose?(): void;
 }
@@ -49,7 +50,7 @@ Cursor behavior uses `CURSOR_MARKER` (not `getCursorPosition`). Focused componen
 
 ## Rendering constraints (terminal safety)
 
-Keyboard feedback keeps the normal frame cadence but can promote a queued background repaint ahead of the adaptive idle time caused by a previous slow frame. This avoids making typing/navigation wait for an animation's recovery window. Background streaming and animation still use adaptive throttling; output-backlog limits and the Ctrl+C/Escape input-drain grace remain in effect. This changes scheduling latency, not the cost of the frame itself.
+Keyboard feedback and a change of focused component keep the normal frame cadence but can promote a queued background repaint ahead of the adaptive idle time caused by a previous slow frame. Focus changes include asynchronously loaded menus, whose mount may finish after input dispatch returns. Background streaming and animation still use adaptive throttling; output-backlog limits and the Ctrl+C/Escape input-drain grace remain in effect. Reassigning the same focus does not promote a frame. This changes scheduling latency, not the cost of the frame itself.
 
 Your `render(width)` output must be terminal-safe:
 
@@ -100,6 +101,8 @@ Then use `isKeyRelease()` / `isKeyRepeat()` if needed.
 - `TUI.setFocus(component)` routes input to that component.
 - Overlay APIs exist in `TUI` (`showOverlay`, `OverlayHandle`). In interactive extension/custom UI, `custom(..., { overlay: true })` mounts your component through `TUI.showOverlay(...)`; without `overlay`, it replaces the editor component area directly.
 - Overlay custom UI is anchored at `bottom-center` with full terminal width/max height and is removed through the returned overlay handle when `done(...)` closes the flow.
+
+Before rendering an overlay, the engine calls its optional `setMaxHeight(height)` with the actual resolved allocation, including viewport margins and percentage caps. Responsive components should reserve input, selection and dismissal controls before decoration. A repeated allocation should be a no-op for cached components. This hook applies to overlays; components replacing the editor area still receive their height from the coding-agent integration.
 
 ### Built-in full-screen surfaces
 
