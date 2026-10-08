@@ -1,0 +1,95 @@
+name: CI
+
+# Continuous integration for Sanidhya14321/harvest.
+# Runs on pushes to main and on pull requests.
+#
+# Release commits (`chore: bump version to vX.Y.Z`, pushed by
+# `bun scripts/release.ts`) get a per-SHA, never-cancel group so retries that
+# keep the same subject don't cancel each other (#2564). Everything else
+# shares a per-ref group that cancels superseded PR runs.
+#
+# What runs where:
+#   check-ts   — oxlint + oxfmt + tsgo gate (`bun run check:ts`) plus the
+#                generated clippy-bazelrc drift check.
+#   scripts    — release/checksum/publish/test-runner unit tests (fast, no Rust).
+#   check-rs   — cargo fmt --check + clippy -D warnings (skipped on PRs that
+#                don't touch Rust, same policy as upstream).
+#   ts-workspace + smoke — host native build, then the fast TS workspace
+#                buckets and the CLI smoke probe. Full suites
+#                (`bun run ci:test:full`, `bun run test:rs`,
+#                `ci:test:install-methods`) stay manual / pre-release gates.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "ci-${{ contains(github.event.head_commit.message, 'chore: bump version to v') && github.sha || github.ref }}"
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check-ts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+      - run: bun install --frozen-lockfile
+      - name: Typecheck + lint gate
+        run: bun run check:ts
+      - name: Clippy bazelrc drift check
+        run: bun scripts/gen-clippy-bazelrc.ts --check
+
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+      - run: bun install --frozen-lockfile
+      - name: Release/script unit tests
+        run: bun test scripts/ci-test-ts.test.ts scripts/ci-release-build-binaries.test.ts scripts/musl-release.test.ts scripts/ci-release-publish.test.ts scripts/release.test.ts
+
+  check-rs:
+    # PRs that don't touch Rust skip this entirely; post-merge main and
+    # manual runs always validate.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-08
+      - name: cargo fmt --check + clippy
+        run: bun scripts/run-rs-task.ts check:rs
+
+  ts-workspace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-08
+      - run: bun install --frozen-lockfile
+      - name: Build host native addon
+        run: bun run build:native
+      - name: Fast TS workspace tests
+        run: bun scripts/ci-test-ts.ts workspace
+      - name: CLI smoke probe
+        run: bun run ci:test:smoke

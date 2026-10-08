@@ -8,7 +8,7 @@ set -e
 #   --ref <ref>    Install specific tag/commit/branch
 #   -r <ref>       Shorthand for --ref
 
-REPO="${HARVEST_REPO:-Sanidhya14321/Harvest-Agent}"
+REPO="${HARVEST_REPO:-Sanidhya14321/harvest}"
 PACKAGE="@harvest/pi-coding-agent"
 INSTALL_DIR="${PI_INSTALL_DIR:-$HOME/.local/bin}"
 MIN_BUN_VERSION="1.3.14"

@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Repo = if ($env:HARVEST_REPO) { $env:HARVEST_REPO } else { "Sanidhya14321/Harvest-Agent" }
+$Repo = if ($env:HARVEST_REPO) { $env:HARVEST_REPO } else { "Sanidhya14321/harvest" }
 $Package = "@harvest/pi-coding-agent"
 $InstallDir = if ($env:PI_INSTALL_DIR) { $env:PI_INSTALL_DIR } else { "$env:LOCALAPPDATA\omp" }
 $NativeArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()

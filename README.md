@@ -32,12 +32,12 @@ The most capable agent surface that ships. Continuously tuned by real-world use 
 
 ### Quick install
 
-These commands will work once this repository is public and its first tagged GitHub release has completed. They install the latest [GitHub release](https://github.com/Sanidhya14321/Harvest-Agent/releases/latest) for your operating system and CPU. They verify its SHA-256 checksum and check that the downloaded binary starts before replacing an existing installation. Re-run the same command to update. Use `--source` (PowerShell: `-Source`) only if you want the Bun package install.
+These commands will work once this repository is public and its first tagged GitHub release has completed. They install the latest [GitHub release](https://github.com/Sanidhya14321/harvest/releases/latest) for your operating system and CPU. They verify its SHA-256 checksum and check that the downloaded binary starts before replacing an existing installation. Re-run the same command to update. Use `--source` (PowerShell: `-Source`) only if you want the Bun package install.
 
 **macOS**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/harvest/main/scripts/install.sh | sh
 ```
 
 The installer detects your architecture (**Apple Silicon M-series ARM64** or **Intel x64**) even inside a Rosetta terminal, downloads the verified binary, checks its SHA-256 checksum, and installs `omp` (along with a `harvest` symlink) into `~/.local/bin`.
@@ -59,7 +59,7 @@ brew install harvest/tap/harvest
 **Linux**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Sanidhya14321/harvest/main/scripts/install.sh | sh
 ```
 
 > **Alpine / musl:** the prebuilt musl binary links `libstdc++`/`libgcc` dynamically, which stock Alpine does not ship. Install them first: `apk add libstdc++ libgcc`.
@@ -76,17 +76,17 @@ bun install -g @harvest/pi-coding-agent
 
 ```sh
 # Run without installing
-nix run github:Sanidhya14321/Harvest-Agent
+nix run github:Sanidhya14321/harvest
 
 # Or install into the active profile
-nix profile install github:Sanidhya14321/Harvest-Agent
+nix profile install github:Sanidhya14321/harvest
 ```
 
 Flake consumers can use `packages.<system>.harvest`, `overlays.default`, `nixosModules.default`, or `homeManagerModules.default`. A Home Manager configuration can install Harvest and own its settings declaratively:
 
 ```nix
 {
-  inputs.harvest.url = "github:Sanidhya14321/Harvest-Agent";
+  inputs.harvest.url = "github:Sanidhya14321/harvest";
 
   # In your Home Manager module:
   imports = [ inputs.harvest.homeManagerModules.default ];
@@ -100,17 +100,17 @@ Flake consumers can use `packages.<system>.harvest`, `overlays.default`, `nixosM
 **Windows (PowerShell)**
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Sanidhya14321/Harvest-Agent/main/scripts/install.ps1)))
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Sanidhya14321/harvest/main/scripts/install.ps1)))
 ```
 
 The Windows installer places `omp.exe` in `%LOCALAPPDATA%\omp` and adds that directory to your user `PATH`. It also makes `omp` available in the current PowerShell session.
 
-**Manual downloads:** [GitHub Releases](https://github.com/Sanidhya14321/Harvest-Agent/releases) provides binaries for Windows, macOS, Ubuntu/Linux (x64 and ARM64), and musl Linux, with `SHA256SUMS.txt`, [MIT license](LICENSE), and [third-party notices](THIRD-PARTY-NOTICES.txt). The binaries are named `omp-<platform>-<architecture>` (`.exe` on Windows). A failed download, checksum, or startup check leaves an existing installation in place.
+**Manual downloads:** [GitHub Releases](https://github.com/Sanidhya14321/harvest/releases) provides binaries for Windows, macOS, Ubuntu/Linux (x64 and ARM64), and musl Linux, with `SHA256SUMS.txt`, [MIT license](LICENSE), and [third-party notices](THIRD-PARTY-NOTICES.txt). The binaries are named `omp-<platform>-<architecture>` (`.exe` on Windows). A failed download, checksum, or startup check leaves an existing installation in place.
 
 **Pinned versions (mise)**
 
 ```sh
-mise use -g github:Sanidhya14321/Harvest-Agent
+mise use -g github:Sanidhya14321/harvest
 ```
 
 macOS · Linux · Windows · no Bun required for the default install
