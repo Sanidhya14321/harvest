@@ -16,6 +16,7 @@ members = [
    "crates/pi-walker",
    "crates/vendor/brush-core",
 ]
+exclude = ["rust-agent"]
 resolver = "3"
 
 [workspace.package]
