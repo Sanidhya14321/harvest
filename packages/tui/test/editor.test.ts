@@ -435,7 +435,7 @@ describe("Editor component", () => {
 			// Wrapped continuation is capped at one extra row ending in an ellipsis.
 			const popupRows = rendered.slice(commandRowIndex);
 			expect(popupRows.length).toBe(2);
-			expect(popupRows[1]).toContain("…");
+			expect(popupRows[1]).toContain("...");
 			expect(rendered.join("\n")).not.toContain("rambling");
 		});
 

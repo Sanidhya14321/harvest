@@ -1,4 +1,5 @@
 import { matchesKey } from "../keys";
+import type { SymbolTheme } from "../symbols";
 import type { Component } from "../tui";
 import { Ellipsis, replaceTabs, truncateToWidth, visibleWidth } from "../utils";
 
@@ -21,6 +22,8 @@ export interface ScrollViewOptions {
 	theme?: ScrollViewTheme;
 	trackChar?: string;
 	thumbChar?: string;
+	/** Shared symbol policy for chrome and truncation; explicit characters still win. */
+	symbols?: SymbolTheme;
 	/**
 	 * Indicator appended when a row overflows `contentWidth`. Defaults to
 	 * {@link Ellipsis.Unicode}. Pass {@link Ellipsis.Omit} when callers wrap
@@ -46,6 +49,18 @@ function firstCellGlyph(value: string, fallback: string): string {
 	return visibleWidth(glyph) === 1 ? glyph : fallback;
 }
 
+/** One-cell scrollbar chrome shared by lists, editors, and standalone viewports. */
+export function resolveScrollbarSymbols(symbols?: SymbolTheme): { track: string; thumb: string } {
+	const ascii = symbols?.boxRound.vertical === "|";
+	return {
+		track: firstCellGlyph(
+			symbols?.scrollbar?.track ?? symbols?.boxRound.vertical ?? DEFAULT_TRACK,
+			ascii ? "|" : DEFAULT_TRACK,
+		),
+		thumb: firstCellGlyph(symbols?.scrollbar?.thumb ?? (ascii ? "#" : DEFAULT_THUMB), ascii ? "#" : DEFAULT_THUMB),
+	};
+}
+
 /**
  * Fixed-height viewport over pre-rendered lines, with optional right-edge scrollbar.
  *
@@ -59,9 +74,12 @@ export class ScrollView implements Component {
 	#totalRows: number | undefined;
 	#scrollbar: ScrollbarMode;
 	#theme: Required<ScrollViewTheme>;
-	#trackChar: string;
-	#thumbChar: string;
-	#ellipsis: Ellipsis;
+	#trackChar = DEFAULT_TRACK;
+	#thumbChar = DEFAULT_THUMB;
+	#ellipsis = Ellipsis.Unicode;
+	readonly #trackOverride: string | undefined;
+	readonly #thumbOverride: string | undefined;
+	readonly #ellipsisOverride: Ellipsis | undefined;
 	#fastScrollLines: number;
 
 	constructor(lines: readonly string[], options: ScrollViewOptions) {
@@ -73,9 +91,10 @@ export class ScrollView implements Component {
 			track: options.theme?.track ?? (text => text),
 			thumb: options.theme?.thumb ?? (text => text),
 		};
-		this.#trackChar = firstCellGlyph(options.trackChar ?? DEFAULT_TRACK, DEFAULT_TRACK);
-		this.#thumbChar = firstCellGlyph(options.thumbChar ?? DEFAULT_THUMB, DEFAULT_THUMB);
-		this.#ellipsis = options.ellipsis ?? Ellipsis.Unicode;
+		this.#trackOverride = options.trackChar;
+		this.#thumbOverride = options.thumbChar;
+		this.#ellipsisOverride = options.ellipsis;
+		this.setSymbols(options.symbols);
 		this.#fastScrollLines = Math.max(1, Math.trunc(options.fastScrollLines ?? 5));
 		this.#clampScrollOffset();
 	}
@@ -109,6 +128,19 @@ export class ScrollView implements Component {
 
 	setScrollbar(scrollbar: ScrollViewOptions["scrollbar"]): void {
 		this.#scrollbar = normalizeScrollbarMode(scrollbar);
+	}
+
+	/** Update theme-owned chrome without replacing the viewport or losing its offset. */
+	setSymbols(symbols?: SymbolTheme): void {
+		const scrollbarSymbols = resolveScrollbarSymbols(symbols);
+		const track = firstCellGlyph(this.#trackOverride ?? scrollbarSymbols.track, scrollbarSymbols.track);
+		const thumb = firstCellGlyph(this.#thumbOverride ?? scrollbarSymbols.thumb, scrollbarSymbols.thumb);
+		const ellipsis =
+			this.#ellipsisOverride ?? (symbols?.boxRound.vertical === "|" ? Ellipsis.Ascii : Ellipsis.Unicode);
+		if (track === this.#trackChar && thumb === this.#thumbChar && ellipsis === this.#ellipsis) return;
+		this.#trackChar = track;
+		this.#thumbChar = thumb;
+		this.#ellipsis = ellipsis;
 	}
 
 	getScrollOffset(): number {

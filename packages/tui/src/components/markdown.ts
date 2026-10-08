@@ -1388,6 +1388,8 @@ export interface MarkdownTheme {
 	 * Return null to fall back to fenced code rendering.
 	 */
 	resolveMermaidAscii?: (source: string, maxWidth?: number) => string | null;
+	/** Disable generated color chips when the host requests color-free rendering. */
+	colorSwatches?: boolean;
 	symbols: SymbolTheme;
 }
 
@@ -1626,7 +1628,13 @@ function colorSwatch(hex: string, glyph: string, text: string): string {
  * mentions. Non-color text (including the matched `#hex` itself) is routed
  * through `applySegment` so the caller's base styling is preserved verbatim.
  */
-function renderTextWithSwatches(text: string, applySegment: (t: string) => string, glyph: string): string {
+function renderTextWithSwatches(
+	text: string,
+	applySegment: (t: string) => string,
+	glyph: string,
+	enabled = true,
+): string {
+	if (!enabled) return applySegment(text);
 	HEX_COLOR_REGEX.lastIndex = 0;
 	let result = "";
 	let last = 0;
@@ -2167,6 +2175,7 @@ export class Markdown implements Component {
 									normalizeHtmlEntitiesForTerminal(deltaTabs),
 									applyText,
 									this.#theme.symbols.colorSwatch || DEFAULT_COLOR_SWATCH_GLYPH,
+									this.#theme.colorSwatches !== false,
 								));
 					const wrapped = wrapTextWithAnsi(grown, contentWidth);
 					const fastPaddingX = this.#ignoreTight ? this.#paddingX : getPaddingX(this.#paddingX);
@@ -3183,7 +3192,12 @@ export class Markdown implements Component {
 					if (token.tokens && token.tokens.length > 0) {
 						result += this.#renderInlineTokens(token.tokens, resolvedStyleContext);
 					} else {
-						result += renderTextWithSwatches(text, applyTextWithNewlines, swatchGlyph);
+						result += renderTextWithSwatches(
+							text,
+							applyTextWithNewlines,
+							swatchGlyph,
+							this.#theme.colorSwatches !== false,
+						);
 					}
 					break;
 				}
@@ -3210,7 +3224,7 @@ export class Markdown implements Component {
 
 				case "codespan": {
 					markHtmlItemWhenContent(token.text);
-					const painted = codespanSwatch(token.text, swatchGlyph);
+					const painted = this.#theme.colorSwatches !== false ? codespanSwatch(token.text, swatchGlyph) : "";
 					result += (painted || this.#theme.code(token.text)) + stylePrefix;
 					break;
 				}

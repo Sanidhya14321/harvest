@@ -609,6 +609,8 @@ export class Editor implements Component, Focusable {
 	#topBorderContent?: EditorTopBorder;
 	#topBorderProvider?: (availableWidth: number) => EditorTopBorder | undefined;
 	#borderVisible = true;
+	/** Per-frame tiny allocation fallback; never changes the user's selected shape. */
+	#compactChrome = false;
 	#borderStyle: EditorBorderStyle = "box";
 	constructor(theme: EditorTheme) {
 		this.#theme = theme;
@@ -853,10 +855,13 @@ export class Editor implements Component, Focusable {
 
 	/** Active chrome style; a hidden border collapses every shape to borderless. */
 	#effectiveStyle(): ComposerStyle {
-		return this.#borderVisible ? getComposerStyle(this.#borderStyle) : borderlessComposerStyle;
+		return this.#borderVisible && !this.#compactChrome
+			? getComposerStyle(this.#borderStyle)
+			: borderlessComposerStyle;
 	}
 
 	#getEffectivePromptGutter(): string | undefined {
+		if (this.#compactChrome) return undefined;
 		const style = this.#effectiveStyle();
 		// The box frame never renders a gutter; hosts that set one expect it only
 		// in borderless contexts (hook editors, agents hub).
@@ -865,10 +870,11 @@ export class Editor implements Component, Focusable {
 		// Legacy `setBorderVisible(false)` callers control the gutter themselves;
 		// only an explicitly selected composer shape gets the style default.
 		if (!this.#borderVisible) return undefined;
-		return style.defaultPromptGutter;
+		return style.resolvePromptGutter?.(this.#theme.symbols) ?? style.defaultPromptGutter;
 	}
 
 	#getEditorPaddingX(): number {
+		if (this.#compactChrome) return 0;
 		if (this.#paddingXOverride !== undefined) return Math.max(0, this.#paddingXOverride);
 		return this.#effectiveStyle().defaultPaddingX(this.#theme.editorPaddingX);
 	}
@@ -1050,6 +1056,21 @@ export class Editor implements Component, Focusable {
 	}
 
 	render(width: number): readonly string[] {
+		const safeWidth = Number.isFinite(width) ? Math.max(0, Math.trunc(width)) : 0;
+		if (safeWidth === 0) return [""];
+		const style = this.#effectiveStyle();
+		const paddingX = this.#getEditorPaddingX();
+		const minimumWidth = style.sideChromeWidth(paddingX) * 2 + (style.sideBorders && paddingX === 0 ? 2 : 1);
+		this.#compactChrome =
+			safeWidth < minimumWidth || (this.#maxHeight !== undefined && this.#maxHeight <= style.verticalChrome);
+		try {
+			return this.#renderFrame(safeWidth);
+		} finally {
+			this.#compactChrome = false;
+		}
+	}
+
+	#renderFrame(width: number): readonly string[] {
 		const style = this.#effectiveStyle();
 		const paddingX = this.#getEditorPaddingX();
 		const isSideBordered = style.sideBorders;
@@ -1105,6 +1126,7 @@ export class Editor implements Component, Focusable {
 			accentColor: this.#theme.accentColor ?? this.borderColor,
 			surfaceColor: this.#theme.surfaceColor ?? PASSTHROUGH_COLOR,
 			box,
+			symbols: this.#theme.symbols,
 			topBorder,
 		};
 

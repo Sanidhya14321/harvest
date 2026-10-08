@@ -15,6 +15,8 @@ export const bandComposerStyle: ComposerStyle = {
 	bottomBar: "none",
 	bottomBarGap: false,
 	defaultPromptGutter: "╰─ ",
+	resolvePromptGutter: symbols =>
+		symbols.composer?.bandGutter ?? `${symbols.boxRound.bottomLeft}${symbols.boxRound.horizontal} `,
 
 	defaultPaddingX(): number {
 		return 0;

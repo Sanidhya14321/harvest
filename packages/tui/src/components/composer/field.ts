@@ -3,10 +3,9 @@
  * caps and a subtle surface fill. The complete status line remains below it.
  */
 import { padding } from "../../utils";
+import { resolveComposerSymbols } from "../../symbols";
+import { resolveScrollbarSymbols } from "../scroll-view";
 import type { ComposerRowContext, ComposerStyle } from "./types";
-
-const LEFT_CAP = "▐";
-const RIGHT_CAP = "▌";
 
 /** One-row filled field with accent caps. */
 export const fieldComposerStyle: ComposerStyle = {
@@ -32,13 +31,14 @@ export const fieldComposerStyle: ComposerStyle = {
 	},
 
 	renderRow(ctx: ComposerRowContext): string[] {
-		const left = ctx.accentColor(LEFT_CAP);
+		const symbols = resolveComposerSymbols(ctx.symbols, ctx.box);
+		const left = ctx.accentColor(symbols.leftCap);
 		const leftFill = padding(ctx.paddingX) + ctx.gutter + ctx.text;
 		if (ctx.imeSafeCursorTail) return [left + ctx.surfaceColor(leftFill)];
 
 		const rightChromeCells = Math.max(1, ctx.paddingX + 1 - ctx.cursorOverflow);
 		const interior = leftFill + ctx.pad + padding(rightChromeCells - 1);
-		const rightGlyph = ctx.scrollbarThumb ? "█" : RIGHT_CAP;
+		const rightGlyph = ctx.scrollbarThumb ? resolveScrollbarSymbols(ctx.symbols).thumb : symbols.rightCap;
 		return [left + ctx.surfaceColor(interior) + ctx.accentColor(rightGlyph)];
 	},
 

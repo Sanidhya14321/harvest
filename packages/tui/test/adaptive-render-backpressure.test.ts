@@ -18,7 +18,7 @@
  *    UI indefinitely.
  */
 import { describe, expect, it } from "bun:test";
-import { type Component, type RenderTimer, TUI } from "@harvest/pi-tui";
+import { type Component, type RenderTimer, Text, TUI } from "@harvest/pi-tui";
 import { VirtualTerminal } from "./virtual-terminal";
 
 const MIN_RENDER_INTERVAL_MS = 1000 / 30;
@@ -85,6 +85,42 @@ function stepRender(scheduler: DeferredRenderScheduler): number | null {
 }
 
 describe("TUI adaptive render backpressure (#4145)", () => {
+	it("opens and closes an asynchronously loaded menu ahead of queued animation recovery", () => {
+		const term = new VirtualTerminal(40, 8);
+		const scheduler = new DeferredRenderScheduler();
+		const probe = new ScriptedFrameCost();
+		probe.scheduler = scheduler;
+		const tui = new TUI(term, undefined, { renderScheduler: scheduler });
+		tui.addChild(probe);
+		tui.setFocus(probe);
+		try {
+			tui.start();
+			stepRender(scheduler);
+			probe.scheduleCost(100);
+			tui.requestRender();
+			stepRender(scheduler);
+			tui.requestComponentRender(probe);
+			while (scheduler.immediates.length) scheduler.immediates.shift()!();
+			expect(scheduler.timers.find(timer => !timer.canceled)?.delayMs).toBe(100);
+			const openedAt = scheduler.nowMs;
+			const overlay = tui.showOverlay(new Text("Selected menu action"), { width: 30 });
+			stepRender(scheduler);
+			expect(scheduler.nowMs - openedAt).toBeLessThanOrEqual(MIN_RENDER_INTERVAL_MS);
+			expect(term.getViewport().join("\n")).toContain("Selected menu action");
+			probe.scheduleCost(100);
+			tui.requestRender();
+			stepRender(scheduler);
+			tui.requestComponentRender(probe);
+			while (scheduler.immediates.length) scheduler.immediates.shift()!();
+			const closedAt = scheduler.nowMs;
+			overlay.hide();
+			stepRender(scheduler);
+			expect(scheduler.nowMs - closedAt).toBeLessThanOrEqual(MIN_RENDER_INTERVAL_MS);
+			expect(term.getViewport().join("\n")).not.toContain("Selected menu action");
+		} finally {
+			tui.stop();
+		}
+	});
 	it("promotes typed feedback ahead of an already queued slow-animation repaint", () => {
 		const term = new VirtualTerminal(20, 4);
 		const scheduler = new DeferredRenderScheduler();

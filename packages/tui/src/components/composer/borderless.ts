@@ -14,6 +14,7 @@ export const borderlessComposerStyle: ComposerStyle = {
 	bottomBar: "full",
 	bottomBarGap: false,
 	defaultPromptGutter: "❯ ",
+	resolvePromptGutter: symbols => symbols.composer?.promptGutter ?? `${symbols.cursor} `,
 
 	defaultPaddingX(): number {
 		return 0;

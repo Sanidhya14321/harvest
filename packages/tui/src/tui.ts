@@ -199,6 +199,8 @@ export interface Component {
 	 * last time.
 	 */
 	render(width: number): readonly string[];
+	/** Optional allocation hook, called before an overlay renders on every frame/resize. */
+	setMaxHeight?(height: number): void;
 
 	/**
 	 * Optional handler for keyboard input when component has focus
@@ -338,6 +340,8 @@ export interface OverlayOptions {
 	width?: SizeValue;
 	/** Minimum width in columns */
 	minWidth?: number;
+	/** Maximum width in columns; reapplied against available space on every resize. */
+	maxWidth?: number;
 	/** Maximum height in rows, or percentage of terminal height (e.g., "50%") */
 	maxHeight?: SizeValue;
 
@@ -975,6 +979,9 @@ export class TUI extends Container {
 			component.focused = true;
 			this.#syncTerminalCursorMode(component);
 		}
+		// Async menus can finish loading after the input callback has returned.
+		// Give that visible focus transition the same feedback priority as input.
+		if (previousFocusedComponent !== component && this.#hasEverRendered) this.#requestInputRender();
 	}
 
 	/** Component currently receiving keyboard input, if any. */
@@ -2058,6 +2065,9 @@ export class TUI extends Container {
 		if (opt.minWidth !== undefined) {
 			width = Math.max(width, opt.minWidth);
 		}
+		if (opt.maxWidth !== undefined) {
+			width = Math.min(width, Math.max(1, Math.floor(opt.maxWidth)));
+		}
 		// Clamp to available space
 		width = Math.max(1, Math.min(width, availWidth));
 
@@ -2177,6 +2187,7 @@ export class TUI extends Container {
 			// Get layout with height=0 first to determine width and maxHeight
 			// (width and maxHeight don't depend on overlay height).
 			const { width, maxHeight } = this.#resolveOverlayLayout(options, 0, termWidth, termHeight);
+			component.setMaxHeight?.(maxHeight);
 			let overlayLines = component.render(width);
 			if (overlayLines.length > maxHeight) {
 				const anchor = options?.anchor ?? "center";

@@ -32,6 +32,7 @@ export const ruleComposerStyle: ComposerStyle = {
 	bottomBar: "left",
 	bottomBarGap: true,
 	defaultPromptGutter: "❯ ",
+	resolvePromptGutter: symbols => symbols.composer?.promptGutter ?? `${symbols.cursor} `,
 
 	defaultPaddingX(): number {
 		return 0;

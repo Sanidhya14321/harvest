@@ -2,8 +2,17 @@ import { fuzzyFilter } from "../fuzzy";
 import { getKeybindings } from "../keybindings";
 import { extractPrintableText } from "../keys";
 import type { MouseRoutable, SgrMouseEvent } from "../mouse";
+import type { SymbolTheme } from "../symbols";
 import type { Component } from "../tui";
-import { Ellipsis, padding, replaceTabs, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils";
+import {
+	applyBackgroundToLine,
+	Ellipsis,
+	padding,
+	replaceTabs,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "../utils";
 import { ScrollView } from "./scroll-view";
 
 function sanitizeSingleLine(text: string): string {
@@ -50,6 +59,10 @@ export interface SettingsListTheme {
 	section?: (text: string, active: boolean) => string;
 	/** Hover band applied to the full row under the mouse pointer. */
 	hovered?: (text: string) => string;
+	/** Filled keyboard selection; optional for legacy SDK themes. */
+	selected?: (text: string) => string;
+	/** Shared scrollbar, separator, and truncation policy. */
+	symbols?: SymbolTheme;
 }
 
 /** A contiguous run of items under one heading, derived from the item list. */
@@ -510,6 +523,10 @@ export class SettingsList implements Component {
 		return item.warning && this.#theme.warningMark ? ` ${this.#theme.warningMark}` : "";
 	}
 
+	#ellipsis(): Ellipsis {
+		return this.#theme.symbols?.boxRound.vertical === "|" ? Ellipsis.Ascii : Ellipsis.Unicode;
+	}
+
 	#renderItemRow(
 		item: SettingItem,
 		index: number,
@@ -521,7 +538,14 @@ export class SettingsList implements Component {
 		if (item.heading) {
 			const headingStyle = this.#theme.heading ?? ((text: string) => this.#theme.hint(text));
 			const prefix = headingCursor ? this.#theme.cursor : "  ";
-			return truncateToWidth(`${prefix}${headingStyle(item.label, dimmed)}`, Math.max(0, rowWidth));
+			const text = truncateToWidth(
+				`${prefix}${headingStyle(item.label, dimmed)}`,
+				Math.max(0, rowWidth),
+				this.#ellipsis(),
+			);
+			return headingCursor && this.#theme.selected
+				? applyBackgroundToLine(text, rowWidth, this.#theme.selected)
+				: text;
 		}
 		// While section focus owns the keyboard, the row cursor hides so the
 		// section cursor is the single focus indicator.
@@ -543,9 +567,13 @@ export class SettingsList implements Component {
 		// under one dim wash so inner label/value colors don't fight it.
 		if (dimmed && !isSelected) {
 			const text = this.#theme.hint(
-				truncateToWidth(`  ${labelPlain}${labelPad}${separator}${valuePlain}`, Math.max(0, rowWidth)),
+				truncateToWidth(
+					`  ${labelPlain}${labelPad}${separator}${valuePlain}`,
+					Math.max(0, rowWidth),
+					this.#ellipsis(),
+				),
 			);
-			return hovered && this.#theme.hovered ? this.#theme.hovered(text) : text;
+			return hovered && this.#theme.hovered ? applyBackgroundToLine(text, rowWidth, this.#theme.hovered) : text;
 		}
 		const warningStyle = this.#theme.warning ?? this.#theme.description;
 		const labelText =
@@ -553,11 +581,13 @@ export class SettingsList implements Component {
 			(mark ? warningStyle(mark) : "") +
 			labelPad;
 		const valueText = this.#theme.value(valuePlain, isSelected, item.changed === true);
-		const text = truncateToWidth(prefix + labelText + separator + valueText, Math.max(0, rowWidth));
-		// Pointer hover paints a band behind the whole row, distinct from the
-		// keyboard selection (cursor glyph + accent) which stays where it is.
+		const text = truncateToWidth(prefix + labelText + separator + valueText, Math.max(0, rowWidth), this.#ellipsis());
+		if (isSelected && this.#theme.selected) {
+			return applyBackgroundToLine(text, rowWidth, this.#theme.selected);
+		}
+		// Pointer hover does not move the keyboard selection.
 		if (hovered && this.#theme.hovered) {
-			return this.#theme.hovered(text);
+			return applyBackgroundToLine(text, rowWidth, this.#theme.hovered);
 		}
 		return text;
 	}
@@ -580,9 +610,16 @@ export class SettingsList implements Component {
 			if (this.#shouldRenderSearchStatus()) {
 				lines.push(this.#renderSearchStatus(width));
 			}
-			lines.push(this.#theme.hint("  No matching settings"));
+			lines.push(truncateToWidth(this.#theme.hint("  No matching settings"), width, Ellipsis.Omit));
 			lines.push("");
-			lines.push(truncateToWidth(this.#theme.hint("  Backspace to edit search · Esc to cancel"), width));
+			const separator = this.#theme.symbols?.boxRound.vertical === "|" ? " . " : " · ";
+			lines.push(
+				truncateToWidth(
+					this.#theme.hint(`  Backspace to edit search${separator}Esc to cancel`),
+					width,
+					this.#ellipsis(),
+				),
+			);
 			return lines;
 		}
 
@@ -627,6 +664,7 @@ export class SettingsList implements Component {
 				height: viewportHeight,
 				scrollbar: "auto",
 				totalRows: this.#filteredItems.length,
+				symbols: this.#theme.symbols,
 				theme: {
 					track: text => this.#theme.hint(text),
 					thumb: text => this.#theme.label(text, true, false),
@@ -659,7 +697,7 @@ export class SettingsList implements Component {
 			}
 			if (descLines.length > 3) {
 				descLines.splice(3);
-				descLines[2] = truncateToWidth(descLines[2], width);
+				descLines[2] = truncateToWidth(descLines[2], width, this.#ellipsis());
 			}
 		}
 		while (descLines.length < 3) descLines.push("");
@@ -673,9 +711,11 @@ export class SettingsList implements Component {
 		// Add hint (suppressed entirely when the host owns the footer)
 		if (this.#options.hint !== "") {
 			lines.push("");
-			const jumpHint = sections.length >= 2 ? "PgUp/PgDn to jump sections · " : "";
-			const hintText = this.#options.hint ?? `Enter/Space to change · ${jumpHint}Type to search · Esc to cancel`;
-			lines.push(truncateToWidth(this.#theme.hint(`  ${hintText}`), width));
+			const separator = this.#theme.symbols?.boxRound.vertical === "|" ? " . " : " · ";
+			const jumpHint = sections.length >= 2 ? `PgUp/PgDn to jump sections${separator}` : "";
+			const hintText =
+				this.#options.hint ?? `Enter/Space to change${separator}${jumpHint}Type to search${separator}Esc to cancel`;
+			lines.push(truncateToWidth(this.#theme.hint(`  ${hintText}`), width, this.#ellipsis()));
 		}
 
 		return lines;
@@ -704,11 +744,19 @@ export class SettingsList implements Component {
 			this.#theme.section ??
 			((text: string, isActive: boolean) =>
 				isActive ? this.#theme.label(text, true, false) : this.#theme.hint(text));
-		const sidebarRows = sectionNames.map((name, i) => {
+		const sidebarStart = Math.max(
+			0,
+			Math.min(activeIndex - Math.floor(this.#maxVisible / 2), sections.length - this.#maxVisible),
+		);
+		const sidebarRows = sectionNames.slice(sidebarStart, sidebarStart + this.#maxVisible).map((name, rowIndex) => {
+			const i = sidebarStart + rowIndex;
 			const label = truncateToWidth(name, sidebarWidth - 4, Ellipsis.Omit);
 			// Section focus parks the cursor glyph on the active sidebar entry.
 			const prefix = this.#sectionFocus && i === activeIndex ? this.#theme.cursor : "  ";
-			return `${prefix}${sectionStyle(label, i === activeIndex)}${padding(sidebarWidth - visibleWidth(prefix) - visibleWidth(label))}`;
+			const text = `${prefix}${sectionStyle(label, i === activeIndex)}${padding(sidebarWidth - visibleWidth(prefix) - visibleWidth(label))}`;
+			return this.#sectionFocus && i === activeIndex && this.#theme.selected
+				? applyBackgroundToLine(text, sidebarWidth, this.#theme.selected)
+				: text;
 		});
 
 		// Right pane: the whole list, continuously scrollable. The active
@@ -738,6 +786,7 @@ export class SettingsList implements Component {
 			height: viewportHeight,
 			scrollbar: "auto",
 			totalRows: this.#filteredItems.length,
+			symbols: this.#theme.symbols,
 			theme: {
 				track: text => this.#theme.hint(text),
 				thumb: text => this.#theme.label(text, true, false),
@@ -749,20 +798,20 @@ export class SettingsList implements Component {
 		// Hit maps: sidebar rows resolve to each section's first item; pane rows
 		// to the item they render.
 		this.#sidebarHitCol = sidebarWidth;
-		for (let i = 0; i < sectionNames.length; i++) {
-			this.#sidebarHitRows[i] = this.#filteredItems[sections[i].firstItemIndex]?.id;
+		for (let i = 0; i < sidebarRows.length; i++) {
+			this.#sidebarHitRows[i] = this.#filteredItems[sections[sidebarStart + i].firstItemIndex]?.id;
 		}
 		for (let r = 0; r < viewportHeight; r++) {
 			const item = this.#filteredItems[startRow + r];
 			if (item && !item.heading) this.#hitRows[r] = item.id;
 		}
 
-		const separator = this.#theme.hint("│ ");
+		const separator = this.#theme.hint(`${this.#theme.symbols?.boxRound.vertical ?? "│"} `);
 		const lines: string[] = [];
-		const height = Math.max(this.#maxVisible, sidebarRows.length);
+		const height = this.#maxVisible;
 		for (let i = 0; i < height; i++) {
 			const left = sidebarRows[i] ?? padding(sidebarWidth);
-			lines.push(truncateToWidth(left + separator + (paneRows[i] ?? ""), width));
+			lines.push(truncateToWidth(left + separator + (paneRows[i] ?? ""), width, this.#ellipsis()));
 		}
 		return lines;
 	}

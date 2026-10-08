@@ -23,4 +23,24 @@ export interface SymbolTheme {
 	/** Chip glyph drawn (painted with the referenced color) before inline hex colors. */
 	colorSwatch?: string;
 	spinnerFrames: string[];
+	/** Optional application chrome; omitted values retain legacy symbol defaults. */
+	scrollbar?: { track: string; thumb: string };
+	composer?: { rail: string; leftCap: string; rightCap: string; promptGutter: string; bandGutter: string };
+}
+
+/** Backward-compatible built-in composer chrome for SDK themes without explicit shape symbols. */
+export function resolveComposerSymbols(
+	symbols?: SymbolTheme,
+	box?: SymbolTheme["boxRound"],
+): NonNullable<SymbolTheme["composer"]> {
+	if (symbols?.composer) return symbols.composer;
+	const activeBox = box ?? symbols?.boxRound;
+	const ascii = activeBox?.vertical === "|";
+	return {
+		rail: ascii ? "|" : "▎",
+		leftCap: ascii ? "|" : "▐",
+		rightCap: ascii ? "|" : "▌",
+		promptGutter: `${symbols?.cursor ?? (ascii ? ">" : "❯")} `,
+		bandGutter: `${activeBox?.bottomLeft ?? "╰"}${activeBox?.horizontal ?? "─"} `,
+	};
 }

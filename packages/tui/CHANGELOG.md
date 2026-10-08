@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Editors, menus, and scrollbars share surface styling and support consistent ASCII and color-free presentation.
 - Typing and navigation no longer wait behind a slow animation's adaptive repaint delay.
 - Long transcripts no longer scan every historical child to render a short viewport.
 - Full-screen workspaces repaint only changed text rows during streaming updates and animations.

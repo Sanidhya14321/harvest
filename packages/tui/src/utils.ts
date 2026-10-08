@@ -161,21 +161,30 @@ export function truncateToWidth(
 	pad?: boolean | null,
 ): string {
 	maxWidth = Math.max(0, maxWidth | 0);
+	if (maxWidth === 0) return "";
+	let resolvedEllipsis = (typeof ellipsisKind === "string" ? Ellipsis.Omit : ellipsisKind) ?? Ellipsis.Unicode;
+	// Native truncation emits the whole ellipsis even when it cannot fit.
+	// Tiny allocated panes must remain width-safe before compositor clipping.
+	if (resolvedEllipsis === Ellipsis.Ascii && maxWidth < 3) resolvedEllipsis = Ellipsis.Omit;
 	// Fast path: every UTF-16 unit is at most 3 cells wide, so a string whose
 	// `length * 3` already fits within `safeWidth` cannot need truncation.
 	if (!pad && text.length * 3 <= maxWidth) {
 		return text;
 	}
-	return nativeTruncateToWidth(
-		text,
-		maxWidth,
-		(typeof ellipsisKind === "string" ? Ellipsis.Omit : ellipsisKind) ?? Ellipsis.Unicode,
-		pad ?? false,
-		DEFAULT_TAB_WIDTH,
-	);
+	return nativeTruncateToWidth(text, maxWidth, resolvedEllipsis, pad ?? false, DEFAULT_TAB_WIDTH);
 }
 
-export function wrapTextWithAnsi(text: string, width: number): string[] {
+export interface WrapTextWithAnsiOptions {
+	/** Text-only hard wrapping for long tokens; image/protocol rows use the default native path. */
+	hard?: boolean;
+}
+
+export function wrapTextWithAnsi(text: string, width: number, options?: WrapTextWithAnsiOptions): string[] {
+	if (options?.hard) {
+		return Bun.wrapAnsi(text, Math.max(1, Math.floor(width)), { hard: true, wordWrap: true, trim: false }).split(
+			"\n",
+		);
+	}
 	return nativeWrapTextWithAnsi(text, width, DEFAULT_TAB_WIDTH);
 }
 
@@ -619,19 +628,24 @@ export function moveWordRight(text: string, cursor: number): number {
  */
 export function applyBackgroundToLine(line: string, width: number, bgFn: (text: string) => string): string {
 	// Calculate padding needed
-	const visibleLen = visibleWidth(line);
-	const paddingNeeded = Math.max(0, width - visibleLen);
+	// Zero width means fill-only (Theme.bgFill); avoid remeasuring already-laid-out rows.
+	const paddingNeeded = width > 0 ? Math.max(0, width - visibleWidth(line)) : 0;
 
 	// Apply background to content + padding
 	let withPadding = line + padding(paddingNeeded);
-	// Nested background resets (e.g. inline color chips closing with \x1b[49m)
+	// Nested full/background resets (e.g. inline color chips closing with \x1b[49m)
 	// would terminate a plain open…close background wrapper early; re-open the
 	// line background after each one (same trick as Theme.bgFill).
-	if (line.includes("\x1b[49m")) {
+	if (line.includes("\x1b[49m") || line.includes("\x1b[0m")) {
 		const probe = bgFn("\x01");
 		const probeIdx = probe.indexOf("\x01");
 		const open = probeIdx > 0 ? probe.slice(0, probeIdx) : "";
-		if (open) withPadding = withPadding.replaceAll("\x1b[49m", `\x1b[49m${open}`);
+		if (open) {
+			const source = withPadding;
+			withPadding = source.replace(/\x1b\[(?:0|49)m/g, (reset, offset: number) =>
+				source.startsWith(open, offset + reset.length) ? reset : reset + open,
+			);
+		}
 	}
 	return bgFn(withPadding);
 }

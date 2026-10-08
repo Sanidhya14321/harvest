@@ -16,6 +16,7 @@ export const claudeComposerStyle: ComposerStyle = {
 	bottomBar: "left",
 	bottomBarGap: false,
 	defaultPromptGutter: "❯ ",
+	resolvePromptGutter: symbols => symbols.composer?.promptGutter ?? `${symbols.cursor} `,
 
 	defaultPaddingX(): number {
 		return 0;

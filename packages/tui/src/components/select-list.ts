@@ -5,7 +5,15 @@ import { extractPrintableText } from "../keys";
 import { type MouseRoutable, routeSelectListMouse, type SgrMouseEvent } from "../mouse";
 import type { SymbolTheme } from "../symbols";
 import type { Component } from "../tui";
-import { Ellipsis, padding, replaceTabs, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils";
+import {
+	applyBackgroundToLine,
+	Ellipsis,
+	padding,
+	replaceTabs,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "../utils";
 import { ScrollView } from "./scroll-view";
 
 const DEFAULT_PRIMARY_COLUMN_WIDTH = 32;
@@ -44,6 +52,8 @@ export interface SelectListTheme {
 	icon?: (text: string) => string;
 	/** Hover band applied to the full row under the mouse pointer. */
 	hovered?: (text: string) => string;
+	/** Paint the keyboard-selected row, including its allocated trailing space. */
+	selected?: (text: string) => string;
 }
 
 export interface SelectListTruncatePrimaryContext {
@@ -249,7 +259,8 @@ export class SelectList implements Component, MouseRoutable {
 			for (const row of itemRows) {
 				if (rows.length >= visualBudget) break;
 				this.#hitRows[rows.length] = i;
-				rows.push(hovered && this.theme.hovered ? this.theme.hovered(row) : row);
+				const paint = i === this.#selectedIndex ? this.theme.selected : hovered ? this.theme.hovered : undefined;
+				rows.push(paint ? applyBackgroundToLine(row, rowWidth, paint) : row);
 			}
 		}
 
@@ -257,6 +268,7 @@ export class SelectList implements Component, MouseRoutable {
 			height: rows.length,
 			scrollbar: "auto",
 			totalRows: visualTotal,
+			symbols: this.theme.symbols,
 			theme: { track: t => this.theme.scrollInfo(t), thumb: t => this.theme.selectedPrefix(t) },
 		});
 		sv.setScrollOffset(visualOffset);
@@ -374,7 +386,13 @@ export class SelectList implements Component, MouseRoutable {
 		const cap = this.layout.maxDescriptionRows;
 		if (cap === undefined || cap < 1 || wrapped.length <= cap) return wrapped;
 		const kept = wrapped.slice(0, cap);
-		kept[cap - 1] = truncateToWidth(kept[cap - 1], width, Ellipsis.Unicode);
+		const marker =
+			this.theme.symbols?.boxRound.vertical === "|"
+				? ".".repeat(Math.min(3, Math.max(0, width)))
+				: width > 0
+					? "…"
+					: "";
+		kept[cap - 1] = truncateToWidth(kept[cap - 1], Math.max(0, width - visibleWidth(marker)), Ellipsis.Omit) + marker;
 		return kept;
 	}
 

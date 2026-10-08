@@ -4,6 +4,7 @@
  * (`╰─ text … ─╯`), keeping a one-line prompt at two rows total.
  */
 import { padding, truncateToWidth, visibleWidth } from "../../utils";
+import { resolveScrollbarSymbols } from "../scroll-view";
 import type { ComposerChromeContext, ComposerRowContext, ComposerStyle } from "./types";
 
 export const boxComposerStyle: ComposerStyle = {
@@ -73,7 +74,7 @@ export const boxComposerStyle: ComposerStyle = {
 		const leftBorder = borderColor(`${box.vertical}${padding(paddingX)}`);
 		// When the scrollbar is active, replace the right border vertical with a
 		// thumb glyph (█) inside the thumb range, keeping the track (│) elsewhere.
-		const rightGlyph = ctx.scrollbarThumb ? "█" : box.vertical;
+		const rightGlyph = ctx.scrollbarThumb ? resolveScrollbarSymbols(ctx.symbols).thumb : box.vertical;
 		const rightBorder = borderColor(`${padding(Math.max(0, rightChromeCells - 1))}${rightGlyph}`);
 		return [leftBorder + text + pad + rightBorder];
 	},

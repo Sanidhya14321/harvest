@@ -52,6 +52,8 @@ export interface ComposerChromeContext {
 	surfaceColor: (str: string) => string;
 	/** Box-drawing glyph set (theme's `boxRound`). */
 	box: ComposerBox;
+	/** Optional symbol policy for built-in chrome; older registered styles remain compatible. */
+	symbols?: SymbolTheme;
 	/** Status content for the top chrome; box embeds it after the corner while
 	 * rule-based styles dock it against the right edge. */
 	topBorder?: EditorTopBorder;
@@ -99,6 +101,8 @@ export interface ComposerStyle {
 	readonly bottomBarGap: boolean;
 	/** Default prompt gutter when the host sets none. */
 	readonly defaultPromptGutter: string | undefined;
+	/** Resolve built-in gutters from the active symbol policy instead of a fixed glyph. */
+	resolvePromptGutter?(symbols: SymbolTheme): string;
 	/** Default horizontal padding; `themePaddingX` is the theme's request. */
 	defaultPaddingX(themePaddingX: number | undefined): number;
 	/** Cells consumed per side on content rows (border glyph + padding). */
