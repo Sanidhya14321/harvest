@@ -17,6 +17,7 @@ import {
 	writeManagedSkill,
 } from "../autolearn/managed-skills";
 import { isNameClaimedByAuthoredSkill } from "../extensibility/skills";
+import { createToolEvalSignal } from "../autolearn/revisions";
 import manageSkillDescription from "../prompts/tools/manage-skill.md" with { type: "text" };
 import type { ToolSession } from ".";
 
@@ -104,7 +105,7 @@ export class ManageSkillTool implements AgentTool<typeof manageSkillSchema> {
 		return typeof this.refreshSkillsOrSession === "function" ? undefined : this.refreshSkillsOrSession;
 	}
 
-	async execute(_id: string, params: ManageSkillParams): Promise<AgentToolResult> {
+	async execute(_id: string, params: ManageSkillParams, signal?: AbortSignal): Promise<AgentToolResult> {
 		switch (params.action) {
 			case "delete":
 				return this.deleteSkill(params);
@@ -113,7 +114,7 @@ export class ManageSkillTool implements AgentTool<typeof manageSkillSchema> {
 			case "draft":
 				return this.draftRevision(params);
 			case "evaluate":
-				return this.evaluateRevision(params);
+				return this.evaluateRevision(params, signal);
 			case "promote":
 				return this.promoteRevision(params);
 			case "rollback":
@@ -225,32 +226,43 @@ export class ManageSkillTool implements AgentTool<typeof manageSkillSchema> {
 		};
 	}
 
-	private async evaluateRevision(params: ManageSkillParams): Promise<AgentToolResult> {
+	private async evaluateRevision(params: ManageSkillParams, signal?: AbortSignal): Promise<AgentToolResult> {
 		if (!params.task || !params.expectedOutcome) {
 			throw new Error(`"evaluate" requires both "task" and "expectedOutcome".`);
 		}
 		const parent = this.evalParent();
 		if (parent) requireAutoImprovementBudget(parent, "evaluation");
 		const revId = await this.resolveTargetRevision(params);
-		const { passed, summary } = await evaluateSkillRevision(params.name, revId, {
-			task: params.task,
-			expectedOutcome: params.expectedOutcome,
-			parent: this.evalParent(),
-		});
-		const verdict = passed ? "passed" : "FAILED";
-		return {
-			content: [
-				{
-					type: "text",
-					text:
-						`Evaluation ${verdict} for managed skill "${params.name}" revision ${revId}: ${summary}` +
-						(passed
-							? ` Promote to activate.`
-							: ` Failed evaluations block promotion; fix the content and draft a new revision.`),
-				},
-			],
-			details: { action: "evaluate", name: params.name, revisionId: revId, passed },
-		};
+		// Fuse the tool call signal with parent-disposal linkage and register
+		// before the run starts, so either side aborts the evaluation and the
+		// parent awaits its settlement. Cancellation records nothing and
+		// never promotes.
+		const evalSignal = createToolEvalSignal(parent, signal);
+		try {
+			const run = evaluateSkillRevision(params.name, revId, {
+				task: params.task,
+				expectedOutcome: params.expectedOutcome,
+				parent: this.evalParent(),
+				signal: evalSignal.signal,
+			});
+			const { passed, summary } = await evalSignal.track(run);
+			const verdict = passed ? "passed" : "FAILED";
+			return {
+				content: [
+					{
+						type: "text",
+						text:
+							`Evaluation ${verdict} for managed skill "${params.name}" revision ${revId}: ${summary}` +
+							(passed
+								? ` Promote to activate.`
+								: ` Failed evaluations block promotion; fix the content and draft a new revision.`),
+					},
+				],
+				details: { action: "evaluate", name: params.name, revisionId: revId, passed },
+			};
+		} finally {
+			evalSignal.release();
+		}
 	}
 
 	private async promoteRevision(params: ManageSkillParams): Promise<AgentToolResult> {

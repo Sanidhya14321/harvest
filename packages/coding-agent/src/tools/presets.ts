@@ -20,6 +20,7 @@ import {
 } from "../task/agents";
 import { discoverAgents } from "../task/discovery";
 import { resolveSpawnPolicy } from "../task/spawn-policy";
+import { createToolEvalSignal } from "../autolearn/revisions";
 import presetsDescription from "../prompts/tools/presets.md" with { type: "text" };
 import type { ToolSession } from ".";
 
@@ -134,7 +135,7 @@ export class PresetsTool implements AgentTool<typeof presetsSchema> {
 		return new PresetsTool(session);
 	}
 
-	async execute(_id: string, params: PresetsParams): Promise<AgentToolResult> {
+	async execute(_id: string, params: PresetsParams, signal?: AbortSignal): Promise<AgentToolResult> {
 		switch (params.action) {
 			case "list":
 				return this.listPresets();
@@ -145,7 +146,7 @@ export class PresetsTool implements AgentTool<typeof presetsSchema> {
 			case "update":
 				return this.updatePreset(params);
 			case "evaluate":
-				return this.evaluatePreset(params);
+				return this.evaluatePreset(params, signal);
 			case "promote":
 				return this.promotePreset(params);
 			case "rollback":
@@ -462,31 +463,41 @@ export class PresetsTool implements AgentTool<typeof presetsSchema> {
 		}
 	}
 
-	private async evaluatePreset(params: PresetsParams): Promise<AgentToolResult> {
+	private async evaluatePreset(params: PresetsParams, signal?: AbortSignal): Promise<AgentToolResult> {
 		const name = this.requireName(params);
 		if (!params.task || !params.expectedOutcome) {
 			throw new Error(`"evaluate" requires both "task" and "expectedOutcome".`);
 		}
 		requirePresetAutoImprovementBudget(this.session, "evaluation");
 		const revId = await this.resolveTargetRevision(name, params.revisionId);
-		const { passed, summary } = await evaluatePresetRevision(name, revId, {
-			task: params.task,
-			expectedOutcome: params.expectedOutcome,
-			parent: this.session,
-		});
-		return {
-			content: [
-				{
-					type: "text",
-					text:
-						`Evaluation ${passed ? "passed" : "FAILED"} for preset "${name}" revision ${revId}: ${summary}` +
-						(passed
-							? ` Promote to activate.`
-							: ` Failed evaluations block promotion; fix the content and draft a new revision.`),
-				},
-			],
-			details: { action: "evaluate", name, revisionId: revId, passed },
-		};
+		// Fuse the tool call signal with parent-disposal linkage and register
+		// before the run starts (mirror of the skill side). Cancellation
+		// records nothing and never promotes.
+		const evalSignal = createToolEvalSignal(this.session, signal);
+		try {
+			const run = evaluatePresetRevision(name, revId, {
+				task: params.task,
+				expectedOutcome: params.expectedOutcome,
+				parent: this.session,
+				signal: evalSignal.signal,
+			});
+			const { passed, summary } = await evalSignal.track(run);
+			return {
+				content: [
+					{
+						type: "text",
+						text:
+							`Evaluation ${passed ? "passed" : "FAILED"} for preset "${name}" revision ${revId}: ${summary}` +
+							(passed
+								? ` Promote to activate.`
+								: ` Failed evaluations block promotion; fix the content and draft a new revision.`),
+					},
+				],
+				details: { action: "evaluate", name, revisionId: revId, passed },
+			};
+		} finally {
+			evalSignal.release();
+		}
 	}
 
 	private async promotePreset(params: PresetsParams): Promise<AgentToolResult> {
