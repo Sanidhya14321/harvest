@@ -1,5 +1,17 @@
 name: GitHub release
 
+# Release flow for Sanidhya14321/harvest.
+#
+#   bun scripts/release.ts patch|minor|major|<version>
+#
+# bumps versions, commits `chore: bump version to X`, tags `vX`, and pushes
+# main + tag. This workflow then builds the 8 release binaries, validates the
+# packed npm bundle, and publishes the GitHub Release with SHA256SUMS.
+#
+# First release: make the repo public, then `bun scripts/release.ts patch`
+# from a clean `main` checkout. Installers (`scripts/install.sh|.ps1`) and
+# README URLs already point at Sanidhya14321/harvest.
+
 on:
   push:
     tags:
@@ -27,13 +39,14 @@ jobs:
           - { runner: ubuntu-24.04, target: win32-x64, native: win32-x64-baseline }
           - { runner: windows-11-arm, target: win32-arm64, native: host }
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           lfs: true
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.3.14'
+          bun-version: '1.4.0'
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-08-08
@@ -59,7 +72,7 @@ jobs:
           retention-days: 1
 
   npm-bundle:
-    # Source-vs-npm leg (P2-10): prove the packed npm tarball — the artifact
+    # Source-vs-npm leg: prove the packed npm tarball — the artifact
     # npm consumers install — carries the release version and a bootable
     # bundled CLI identical to the source checkout the binaries are built
     # from. The unpacked tree runs from inside the checkout so the bundle's
@@ -67,11 +80,12 @@ jobs:
     # is not published to the public registry, so a fresh-registry consumer
     # install stays a manual release gate, not an automated one.
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.3.14'
+          bun-version: '1.4.0'
       - name: Check tag matches package version
         run: bun -e 'const pkg = await Bun.file("packages/coding-agent/package.json").json(); if (process.env.GITHUB_REF_NAME !== "v" + pkg.version) throw new Error("Release tag does not match coding-agent version");'
       - run: bun install --frozen-lockfile
@@ -109,13 +123,15 @@ jobs:
   publish:
     needs: [binaries, npm-bundle]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.3.14'
+          bun-version: '1.4.0'
       - uses: actions/download-artifact@v4
         with:
           pattern: binary-*
