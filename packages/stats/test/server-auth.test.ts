@@ -20,9 +20,7 @@ describe("stats dashboard authentication", () => {
 
 	it("refuses a non-loopback bind without credentials before listening", async () => {
 		delete process.env[STATS_TOKEN_ENV];
-		await expect(startServer(0, "0.0.0.0")).rejects.toThrow(
-			"refusing non-loopback bind '0.0.0.0' without a token",
-		);
+		await expect(startServer(0, "0.0.0.0")).rejects.toThrow("refusing non-loopback bind '0.0.0.0' without a token");
 	});
 
 	it("rejects unauthenticated API reads when a token is configured", async () => {

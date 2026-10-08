@@ -1938,7 +1938,12 @@ describe("anthropic stream envelope handling", () => {
 						type: "message_start",
 						message: {
 							id: "msg_finalized_blocks",
-							usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+							usage: {
+								input_tokens: 10,
+								output_tokens: 0,
+								cache_read_input_tokens: 0,
+								cache_creation_input_tokens: 0,
+							},
 						},
 					},
 					{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
@@ -1971,14 +1976,24 @@ describe("anthropic stream envelope handling", () => {
 					type: "message_start",
 					message: {
 						id: "msg_spliced_1",
-						usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+						usage: {
+							input_tokens: 10,
+							output_tokens: 0,
+							cache_read_input_tokens: 0,
+							cache_creation_input_tokens: 0,
+						},
 					},
 				},
 				{
 					type: "message_start",
 					message: {
 						id: "msg_spliced_2",
-						usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+						usage: {
+							input_tokens: 10,
+							output_tokens: 0,
+							cache_read_input_tokens: 0,
+							cache_creation_input_tokens: 0,
+						},
 					},
 				},
 			]) as never;
@@ -2001,4 +2016,3 @@ describe("anthropic stream envelope handling", () => {
 		expect(result.errorMessage).toContain("message_stop");
 	});
 });
-

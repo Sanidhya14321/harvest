@@ -1,8 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-	isOpenAICompletionsProgressChunk,
-	streamOpenAICompletions,
-} from "@harvest/pi-ai/providers/openai-completions";
+import { isOpenAICompletionsProgressChunk, streamOpenAICompletions } from "@harvest/pi-ai/providers/openai-completions";
 import type { Context, FetchImpl, Model, ModelSpec } from "@harvest/pi-ai/types";
 import { buildModel } from "@harvest/pi-catalog/build";
 import { getBundledModel } from "@harvest/pi-catalog/models";

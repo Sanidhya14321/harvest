@@ -181,14 +181,20 @@ export class HarvestSkillAutomation {
 	/**
 	 * Strictly human-gated approval: compiles proposal into .harvest/skills/<name>.md.
 	 */
-	async approveProposal(proposalId: string, customName?: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
+	async approveProposal(
+		proposalId: string,
+		customName?: string,
+	): Promise<{ success: boolean; filePath?: string; error?: string }> {
 		const proposal = this.#proposalsData.proposals[proposalId];
 		if (!proposal) {
 			return { success: false, error: `Proposal '${proposalId}' not found.` };
 		}
 
 		const rawName = customName ?? proposal.name;
-		const skillName = rawName.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+		const skillName = rawName
+			.replace(/[^a-zA-Z0-9_-]/g, "-")
+			.replace(/-+/g, "-")
+			.replace(/^-|-$/g, "");
 		const skillsDir = path.join(this.#harvestDir, "skills");
 		await fs.promises.mkdir(skillsDir, { recursive: true });
 
@@ -254,7 +260,7 @@ export class HarvestSkillAutomation {
 	}
 
 	getPendingProposals(): SkillProposal[] {
-		return Object.values(this.#proposalsData.proposals).filter((p) => p.status === "pending");
+		return Object.values(this.#proposalsData.proposals).filter(p => p.status === "pending");
 	}
 
 	get history(): readonly string[] {

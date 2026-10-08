@@ -7,7 +7,13 @@ import { configureCustomProvider } from "../src/config/custom-provider";
 describe("configureCustomProvider", () => {
 	it("saves custom provider configuration to models.yml with apiKey and default model", async () => {
 		const testProviderId = "test-custom-prov";
-		await configureCustomProvider("https://api.example.com/v1", "sk-secret-key-123", undefined, undefined, testProviderId);
+		await configureCustomProvider(
+			"https://api.example.com/v1",
+			"sk-secret-key-123",
+			undefined,
+			undefined,
+			testProviderId,
+		);
 
 		const agentDir = getAgentDir();
 		const modelsPath = path.join(agentDir, "models.yml");
@@ -59,7 +65,13 @@ describe("configureCustomProvider", () => {
 			refresh: async () => {},
 		};
 
-		await configureCustomProvider("http://localhost:11434", "my-key", mockModelRegistry as any, undefined, testProviderId);
+		await configureCustomProvider(
+			"http://localhost:11434",
+			"my-key",
+			mockModelRegistry as any,
+			undefined,
+			testProviderId,
+		);
 
 		const agentDir = getAgentDir();
 		const modelsPath = path.join(agentDir, "models.yml");

@@ -267,7 +267,10 @@ describe("global --profile flag", () => {
 				proc.exited,
 			]);
 
-			console.log("DEBUG SENTINEL lines:", stdout.split("\n").filter(l => l.includes("SENTINEL")));
+			console.log(
+				"DEBUG SENTINEL lines:",
+				stdout.split("\n").filter(l => l.includes("SENTINEL")),
+			);
 			expect(exitCode, stderr).toBe(0);
 			expect(stdout).toContain("SENTINEL=work");
 			expect(stdout).not.toContain("SENTINEL=default");

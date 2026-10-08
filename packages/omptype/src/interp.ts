@@ -695,11 +695,7 @@ function pathsEqual(left: readonly PropertyKey[], right: readonly PropertyKey[])
 function valueAtPath(value: unknown, path: readonly PropertyKey[]): { present: boolean; value?: unknown } {
 	let cursor = value;
 	for (const key of path) {
-		if (
-			(typeof cursor !== "object" && typeof cursor !== "function") ||
-			cursor === null ||
-			!own.call(cursor, key)
-		) {
+		if ((typeof cursor !== "object" && typeof cursor !== "function") || cursor === null || !own.call(cursor, key)) {
 			return { present: false };
 		}
 		cursor = (cursor as Record<PropertyKey, unknown>)[key];

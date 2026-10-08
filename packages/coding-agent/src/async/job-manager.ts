@@ -963,10 +963,7 @@ export class AsyncJobManager {
 				const waited =
 					inFlight.length > 0
 						? await this.#waitForDeliveryPromise(inFlight[0]?.promise, deadline)
-						: await this.#waitForDeliveryPromise(
-								this.#inFlightDeliveries[0]?.promise,
-								deadline,
-							);
+						: await this.#waitForDeliveryPromise(this.#inFlightDeliveries[0]?.promise, deadline);
 				if (!waited) return false;
 				continue;
 			}

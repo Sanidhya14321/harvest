@@ -1702,9 +1702,7 @@ export function frames(text: string, options?: Pick<RenderManyOptions, "shape" |
 /** Validate and extract a persisted frame archive from `preserveData`. */
 export function getPreservedArchive(preserveData: Record<string, unknown> | undefined): Archive | undefined {
 	const candidate =
-		preserveData !== undefined && Object.hasOwn(preserveData, PRESERVE_KEY)
-			? preserveData[PRESERVE_KEY]
-			: undefined;
+		preserveData !== undefined && Object.hasOwn(preserveData, PRESERVE_KEY) ? preserveData[PRESERVE_KEY] : undefined;
 	if (!candidate || typeof candidate !== "object") return undefined;
 	const archive = candidate as Archive;
 	const frames = Array.isArray(archive.frames)

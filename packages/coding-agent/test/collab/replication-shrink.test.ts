@@ -30,10 +30,7 @@ import {
 	unpackEnvelope,
 } from "@harvest/pi-coding-agent/collab/protocol";
 import { CollabSocket } from "@harvest/pi-coding-agent/collab/relay-client";
-import {
-	MAX_REPLICATED_PAYLOAD_BYTES,
-	shrinkForReplication,
-} from "@harvest/pi-coding-agent/collab/replication-shrink";
+import { MAX_REPLICATED_PAYLOAD_BYTES, shrinkForReplication } from "@harvest/pi-coding-agent/collab/replication-shrink";
 import type { InteractiveModeContext } from "@harvest/pi-coding-agent/modes/types";
 import type { SessionEntry } from "@harvest/pi-coding-agent/session/session-entries";
 

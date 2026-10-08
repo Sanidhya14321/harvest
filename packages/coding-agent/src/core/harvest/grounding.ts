@@ -54,12 +54,7 @@ export class ExecutionGroundingEngine {
 	}
 
 	/** Record command execution (e.g. bash tool run) */
-	recordCommandExecution(
-		command: string,
-		exitCode: number,
-		stdout: string = "",
-		stderr: string = "",
-	): void {
+	recordCommandExecution(command: string, exitCode: number, stdout: string = "", stderr: string = ""): void {
 		this.#executions.push({
 			command,
 			exitCode,
@@ -124,7 +119,7 @@ export class ExecutionGroundingEngine {
 	hasRecoveredFromFailure(): boolean {
 		if (!this.isGroundingValidated()) return false;
 		// Check if any prior verification run failed
-		return this.#executions.some((e) => e.exitCode !== 0 && this.#isVerificationCommand(e.command));
+		return this.#executions.some(e => e.exitCode !== 0 && this.#isVerificationCommand(e.command));
 	}
 
 	/**
@@ -157,7 +152,7 @@ export class ExecutionGroundingEngine {
 
 		this.#nudgesUsed++;
 
-		const fileList = unverified.map((f) => `'${f}'`).join(", ");
+		const fileList = unverified.map(f => `'${f}'`).join(", ");
 		const steerPrompt = `You modified [${fileList}] but have not verified the changes successfully. Before finishing, run the project's verification command: \`${cmd}\`. Fix any failures it reports.`;
 
 		return {

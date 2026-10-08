@@ -428,7 +428,9 @@ function createDashboardServer(port: number, hostname: string, token: string | n
 					headers,
 				});
 			} catch (error) {
-				logger.error("Server error in stats dashboard", { error: error instanceof Error ? error.message : String(error) });
+				logger.error("Server error in stats dashboard", {
+					error: error instanceof Error ? error.message : String(error),
+				});
 				return Response.json(
 					{ error: error instanceof Error ? error.message : "Unknown error" },
 					{ status: 500, headers: dashboardHeaders },

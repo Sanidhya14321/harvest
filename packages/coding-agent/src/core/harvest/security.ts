@@ -195,7 +195,11 @@ export class SecuritySandbox {
 					};
 				}
 				const parent = path.dirname(ancestor);
-				if (parent === ancestor || !path.relative(this.#workspaceRoot, ancestor) || path.relative(this.#workspaceRoot, ancestor).startsWith("..")) {
+				if (
+					parent === ancestor ||
+					!path.relative(this.#workspaceRoot, ancestor) ||
+					path.relative(this.#workspaceRoot, ancestor).startsWith("..")
+				) {
 					resolved = path.normalize(absolute);
 					break;
 				}

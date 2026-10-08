@@ -109,7 +109,7 @@ describe("workstream B T09 cancel between pass and append", () => {
 			release = resolve;
 		});
 		const holder = withArtifactTransaction("skill", "t09-queued", () => gate);
-	 const controller = new AbortController();
+		const controller = new AbortController();
 		const pending = evaluateSkillRevision("t09-queued", draft.id, {
 			task: "t",
 			expectedOutcome: "o",

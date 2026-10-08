@@ -125,7 +125,7 @@ export function extractTranscriptEvidence(toolCalls: readonly TranscriptToolCall
 				status: "STALE",
 				timestamp: v.timestamp,
 				exitCode: v.exitCode,
-				stalenessReason: `Modified after test passed: ${staleFiles.map((f) => `'${f}'`).join(", ")}`,
+				stalenessReason: `Modified after test passed: ${staleFiles.map(f => `'${f}'`).join(", ")}`,
 			});
 		} else {
 			verificationRecords.push({

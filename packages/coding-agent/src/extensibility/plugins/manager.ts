@@ -246,7 +246,9 @@ export class PluginManager {
 		}
 
 		const name = typeof pluginPkg.name === "string" && pluginPkg.name.length > 0 ? pluginPkg.name : fallbackName;
-		const manifest: PluginManifest = pluginPkg.harvest || pluginPkg.omp || pluginPkg.pi || { version: pluginPkg.version };
+		const manifest: PluginManifest = pluginPkg.harvest ||
+			pluginPkg.omp ||
+			pluginPkg.pi || { version: pluginPkg.version };
 		manifest.version = pluginPkg.version;
 		const runtimeState = config.plugins[name] || {
 			version: pluginPkg.version,
@@ -572,7 +574,13 @@ export class PluginManager {
 			}
 
 			const pkgPath = path.join(getPluginsNodeModules(), actualName, "package.json");
-			let pkg: { name: string; version: string; harvest?: PluginManifest; omp?: PluginManifest; pi?: PluginManifest };
+			let pkg: {
+				name: string;
+				version: string;
+				harvest?: PluginManifest;
+				omp?: PluginManifest;
+				pi?: PluginManifest;
+			};
 			try {
 				pkg = await Bun.file(pkgPath).json();
 			} catch (err) {

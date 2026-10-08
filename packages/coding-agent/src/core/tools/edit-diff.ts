@@ -24,10 +24,7 @@ export function generateUnifiedDiff(filePath: string, original: string, modified
 	const origLines = original.split("\n");
 	const modLines = modified.split("\n");
 
-	const diffLines: string[] = [
-		`--- a/${filePath}`,
-		`+++ b/${filePath}`,
-	];
+	const diffLines: string[] = [`--- a/${filePath}`, `+++ b/${filePath}`];
 
 	// Find common prefix
 	let prefix = 0;

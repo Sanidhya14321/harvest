@@ -263,22 +263,16 @@ for (const file of [projectEnv, agentEnv, piEnv, homeEnv]) {
 const harvestProvider = (Bun.env.HARVEST_PROVIDER || "").trim().toLowerCase();
 if (Bun.env.HARVEST_API_KEY) {
 	if (!Bun.env.OPENAI_API_KEY) Bun.env.OPENAI_API_KEY = Bun.env.HARVEST_API_KEY;
-	if (harvestProvider === "groq" && !Bun.env.GROQ_API_KEY)
-		Bun.env.GROQ_API_KEY = Bun.env.HARVEST_API_KEY;
+	if (harvestProvider === "groq" && !Bun.env.GROQ_API_KEY) Bun.env.GROQ_API_KEY = Bun.env.HARVEST_API_KEY;
 	if (harvestProvider === "openrouter" && !Bun.env.OPENROUTER_API_KEY)
 		Bun.env.OPENROUTER_API_KEY = Bun.env.HARVEST_API_KEY;
 	if (harvestProvider === "anthropic" && !Bun.env.ANTHROPIC_API_KEY)
 		Bun.env.ANTHROPIC_API_KEY = Bun.env.HARVEST_API_KEY;
-	if (harvestProvider === "google" && !Bun.env.GEMINI_API_KEY)
-		Bun.env.GEMINI_API_KEY = Bun.env.HARVEST_API_KEY;
-	if (harvestProvider === "cerebras" && !Bun.env.CEREBRAS_API_KEY)
-		Bun.env.CEREBRAS_API_KEY = Bun.env.HARVEST_API_KEY;
-	if (harvestProvider === "deepseek" && !Bun.env.DEEPSEEK_API_KEY)
-		Bun.env.DEEPSEEK_API_KEY = Bun.env.HARVEST_API_KEY;
-	if (harvestProvider === "mistral" && !Bun.env.MISTRAL_API_KEY)
-		Bun.env.MISTRAL_API_KEY = Bun.env.HARVEST_API_KEY;
-	if (harvestProvider === "xai" && !Bun.env.XAI_API_KEY)
-		Bun.env.XAI_API_KEY = Bun.env.HARVEST_API_KEY;
+	if (harvestProvider === "google" && !Bun.env.GEMINI_API_KEY) Bun.env.GEMINI_API_KEY = Bun.env.HARVEST_API_KEY;
+	if (harvestProvider === "cerebras" && !Bun.env.CEREBRAS_API_KEY) Bun.env.CEREBRAS_API_KEY = Bun.env.HARVEST_API_KEY;
+	if (harvestProvider === "deepseek" && !Bun.env.DEEPSEEK_API_KEY) Bun.env.DEEPSEEK_API_KEY = Bun.env.HARVEST_API_KEY;
+	if (harvestProvider === "mistral" && !Bun.env.MISTRAL_API_KEY) Bun.env.MISTRAL_API_KEY = Bun.env.HARVEST_API_KEY;
+	if (harvestProvider === "xai" && !Bun.env.XAI_API_KEY) Bun.env.XAI_API_KEY = Bun.env.HARVEST_API_KEY;
 }
 if (Bun.env.HARVEST_BASE_URL) {
 	if (!Bun.env.OPENAI_BASE_URL) Bun.env.OPENAI_BASE_URL = Bun.env.HARVEST_BASE_URL;

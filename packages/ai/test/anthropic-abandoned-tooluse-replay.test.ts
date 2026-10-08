@@ -1,13 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { convertAnthropicMessages } from "@harvest/pi-ai/providers/anthropic";
-import type {
-	AssistantMessage,
-	Message,
-	Model,
-	ModelSpec,
-	ToolResultMessage,
-	UserMessage,
-} from "@harvest/pi-ai/types";
+import type { AssistantMessage, Message, Model, ModelSpec, ToolResultMessage, UserMessage } from "@harvest/pi-ai/types";
 import { buildModel } from "@harvest/pi-catalog/build";
 
 // These tests pin the wire-validity contract that was verified end-to-end against the

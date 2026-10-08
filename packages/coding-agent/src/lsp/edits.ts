@@ -384,14 +384,8 @@ export async function applyWorkspaceEdit(
 			} else if (op.kind === "rename") {
 				const oldPath = uriToFile(op.oldUri);
 				const newPath = uriToFile(op.newUri);
-				const oldResolved = jailUri(
-					op.oldUri,
-					`LSP rename source rejected: ${oldPath} is outside workspace root`,
-				);
-				const newResolved = jailUri(
-					op.newUri,
-					`LSP rename target rejected: ${newPath} is outside workspace root`,
-				);
+				const oldResolved = jailUri(op.oldUri, `LSP rename source rejected: ${oldPath} is outside workspace root`);
+				const newResolved = jailUri(op.newUri, `LSP rename target rejected: ${newPath} is outside workspace root`);
 				await fs.mkdir(path.dirname(newResolved), { recursive: true });
 				if (oldResolved !== newResolved) {
 					// Displace an overwritten destination into a kernel-reserved sibling

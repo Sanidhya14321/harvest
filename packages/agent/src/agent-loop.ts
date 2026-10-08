@@ -1621,9 +1621,7 @@ interface PreparedProviderCall {
 function raceWithTurnSignal<T>(promise: Promise<T> | T, signal: AbortSignal | undefined): Promise<T> {
 	if (!signal) return Promise.resolve(promise);
 	if (signal.aborted) {
-		return Promise.reject(
-			signal.reason instanceof Error ? signal.reason : new Error("Request was aborted"),
-		);
+		return Promise.reject(signal.reason instanceof Error ? signal.reason : new Error("Request was aborted"));
 	}
 	let onAbort: (() => void) | undefined;
 	const aborted = new Promise<never>((_, reject) => {

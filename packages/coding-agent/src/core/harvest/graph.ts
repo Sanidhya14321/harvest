@@ -10,12 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export type EdgeRelation =
-	| "depends_on"
-	| "relates_to"
-	| "supersedes"
-	| "produced_by"
-	| "contradicts";
+export type EdgeRelation = "depends_on" | "relates_to" | "supersedes" | "produced_by" | "contradicts";
 
 export interface GraphNode {
 	readonly id: string;
@@ -97,16 +92,11 @@ export class HarvestKnowledgeGraph {
 	 */
 	addEdge(source: string, target: string, relation: EdgeRelation, metadata?: Record<string, unknown>): void {
 		// Prevent exact duplicate edges
-		const exists = this.#data.edges.some(
-			(e) => e.source === source && e.target === target && e.relation === relation,
-		);
+		const exists = this.#data.edges.some(e => e.source === source && e.target === target && e.relation === relation);
 		if (!exists) {
 			this.#data = {
 				...this.#data,
-				edges: [
-					...this.#data.edges,
-					{ source, target, relation, metadata },
-				],
+				edges: [...this.#data.edges, { source, target, relation, metadata }],
 			};
 			this.save();
 		}
@@ -114,12 +104,12 @@ export class HarvestKnowledgeGraph {
 
 	/** Get all outgoing edges from a node */
 	getOutgoingEdges(nodeId: string): readonly GraphEdge[] {
-		return this.#data.edges.filter((e) => e.source === nodeId);
+		return this.#data.edges.filter(e => e.source === nodeId);
 	}
 
 	/** Get all incoming edges to a node */
 	getIncomingEdges(nodeId: string): readonly GraphEdge[] {
-		return this.#data.edges.filter((e) => e.target === nodeId);
+		return this.#data.edges.filter(e => e.target === nodeId);
 	}
 
 	/**
@@ -140,7 +130,7 @@ export class HarvestKnowledgeGraph {
 			// Avoid self-loops after compaction
 			if (source !== target) {
 				const duplicate = newEdges.some(
-					(e) => e.source === source && e.target === target && e.relation === edge.relation,
+					e => e.source === source && e.target === target && e.relation === edge.relation,
 				);
 				if (!duplicate) {
 					newEdges.push({ ...edge, source, target });
@@ -173,7 +163,7 @@ export class HarvestKnowledgeGraph {
 			}
 
 			if (depth < maxDepth) {
-				const edges = this.#data.edges.filter((e) => e.source === id || e.target === id);
+				const edges = this.#data.edges.filter(e => e.source === id || e.target === id);
 				for (const edge of edges) {
 					const neighbor = edge.source === id ? edge.target : edge.source;
 					if (!visited.has(neighbor)) {

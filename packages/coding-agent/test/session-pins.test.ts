@@ -3,11 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { SessionInfo } from "@harvest/pi-coding-agent/session/session-listing";
-import {
-	loadPinnedSessionIds,
-	sortPinnedFirst,
-	toggleSessionPin,
-} from "@harvest/pi-coding-agent/session/session-pins";
+import { loadPinnedSessionIds, sortPinnedFirst, toggleSessionPin } from "@harvest/pi-coding-agent/session/session-pins";
 
 describe("session-pins", () => {
 	let tempDir: string;

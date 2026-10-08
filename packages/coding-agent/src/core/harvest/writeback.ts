@@ -77,10 +77,14 @@ export class HarvestWriteback {
 	/**
 	 * Find most similar existing entry in the same role and kind.
 	 */
-	#findSimilarEntry(role: string, kind: "pattern" | "anti-pattern", title: string): { entry: KnowledgeEntry; score: number } | null {
-		const entries = this.#contradictionEngine.loadAllEntries().filter(
-			(e) => e.role === role && e.kind === kind && !e.superseded,
-		);
+	#findSimilarEntry(
+		role: string,
+		kind: "pattern" | "anti-pattern",
+		title: string,
+	): { entry: KnowledgeEntry; score: number } | null {
+		const entries = this.#contradictionEngine
+			.loadAllEntries()
+			.filter(e => e.role === role && e.kind === kind && !e.superseded);
 
 		let bestEntry: KnowledgeEntry | null = null;
 		let bestScore = 0;

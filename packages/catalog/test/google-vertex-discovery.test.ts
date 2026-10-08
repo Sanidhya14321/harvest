@@ -6,10 +6,7 @@ import { Effort } from "@harvest/pi-catalog/effort";
 import { writeModelCache } from "@harvest/pi-catalog/model-cache";
 import { resolveProviderModels } from "@harvest/pi-catalog/model-manager";
 import { getBundledModels } from "@harvest/pi-catalog/models";
-import {
-	googleModelManagerOptions,
-	googleVertexModelManagerOptions,
-} from "@harvest/pi-catalog/provider-models/google";
+import { googleModelManagerOptions, googleVertexModelManagerOptions } from "@harvest/pi-catalog/provider-models/google";
 import {
 	MODELS_DEV_PROVIDER_DESCRIPTORS,
 	mapModelsDevToModels,

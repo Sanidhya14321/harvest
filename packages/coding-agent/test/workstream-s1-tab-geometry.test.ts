@@ -116,7 +116,7 @@ describe("tab-strip screen geometry and close order", () => {
 		if (row < 0) throw new Error(`Tab ${label} is not visible`);
 		const text = view[row]!;
 		const labelAt = text.indexOf(label);
-	 const after = text.indexOf("x", labelAt + label.length);
+		const after = text.indexOf("x", labelAt + label.length);
 		if (after < 0 || text[after - 1] !== " " || (after + 1 < text.length && text[after + 1] !== " ")) {
 			throw new Error(`No close cell after ${label} on row ${row}: ${JSON.stringify(text)}`);
 		}

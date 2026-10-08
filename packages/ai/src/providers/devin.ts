@@ -256,7 +256,10 @@ export const streamDevin: StreamFunction<"devin-agent"> = (
 					pending = pending.subarray(5 + len);
 
 					if (flag & CONNECT_END_STREAM_FLAG) {
-						const trailerBytes = flag & CONNECT_COMPRESSED_FLAG ? gunzipSync(payload, { maxOutputLength: MAX_DECOMPRESSED_TRAILER_BYTES }) : payload;
+						const trailerBytes =
+							flag & CONNECT_COMPRESSED_FLAG
+								? gunzipSync(payload, { maxOutputLength: MAX_DECOMPRESSED_TRAILER_BYTES })
+								: payload;
 						const trailerError = readConnectTrailerError(trailerBytes.toString("utf8").trim());
 						if (trailerError) {
 							// #4218: these rejections carry no HTTP error body, so the raw
@@ -323,7 +326,10 @@ export const streamDevin: StreamFunction<"devin-agent"> = (
 						continue;
 					}
 
-					const raw = flag & CONNECT_COMPRESSED_FLAG ? gunzipSync(payload, { maxOutputLength: MAX_DECOMPRESSED_FRAME_BYTES }) : payload;
+					const raw =
+						flag & CONNECT_COMPRESSED_FLAG
+							? gunzipSync(payload, { maxOutputLength: MAX_DECOMPRESSED_FRAME_BYTES })
+							: payload;
 					const msg = fromBinary(GetChatMessageResponseSchema, raw);
 					if (msg.messageId && !output.responseId) output.responseId = msg.messageId;
 					// The router reports the concrete model it landed on; it can differ

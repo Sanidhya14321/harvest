@@ -30,11 +30,7 @@ import { AgentSession } from "../src/session/agent-session";
 import { SessionManager } from "../src/session/session-manager";
 import * as discovery from "../src/task/discovery";
 import { createPresetDraft, setPresetEvalRunner } from "../src/task/agents";
-import {
-	createSkillDraft,
-	evaluateSkillRevision,
-	setSkillEvalRunner,
-} from "../src/autolearn/managed-skills";
+import { createSkillDraft, evaluateSkillRevision, setSkillEvalRunner } from "../src/autolearn/managed-skills";
 import type { TUI } from "@harvest/pi-tui";
 import { ImageBudget } from "@harvest/pi-tui";
 import { setKeybindings } from "@harvest/pi-tui";

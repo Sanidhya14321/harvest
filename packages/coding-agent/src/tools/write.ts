@@ -1365,13 +1365,8 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 				};
 			}
 
-			const diagnostics = await this.#writethrough(
-				jailedPath,
-				cleanContent,
-				signal,
-				undefined,
-				batchRequest,
-				dst => this.#deferredDiagnostics?.begin(dst),
+			const diagnostics = await this.#writethrough(jailedPath, cleanContent, signal, undefined, batchRequest, dst =>
+				this.#deferredDiagnostics?.begin(dst),
 			);
 			// Re-validate after the write: an ancestor switched between the
 			// jail check and the commit would otherwise succeed silently.

@@ -163,7 +163,10 @@ describe("fromJsonSchema", () => {
 	it("rejects oneOf explicitly as unsupported", () => {
 		expect(() =>
 			fromJsonSchema({
-				oneOf: [{ type: "number", minimum: 0 }, { type: "number", maximum: 10 }],
+				oneOf: [
+					{ type: "number", minimum: 0 },
+					{ type: "number", maximum: 10 },
+				],
 			}),
 		).toThrow("unsupported JSON Schema keyword: oneOf");
 	});
@@ -177,4 +180,3 @@ describe("fromJsonSchema", () => {
 		expect(schema({})).toBeInstanceOf(OmpErrors);
 	});
 });
-

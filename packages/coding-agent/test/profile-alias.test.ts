@@ -331,7 +331,7 @@ describe("profile alias installer", () => {
 					readFile: async () => "",
 					writeFile: async () => {},
 				}),
-			).rejects.toThrow('Refusing to shadow the base omp command.');
+			).rejects.toThrow("Refusing to shadow the base omp command.");
 		}
 	});
 

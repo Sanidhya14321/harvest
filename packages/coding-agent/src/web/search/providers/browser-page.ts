@@ -89,7 +89,11 @@ async function fetchHtmlPage(url: string, options: BrowserFetchOptions, fetchImp
 		},
 		signal: options.signal,
 	});
-	return { html: await readBoundedText(response, MAX_SEARCH_HTML_BYTES), status: response.status, url: response.url || url };
+	return {
+		html: await readBoundedText(response, MAX_SEARCH_HTML_BYTES),
+		status: response.status,
+		url: response.url || url,
+	};
 }
 
 async function browseHtmlPage(

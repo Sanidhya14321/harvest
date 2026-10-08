@@ -101,7 +101,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }).__harvest_worker_core_gate = {
+		(
+			globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }
+		).__harvest_worker_core_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -151,7 +153,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }).__harvest_worker_core_gate = {
+		(
+			globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }
+		).__harvest_worker_core_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -218,7 +222,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }).__harvest_worker_core_gate = {
+		(
+			globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }
+		).__harvest_worker_core_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -303,7 +309,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }).__harvest_worker_core_gate = {
+		(
+			globalThis as { __harvest_worker_core_gate?: { entered(): void; wait: Promise<void> } }
+		).__harvest_worker_core_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -395,7 +403,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __harvest_worker_cwd_gate?: { entered(): void; wait: Promise<void> } }).__harvest_worker_cwd_gate = {
+		(
+			globalThis as { __harvest_worker_cwd_gate?: { entered(): void; wait: Promise<void> } }
+		).__harvest_worker_cwd_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};

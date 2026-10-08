@@ -39,9 +39,7 @@ export class DeterministicCompactor {
 		const summaryId = options.summaryId ?? `compaction-${Date.now()}`;
 		const evidence = extractTranscriptEvidence(toolCalls);
 
-		const lines: string[] = [
-			`<compacted-session-evidence id="${summaryId}">`,
-		];
+		const lines: string[] = [`<compacted-session-evidence id="${summaryId}">`];
 
 		if (options.generalSummaryText) {
 			lines.push(`## Summary`, options.generalSummaryText, ``);

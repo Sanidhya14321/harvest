@@ -23,11 +23,57 @@ export interface FormatSkillsOptions {
 }
 
 const STOPWORDS = new Set([
-	"about", "all", "also", "and", "any", "are", "been", "can", "could", "does",
-	"for", "from", "has", "have", "how", "into", "its", "just", "like", "make",
-	"more", "most", "not", "only", "other", "our", "out", "some", "such", "than",
-	"that", "the", "their", "them", "then", "there", "these", "they", "this", "use",
-	"was", "were", "what", "when", "where", "which", "who", "will", "with", "you", "your",
+	"about",
+	"all",
+	"also",
+	"and",
+	"any",
+	"are",
+	"been",
+	"can",
+	"could",
+	"does",
+	"for",
+	"from",
+	"has",
+	"have",
+	"how",
+	"into",
+	"its",
+	"just",
+	"like",
+	"make",
+	"more",
+	"most",
+	"not",
+	"only",
+	"other",
+	"our",
+	"out",
+	"some",
+	"such",
+	"than",
+	"that",
+	"the",
+	"their",
+	"them",
+	"then",
+	"there",
+	"these",
+	"they",
+	"this",
+	"use",
+	"was",
+	"were",
+	"what",
+	"when",
+	"where",
+	"which",
+	"who",
+	"will",
+	"with",
+	"you",
+	"your",
 ]);
 
 /** Tokenize text for keyword relevance matching, omitting noise stop words */
@@ -37,7 +83,7 @@ function extractKeywords(text: string): Set<string> {
 			.toLowerCase()
 			.replace(/[^a-z0-9_\-\s]/g, " ")
 			.split(/\s+/)
-			.filter((t) => t.length >= 3 && !STOPWORDS.has(t)),
+			.filter(t => t.length >= 3 && !STOPWORDS.has(t)),
 	);
 }
 
@@ -53,12 +99,20 @@ export function parseFrontmatterTags(fm: string): string[] {
 			const items = raw
 				.slice(1, -1)
 				.split(",")
-				.map((s) => s.trim().replace(/^['"]|['"]$/g, "").toLowerCase());
+				.map(s =>
+					s
+						.trim()
+						.replace(/^['"]|['"]$/g, "")
+						.toLowerCase(),
+				);
 			tags.push(...items.filter(Boolean));
 		} else if (!raw.startsWith("-")) {
-			const items = raw
-				.split(",")
-				.map((s) => s.trim().replace(/^['"]|['"]$/g, "").toLowerCase());
+			const items = raw.split(",").map(s =>
+				s
+					.trim()
+					.replace(/^['"]|['"]$/g, "")
+					.toLowerCase(),
+			);
 			tags.push(...items.filter(Boolean));
 		}
 	}
@@ -92,12 +146,9 @@ export class SkillContextManager {
 
 	loadSkills(): LoadedSkill[] {
 		const skills: LoadedSkill[] = [];
-		const candidateDirs = [
-			this.#skillsDir,
-			path.join(this.#workspaceRoot, ".omp", "skills"),
-		];
+		const candidateDirs = [this.#skillsDir, path.join(this.#workspaceRoot, ".omp", "skills")];
 
-		const targetDir = candidateDirs.find((d) => fs.existsSync(d));
+		const targetDir = candidateDirs.find(d => fs.existsSync(d));
 		if (!targetDir) return skills;
 
 		try {
@@ -177,17 +228,14 @@ export class SkillContextManager {
 		}
 
 		scored.sort((a, b) => b.score - a.score);
-		return scored.slice(0, maxSkills).map((s) => s.skill);
+		return scored.slice(0, maxSkills).map(s => s.skill);
 	}
 
 	/**
 	 * Format skills for context injection.
 	 * When a query is provided, filters to relevant skills only to avoid token bloat.
 	 */
-	formatSkillsPrompt(
-		optionsOrMaxSkills?: FormatSkillsOptions | number,
-		legacyMaxTotalChars?: number,
-	): string {
+	formatSkillsPrompt(optionsOrMaxSkills?: FormatSkillsOptions | number, legacyMaxTotalChars?: number): string {
 		let query: string | undefined;
 		let maxSkills = 2;
 		let maxTotalChars = 800;
@@ -232,11 +280,8 @@ export class SkillContextManager {
 		limit: number = 3,
 		maxTokens: number = 4000,
 	): Promise<SearchResult[]> {
-		const candidateDirs = [
-			this.#skillsDir,
-			path.join(this.#workspaceRoot, ".omp", "skills"),
-		];
-		const targetDir = candidateDirs.find((d) => fs.existsSync(d));
+		const candidateDirs = [this.#skillsDir, path.join(this.#workspaceRoot, ".omp", "skills")];
+		const targetDir = candidateDirs.find(d => fs.existsSync(d));
 		if (!targetDir) return [];
 
 		const pages: SectionPage[] = [];
@@ -263,8 +308,8 @@ export class SkillContextManager {
 
 								if (tags.length > 0) {
 									const fileTags = parseFrontmatterTags(fm);
-									const lowerQueryTags = tags.map((t) => t.toLowerCase());
-									if (lowerQueryTags.some((t) => fileTags.includes(t))) {
+									const lowerQueryTags = tags.map(t => t.toLowerCase());
+									if (lowerQueryTags.some(t => fileTags.includes(t))) {
 										hasMatch = true;
 									}
 								}

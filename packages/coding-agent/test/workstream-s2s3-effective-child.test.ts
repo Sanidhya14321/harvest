@@ -8,10 +8,7 @@ import { ModelRegistry } from "../src/config/model-registry";
 import { Settings } from "../src/config/settings";
 import { createAgentSession, discoverAuthStorage, getToolSessionForAgentSession } from "../src/sdk";
 import { SessionManager } from "../src/session/session-manager";
-import {
-	openLiveAgentSessionFromSnapshot,
-	snapshotTrustedCaller,
-} from "../src/session/live-session-factory";
+import { openLiveAgentSessionFromSnapshot, snapshotTrustedCaller } from "../src/session/live-session-factory";
 
 /**
  * T03/S2: a real restricted SDK parent ([read, sessions, task], restricted

@@ -8,7 +8,10 @@ export const LEGACY_WORKER_HOST_SELECTOR_PREFIX = "__omp_worker_";
 
 /** Whether an argv value selects a worker hosted by the shared CLI entrypoint. */
 export function isWorkerHostSelector(value: string | undefined): value is string {
-	return (value?.startsWith(WORKER_HOST_SELECTOR_PREFIX) ?? false) || (value?.startsWith(LEGACY_WORKER_HOST_SELECTOR_PREFIX) ?? false);
+	return (
+		(value?.startsWith(WORKER_HOST_SELECTOR_PREFIX) ?? false) ||
+		(value?.startsWith(LEGACY_WORKER_HOST_SELECTOR_PREFIX) ?? false)
+	);
 }
 
 /**

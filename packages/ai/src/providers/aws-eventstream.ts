@@ -163,7 +163,8 @@ export async function* decodeEventStream(source: ReadableStream<Uint8Array>): As
 				const dv = new DataView(buf.buffer, buf.byteOffset + offset, buf.length - offset);
 				const total = dv.getUint32(0, false);
 				if (total < MIN_MESSAGE_LEN) throw new AIError.EventStreamFrameError(`total length ${total} below minimum`);
-				if (total > MAX_MESSAGE_LEN) throw new AIError.EventStreamFrameError(`total length ${total} exceeds maximum ${MAX_MESSAGE_LEN}`);
+				if (total > MAX_MESSAGE_LEN)
+					throw new AIError.EventStreamFrameError(`total length ${total} exceeds maximum ${MAX_MESSAGE_LEN}`);
 				if (buf.length - offset < total) break;
 				const frame = buf.subarray(offset, offset + total);
 				yield decodeMessage(frame);

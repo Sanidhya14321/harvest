@@ -372,7 +372,10 @@ export interface ToolSession {
 	 * semantics of the owning runtime). Falls back to the session-global
 	 * delivery seam when unset.
 	 */
-	deliverManagedMessage?: (target: { prompt?: (message: string) => Promise<unknown> }, message: string) => Promise<string>;
+	deliverManagedMessage?: (
+		target: { prompt?: (message: string) => Promise<unknown> },
+		message: string,
+	) => Promise<string>;
 	/** Idle→parked→revive lifecycle owner; lets the hub kill a non-job-backed agent registration. Default: AgentLifecycleManager.global(). */
 	agentLifecycle?: () => AgentLifecycleManager;
 	/** Get artifacts directory for artifact:// URLs */

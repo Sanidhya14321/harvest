@@ -9,7 +9,8 @@ const CHANGELOG_BASELINE_REF = "refs/clog";
 const CHANGELOG_BASELINE_NAME = "clog";
 /** Per-file size ceiling; larger changelogs get their oldest releases collapsed into an archive link. */
 export const MAX_CHANGELOG_BYTES = 256 * 1024;
-const ARCHIVE_REPO = process.env.HARVEST_REPO ?? process.env.OMP_REPO ?? process.env.GITHUB_REPOSITORY ?? "harvest/harvest";
+const ARCHIVE_REPO =
+	process.env.HARVEST_REPO ?? process.env.OMP_REPO ?? process.env.GITHUB_REPOSITORY ?? "harvest/harvest";
 const ARCHIVE_LINK_PATTERN = /^Older entries are archived in \[[^\]]+@[0-9a-f]{7,40}\]\(https:\/\/[^)]+\)\.$/;
 
 export interface NumberedLine {

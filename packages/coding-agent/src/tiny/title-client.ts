@@ -451,7 +451,9 @@ async function logTail(logPath: string): Promise<string> {
 		return text
 			.split("\n")
 			.filter(
-				line => !line.startsWith("harvest tiny worker listening on ") && !line.startsWith("omp tiny worker listening on "),
+				line =>
+					!line.startsWith("harvest tiny worker listening on ") &&
+					!line.startsWith("omp tiny worker listening on "),
 			)
 			.join("\n")
 			.trim()

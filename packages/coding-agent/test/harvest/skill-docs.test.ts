@@ -31,7 +31,7 @@ describe("SkillContextManager - findRelevantSkillDocs", () => {
 tags: frontend, react
 ---
 ## React Best Practices
-Always use hooks for state.`
+Always use hooks for state.`,
 		);
 
 		const results = await manager.findRelevantSkillDocs(["react"], "best practices for state");
@@ -51,7 +51,7 @@ Always use hooks for state.`
 tags: backend, api
 ---
 ## API Usage
-Make sure to authenticate requests.`
+Make sure to authenticate requests.`,
 		);
 
 		const results = await manager.findRelevantSkillDocs(["backend"], "authenticate api");
@@ -71,7 +71,7 @@ Make sure to authenticate requests.`
 tags: frontend
 ---
 ## HTML Guide
-Use semantic tags.`
+Use semantic tags.`,
 		);
 
 		const results = await manager.findRelevantSkillDocs(["backend"], "html semantic tags");
@@ -92,7 +92,7 @@ tags: general
 This section mentions authentication once.
 
 ## Section Two
-This section talks about authentication multiple times because authentication is important for authentication.`
+This section talks about authentication multiple times because authentication is important for authentication.`,
 		);
 
 		const results = await manager.findRelevantSkillDocs(["general"], "authentication");
@@ -114,7 +114,7 @@ tags: frontend
 superseded: true
 ---
 ## Old React Best Practices
-Use class components.`
+Use class components.`,
 		);
 
 		const results = await manager.findRelevantSkillDocs(["frontend"], "react components");
@@ -132,7 +132,7 @@ Use class components.`
 tags: test
 ---
 ## Same Section
-This is some identical text.`
+This is some identical text.`,
 		);
 		const docPath2 = path.join(skillDocsDir, "file2.md");
 		await fs.writeFile(
@@ -141,7 +141,7 @@ This is some identical text.`
 tags: test
 ---
 ## Same Section
-This is some identical text.`
+This is some identical text.`,
 		);
 
 		const results = await manager.findRelevantSkillDocs(["test"], "identical text");
@@ -166,7 +166,7 @@ token token token token token token token token token token
 token token token token token token token token token token
 
 ## Third
-token token token token token token token token token token`
+token token token token token token token token token token`,
 		);
 
 		// With maxTokens = 15, we can only fit one section (each has 10 valid tokens > 2 chars)
@@ -189,7 +189,7 @@ token token token token token token token token token token`
 tags: [database, postgres]
 ---
 ## Database Connection
-Pooling postgres connections.`
+Pooling postgres connections.`,
 		);
 
 		const docPath2 = path.join(skillDocsDir, "multiline.md");
@@ -201,7 +201,7 @@ tags:
   - tracing
 ---
 ## Telemetry Setup
-OpenTelemetry tracer initialization.`
+OpenTelemetry tracer initialization.`,
 		);
 
 		const res1 = await manager.findRelevantSkillDocs(["postgres"], "pooling connections");

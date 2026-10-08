@@ -188,8 +188,7 @@ export class EditMutator {
 
 		for (const resolved of sortedReverse) {
 			const { match, newText } = resolved;
-			modifiedContent =
-				modifiedContent.slice(0, match.start) + newText + modifiedContent.slice(match.end);
+			modifiedContent = modifiedContent.slice(0, match.start) + newText + modifiedContent.slice(match.end);
 
 			appliedRecords.push({
 				start: match.start,

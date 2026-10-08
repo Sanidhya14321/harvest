@@ -23,6 +23,7 @@ version = "18.1.14"
 edition = "2024"
 license = "MIT"
 authors = ["Harvest Contributors"]
+repository = "https://github.com/Sanidhya14321/harvest"
 
 [patch.crates-io]
 brush-core = { path = "crates/vendor/brush-core" }

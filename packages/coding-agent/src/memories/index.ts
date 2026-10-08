@@ -1483,11 +1483,7 @@ function encodeHashedProjectPath(cwd: string): string {
 export function encodeProjectPath(cwd: string): string {
 	const canonical = path.resolve(cwd).replaceAll("\\", "/");
 	const stripped = canonical.replace(/^[/\\]+/, "");
-	const escaped = stripped
-		.replace(/%/g, "%25")
-		.replace(/-/g, "%2D")
-		.replace(/[/\\]/g, "-")
-		.replace(/:/g, "%3A");
+	const escaped = stripped.replace(/%/g, "%25").replace(/-/g, "%2D").replace(/[/\\]/g, "-").replace(/:/g, "%3A");
 	const readable = escaped.slice(0, 100) || "project";
 	const digest = Bun.SHA256.hash(canonical, "hex").slice(0, 16);
 	return `--${readable}-${digest}--`;

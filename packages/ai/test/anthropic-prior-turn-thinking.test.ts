@@ -1,14 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { renderDemotedThinking } from "@harvest/pi-ai/dialect";
 import { convertAnthropicMessages } from "@harvest/pi-ai/providers/anthropic";
-import type {
-	AssistantMessage,
-	Message,
-	Model,
-	ModelSpec,
-	ToolResultMessage,
-	UserMessage,
-} from "@harvest/pi-ai/types";
+import type { AssistantMessage, Message, Model, ModelSpec, ToolResultMessage, UserMessage } from "@harvest/pi-ai/types";
 import { buildModel } from "@harvest/pi-catalog/build";
 
 /**

@@ -41,7 +41,11 @@ export interface AssembledHarvestPrompt {
  * and the Grounded Coding Task Contract.
  */
 export function assembleHarvestSystemPrompt(options: HarvestPromptOptions): AssembledHarvestPrompt {
-	if (options.localMemory || options.graph || (options.taskQuery && !options.skillsPrompt && !options.knowledgePrompt)) {
+	if (
+		options.localMemory ||
+		options.graph ||
+		(options.taskQuery && !options.skillsPrompt && !options.knowledgePrompt)
+	) {
 		const res = assembleHarvestPrompt(options);
 		return {
 			prompt: res.prompt,
@@ -64,7 +68,7 @@ export function assembleHarvestSystemPrompt(options: HarvestPromptOptions): Asse
 	if (roleDef.promptAddendum) {
 		assembled += `\n\n# Role Directive: ${roleDef.name}\n${roleDef.promptAddendum}\n`;
 		if (roleDef.directives.length > 0) {
-			assembled += `\nDirectives:\n${roleDef.directives.map((d) => `- ${d}`).join("\n")}\n`;
+			assembled += `\nDirectives:\n${roleDef.directives.map(d => `- ${d}`).join("\n")}\n`;
 		}
 	}
 

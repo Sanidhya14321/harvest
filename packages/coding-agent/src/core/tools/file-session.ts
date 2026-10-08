@@ -61,7 +61,7 @@ export async function atomicWriteFile(targetPath: string, content: string): Prom
 			attempts++;
 			const code = (err as { code?: string })?.code;
 			if ((code === "EBUSY" || code === "EPERM" || code === "EACCES") && attempts < maxAttempts) {
-				await new Promise((resolve) => setTimeout(resolve, delayMs));
+				await new Promise(resolve => setTimeout(resolve, delayMs));
 				delayMs = Math.min(delayMs * 2, 500);
 				continue;
 			}
@@ -154,7 +154,7 @@ export class FileSession {
 
 	/** Get snapshots for a specific turn */
 	getTurnSnapshots(turnId: string): readonly TurnSnapshot[] {
-		return this.#snapshots.filter((s) => s.turnId === turnId);
+		return this.#snapshots.filter(s => s.turnId === turnId);
 	}
 
 	/**
@@ -162,7 +162,7 @@ export class FileSession {
 	 * Restores files to their exact `before` state atomically.
 	 */
 	async undoTurn(turnId: string): Promise<RestoreResult[]> {
-		const turnSnapshots = this.#snapshots.filter((s) => s.turnId === turnId);
+		const turnSnapshots = this.#snapshots.filter(s => s.turnId === turnId);
 		const results: RestoreResult[] = [];
 
 		// Roll back in reverse order of mutation

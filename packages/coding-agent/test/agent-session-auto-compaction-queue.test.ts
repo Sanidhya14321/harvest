@@ -525,7 +525,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 		expect(
 			debugSpy.mock.calls.some(([message, context]) => {
 				if (message !== "agent_end maintenance routing") return false;
-				const ctx = (typeof context === "function" ? (context as () => any)() : context) as Record<string, any> | undefined;
+				const ctx = (typeof context === "function" ? (context as () => any)() : context) as
+					| Record<string, any>
+					| undefined;
 				if (ctx?.route !== "post-yield-trailing-stop-active-goal-checkCompaction") return false;
 				return ctx?.successfulYield === true;
 			}),

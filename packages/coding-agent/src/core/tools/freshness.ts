@@ -114,7 +114,8 @@ export class FreshnessTracker {
 		const canonical = this.#canonicalize(filePath);
 		try {
 			const stat = fs.statSync(canonical);
-			const sha256 = newContent !== undefined ? this.#computeStringSha256(newContent) : this.#computeSha256(canonical);
+			const sha256 =
+				newContent !== undefined ? this.#computeStringSha256(newContent) : this.#computeSha256(canonical);
 			this.#records.set(canonical, {
 				path: canonical,
 				mtimeMs: stat.mtimeMs,

@@ -10,11 +10,7 @@ import { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@harvest/pi-coding-agent/session/auth-storage";
 import { SKILL_PROMPT_MESSAGE_TYPE } from "@harvest/pi-coding-agent/session/messages";
 import { SessionManager } from "@harvest/pi-coding-agent/session/session-manager";
-import {
-	AUTO_THINKING,
-	clampAutoThinkingEffort,
-	resolveProvisionalAutoLevel,
-} from "@harvest/pi-coding-agent/thinking";
+import { AUTO_THINKING, clampAutoThinkingEffort, resolveProvisionalAutoLevel } from "@harvest/pi-coding-agent/thinking";
 import { TempDir } from "@harvest/pi-utils";
 import { createAssistantMessage } from "./helpers/agent-session-setup";
 

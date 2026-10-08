@@ -5,13 +5,7 @@
  * directives, and Shannon entropy routing with ambiguity gating.
  */
 
-export type SpecialistRole =
-	| "backend"
-	| "frontend"
-	| "qa"
-	| "coordinator"
-	| "bootstrap"
-	| "compaction";
+export type SpecialistRole = "backend" | "frontend" | "qa" | "coordinator" | "bootstrap" | "compaction";
 
 export type CodingIntent = "informational" | "mutation" | "complex";
 
@@ -70,12 +64,7 @@ export const SPECIALIST_ROLES: Record<SpecialistRole, RoleDefinition> = {
 			"Client state machines and reactive data stores",
 			"Direct mutation without conversational overhead",
 		],
-		preApprovedCommands: [
-			"npm run build",
-			"npm run dev",
-			"vite build",
-			"npx tailwindcss",
-		],
+		preApprovedCommands: ["npm run build", "npm run dev", "vite build", "npx tailwindcss"],
 		toolPolicy: ["read", "write", "edit", "bash", "grep", "glob"],
 		directives: [
 			"Enforce single-file encapsulation and self-contained styling.",
@@ -96,14 +85,7 @@ export const SPECIALIST_ROLES: Record<SpecialistRole, RoleDefinition> = {
 			"Test coverage auditing and edge case analysis",
 			"Execution grounding and test runner diagnostic parsing",
 		],
-		preApprovedCommands: [
-			"npm test",
-			"vitest",
-			"jest",
-			"pytest",
-			"cargo test",
-			"playwright test",
-		],
+		preApprovedCommands: ["npm test", "vitest", "jest", "pytest", "cargo test", "playwright test"],
 		toolPolicy: ["read", "write", "edit", "bash", "grep", "glob"],
 		directives: [
 			"Always reproduce the failure with a real test before applying any fix.",
@@ -117,18 +99,15 @@ export const SPECIALIST_ROLES: Record<SpecialistRole, RoleDefinition> = {
 	coordinator: {
 		id: "coordinator",
 		name: "Coordinator Specialist",
-		description: "Specialized in multi-stage decomposition, delegation, architectural roadmaps, and anti-hallucination verification",
+		description:
+			"Specialized in multi-stage decomposition, delegation, architectural roadmaps, and anti-hallucination verification",
 		capabilities: [
 			"Task breakdown into small verified checkpoints",
 			"Subagent delegation and verification auditing",
 			"Cross-cutting architectural design and consensus",
 			"Git claim verification and progress tracking",
 		],
-		preApprovedCommands: [
-			"git status",
-			"git diff",
-			"git log",
-		],
+		preApprovedCommands: ["git status", "git diff", "git log"],
 		toolPolicy: ["read", "bash", "task", "ask", "grep", "glob"],
 		directives: [
 			"Decompose complex requests into sequential verifiable milestones.",
@@ -148,12 +127,7 @@ export const SPECIALIST_ROLES: Record<SpecialistRole, RoleDefinition> = {
 			"Toolchain, formatter, and linter configuration",
 			"CI workflow and script bootstrapping",
 		],
-		preApprovedCommands: [
-			"npm init -y",
-			"cargo new",
-			"git init",
-			"pnpm init",
-		],
+		preApprovedCommands: ["npm init -y", "cargo new", "git init", "pnpm init"],
 		toolPolicy: ["read", "write", "bash", "glob"],
 		directives: [
 			"Create clean, standard, minimal directory hierarchies.",
@@ -166,7 +140,8 @@ export const SPECIALIST_ROLES: Record<SpecialistRole, RoleDefinition> = {
 	compaction: {
 		id: "compaction",
 		name: "Compaction Specialist",
-		description: "Specialized in lossless session history summarization, verification retention, and context preservation",
+		description:
+			"Specialized in lossless session history summarization, verification retention, and context preservation",
 		capabilities: [
 			"Deterministic file operation auditing (read / write / edit)",
 			"Test pass/fail status and staleness tracking",
@@ -272,14 +247,7 @@ const ROLE_KEYWORDS: Record<SpecialistRole, readonly string[]> = {
 		"skeleton",
 		"initialize",
 	],
-	compaction: [
-		"summarize",
-		"compact",
-		"prune",
-		"shrink context",
-		"condense",
-		"compress session",
-	],
+	compaction: ["summarize", "compact", "prune", "shrink context", "condense", "compress session"],
 };
 
 const MUTATION_VERBS = [
@@ -450,15 +418,13 @@ export function routeRole(promptText: string): RoleRoutingResult {
 	// As per Section 4.2: Score Distribution Vector across the 5 routing roles
 	const ROUTING_VECTOR_SIZE = 5;
 	const { confidence } = calculateEntropy(scores, ROUTING_VECTOR_SIZE);
-	const positiveRoles = sortedRoles.filter((r) => scores[r] > 0);
+	const positiveRoles = sortedRoles.filter(r => scores[r] > 0);
 	const isAmbiguous = confidence < ROUTING_CONFIDENCE_THRESHOLD && positiveRoles.length > 1;
 
 	let clarificationQuestion: string | undefined;
 	if (isAmbiguous) {
 		const topCandidates = positiveRoles.slice(0, 2);
-		const candidateNames = topCandidates
-			.map((r) => `\`${r}\` (${SPECIALIST_ROLES[r].name})`)
-			.join(" vs ");
+		const candidateNames = topCandidates.map(r => `\`${r}\` (${SPECIALIST_ROLES[r].name})`).join(" vs ");
 		clarificationQuestion = `Your request contains multi-domain keywords spanning ${candidateNames}. Which specialist role should lead this task?`;
 	}
 

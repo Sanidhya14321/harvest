@@ -27,10 +27,7 @@ import { ExtensionRunner } from "@harvest/pi-coding-agent/extensibility/extensio
 import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { AgentSession, type AgentSessionEvent } from "@harvest/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@harvest/pi-coding-agent/session/auth-storage";
-import {
-	type ServingModel,
-	validateRetryFallbackChains,
-} from "@harvest/pi-coding-agent/session/retry-fallback-chains";
+import { type ServingModel, validateRetryFallbackChains } from "@harvest/pi-coding-agent/session/retry-fallback-chains";
 import { SessionManager } from "@harvest/pi-coding-agent/session/session-manager";
 import { convertToLlm } from "@harvest/pi-coding-agent/session/messages";
 import { EventBus } from "@harvest/pi-coding-agent/utils/event-bus";

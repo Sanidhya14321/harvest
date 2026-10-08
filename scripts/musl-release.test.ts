@@ -59,6 +59,11 @@ describe("musl release artifacts", () => {
 		const binDir = path.join(dir, "bin");
 		const installDir = path.join(dir, "install");
 		await fs.mkdir(binDir);
+		// The stub binary the fake curl serves, and its checksum entry: install.sh
+		// verifies SHA256SUMS.txt before replacing an existing installation, so the
+		// fixture must serve a checksum manifest that matches the stub.
+		const stub = '#!/bin/sh\necho "omp v1.0.0"\n';
+		const stubHash = new Bun.CryptoHasher("sha256").update(stub).digest("hex");
 		await writeExecutable(binDir, "uname", '#!/bin/sh\n[ "$1" = "-s" ] && echo Linux || echo x86_64\n');
 		await writeExecutable(binDir, "ldd", "#!/bin/sh\necho 'musl libc (x86_64)'\n");
 		await writeExecutable(
@@ -67,6 +72,10 @@ describe("musl release artifacts", () => {
 			`#!/bin/sh
 case "$*" in
   *api.github.com*) echo '{"tag_name":"v1.0.0","mentions_count":0}' ;;
+  *SHA256SUMS.txt*) while [ "$#" -gt 0 ]; do
+       [ "$1" = "-o" ] && { printf '%s\n' '${stubHash}  omp-linux-musl-x64' > "$2"; exit 0; }
+       shift
+     done ;;
   *) while [ "$#" -gt 0 ]; do
        [ "$1" = "-o" ] && { printf '%s\n' '#!/bin/sh' 'echo "omp v1.0.0"' > "$2"; exit 0; }
        shift

@@ -221,14 +221,19 @@ interface ConfiguredExtensions {
 async function readConfiguredExtensions(ctx: LoadContext): Promise<ConfiguredExtensions | null> {
 	const { project, user } = scopeDirs(ctx);
 	const legacyProject = path.join(ctx.cwd, ".omp");
-	const [projectYaml, projectSettings, legacyProjectYaml, legacyProjectSettings, userYaml, userSettings] = await Promise.all([
-		readYamlExtensions(project, PROJECT_CONFIG_FILENAMES),
-		readSettingsExtensions(path.join(project, "settings.json")),
-		project !== legacyProject ? readYamlExtensions(legacyProject, PROJECT_CONFIG_FILENAMES) : Promise.resolve({ exists: false, entries: null }),
-		project !== legacyProject ? readSettingsExtensions(path.join(legacyProject, "settings.json")) : Promise.resolve(null),
-		readYamlExtensions(user, MAIN_CONFIG_FILENAMES),
-		readSettingsExtensions(path.join(user, "settings.json")),
-	]);
+	const [projectYaml, projectSettings, legacyProjectYaml, legacyProjectSettings, userYaml, userSettings] =
+		await Promise.all([
+			readYamlExtensions(project, PROJECT_CONFIG_FILENAMES),
+			readSettingsExtensions(path.join(project, "settings.json")),
+			project !== legacyProject
+				? readYamlExtensions(legacyProject, PROJECT_CONFIG_FILENAMES)
+				: Promise.resolve({ exists: false, entries: null }),
+			project !== legacyProject
+				? readSettingsExtensions(path.join(legacyProject, "settings.json"))
+				: Promise.resolve(null),
+			readYamlExtensions(user, MAIN_CONFIG_FILENAMES),
+			readSettingsExtensions(path.join(user, "settings.json")),
+		]);
 	if (projectYaml.entries !== null) return { entries: projectYaml.entries, level: "project" };
 	if (projectSettings !== null) return { entries: projectSettings, level: "project" };
 	if (legacyProjectYaml.entries !== null) return { entries: legacyProjectYaml.entries, level: "project" };

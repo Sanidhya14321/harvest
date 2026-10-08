@@ -125,11 +125,11 @@ export function findEditMatch(sourceContent: string, searchBlock: string): Match
 	// -------------------------------------------------------------
 	// Build regex by replacing runs of non-newline whitespace with [^\S\r\n]+
 	const searchLines = canonicalSearch.split("\n");
-	const regexParts = searchLines.map((line) => {
+	const regexParts = searchLines.map(line => {
 		const trimmed = line.trim();
 		if (!trimmed) return "[^\\S\\r\\n]*";
 		const tokens = trimmed.split(/[^\S\r\n]+/);
-		const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+		const escaped = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 		return "[^\\S\\r\\n]*" + escaped.join("[^\\S\\r\\n]+") + "[^\\S\\r\\n]*";
 	});
 

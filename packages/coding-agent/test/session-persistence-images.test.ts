@@ -2,11 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@harvest/pi-agent-core";
 import type { ImageContent, TextContent } from "@harvest/pi-ai";
 import { BlobStore, isBlobRef } from "@harvest/pi-coding-agent/session/blob-store";
-import type {
-	CompactionEntry,
-	FileEntry,
-	SessionMessageEntry,
-} from "@harvest/pi-coding-agent/session/session-entries";
+import type { CompactionEntry, FileEntry, SessionMessageEntry } from "@harvest/pi-coding-agent/session/session-entries";
 import { resolveBlobRefsInEntries } from "@harvest/pi-coding-agent/session/session-loader";
 import { prepareEntryForPersistence } from "@harvest/pi-coding-agent/session/session-persistence";
 import { TempDir } from "@harvest/pi-utils";
