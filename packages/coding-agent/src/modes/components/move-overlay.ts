@@ -8,10 +8,11 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type Component, CURSOR_MARKER, type Focusable, Key, matchesKey } from "@harvest/pi-tui";
+import { type Component, type Focusable, Input, Key, matchesKey } from "@harvest/pi-tui";
 import { theme } from "../theme/theme";
 import { matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../utils/keybinding-matchers";
-import { bottomBorder, row, topBorder } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { fit, renderDialog } from "./overlay-box";
 
 export interface MoveOverlayResult {
 	directory: string;
@@ -62,17 +63,6 @@ function entryIsDirectory(dir: string, entry: fs.Dirent): boolean {
 	} catch {
 		return false;
 	}
-}
-
-function printableInput(data: string): string {
-	const withoutPasteEnvelope = data.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
-	if (withoutPasteEnvelope.includes("\x1b")) return "";
-	return Array.from(withoutPasteEnvelope)
-		.filter(ch => {
-			const code = ch.codePointAt(0);
-			return code !== undefined && code >= 32 && code !== 0x7f;
-		})
-		.join("");
 }
 
 /** Resolve a user-typed path (`~`, absolute, or relative to `cwd`) to an absolute path. */
@@ -154,8 +144,8 @@ function searchDirectories(prefix: string, cwd: string, max: number): DirEntry[]
  */
 export class MoveOverlay implements Component, Focusable {
 	#focused = false;
-	#input = "";
-	#cursor = 0;
+	#input = new Input();
+	#maxHeight: number | undefined;
 	#selectedIndex = 0;
 	#results: DirEntry[] = [];
 	#cwd: string;
@@ -164,6 +154,7 @@ export class MoveOverlay implements Component, Focusable {
 	constructor(cwd: string, done: (result: MoveOverlayResult | undefined) => void) {
 		this.#cwd = cwd;
 		this.#done = done;
+		this.#input.prompt = theme.fg("muted", "Path: ");
 		// Warm the cache for the current directory so the first keystroke is instant.
 		readDirCached(cwd);
 		this.#updateResults();
@@ -198,81 +189,59 @@ export class MoveOverlay implements Component, Focusable {
 		if (matchesKey(data, Key.tab)) {
 			const selected = this.#results[this.#selectedIndex];
 			if (selected) {
-				this.#input = selected.value;
-				this.#cursor = this.#input.length;
+				this.#input.setValue(selected.value);
 				this.#selectedIndex = 0;
 				this.#updateResults();
 			}
 			return;
 		}
-		if (matchesKey(data, Key.left)) {
-			this.#cursor = Math.max(0, this.#cursor - 1);
-			return;
-		}
-		if (matchesKey(data, Key.right)) {
-			this.#cursor = Math.min(this.#input.length, this.#cursor + 1);
-			return;
-		}
-		if (matchesKey(data, Key.backspace) && this.#cursor > 0) {
-			this.#input = this.#input.slice(0, this.#cursor - 1) + this.#input.slice(this.#cursor);
-			this.#cursor--;
-			this.#selectedIndex = 0;
-			this.#updateResults();
-			return;
-		}
-		const text = printableInput(data);
-		if (text.length > 0) {
-			this.#input = this.#input.slice(0, this.#cursor) + text + this.#input.slice(this.#cursor);
-			this.#cursor += text.length;
+		const previous = this.#input.getValue();
+		this.#input.handleInput(data);
+		if (this.#input.getValue() !== previous) {
 			this.#selectedIndex = 0;
 			this.#updateResults();
 		}
 	}
 
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
+	}
+
+	pasteText(text: string): void {
+		this.#input.pasteText(text);
+		this.#selectedIndex = 0;
+		this.#updateResults();
+	}
+
 	render(width: number): readonly string[] {
-		const w = width;
-		const lines: string[] = [];
-
-		lines.push(topBorder(w, "Move to directory"));
-		lines.push(row(this.#renderInput(), w));
-		lines.push(row("", w));
-
-		if (this.#results.length === 0 && this.#input.length > 0) {
-			lines.push(row(theme.fg("dim", "No matching directories"), w));
-		} else {
-			for (let i = 0; i < Math.min(this.#results.length, MAX_RESULTS); i++) {
-				const item = this.#results[i]!;
-				const selected = i === this.#selectedIndex;
-				const marker = selected ? theme.fg("accent", "▶ ") : "  ";
-				const label = selected ? theme.fg("accent", item.label) : theme.fg("text", item.label);
-				lines.push(row(`${marker}${label}`, w));
-			}
-		}
-
-		lines.push(row("", w));
-		lines.push(row(theme.fg("dim", "Type to filter · ↑↓ navigate · Tab accept · Enter confirm · Esc cancel"), w));
-		lines.push(bottomBorder(w));
-		return lines;
+		const height = this.#maxHeight ?? Math.max(1, process.stdout.rows || 40);
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		const bodyBudget = Math.max(1, height - chrome);
+		const innerWidth = Math.max(1, width - 4);
+		this.#input.focused = this.#focused;
+		const input = this.#input.render(innerWidth)[0] ?? "";
+		const visible = Math.max(1, Math.min(MAX_RESULTS, bodyBudget - 1));
+		const start = Math.max(
+			0,
+			Math.min(this.#selectedIndex - Math.floor(visible / 2), this.#results.length - visible),
+		);
+		const choices = this.#results.slice(start, start + visible).map((item, index) => {
+			const selected = start + index === this.#selectedIndex;
+			const label = `${selected ? theme.nav.cursor : " "} ${item.label}`;
+			return selected ? theme.bgFill("selectedBg", theme.fg("accent", fit(label, innerWidth))) : label;
+		});
+		const body = bodyBudget === 1 ? [choices[this.#selectedIndex - start] ?? input] : [input, ...choices];
+		if (choices.length === 0 && bodyBudget > 1) body.push(theme.fg("muted", "No matching directories"));
+		const footer = `${editorKey("tui.select.cancel") || "Esc"} cancel · Enter confirm · Tab accept`;
+		return renderDialog("Move to directory", body, width, height, footer).lines;
 	}
 
 	invalidate(): void {}
 
-	#renderInput(): string {
-		const prompt = theme.fg("dim", "Path: ");
-		if (this.#input.length === 0) {
-			const placeholder = theme.fg("dim", "Type a directory path…");
-			const marker = this.#focused ? CURSOR_MARKER : "";
-			return `${prompt}${placeholder}${marker}\x1b[7m \x1b[27m`;
-		}
-		const before = this.#input.slice(0, this.#cursor);
-		const cursorChar = this.#cursor < this.#input.length ? this.#input[this.#cursor] : " ";
-		const after = this.#input.slice(this.#cursor + 1);
-		const marker = this.#focused ? CURSOR_MARKER : "";
-		return `${prompt}${before}${marker}\x1b[7m${cursorChar}\x1b[27m${after}`;
-	}
-
 	#updateResults(): void {
-		this.#results = searchDirectories(this.#input, this.#cwd, MAX_RESULTS + 5);
+		this.#results = searchDirectories(this.#input.getValue(), this.#cwd, MAX_RESULTS + 5);
 		if (this.#selectedIndex >= this.#results.length) {
 			this.#selectedIndex = Math.max(0, this.#results.length - 1);
 		}
@@ -284,8 +253,8 @@ export class MoveOverlay implements Component, Focusable {
 			this.#done({ directory: selected.value });
 			return;
 		}
-		if (this.#input.trim().length > 0) {
-			this.#done({ directory: this.#input.trim() });
+		if (this.#input.getValue().trim().length > 0) {
+			this.#done({ directory: this.#input.getValue().trim() });
 			return;
 		}
 		this.#done(undefined);

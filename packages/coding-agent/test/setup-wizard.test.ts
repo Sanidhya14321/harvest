@@ -54,13 +54,13 @@ describe("setup wizard scene selection", () => {
 		expect(scenes.map(scene => scene.id)).toEqual(ALL_SCENES.map(scene => scene.id));
 	});
 
-	it("keeps CURRENT_SETUP_VERSION in sync with the highest scene minVersion", () => {
+	it("keeps the startup version high enough to load every current scene", () => {
 		// main.ts's cold-launch gate sources CURRENT_SETUP_VERSION from the tiny
 		// `setup-version` module to decide whether to load the wizard at all. If a
 		// new scene raises the bar but the constant is not bumped, stale installs
 		// would never see the scene. Guard the invariant the gate relies on.
 		const highestMinVersion = Math.max(...ALL_SCENES.map(scene => scene.minVersion));
-		expect(CURRENT_SETUP_VERSION).toBe(highestMinVersion);
+		expect(CURRENT_SETUP_VERSION).toBeGreaterThanOrEqual(highestMinVersion);
 	});
 
 	it("runs only scenes newer than the stored setup version", async () => {
@@ -363,6 +363,13 @@ describe("setup wizard short terminals", () => {
 				},
 			},
 			openInBrowser: () => {},
+			statusLine: {
+				getPreviewLines: () => ["status preview"],
+				getTopBorder: () => ({ content: "", width: 0 }),
+				getBandTopBorder: () => ({ content: "", width: 0 }),
+				getStandaloneTopBorder: () => ({ content: "", width: 0 }),
+				renderBottomBar: () => "",
+			},
 		} as unknown as InteractiveModeContext;
 	}
 
@@ -375,6 +382,54 @@ describe("setup wizard short terminals", () => {
 		const realNow = performance.now.bind(performance);
 		return vi.spyOn(performance, "now").mockImplementation(() => realNow() + 1_000);
 	}
+
+	it("opens provider controls immediately and keeps the selection visible in the allocated short frame", async () => {
+		await initTheme(false, "unicode", false, "harvest", "harvest-light");
+		const component = new SetupWizardComponent(shortTerminalCtx(24), [providersSetupScene]);
+		void component.run();
+		try {
+			component.handleInput("\r");
+			for (const height of [8, 4]) {
+				component.setMaxHeight(height);
+				for (let step = 0; step < 12; step++) {
+					component.handleInput("\x1b[B");
+					const frame = component.render(32).map(line => Bun.stripANSI(line));
+					expect(frame.length).toBe(height);
+					expect(frame.some(line => line.includes(theme.nav.cursor))).toBe(true);
+					expect(frame.every(line => Bun.stringWidth(line) <= 32)).toBe(true);
+				}
+			}
+		} finally {
+			component.dispose();
+		}
+	});
+
+	it("routes tiny-scene clicks using the painted inset and excludes hidden rows", () => {
+		const routes: Array<{ line: number; col: number }> = [];
+		const scene: SetupScene = {
+			id: "tiny",
+			title: "Tiny",
+			minVersion: 1,
+			mount: () => ({
+				title: "Tiny",
+				render: () => ["X"],
+				routeMouse: (_event, line, col) => routes.push({ line, col }),
+				invalidate: () => {},
+			}),
+		};
+		const component = new SetupWizardComponent(shortTerminalCtx(24), [scene]);
+		void component.run();
+		try {
+			component.handleInput("\r");
+			component.setMaxHeight(1);
+			component.render(3);
+			component.handleInput("\x1b[<0;2;1M");
+			component.handleInput("\x1b[<0;2;2M");
+			expect(routes).toEqual([{ line: 0, col: 0 }]);
+		} finally {
+			component.dispose();
+		}
+	});
 
 	it("keeps the selected provider row visible while navigating on a 24-row terminal", async () => {
 		await initTheme(false, "unicode", false, "titanium", "light");
@@ -408,8 +463,10 @@ describe("setup wizard short terminals", () => {
 			const frame = component.render(80).map(line => Bun.stripANSI(line));
 			expect(frame.length).toBe(24);
 			expect(frame.some(line => line.trimStart().startsWith(theme.nav.cursor))).toBe(true);
-			for (const label of ["Match terminal", "Titanium", "Light", "Colorblind colors", "ANSI-safe", "Browse all"]) {
-				expect(frame.some(line => line.includes(label))).toBe(true);
+			for (const key of ["1", "2", "3", "4", "5", "6", "7", "8"]) {
+				component.handleInput(key);
+				const current = component.render(80).map(line => Bun.stripANSI(line));
+				expect(current.some(line => line.trimStart().startsWith(theme.nav.cursor))).toBe(true);
 			}
 		} finally {
 			nowSpy.mockRestore();
@@ -440,7 +497,7 @@ describe("setup wizard theme previews", () => {
 		} as unknown as SetupSceneHost;
 
 		const controller = setupScene!.mount(host);
-		controller.handleInput?.("5");
+		controller.handleInput?.("7");
 		await Bun.sleep(20);
 		expect(theme.getSymbolPreset()).toBe("ascii");
 

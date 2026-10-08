@@ -1,9 +1,10 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { KeybindingsManager } from "@harvest/pi-coding-agent/config/keybindings";
 import type { HookSelectorSlider } from "@harvest/pi-coding-agent/modes/components/hook-selector";
 import { PlanReviewOverlay } from "@harvest/pi-coding-agent/modes/components/plan-review-overlay";
-import { getThemeByName, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { setKeybindings } from "@harvest/pi-tui";
 
 const UP = "\x1b[A";
@@ -15,7 +16,8 @@ const TAB = "\t";
 const SHIFT_DOWN = "\x1b[1;2B";
 const CANCEL = "\x07"; // ctrl+g, remapped to tui.select.cancel below
 
-let darkTheme = await getThemeByName("dark");
+const darkTheme = createTheme(getBuiltinThemes().dark, { mode: "truecolor" });
+let previousTheme = theme;
 
 function render(component: PlanReviewOverlay): string {
 	return stripVTControlCharacters(component.render(80).join("\n"));
@@ -29,22 +31,67 @@ const APPROVAL_OPTIONS = [
 ];
 
 describe("PlanReviewOverlay", () => {
-	beforeAll(async () => {
-		darkTheme = await getThemeByName("dark");
-		if (!darkTheme) throw new Error("Failed to load dark theme");
-	});
-
 	beforeEach(() => {
-		setThemeInstance(darkTheme!);
+		previousTheme = theme;
+		setThemeInstance(darkTheme);
 		setKeybindings(KeybindingsManager.inMemory({ "tui.select.cancel": "ctrl+g" }));
 	});
 
 	afterEach(() => {
+		setThemeInstance(previousTheme);
 		setKeybindings(KeybindingsManager.inMemory());
 		vi.restoreAllMocks();
 	});
 
-	it("renders the plan body, prompt, options and footer inside one outlined box", () => {
+	it("keeps a short-screen action visible, ignores hidden pointer rows and preserves full plan copying", () => {
+		const onPick = vi.fn();
+		const onCopyPlan = vi.fn();
+		const plan = "# Detailed plan\n\n" + "Preserve every step and payload.\n".repeat(20);
+		const overlay = new PlanReviewOverlay(
+			plan,
+			{ options: ["Execute", "Refine", "Unavailable"], disabledIndices: [2], initialIndex: 1 },
+			{ onPick, onCancel: vi.fn(), onCopyPlan },
+		);
+		overlay.setMaxHeight(4);
+		const rows = overlay.render(24).map(line => stripVTControlCharacters(line));
+		expect(rows).toHaveLength(4);
+		expect(rows.join("\n")).toContain("Refine");
+		for (const line of rows) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(24);
+		overlay.handleInput("\x1b[<0;4;8M");
+		expect(onPick).not.toHaveBeenCalled();
+		overlay.handleInput("c");
+		expect(onCopyPlan).toHaveBeenCalledWith(plan);
+		const actionRow = rows.findIndex(line => line.includes("Refine"));
+		overlay.handleInput(`\x1b[<0;4;${actionRow + 1}M`);
+		expect(onPick).toHaveBeenCalledTimes(1);
+		expect(onPick).toHaveBeenCalledWith("Refine");
+	});
+
+	it("retains annotation input at one row and restores the plan after expansion", () => {
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const onFeedbackChange = vi.fn();
+		const overlay = new PlanReviewOverlay(
+			"# Plan\n\n## Build\n\nBody to annotate.\n\n## Ship\n\nRelease content.",
+			{ options: ["Execute", "Refine"] },
+			{ onPick: vi.fn(), onCancel: vi.fn(), onFeedbackChange },
+		);
+		overlay.render(80);
+		overlay.handleInput(TAB);
+		overlay.handleInput("a");
+		overlay.setMaxHeight(1);
+		overlay.handleInput("Keep full detail");
+		const compact = overlay.render(24).map(line => stripVTControlCharacters(line));
+		expect(compact).toHaveLength(1);
+		expect(compact[0]).toContain("Keep full detail");
+		overlay.handleInput(ENTER);
+		expect(onFeedbackChange.mock.calls.at(-1)?.[0]).toContain("Keep full detail");
+		overlay.setMaxHeight(40);
+		const wide = stripVTControlCharacters(overlay.render(80).join("\n"));
+		expect(wide).toContain("Release content.");
+		expect(wide).toContain("Keep full detail");
+	});
+
+	it("retains plan content and actions within the assigned panel width", () => {
 		const overlay = new PlanReviewOverlay(
 			"# My Plan\n\nstep one then step two",
 			{ promptTitle: "Plan mode - next step", options: APPROVAL_OPTIONS, helpText: "esc cancel" },
@@ -57,10 +104,7 @@ describe("PlanReviewOverlay", () => {
 		expect(out).toContain("Plan mode - next step");
 		for (const option of APPROVAL_OPTIONS) expect(out).toContain(option);
 		expect(out).toContain("esc cancel");
-		// Outlined like the /copy overlay.
-		expect(out).toContain(theme.boxRound.topLeft);
-		expect(out).toContain("│");
-		expect(out).toContain(theme.boxRound.bottomLeft);
+		for (const line of overlay.render(80)) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
 	});
 
 	it("confirms the highlighted option on Enter", () => {
@@ -354,7 +398,7 @@ describe("PlanReviewOverlay", () => {
 		const out = render(overlay);
 		// Two-column split chrome (┬ joins the title rule over the divider) and the
 		// bare section list — no "Contents" label.
-		expect(out).toContain("┬");
+		for (const line of overlay.render(80)) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
 		expect(out).not.toContain("Contents");
 		expect(out).toContain("Overview");
 		// Tab into the ToC region surfaces its focus-specific help.
@@ -373,7 +417,7 @@ describe("PlanReviewOverlay", () => {
 		);
 		const sidebar = render(overlay)
 			.split("\n")
-			.map(line => line.split("│")[1] ?? "")
+			.map(line => line.slice(0, 22))
 			.join("\n");
 		expect(sidebar).toContain("Design");
 		expect(sidebar).toContain("Rollout");
@@ -392,7 +436,7 @@ describe("PlanReviewOverlay", () => {
 		for (let i = 0; i < 10; i++) overlay.handleInput(DOWN);
 		const out = render(overlay);
 		// Actions focus restores the option cursor highlight + actions help.
-		expect(out).toContain("⏎ confirm");
+		expect(out).toContain("enter confirm");
 		expect(out).not.toContain("a annotate");
 	});
 

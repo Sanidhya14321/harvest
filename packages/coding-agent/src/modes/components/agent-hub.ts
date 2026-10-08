@@ -78,9 +78,11 @@ import {
 import { AgentTranscriptViewer } from "./agent-transcript-viewer";
 import {
 	bottomBorder,
+	dialogContentWidth,
 	divider,
 	dividerSplit,
 	row,
+	renderDialog,
 	splitBodyWidth,
 	splitRow,
 	topBorder,
@@ -169,18 +171,18 @@ export function mergeSessionHandles(
 export function formatManagedSessionStatus(status: ManagedSessionStatus): string {
 	switch (status) {
 		case "running":
-			return theme.fg("accent", "● running");
+			return theme.fg("accent", `${theme.status.running} running`);
 		case "waiting":
 			return theme.fg("warning", "? waiting");
 		case "error":
 			return theme.fg("error", "! error");
 		case "completed":
-			return theme.fg("success", "✓ done");
+			return theme.fg("success", `${theme.status.done} done`);
 		case "archived":
-			return theme.fg("muted", "○ archived");
+			return theme.fg("muted", `${theme.status.shadowed} archived`);
 		case "idle":
 		default:
-			return theme.fg("dim", "· idle");
+			return theme.fg("dim", `${theme.status.pending} idle`);
 	}
 }
 
@@ -198,13 +200,13 @@ function activityGlyph(row: AgentActivityRow): string {
 	if (row.status === "pending") return theme.fg("accent", theme.status.running);
 	switch (row.kind) {
 		case "response":
-			return theme.fg("success", "◆");
+			return theme.fg("success", theme.getSymbolPreset() === "ascii" ? "*" : "◆");
 		case "tool":
 			return theme.fg("success", theme.status.success);
 		case "irc":
-			return theme.fg("accent", "→");
+			return theme.fg("accent", theme.getSymbolPreset() === "ascii" ? "->" : "→");
 		case "lifecycle":
-			return theme.fg("muted", "○");
+			return theme.fg("muted", theme.status.shadowed);
 	}
 }
 
@@ -327,6 +329,7 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 	#dataChangeTimer?: NodeJS.Timeout;
 	#remote: AgentHubRemote | undefined;
 	#disposed = false;
+	#maxHeight: number | undefined;
 	/** Resolves after persisted historical subagents have been registered and rows refreshed. */
 	readonly persistedSubagentsReady: Promise<void>;
 	/** Prevent the async persisted-session scan from flashing a false empty state. */
@@ -522,8 +525,14 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		this.#closeTranscriptOverlay();
 	}
 
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
+
 	override render(width: number): readonly string[] {
-		const termHeight = this.#ui.terminal?.rows || process.stdout.rows || 40;
+		const terminalRows = this.#ui.terminal?.rows || process.stdout.rows || 40;
+		const termHeight = Math.min(this.#maxHeight ?? terminalRows, terminalRows);
+		if (termHeight <= 8) return this.#renderCompactTable(width, termHeight);
 		const frame = (
 			this.#section === "activity"
 				? this.#renderActivityTable(width, termHeight)
@@ -538,6 +547,84 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const footerLines = Math.min(3, frame.length);
 		const bodyEnd = Math.max(0, termHeight - footerLines);
 		return [...frame.slice(0, bodyEnd), ...frame.slice(-footerLines)].slice(0, termHeight);
+	}
+
+	/** Primary identity/input survives when summaries and inspectors cannot fit. */
+	#renderCompactTable(width: number, height: number): readonly string[] {
+		this.#hitRows.length = 0;
+		this.#lastRenderWasSplit = false;
+		this.#lastSplitRosterWidth = undefined;
+		const innerWidth = dialogContentWidth(width);
+		const bodyRows = Math.max(1, height - Number(height >= 3) - Number(height >= 2) - Number(height >= 6));
+		let body: string[] = [];
+		let hits: Array<number | undefined> = [];
+		let selected: number | undefined;
+		let title = "Agents";
+		let footer = `Esc close${theme.sep.dot}Enter open${theme.sep.dot}1/2/3 views`;
+		if (this.#section === "agents") {
+			selected = this.#selectedRow;
+			if (this.#narrowDetailsOpen && this.#rows[selected]) {
+				body = this.#renderDetailPanel(this.#rows[selected], innerWidth, bodyRows, this.#observedById);
+			} else if (this.#rows.length > 0) {
+				const roster = this.#renderRosterWindow(innerWidth, bodyRows, this.#observedById);
+				body = roster.lines;
+				hits = roster.hitRows;
+			} else
+				body = [
+					this.#loadingPersistedSubagents
+						? `Loading agents${theme.symbol("sep.ellipsis")}`
+						: "No agents in this session",
+				];
+		} else if (this.#section === "activity") {
+			title = "Activity";
+			selected = this.#selectedActivityRow;
+			footer = `Esc close${theme.sep.dot}Enter transcript${theme.sep.dot}1/2/3 views`;
+			if (this.#activitySearchEditing) body = [`search: ${this.#activitySearch}_`];
+			else {
+				const start = Math.max(
+					0,
+					Math.min(selected - Math.floor(bodyRows / 2), this.#activityRows.length - bodyRows),
+				);
+				for (let index = start; index < Math.min(this.#activityRows.length, start + bodyRows); index++) {
+					body.push(this.#formatActivityRow(this.#activityRows[index]!, index === selected, innerWidth));
+					hits.push(index);
+				}
+				if (body.length === 0)
+					body.push(this.#activitySearch ? "No matching activity" : "No agent activity recorded yet");
+			}
+		} else {
+			title = "Sessions";
+			selected = this.#selectedSessionRow;
+			footer = `Esc close${theme.sep.dot}Enter reopen${theme.sep.dot}x stop${theme.sep.dot}a archive`;
+			this.#ensureSessionAsyncLoad();
+			if (this.#sessionSendEditing) body = [`message: ${this.#sessionSendBuffer}_`];
+			else if (this.#sessionSearchEditing) body = [`search: ${this.#sessionSearch}_`];
+			else {
+				const sessions = this.#sessionRows();
+				const start = Math.max(0, Math.min(selected - Math.floor(bodyRows / 2), sessions.length - bodyRows));
+				for (let index = start; index < Math.min(sessions.length, start + bodyRows); index++) {
+					body.push(this.#formatSessionRow(sessions[index]!, index === selected, innerWidth));
+					hits.push(index);
+				}
+				if (body.length === 0)
+					body.push(
+						this.#sessionNotice ??
+							(this.#sessionAsyncLoading
+								? `Loading sessions${theme.symbol("sep.ellipsis")}`
+								: "No matching sessions"),
+					);
+			}
+		}
+		const layout = renderDialog(title, body, width, height, footer);
+		for (let line = 0; line < layout.bodyRows; line++) {
+			const hit = hits[line + layout.bodyWindowStart];
+			const outputLine = layout.bodyRowStart + line;
+			if (hit === undefined) continue;
+			this.#hitRows[outputLine] = hit;
+			if (hit === selected || hit === this.#hoveredRow)
+				layout.lines[outputLine] = row(body[line + layout.bodyWindowStart] ?? "", width, undefined, "selectedBg");
+		}
+		return layout.lines;
 	}
 
 	handleInput(keyData: string): void {
@@ -983,11 +1070,11 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const title = sanitizeLine(handle.title ?? "(unsaved session)", width);
 		const name = selected ? theme.bold(theme.fg("accent", title)) : theme.bold(title);
 		const markers = [
-			handle.selected ? theme.fg("accent", "●current") : undefined,
-			handle.visible ? undefined : theme.fg("muted", "○hidden"),
+			handle.selected ? theme.fg("accent", `${theme.status.running}current`) : undefined,
+			handle.visible ? undefined : theme.fg("muted", `${theme.status.shadowed}hidden`),
 			handle.archived ? theme.fg("muted", "archived") : undefined,
 		].filter((part): part is string => !!part);
-		const location = handle.path ? shortenPath(handle.path) : "(unsaved — reachable here)";
+		const location = handle.path ? shortenPath(handle.path) : "(unsaved: reachable here)";
 		const prefix = `${cursor} ${formatManagedSessionStatus(handle.status)} ${name} `;
 		const suffix = markers.length > 0 ? ` ${markers.join(" ")}` : "";
 		const available = Math.max(8, width - visibleWidth(prefix) - visibleWidth(suffix));
@@ -1267,7 +1354,17 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			for (let i = 0; i < contentRows; i++) {
 				const hit = roster.hitRows[i];
 				if (hit !== undefined) this.#hitRows[lines.length] = hit;
-				lines.push(splitRow(roster.lines[i] ?? "", details[i] ?? "", width, split));
+				lines.push(
+					splitRow(
+						roster.lines[i] ?? "",
+						details[i] ?? "",
+						width,
+						split,
+						hit !== undefined && (hit === this.#selectedRow || hit === this.#hoveredRow)
+							? "selectedBg"
+							: "panelBg",
+					),
+				);
 			}
 			lines.push(dividerSplit(width, split));
 			lines.push(row(this.#footer(false, Math.max(1, width - 4)), width));
@@ -1286,7 +1383,16 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			for (let i = 0; i < contentRows; i++) {
 				const hit = roster.hitRows[i];
 				if (hit !== undefined) this.#hitRows[lines.length] = hit;
-				lines.push(row(roster.lines[i] ?? "", width));
+				lines.push(
+					row(
+						roster.lines[i] ?? "",
+						width,
+						undefined,
+						hit !== undefined && (hit === this.#selectedRow || hit === this.#hoveredRow)
+							? "selectedBg"
+							: "modalBg",
+					),
+				);
 			}
 		}
 		lines.push(divider(width));
@@ -1642,14 +1748,16 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 		const styledId = selected ? theme.bold(theme.fg("accent", id)) : theme.bold(id);
 		const fields: string[] = [`${cursor} ${branch}${statusGlyph(ref.status)} ${styledId}`];
 		if (this.#viewMode === "roster" && ref.parentId && ref.parentId !== MAIN_AGENT_ID) {
-			fields.push(theme.fg("dim", `↳ ${sanitizeDisplayText(ref.parentId)}`));
+			fields.push(
+				theme.fg("dim", `${theme.getSymbolPreset() === "ascii" ? "->" : "↳"} ${sanitizeDisplayText(ref.parentId)}`),
+			);
 		}
 		if (ref.kind === "advisor") {
 			fields.push(theme.fg("warning", "read-only"));
 		}
 		const unread = this.#irc.unreadCount(ref.id);
 		if (unread > 0) {
-			fields.push(theme.fg("warning", `⧉ ${unread}`));
+			fields.push(theme.fg("warning", `${theme.getSymbolPreset() === "ascii" ? "irc" : "⧉"} ${unread}`));
 		}
 		const left = fields.join("  ");
 
@@ -1676,7 +1784,9 @@ export class AgentHubOverlayComponent extends Container implements SelectListMou
 			entry.push(truncateToWidth(left.replace(/[\r\n]+/g, " "), max));
 		}
 
-		const ownChildRail = this.#childrenByParent.has(ref.id) ? theme.fg("dim", "│ ") : "  ";
+		const ownChildRail = this.#childrenByParent.has(ref.id)
+			? theme.fg("dim", `${theme.symbol("tree.vertical")} `)
+			: "  ";
 		const continuation = treeMode
 			? `  ${treeContinuation(ref, max, this.#treeDepthById, this.#treeParentById, this.#treeLastSiblingById)}${ownChildRail}`
 			: "";

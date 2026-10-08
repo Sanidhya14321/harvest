@@ -17,6 +17,7 @@
 import type { AgentTool } from "@harvest/pi-agent-core";
 import {
 	type Component,
+	Ellipsis,
 	matchesKey,
 	routeSgrMouseInput,
 	ScrollView,
@@ -28,7 +29,7 @@ import type { MessageRenderer } from "../../extensibility/extensions/types";
 import type { SessionMessageEntry } from "../../session/session-entries";
 import { isUserTurnInitiator } from "../../session/messages";
 import { replaceTabs } from "../../tools/render-utils";
-import { highlightCode, type ThemeColor, theme } from "../theme/theme";
+import { getSymbolTheme, highlightCode, type ThemeColor, theme } from "../theme/theme";
 import { commandFromToolCall, extractBlocks, extractLinks } from "../utils/copy-targets";
 import {
 	matchesAppToolsExpand,
@@ -37,13 +38,14 @@ import {
 	matchesSelectUp,
 } from "../utils/keybinding-matchers";
 import { ChatTranscriptBuilder } from "./chat-transcript-builder";
-import { DynamicBorder } from "./dynamic-border";
+import { dialogContentWidth, surfaceRow, topBorder } from "./overlay-box";
 import {
 	appendOutlineEntries,
 	type ComposedColumn,
 	composeOutlineColumn,
 	OutlineRowCache,
 	type OutlineTarget,
+	outlineContentWidth,
 	outlineRows,
 	outlineVisibility,
 } from "./transcript-outline";
@@ -78,14 +80,10 @@ interface CopyBlock {
 	href?: string;
 }
 
-/** Rows the frame chrome occupies: top rule, header, rule, footer hint, bottom rule. */
-const CHROME_ROWS = 5;
 /** Preview rows shown per block in the descended view; copy always takes the full text. */
 const BLOCK_PREVIEW_LINES = 12;
 /** The copy picker's outline stroke — green, distinct from the rewind selector's accent. */
 const OUTLINE_COLOR: ThemeColor = "success";
-/** Rows above the scroll view: top rule, header, rule. Mouse rows map through this offset. */
-const CONTENT_TOP = 3;
 /**
  * Entries replayed when the picker opens. Replaying a long session's whole
  * branch costs seconds before the first frame (one component built and
@@ -105,7 +103,10 @@ interface ControlRegion {
 export class CopySelectorComponent implements Component {
 	#builder: ChatTranscriptBuilder;
 	#scrollView: ScrollView;
-	#border = new DynamicBorder();
+	#maxHeight: number | undefined;
+	#lastWidth = 0;
+	#contentTop = 0;
+	#contentRows = 0;
 	#targets: OutlineTarget[] = [];
 	#selected = 0;
 	#visible: boolean[] | undefined;
@@ -181,6 +182,14 @@ export class CopySelectorComponent implements Component {
 	/** Number of copyable transcript items; hosts skip mounting when zero. */
 	get targetCount(): number {
 		return this.#targets.length;
+	}
+
+	/** Use the live overlay allocation rather than the process terminal's full height. */
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (next === this.#maxHeight) return;
+		this.#maxHeight = next;
+		this.#scrollToSelection = true;
 	}
 
 	invalidate(): void {
@@ -291,7 +300,8 @@ export class CopySelectorComponent implements Component {
 	/** A left click at terminal (row, col): act if it lands on a caption control. */
 	#click(row: number, col: number): void {
 		if (!this.#blocks) return;
-		const line = row - CONTENT_TOP + this.#scrollView.getScrollOffset();
+		if (row < this.#contentTop || row >= this.#contentTop + this.#contentRows) return;
+		const line = row - this.#contentTop + this.#scrollView.getScrollOffset();
 		const regions = this.#controls.get(line);
 		if (!regions) return;
 		const hit = regions.find(region => col >= region.start && col < region.end);
@@ -333,10 +343,24 @@ export class CopySelectorComponent implements Component {
 	// ========================================================================
 
 	render(width: number): readonly string[] {
-		const termHeight = process.stdout.rows || 40;
-		const contentWidth = Math.max(1, width - 1);
+		const safeWidth = Math.max(0, Math.floor(width));
+		if (safeWidth === 0) {
+			this.#contentRows = 0;
+			return [];
+		}
+		const termHeight = this.#maxHeight ?? Math.max(1, process.stdout.rows || 40);
+		const showTitle = termHeight >= 3;
+		const showFooter = termHeight >= 2;
+		const showBottom = termHeight >= 6;
+		const viewportHeight = Math.max(1, termHeight - Number(showTitle) - Number(showFooter) - Number(showBottom));
+		const compact = viewportHeight < 3 || safeWidth < 5;
+		if (safeWidth !== this.#lastWidth) this.#scrollToSelection = true;
+		this.#lastWidth = safeWidth;
+		this.#scrollView.setScrollbar(safeWidth >= 5 ? "auto" : "never");
+		this.#scrollView.setSymbols(getSymbolTheme());
+		const contentWidth = safeWidth >= 5 ? safeWidth - 1 : safeWidth;
 		const children = this.#builder.container.children;
-		const inner = Math.max(10, contentWidth - 4);
+		const inner = outlineContentWidth(contentWidth, compact);
 		const childRows = this.#rowCache.rows(children, inner);
 
 		this.#visible = outlineVisibility(childRows, this.#targets);
@@ -356,9 +380,11 @@ export class CopySelectorComponent implements Component {
 		this.#controls = new Map();
 		if (this.#blocks && target) {
 			// Descended: the turn's rendered region is replaced by its block stack.
-			const before = composeOutlineColumn(childRows, 0, target.start, [], -1, contentWidth, undefined);
-			const stack = this.#composeBlocks(this.#blocks, contentWidth, before.lines.length);
-			const after = composeOutlineColumn(childRows, target.end, children.length, [], -1, contentWidth, undefined);
+			const before = composeOutlineColumn(childRows, 0, target.start, [], -1, contentWidth, undefined, { compact });
+			const stack = this.#composeBlocks(this.#blocks, contentWidth, before.lines.length, compact);
+			const after = composeOutlineColumn(childRows, target.end, children.length, [], -1, contentWidth, undefined, {
+				compact,
+			});
 			composed = {
 				lines: [...before.lines, ...stack.lines, ...after.lines],
 				selStart: stack.selStart >= 0 ? before.lines.length + stack.selStart : -1,
@@ -376,39 +402,54 @@ export class CopySelectorComponent implements Component {
 				undefined,
 				{
 					color: OUTLINE_COLOR,
-					caption: blocks.length > 0 ? `${blocks.length} block${blocks.length === 1 ? "" : "s"} →` : undefined,
+					compact,
+					caption:
+						blocks.length > 0
+							? `${blocks.length} block${blocks.length === 1 ? "" : "s"} ${theme.nav.expand}`
+							: undefined,
 				},
 			);
 		}
 
-		const viewportHeight = Math.max(3, termHeight - CHROME_ROWS);
 		this.#scrollView.setLines(composed.lines);
 		this.#scrollView.setHeight(viewportHeight);
 		if (this.#scrollToSelection && composed.selStart >= 0) {
 			const offset = this.#scrollView.getScrollOffset();
 			const top = Math.max(0, composed.selStart - 1);
 			const bottom = Math.min(composed.lines.length, composed.selEnd + 1);
-			if (top < offset) this.#scrollView.setScrollOffset(top);
+			if (composed.selEnd - composed.selStart >= viewportHeight) this.#scrollView.setScrollOffset(composed.selStart);
+			else if (top < offset) this.#scrollView.setScrollOffset(top);
 			else if (bottom > offset + viewportHeight) this.#scrollView.setScrollOffset(bottom - viewportHeight);
 			this.#scrollToSelection = false;
 		}
 
 		const output: string[] = [];
-		output.push(...this.#border.render(width));
-		output.push(
-			` ${theme.cmd.copy} ${theme.bold("Copy")}${theme.sep.dot}${theme.fg("dim", "pick what to put on the clipboard")}`,
-		);
-		output.push(...this.#border.render(width));
-		output.push(...this.#scrollView.render(width));
+		const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
+		if (showTitle)
+			output.push(
+				topBorder(
+					safeWidth,
+					truncateToWidth(
+						`${theme.cmd.copy} Copy${theme.sep.dot}pick what to put on the clipboard`,
+						dialogContentWidth(safeWidth),
+						ellipsis,
+					),
+				),
+			);
+		this.#contentTop = output.length;
+		const body = this.#scrollView.render(safeWidth);
+		this.#contentRows = body.length;
+		output.push(...body.map(line => surfaceRow(line, safeWidth)));
 		const selectedBlock = this.#blocks?.[this.#blockSelected];
 		const openHint = selectedBlock?.href && this.deps.onOpen ? "  o open" : "";
+		const ascii = theme.getSymbolPreset() === "ascii";
+		const step = ascii ? "up/down" : "↑/↓";
+		const back = ascii ? "left/esc" : "←/esc";
 		const hint = this.#blocks
-			? `${this.#blockSelected + 1}/${this.#blocks.length}  ↑/↓ block  ←/esc back  enter copy${openHint}  click ${theme.cmd.copy}/${theme.cmd.share}`
-			: `${this.#targets.length > 0 ? `${this.#selected + 1}/${this.#targets.length}  ` : ""}↑/↓ step  ${blocks.length > 0 ? "→ blocks  " : ""}enter copy  ${this.#truncated ? "a earlier turns  " : ""}ctrl+o expand  esc close`;
-		// The hint grows with the load-all affordance; an over-width row would
-		// wrap and shift the mouse rows CONTENT_TOP/CHROME_ROWS assume.
-		output.push(` ${theme.fg("dim", truncateToWidth(hint, Math.max(0, width - 1)))}`);
-		output.push(...this.#border.render(width));
+			? `${this.#blockSelected + 1}/${this.#blocks.length}  ${step} block  ${back} back  enter copy${openHint}  click ${theme.cmd.copy}/${theme.cmd.share}`
+			: `${this.#targets.length > 0 ? `${this.#selected + 1}/${this.#targets.length}  ` : ""}${step} step  ${blocks.length > 0 ? `${theme.nav.expand} blocks  ` : ""}enter copy  ${this.#truncated ? "a earlier turns  " : ""}ctrl+o expand  esc close`;
+		if (showFooter) output.push(surfaceRow(theme.fg("dim", truncateToWidth(hint, safeWidth, ellipsis)), safeWidth));
+		if (showBottom) output.push(surfaceRow("", safeWidth));
 		return output;
 	}
 
@@ -418,8 +459,9 @@ export class CopySelectorComponent implements Component {
 	 * are recorded in `#controls` under the composed line index
 	 * (`lineOffset` + local index) so {@link #click} can resolve a mouse hit.
 	 */
-	#composeBlocks(blocks: CopyBlock[], columnWidth: number, lineOffset: number): ComposedColumn {
-		const inner = Math.max(10, columnWidth - 4);
+	#composeBlocks(blocks: CopyBlock[], columnWidth: number, lineOffset: number, compact: boolean): ComposedColumn {
+		const inner = outlineContentWidth(columnWidth, compact);
+		const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
 		const lines: string[] = [];
 		let selStart = -1;
 		let selEnd = -1;
@@ -428,9 +470,18 @@ export class CopySelectorComponent implements Component {
 			const raw = block.content.split("\n");
 			const shown = raw.slice(0, BLOCK_PREVIEW_LINES);
 			const styled = block.language ? highlightCode(shown.join("\n"), block.language) : shown;
-			const rows = styled.map(row => truncateToWidth(replaceTabs(row), inner));
+			const rows = styled.map(row => truncateToWidth(replaceTabs(row), inner, ellipsis));
 			if (raw.length > shown.length) {
-				rows.push(theme.fg("dim", `… +${raw.length - shown.length} more lines`));
+				rows.push(
+					theme.fg(
+						"dim",
+						truncateToWidth(
+							`${theme.symbol("sep.ellipsis")} +${raw.length - shown.length} more lines`,
+							inner,
+							ellipsis,
+						),
+					),
+				);
 			}
 			const selected = index === this.#blockSelected;
 			const captionColor: ThemeColor = selected ? OUTLINE_COLOR : "dim";
@@ -438,16 +489,25 @@ export class CopySelectorComponent implements Component {
 				{ action: "copy", text: `${theme.cmd.copy} copy` },
 			];
 			if (block.href && this.deps.onOpen) controls.push({ action: "open", text: `${theme.cmd.share} open` });
-			const controlsWidth = controls.reduce((sum, control) => sum + visibleWidth(control.text) + 2, 0);
+			const captionInset = compact ? 0 : 2;
+			const captionWidth = Math.max(0, columnWidth - captionInset);
+			let controlsWidth = 0;
+			const shownControls = controls.filter(control => {
+				const next = controlsWidth + visibleWidth(control.text) + 2;
+				if (next >= captionWidth) return false;
+				controlsWidth = next;
+				return true;
+			});
 			const summary = truncateToWidth(
 				`${index + 1}/${blocks.length}${theme.sep.dot}${block.label}${theme.sep.dot}${raw.length} line${raw.length === 1 ? "" : "s"}`,
-				Math.max(4, inner - controlsWidth),
+				Math.max(0, captionWidth - controlsWidth),
+				ellipsis,
 			);
 			// Caption: two-space gutter, summary, then the controls, each preceded by two spaces.
 			let caption = theme.fg(captionColor, summary);
-			let cursor = 2 + visibleWidth(summary);
+			let cursor = captionInset + visibleWidth(summary);
 			const regions: ControlRegion[] = [];
-			for (const control of controls) {
+			for (const control of shownControls) {
 				cursor += 2;
 				regions.push({
 					action: control.action,
@@ -462,12 +522,16 @@ export class CopySelectorComponent implements Component {
 			this.#controls.set(lineOffset + lines.length, regions);
 			if (selected) {
 				selStart = lines.length;
-				lines.push(`  ${caption}`);
-				lines.push(...outlineRows(rows, inner, { color: OUTLINE_COLOR }));
+				lines.push(`${" ".repeat(captionInset)}${caption}`);
+				lines.push(
+					...(compact
+						? rows.map(row => theme.bgFill("selectedBg", row))
+						: outlineRows(rows, inner, { color: OUTLINE_COLOR })),
+				);
 				selEnd = lines.length;
 			} else {
-				lines.push(`  ${caption}`);
-				for (const row of rows) lines.push(row ? `  ${row}` : row);
+				lines.push(`${" ".repeat(captionInset)}${caption}`);
+				for (const row of rows) lines.push(row ? `${" ".repeat(captionInset)}${row}` : row);
 			}
 		}
 		lines.push("");

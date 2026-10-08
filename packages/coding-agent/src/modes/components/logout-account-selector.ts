@@ -1,8 +1,17 @@
-import { Container, matchesKey, ScrollView, Spacer, TruncatedText } from "@harvest/pi-tui";
+import {
+	Container,
+	matchesKey,
+	parseSgrMouse,
+	ScrollView,
+	type SgrMouseEvent,
+	Spacer,
+	TruncatedText,
+} from "@harvest/pi-tui";
 import { theme } from "../../modes/theme/theme";
 import { matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../../modes/utils/keybinding-matchers";
 import type { LogoutAccount } from "../../slash-commands/helpers/logout";
-import { OverlayPanel } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { type DialogLayout, OverlayPanel, renderChoiceDialog } from "./overlay-box";
 
 const LOGOUT_SELECTOR_MAX_VISIBLE = 10;
 
@@ -14,6 +23,7 @@ export class LogoutAccountSelectorComponent extends OverlayPanel {
 	#statusMessage: string | undefined;
 	#onSelectCallback: (account: LogoutAccount) => void;
 	#onCancelCallback: () => void;
+	#layout: DialogLayout | undefined;
 
 	constructor(
 		providerName: string,
@@ -73,7 +83,11 @@ export class LogoutAccountSelectorComponent extends OverlayPanel {
 		}
 
 		this.#listContainer.addChild(
-			new TruncatedText(theme.fg("muted", "↑/↓ select · ↵ log out account · Esc cancel"), 0, 0),
+			new TruncatedText(
+				theme.fg("muted", ["Up/Down select", "Enter log out account", "Esc cancel"].join(theme.sep.dot)),
+				0,
+				0,
+			),
 		);
 
 		if (this.#statusMessage) {
@@ -83,6 +97,11 @@ export class LogoutAccountSelectorComponent extends OverlayPanel {
 	}
 
 	handleInput(keyData: string): void {
+		const mouse = parseSgrMouse(keyData);
+		if (mouse) {
+			this.routeMouse(mouse, mouse.row, mouse.col);
+			return;
+		}
 		if (matchesSelectCancel(keyData)) {
 			this.#onCancelCallback();
 			return;
@@ -118,6 +137,47 @@ export class LogoutAccountSelectorComponent extends OverlayPanel {
 		} else if (matchesKey(keyData, "enter") || matchesKey(keyData, "return") || keyData === "\n") {
 			const account = this.#accounts[this.#selectedIndex];
 			if (!account) return;
+			this.#onSelectCallback(account);
+		}
+	}
+
+	override render(width: number): readonly string[] {
+		const choices = this.#accounts.map(
+			(account, index) =>
+				`${index === this.#selectedIndex ? theme.nav.cursor : " "} ${account.label}${account.active ? " (active)" : ""}${account.detail ? `  ${account.detail}` : ""}`,
+		);
+		if (choices.length === 0) choices.push(theme.fg("muted", "No stored accounts to log out"));
+		const footer = [
+			`${editorKey("tui.select.cancel") || "Esc"} cancel`,
+			"Enter log out",
+			`${this.#accounts.length ? this.#selectedIndex + 1 : 0}/${this.#accounts.length}`,
+		].join(theme.sep.dot);
+		this.#layout = renderChoiceDialog(
+			this.title,
+			choices,
+			this.#selectedIndex,
+			width,
+			Math.min(this.getMaxHeight(), LOGOUT_SELECTOR_MAX_VISIBLE + 3),
+			footer,
+		);
+		return this.#layout.lines;
+	}
+
+	routeMouse(event: SgrMouseEvent, line: number, _col: number): void {
+		const layout = this.#layout;
+		if (!layout) return;
+		const row = line - layout.bodyRowStart;
+		if (row < 0 || row >= layout.bodyRows) return;
+		if (event.wheel !== null) {
+			if (this.#accounts.length)
+				this.#selectedIndex = (this.#selectedIndex + event.wheel + this.#accounts.length) % this.#accounts.length;
+			this.#statusMessage = undefined;
+			this.#updateList();
+		} else if (event.leftClick) {
+			const index = layout.bodyWindowStart + row;
+			const account = this.#accounts[index];
+			if (!account) return;
+			this.#selectedIndex = index;
 			this.#onSelectCallback(account);
 		}
 	}

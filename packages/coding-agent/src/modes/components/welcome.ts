@@ -1,5 +1,6 @@
 import {
 	type Component,
+	Ellipsis,
 	padding,
 	replaceTabs,
 	TERMINAL,
@@ -8,7 +9,9 @@ import {
 	wrapTextWithAnsi,
 } from "@harvest/pi-tui";
 import { APP_NAME } from "@harvest/pi-utils";
-import { theme } from "../../modes/theme/theme";
+import { detectColorLevel } from "@harvest/pi-utils/chalk";
+import { getThemeEpoch, theme } from "../../modes/theme/theme";
+import { bottomBorder, fit, surfaceRow, topBorder } from "./overlay-box";
 import tipsText from "./tips.txt" with { type: "text" };
 
 /** Tips embedded at build time, one per line; blanks dropped. */
@@ -65,6 +68,7 @@ type ColorEncoding = "ansi-16m" | "ansi-256";
  *  rotates the hue offset cyclically; successive renders with increasing phase
  *  shimmer, while a fixed phase yields a still rainbow. */
 function renderNewTag(phase: number, encoding: ColorEncoding): string {
+	if (theme.getColorMode() === "none") return NEW_TAG_TEXT;
 	const bold = "\x1b[1m";
 	const reset = "\x1b[0m";
 	const wrapped = ((phase % 1) + 1) % 1;
@@ -91,7 +95,7 @@ export function renderWelcomeTip(tip: string, boxWidth: number, phase = 0): stri
 	const isNew = NEW_TIP_MARKER.test(tip);
 	const body = isNew ? tip.replace(NEW_TIP_MARKER, "") : tip;
 
-	const wrappedBody = wrapTextWithAnsi(replaceTabs(body), bodyBudget);
+	const wrappedBody = wrapTextWithAnsi(replaceTabs(body), bodyBudget, { hard: true });
 	if (wrappedBody.length === 0) return [];
 
 	// Pull both colors from the active theme so the line stays readable on light
@@ -153,6 +157,8 @@ export class WelcomeComponent implements Component {
 	// Bypassed while the intro animation runs (every frame differs).
 	#cachedWidth = -1;
 	#cachedLines: string[] | undefined;
+	#cachedEpoch = -1;
+	#maxHeight: number | undefined;
 
 	constructor(
 		private version: string,
@@ -173,6 +179,13 @@ export class WelcomeComponent implements Component {
 	invalidate(): void {
 		this.#cachedWidth = -1;
 		this.#cachedLines = undefined;
+	}
+
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (next === this.#maxHeight) return;
+		this.#maxHeight = next;
+		this.invalidate();
 	}
 	/** The intro keeps the welcome block mutable; settling lets it retire to history. */
 	isTranscriptBlockFinalized(): boolean {
@@ -248,17 +261,25 @@ export class WelcomeComponent implements Component {
 	}
 
 	render(termWidth: number): readonly string[] {
+		if (termWidth <= 0) return [];
 		const animating = this.#animStart != null;
-		if (!animating && this.#cachedLines && this.#cachedWidth === termWidth) {
+		const epoch = getThemeEpoch();
+		if (!animating && this.#cachedLines && this.#cachedWidth === termWidth && this.#cachedEpoch === epoch) {
 			return this.#cachedLines;
 		}
-		const lines = this.#renderLines(termWidth);
+		let lines = this.#renderLines(termWidth);
+		if (this.#maxHeight !== undefined && lines.length > this.#maxHeight) {
+			lines = [topBorder(termWidth, `${APP_NAME} v${this.version}`),
+				...(this.#maxHeight >= 2 ? [surfaceRow(`${this.modelName}${theme.sep.dot}${this.providerName}`, termWidth)] : []),
+				...(this.#maxHeight >= 3 ? [surfaceRow("/ commands  ! bash  $ python", termWidth)] : [])].slice(0, this.#maxHeight);
+		}
 		if (animating) {
 			this.#cachedLines = undefined;
 			this.#cachedWidth = -1;
 		} else {
 			this.#cachedLines = lines;
 			this.#cachedWidth = termWidth;
+			this.#cachedEpoch = epoch;
 		}
 		return lines;
 	}
@@ -268,7 +289,7 @@ export class WelcomeComponent implements Component {
 		const maxWidth = 100;
 		const boxWidth = Math.min(maxWidth, Math.max(0, termWidth - 2));
 		if (boxWidth < 4) {
-			return [];
+			return [surfaceRow(APP_NAME, termWidth)];
 		}
 		const dualContentWidth = boxWidth - 3; // 3 = │ + │ + │
 		const preferredLeftCol = 26;
@@ -375,28 +396,8 @@ export class WelcomeComponent implements Component {
 		];
 
 		// Border characters (dim)
-		const hChar = theme.boxRound.horizontal;
-		const h = theme.fg("dim", hChar);
-		const v = theme.fg("dim", theme.boxRound.vertical);
-		const tl = theme.fg("dim", theme.boxRound.topLeft);
-		const tr = theme.fg("dim", theme.boxRound.topRight);
-		const bl = theme.fg("dim", theme.boxRound.bottomLeft);
-		const br = theme.fg("dim", theme.boxRound.bottomRight);
-
 		const lines: string[] = [];
-
-		// Top border with embedded title
-		const title = ` ${APP_NAME} v${this.version} `;
-		const titlePrefixRaw = hChar.repeat(3);
-		const titleStyled = theme.fg("dim", titlePrefixRaw) + theme.fg("muted", title);
-		const titleVisLen = visibleWidth(titlePrefixRaw) + visibleWidth(title);
-		const titleSpace = boxWidth - 2;
-		if (titleVisLen >= titleSpace) {
-			lines.push(tl + truncateToWidth(titleStyled, titleSpace) + tr);
-		} else {
-			const afterTitle = titleSpace - titleVisLen;
-			lines.push(tl + titleStyled + theme.fg("dim", hChar.repeat(afterTitle)) + tr);
-		}
+		lines.push(topBorder(boxWidth, `${APP_NAME} v${this.version}`));
 
 		// Content rows
 		const maxRows = showRightColumn ? Math.max(leftLines.length, rightLines.length) : leftLines.length;
@@ -404,17 +405,13 @@ export class WelcomeComponent implements Component {
 			const left = this.#fitToWidth(leftLines[i] ?? "", leftCol);
 			if (showRightColumn) {
 				const right = this.#fitToWidth(rightLines[i] ?? "", rightCol);
-				lines.push(v + left + v + right + v);
+				lines.push(surfaceRow(` ${left} ${right} `, boxWidth));
 			} else {
-				lines.push(v + left + v);
+				lines.push(surfaceRow(` ${left} `, boxWidth));
 			}
 		}
 		// Bottom border
-		if (showRightColumn) {
-			lines.push(bl + h.repeat(leftCol) + theme.fg("dim", theme.boxRound.teeUp) + h.repeat(rightCol) + br);
-		} else {
-			lines.push(bl + h.repeat(leftCol) + br);
-		}
+		lines.push(bottomBorder(boxWidth));
 
 		// Randomly picked tip, rendered directly beneath the box.
 		lines.push(...this.#renderTip(boxWidth));
@@ -440,9 +437,10 @@ export class WelcomeComponent implements Component {
 
 	/** Center text within a given width */
 	#centerText(text: string, width: number): string {
+		text = replaceTabs(text).replace(/[\r\n]+/g, " ");
 		const visLen = visibleWidth(text);
 		if (visLen >= width) {
-			return truncateToWidth(text, width);
+			return truncateToWidth(text, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode);
 		}
 		const leftPad = Math.floor((width - visLen) / 2);
 		const rightPad = width - visLen - leftPad;
@@ -451,34 +449,14 @@ export class WelcomeComponent implements Component {
 
 	/** Fit string to exact width with ANSI-aware truncation/padding */
 	#fitToWidth(str: string, width: number): string {
-		const visLen = visibleWidth(str);
-		if (visLen > width) {
-			const ellipsis = "…";
-			const ellipsisWidth = visibleWidth(ellipsis);
-			const maxWidth = Math.max(0, width - ellipsisWidth);
-			let truncated = "";
-			let currentWidth = 0;
-			let inEscape = false;
-			for (const char of str) {
-				if (char === "\x1b") inEscape = true;
-				if (inEscape) {
-					truncated += char;
-					if (char === "m") inEscape = false;
-				} else if (currentWidth < maxWidth) {
-					truncated += char;
-					currentWidth++;
-				}
-			}
-			return `${truncated}${ellipsis}`;
-		}
-		return str + padding(width - visLen);
+		return fit(replaceTabs(str).replace(/[\r\n]+/g, " "), width);
 	}
 
 	/** Pick the logo frame for the current intro phase, or the resting frame. */
 	#currentLogoFrame(): readonly string[] {
-		if (this.#animStart == null) return REST_FRAME;
+		if (this.#animStart == null) return restingLogo();
 		const elapsed = performance.now() - this.#animStart;
-		if (elapsed >= INTRO_MS) return REST_FRAME;
+		if (elapsed >= INTRO_MS) return restingLogo();
 		return introLogoFrame(elapsed / INTRO_MS);
 	}
 }
@@ -514,6 +492,7 @@ export interface ShineConfig {
  * color-identical (truecolor when available, 256-color ramp otherwise).
  */
 export function gradientEscape(t: number, shine?: ShineConfig): string {
+	if ((typeof theme === "undefined" && detectColorLevel(process.env, true) === 0) || (typeof theme !== "undefined" && theme.getColorMode() === "none")) return "";
 	const shineStrength = shine && shine.strength > 0 ? shine.strength : 0;
 	const shinePos = shine ? shine.pos : 0;
 	if (TERMINAL.trueColor) {
@@ -557,7 +536,7 @@ export function gradientEscape(t: number, shine?: ShineConfig): string {
  * white highlight is composited on top, centered at `shine.pos`.
  */
 export function gradientLogo(lines: readonly string[], phase = 0, shine?: ShineConfig): string[] {
-	const reset = "\x1b[0m";
+	const reset = typeof theme !== "undefined" && theme.getColorMode() === "none" ? "" : "\x1b[0m";
 	const rows = lines.length;
 	const cols = Math.max(...lines.map(l => l.length));
 	const xSpan = Math.max(1, cols - 1);
@@ -566,7 +545,7 @@ export function gradientLogo(lines: readonly string[], phase = 0, shine?: ShineC
 	return lines.map((line, y) => {
 		let result = "";
 		for (let x = 0; x < line.length; x++) {
-			const char = line[x];
+			const char = typeof theme !== "undefined" && theme.getSymbolPreset() === "ascii" && line[x] === "█" ? "#" : line[x];
 			if (char === " ") {
 				result += char;
 				continue;
@@ -582,9 +561,9 @@ export function gradientLogo(lines: readonly string[], phase = 0, shine?: ShineC
 }
 
 /** Total length of the intro animation. */
-const INTRO_MS = 3000;
+const INTRO_MS = 600;
 /** Render cadence during the intro (~30fps). */
-const INTRO_TICK_MS = 33;
+const INTRO_TICK_MS = 40;
 /** Number of full gradient rotations the sweep performs before settling. */
 const INTRO_SWEEPS = 2.5;
 /** Number of times the shine highlight crosses the diagonal across the intro. */
@@ -609,4 +588,9 @@ function introLogoFrame(progress: number): string[] {
 }
 
 /** Resting gradient frame, cached for re-renders outside of the intro. */
-const REST_FRAME = gradientLogo(PI_LOGO, 0);
+let restingFrame: { epoch: number; rows: string[] } | undefined;
+function restingLogo(): readonly string[] {
+	const epoch = getThemeEpoch();
+	if (restingFrame?.epoch !== epoch) restingFrame = { epoch, rows: gradientLogo(PI_LOGO, 0) };
+	return restingFrame.rows;
+}

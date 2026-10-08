@@ -1,15 +1,15 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { HookSelectorComponent } from "@harvest/pi-coding-agent/modes/components/hook-selector";
-import { getThemeByName, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { visibleWidth } from "@harvest/pi-tui";
 
-beforeAll(async () => {
-	const theme = await getThemeByName("dark");
-	if (!theme) {
-		throw new Error("Failed to load dark theme for tests");
-	}
-	setThemeInstance(theme);
+let previousTheme = theme;
+beforeEach(async () => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor" }));
 });
+afterEach(() => setThemeInstance(previousTheme));
 describe("HookSelectorComponent", () => {
 	it("keeps outlined options within render width", () => {
 		const options = [

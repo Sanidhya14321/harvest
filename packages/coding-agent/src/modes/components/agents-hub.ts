@@ -43,10 +43,25 @@ import type { Settings } from "../../config/settings";
 import agentCreationArchitectPrompt from "../../prompts/system/agent-creation-architect.md" with { type: "text" };
 import agentCreationUserPrompt from "../../prompts/system/agent-creation-user.md" with { type: "text" };
 import { createAgentSession } from "../../sdk";
+import { EVAL_DEFAULT_MODEL_PATTERN } from "../../autolearn/eval-executor";
 import { refreshAgentDiscovery } from "../../task";
-import { PRESET_IDENTIFIER_PATTERN as IDENTIFIER_PATTERN } from "../../task/agents";
+import {
+	createPresetDraft,
+	evaluatePresetRevision,
+	getManagedPresetsDir,
+	isPresetNameClaimedByAuthored,
+	isValidPresetName,
+	listManagedPresetNames,
+	listPresetRevisions,
+	loadBundledAgents,
+	parseAgent,
+	promotePresetRevision,
+	rollbackPresetRevision,
+	PRESET_IDENTIFIER_PATTERN as IDENTIFIER_PATTERN,
+} from "../../task/agents";
 import { discoverAgents } from "../../task/discovery";
 import { resolveAgentPrewalkDefault } from "../../task/prewalk";
+import type { ToolSession } from "../../tools/index";
 import type { AgentDefinition, AgentSource } from "../../task/types";
 import { shortenPath } from "../../tools/render-utils";
 import { getEditorTheme, theme } from "../theme/theme";
@@ -57,7 +72,8 @@ import {
 	matchesSelectUp,
 } from "../utils/keybinding-matchers";
 import { buildBrowserItems, ModelBrowser, type ModelBrowserItem, sortModelItems } from "./model-browser";
-import { bottomBorder, dividerSplit, row, splitBodyWidth, splitRow, topBorderSplit } from "./overlay-box";
+import { canSplitPane, dialogContentWidth, renderDialog, row, splitBodyWidth, splitRow } from "./overlay-box";
+import { formatEvaluationLines, formatPromotedNotice, revisionEvalStatus } from "./revision-views";
 
 /** One agent with its per-agent settings overrides resolved for display. */
 interface HubAgent extends AgentDefinition {
@@ -68,6 +84,14 @@ interface HubAgent extends AgentDefinition {
 	prewalkOverride?: string;
 	/** `task.agentAdvisor[name]`: "on", "off", or a model pattern. */
 	advisorOverride?: string;
+	/**
+	 * True for rows synthesized from revision history for presets with no
+	 * materialized file (unevaluated/inactive drafts). Spawn discovery is
+	 * file-scan only and never lists these — the hub enumerates them through
+	 * the revision service so the revision manager stays reachable. Drafts
+	 * never execute: nothing outside the revision manager consumes these rows.
+	 */
+	managedDraftOnly?: boolean;
 }
 
 const SOURCE_LABEL: Record<AgentSource, string> = {
@@ -99,7 +123,13 @@ interface StripChip {
 		| { kind: "property"; property: PropertyKind }
 		| { kind: "set"; property: PropertyKind; value: string | undefined }
 		| { kind: "pick"; property: PropertyKind }
-		| { kind: "pattern"; property: PropertyKind };
+		| { kind: "pattern"; property: PropertyKind }
+		| { kind: "revisions" }
+		| { kind: "rev-inspect"; revId: string }
+		| { kind: "rev-evaluate"; revId: string }
+		| { kind: "rev-cancel-eval"; revId: string }
+		| { kind: "rev-promote"; revId: string }
+		| { kind: "rev-rollback"; revId: string };
 }
 
 type StripState =
@@ -119,6 +149,121 @@ interface GeneratedAgentSpec {
 	systemPrompt: string;
 }
 
+/**
+ * Override for the /agents hub creation architect (tests inject a
+ * deterministic fixture; production runs the isolated session below).
+ * The runner always receives runtime-only settings — a clone of the shared
+ * instance with recursive capture disabled — never the shared instance, so
+ * generation leaves persisted configuration bytes untouched on success and
+ * failure alike.
+ */
+export type AgentsHubArchitectRunner = (input: { brief: string; settings: Settings }) => Promise<GeneratedAgentSpec>;
+
+let agentsHubArchitectRunner: AgentsHubArchitectRunner | undefined;
+
+/** Override the hub creation architect (tests inject deterministic fixtures). */
+export function setAgentsHubArchitectRunner(runner: AgentsHubArchitectRunner | undefined): void {
+	agentsHubArchitectRunner = runner;
+}
+
+/** One managed-preset revision as the hub revision manager displays it. */
+export interface PresetRevisionView {
+	id: string;
+	state: string;
+	active: boolean;
+	evaluations: number;
+	evalStatus: "unevaluated" | "passing" | "failing";
+}
+
+/** True for agents materialized from the isolated managed-presets store.
+ * Authoritative containment against the managed-presets root the service
+ * writes — never a path substring, so sibling directories whose names merely
+ * contain "managed-presets" (backups, archives) are not mistaken for managed
+ * artifacts, and synthetic draft-only rows (whose filePath is the managed
+ * path the draft would materialize at) resolve identically. */
+export function isManagedPresetAgent(agent: { filePath?: string }): boolean {
+	const filePath = agent.filePath;
+	if (!filePath) return false;
+	try {
+		const root = path.resolve(getManagedPresetsDir());
+		const resolved = path.resolve(filePath);
+		const rel = path.relative(root, resolved);
+		return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Managed presets with revision history but no materialized file
+ * (unevaluated/inactive drafts): file-scan spawn discovery never lists them,
+ * so the hub enumerates them here through the revision service and
+ * synthesizes management rows. Names already present in spawn discovery
+ * (`known`) and names without history are skipped — authored/bundled
+ * definitions always win and legacy files without history stay on the
+ * discovery path.
+ */
+async function enumerateDraftOnlyManagedPresets(
+	known: Set<string>,
+): Promise<Array<{ name: string; agent: AgentDefinition }>> {
+	const candidates = new Set<string>();
+	try {
+		const files = await fs.readdir(getManagedPresetsDir()).catch((err: unknown) => {
+			if (isEnoent(err)) return [];
+			throw err;
+		});
+		for (const entry of files) {
+			if (!entry.endsWith(".md") || entry.endsWith(".txn.json") || entry.endsWith(".tmp")) continue;
+			const stem = entry.slice(0, -".md".length);
+			if (isValidPresetName(stem) && !known.has(stem)) candidates.add(stem);
+		}
+	} catch {
+		// Best-effort: an unreadable managed dir leaves discovery rows intact.
+	}
+	// Draft-only names come from the authoritative revision service (U1),
+	// never a mirrored store path: per-name verification below still runs
+	// through `listPresetRevisions`, so stray directories never surface.
+	try {
+		for (const name of await listManagedPresetNames()) {
+			if (!known.has(name)) candidates.add(name);
+		}
+	} catch {
+		// Best-effort: same as above.
+	}
+	const out: Array<{ name: string; agent: AgentDefinition }> = [];
+	for (const name of [...candidates].sort()) {
+		let revisions: Array<{ id: string; description: string; content: string }>;
+		try {
+			({ revisions } = await listPresetRevisions(name));
+		} catch {
+			continue;
+		}
+		if (revisions.length === 0) continue;
+		const latest = revisions[revisions.length - 1];
+		if (!latest) continue;
+		let description = latest.description;
+		let systemPrompt = "";
+		try {
+			const parsed = parseAgent(`managed:${name}`, latest.content, "user", "warn");
+			description = parsed.description;
+			systemPrompt = parsed.systemPrompt;
+		} catch {
+			systemPrompt = latest.content;
+		}
+		out.push({
+			name,
+			agent: {
+				name,
+				description,
+				systemPrompt,
+				source: "user",
+				filePath: path.join(getManagedPresetsDir(), `${name}.md`),
+			},
+		});
+	}
+	return out;
+}
+
 /** Ambient model context for resolution previews and the creation architect. */
 export interface AgentsHubModelContext {
 	modelRegistry?: ModelRegistry;
@@ -135,6 +280,26 @@ export interface AgentsHubModelContext {
 
 export interface AgentsHubCallbacks {
 	onCancel: () => void;
+}
+
+/**
+ * Production evaluation context for managed-preset runs started from the hub.
+ *
+ * The revision service executes evaluations through real restricted task
+ * execution and refuses to run without the owning session (model registry,
+ * credential resolvers, cwd, settings, restrictions). The hub itself owns no
+ * session, so the host must thread the owning production ToolSession (or an
+ * equivalent trusted context) plus an AbortSignal here — see the patch
+ * request on `showAgentsDashboard`: pass the live session's ToolSession and a
+ * signal aborted when the hub closes. Without a parent, evaluations surface
+ * as unavailable instead of running unscoped; tests inject a structural
+ * parent plus deterministic transport.
+ */
+export interface AgentsHubEvalContext {
+	/** Owning production session: model/registry/credentials/restrictions source. */
+	parent?: ToolSession;
+	/** Caller abort: aborts the run, records nothing, never passes/promotes. */
+	signal?: AbortSignal;
 }
 
 const SIDEBAR_MIN_WIDTH = 16;
@@ -215,6 +380,7 @@ export class AgentsHubComponent implements Component {
 	#settings: Settings;
 	#modelContext: AgentsHubModelContext;
 	#callbacks: AgentsHubCallbacks;
+	#evalContext: AgentsHubEvalContext;
 
 	#allAgents: HubAgent[] = [];
 	#entries: SidebarEntry[] = [];
@@ -239,11 +405,43 @@ export class AgentsHubComponent implements Component {
 	// Create flow (AI-generated agent definition).
 	#createInput: Editor | null = null;
 	#createDescription = "";
-	#createScope: "project" | "user" = "project";
+	#createScope: "project" | "user" | "managed" = "project";
 	#createGenerating = false;
 	#createSpec: GeneratedAgentSpec | null = null;
 	#createError: string | null = null;
 	#createStreamingText = "";
+
+	// Managed-preset revision management (isolated managed-presets store only;
+	// authored/bundled agents never enter this flow).
+	#managingRevisions: {
+		agent: HubAgent;
+		items: PresetRevisionView[];
+		active: string | null;
+		index: number;
+		scroll: number;
+		error: string | null;
+	} | null = null;
+	#presetEvalInput: {
+		agent: HubAgent;
+		revId: string;
+		step: "task" | "outcome";
+		task: string;
+		input: Input;
+	} | null = null;
+	/** In-flight preset evaluation, if any (single-flight per hub). */
+	#presetEvalRunning: {
+		agentName: string;
+		revId: string;
+		/** Fence token: late callbacks from a closed manager or a superseded run are dropped. */
+		generation: number;
+		cancel: () => void;
+	} | null = null;
+	/** Bumped on manager close/switch, hub dispose, and every new eval start. */
+	#evalGeneration = 0;
+	/** Revision under inspection (read-only detail: content, evals, restrictions). */
+	#inspectingRevision: { agent: HubAgent; revId: string; error: string | null; body: string[] } | null = null;
+	/** Last fallible hub-action failure, rendered distinctly from notices. */
+	#actionError: string | null = null;
 
 	// Frame geometry from the last render, for mouse hit-testing.
 	#contentRowStart = 1;
@@ -252,6 +450,11 @@ export class AgentsHubComponent implements Component {
 	#footerRow = 0;
 	/** First agent-list row's offset in body-line coordinates (after the status row). */
 	#listRowStart = 2;
+	#maxHeight: number | undefined;
+	#splitVisible = false;
+	#scopeOnly = false;
+	#bodyHeaderRows = 0;
+	#contentInset = 2;
 
 	private constructor(
 		tui: TUI,
@@ -259,12 +462,14 @@ export class AgentsHubComponent implements Component {
 		settings: Settings,
 		modelContext: AgentsHubModelContext,
 		callbacks: AgentsHubCallbacks,
+		evalContext: AgentsHubEvalContext = {},
 	) {
 		this.#tui = tui;
 		this.#cwd = cwd;
 		this.#settings = settings;
 		this.#modelContext = modelContext;
 		this.#callbacks = callbacks;
+		this.#evalContext = evalContext;
 		this.#browser = new ModelBrowser(settings, {
 			emptyText: () => "  No models available — configure a provider in /models first.",
 		});
@@ -279,14 +484,23 @@ export class AgentsHubComponent implements Component {
 		settings: Settings,
 		modelContext: AgentsHubModelContext = {},
 		callbacks: AgentsHubCallbacks = { onCancel: () => {} },
+		evalContext: AgentsHubEvalContext = {},
 	): Promise<AgentsHubComponent> {
-		const hub = new AgentsHubComponent(tui, cwd, settings, modelContext, callbacks);
+		const hub = new AgentsHubComponent(tui, cwd, settings, modelContext, callbacks, evalContext);
 		await hub.#reload();
 		return hub;
 	}
 
-	dispose(): void {}
+	dispose(): void {
+		// Fence late evaluation callbacks: a run settling after close must
+		// neither reopen the manager nor rewrite notices on a dead view.
+		this.#evalGeneration++;
+		this.#presetEvalRunning = null;
+	}
 	invalidate(): void {}
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
 
 	/** Live extension roots for the owning session; settings-only merge fallback when no provider. */
 	#extensionRoots(): EffectiveExtensionRoots {
@@ -313,24 +527,36 @@ export class AgentsHubComponent implements Component {
 			const overrides = this.#settings.get("task.agentModelOverrides") ?? {};
 			const prewalkOverrides = this.#settings.get("task.agentPrewalk") ?? {};
 			const advisorOverrides = this.#settings.get("task.agentAdvisor") ?? {};
-			this.#allAgents = agents
-				.slice()
-				.sort((a, b) => {
-					const sourceCmp = SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source];
-					if (sourceCmp !== 0) return sourceCmp;
-					return a.name.localeCompare(b.name);
-				})
-				.map(agent => {
-					const override = overrides[agent.name];
-					const overrideModel = (Array.isArray(override) ? override.join(",") : (override ?? "")).trim();
-					return {
-						...agent,
-						disabled: disabled.has(agent.name),
-						overrideModel: overrideModel || undefined,
-						prewalkOverride: prewalkOverrides[agent.name]?.trim() || undefined,
-						advisorOverride: advisorOverrides[agent.name]?.trim() || undefined,
-					};
-				});
+			const toHubAgent = (agent: AgentDefinition): HubAgent => {
+				const override = overrides[agent.name];
+				const overrideModel = (Array.isArray(override) ? override.join(",") : (override ?? "")).trim();
+				return {
+					...agent,
+					disabled: disabled.has(agent.name),
+					overrideModel: overrideModel || undefined,
+					prewalkOverride: prewalkOverrides[agent.name]?.trim() || undefined,
+					advisorOverride: advisorOverrides[agent.name]?.trim() || undefined,
+				};
+			};
+			const discovered = agents.map(toHubAgent);
+			// Draft-only managed presets have revision history but no
+			// materialized file, so file-scan spawn discovery never lists
+			// them. Enumerate them through the revision service and synthesize
+			// management rows — otherwise a freshly saved draft is unreachable
+			// (no row, no revision manager) until it is promoted. Authored and
+			// bundled definitions always win on collision and are never
+			// shadowed here.
+			const known = new Set(discovered.map(agent => agent.name));
+			const bundledNames = new Set(loadBundledAgents().map(agent => agent.name));
+			for (const draft of await enumerateDraftOnlyManagedPresets(known)) {
+				if (bundledNames.has(draft.name)) continue;
+				discovered.push({ ...toHubAgent(draft.agent), managedDraftOnly: true });
+			}
+			this.#allAgents = discovered.slice().sort((a, b) => {
+				const sourceCmp = SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source];
+				if (sourceCmp !== 0) return sourceCmp;
+				return a.name.localeCompare(b.name);
+			});
 			this.#buildSidebar();
 			this.#buildRows();
 			if (selectedName) {
@@ -549,7 +775,21 @@ export class AgentsHubComponent implements Component {
 		this.#strip = {
 			kind: "chips",
 			agent,
-			chips: [enabledChip, propertyChip("model"), propertyChip("prewalk"), propertyChip("advisor")],
+			chips: [
+				enabledChip,
+				propertyChip("model"),
+				propertyChip("prewalk"),
+				propertyChip("advisor"),
+				...(isManagedPresetAgent(agent)
+					? [
+							{
+								label: "revisions…",
+								styled: theme.fg("accent", "revisions…"),
+								action: { kind: "revisions" as const },
+							} satisfies StripChip,
+						]
+					: []),
+			],
 			index: 1,
 		};
 	}
@@ -630,6 +870,30 @@ export class AgentsHubComponent implements Component {
 			case "toggle":
 				this.#toggleAgent(strip.agent);
 				this.#closeStrip();
+				return;
+			case "revisions":
+				this.#closeStrip();
+				void this.#openRevisionManager(strip.agent);
+				return;
+			case "rev-inspect":
+				this.#closeStrip();
+				void this.#inspectManagedRevision(strip.agent, action.revId);
+				return;
+			case "rev-evaluate":
+				this.#closeStrip();
+				this.#beginPresetEval(strip.agent, action.revId);
+				return;
+			case "rev-cancel-eval":
+				this.#closeStrip();
+				this.#cancelPresetEval(strip.agent, action.revId);
+				return;
+			case "rev-promote":
+				this.#closeStrip();
+				void this.#promoteManagedRevision(strip.agent, action.revId);
+				return;
+			case "rev-rollback":
+				this.#closeStrip();
+				void this.#rollbackManagedRevision(strip.agent, action.revId);
 				return;
 			case "property":
 				this.#openPropertyStrip(strip.agent, action.property);
@@ -733,7 +997,12 @@ export class AgentsHubComponent implements Component {
 		this.#createStreamingText = "";
 		this.#tui.requestRender();
 		try {
-			const spec = await this.#runAgentCreationArchitect(description);
+			// Runtime-only settings for the architect: a clone of the shared
+			// instance with recursive capture disabled, so generation — success
+			// or failure — never mutates persisted configuration.
+			const runtimeSettings = await this.#settings.cloneForCwd(this.#cwd);
+			runtimeSettings.override("autolearn.enabled", false);
+			const spec = await this.#runAgentCreationArchitect(description, runtimeSettings);
 			this.#createSpec = spec;
 			this.#notice = null;
 		} catch (error) {
@@ -744,7 +1013,10 @@ export class AgentsHubComponent implements Component {
 		}
 	}
 
-	async #runAgentCreationArchitect(description: string): Promise<GeneratedAgentSpec> {
+	async #runAgentCreationArchitect(description: string, runtimeSettings: Settings): Promise<GeneratedAgentSpec> {
+		if (agentsHubArchitectRunner) {
+			return agentsHubArchitectRunner({ brief: description, settings: runtimeSettings });
+		}
 		const modelRegistry = this.#modelContext.modelRegistry;
 		if (!modelRegistry) {
 			throw new Error("Model registry unavailable in current session.");
@@ -753,10 +1025,10 @@ export class AgentsHubComponent implements Component {
 		const modelPatterns = resolveConfiguredModelPatterns(
 			this.#modelContext.activeModelPattern ??
 				this.#modelContext.defaultModelPattern ??
-				this.#settings.getModelRole("default"),
-			this.#settings,
+				runtimeSettings.getModelRole("default"),
+			runtimeSettings,
 		);
-		const { model } = resolveModelOverride(modelPatterns, modelRegistry, this.#settings);
+		const { model } = resolveModelOverride(modelPatterns, modelRegistry, runtimeSettings);
 		const selectedModel = model ?? modelRegistry.getAvailable()[0];
 		if (!selectedModel) {
 			throw new Error("No available model to generate agent specification.");
@@ -767,7 +1039,7 @@ export class AgentsHubComponent implements Component {
 			cwd: this.#cwd,
 			authStorage: modelRegistry.authStorage,
 			modelRegistry,
-			settings: this.#settings,
+			settings: runtimeSettings,
 			model: selectedModel,
 			systemPrompt: [systemPrompt],
 			hasUI: false,
@@ -775,6 +1047,7 @@ export class AgentsHubComponent implements Component {
 			enableMCP: false,
 			disableExtensionDiscovery: true,
 			toolNames: ["__none__"],
+			restrictToolNames: true,
 			customTools: [],
 			skills: [],
 			contextFiles: [],
@@ -806,6 +1079,10 @@ export class AgentsHubComponent implements Component {
 	async #saveGeneratedAgent(): Promise<void> {
 		const spec = this.#createSpec;
 		if (!spec) return;
+		if (this.#createScope === "managed") {
+			await this.#saveManagedPresetDraft(spec);
+			return;
+		}
 		const dirs = getConfigDirs("agents", {
 			user: this.#createScope === "user",
 			project: this.#createScope === "project",
@@ -831,6 +1108,366 @@ export class AgentsHubComponent implements Component {
 		await this.#reload();
 	}
 
+	/**
+	 * Save an architect-generated spec as a managed-preset draft revision.
+	 * The draft is unevaluated and inactive until the operator evaluates and
+	 * promotes it through the revision manager below — authored and bundled
+	 * agents are never touched (name collisions are refused, not shadowed).
+	 */
+	async #saveManagedPresetDraft(spec: GeneratedAgentSpec): Promise<void> {
+		const { agents } = await discoverAgents(this.#cwd, undefined, this.#extensionRoots()).catch(() => ({
+			agents: [] as AgentDefinition[],
+		}));
+		if (
+			isPresetNameClaimedByAuthored(spec.identifier, agents) ||
+			loadBundledAgents().some(agent => agent.name === spec.identifier)
+		) {
+			throw new Error(
+				`Cannot create managed preset "${spec.identifier}": that name is already claimed by an authored, discovered, or bundled agent. Managed presets cannot override them. Choose a different name.`,
+			);
+		}
+		const draft = await createPresetDraft({
+			name: spec.identifier,
+			description: spec.whenToUse,
+			systemPrompt: spec.systemPrompt,
+		});
+		await refreshAgentDiscovery(this.#cwd, this.#extensionRoots());
+		this.#clearCreateFlow();
+		this.#actionError = null;
+		// Reload BEFORE announcing: the "Drafted" notice promises the draft
+		// row is listed, so the merge must have completed first. Otherwise
+		// operators (and tests) observe the notice while the row is still
+		// missing and act on a stale list.
+		await this.#reload();
+		this.#notice =
+			`Drafted managed preset ${spec.identifier} revision ${draft.id} ` +
+			`(unevaluated — open revisions… to evaluate, then promote)`;
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// Managed-preset revision management
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/** Open the revision manager for a managed-preset agent. */
+	async #openRevisionManager(agent: HubAgent): Promise<void> {
+		if (!isManagedPresetAgent(agent)) return;
+		this.#closeStrip();
+		this.#actionError = null;
+		this.#managingRevisions = { agent, items: [], active: null, index: 0, scroll: 0, error: null };
+		this.#tui.requestRender();
+		try {
+			const { active, revisions } = await listPresetRevisions(agent.name);
+			const items: PresetRevisionView[] = revisions.map(rev => ({
+				id: rev.id,
+				state: rev.state,
+				active: rev.id === active,
+				evaluations: rev.evaluations.length,
+				evalStatus: revisionEvalStatus(rev.evaluations),
+			}));
+			const current = this.#managingRevisions;
+			if (current && current.agent.name === agent.name) {
+				current.items = items;
+				current.active = active;
+				current.index = Math.max(0, Math.min(current.index, Math.max(0, items.length - 1)));
+			}
+		} catch (error) {
+			const current = this.#managingRevisions;
+			if (current && current.agent.name === agent.name) {
+				current.error = error instanceof Error ? error.message : String(error);
+			}
+		}
+		this.#tui.requestRender();
+	}
+
+	#closeRevisionManager(): void {
+		// Fence late evaluation settlements: a run finishing after close
+		// refreshes items only when this same manager is still open.
+		this.#evalGeneration++;
+		this.#managingRevisions = null;
+		this.#presetEvalInput = null;
+		this.#inspectingRevision = null;
+	}
+
+	#selectedRevision(): PresetRevisionView | undefined {
+		return this.#managingRevisions?.items[this.#managingRevisions.index];
+	}
+
+	/** Level-1 revision actions for one managed-preset revision. */
+	#openRevisionStrip(agent: HubAgent, rev: PresetRevisionView): void {
+		const running = this.#presetEvalRunning?.agentName === agent.name && this.#presetEvalRunning.revId === rev.id;
+		const chips: StripChip[] = running
+			? [
+					{
+						label: "cancel evaluation",
+						styled: theme.fg("warning", "cancel evaluation"),
+						action: { kind: "rev-cancel-eval", revId: rev.id },
+					},
+				]
+			: [
+					{
+						label: "evaluate…",
+						styled: theme.fg("accent", "evaluate…"),
+						action: { kind: "rev-evaluate", revId: rev.id },
+					},
+					{
+						label: "promote",
+						styled: theme.fg("accent", "promote"),
+						action: { kind: "rev-promote", revId: rev.id },
+					},
+					{
+						label: "rollback",
+						styled: theme.fg("warning", "rollback"),
+						action: { kind: "rev-rollback", revId: rev.id },
+					},
+					{
+						label: "inspect…",
+						styled: theme.fg("muted", "inspect…"),
+						action: { kind: "rev-inspect", revId: rev.id },
+					},
+				];
+		this.#strip = { kind: "chips", agent, chips, index: 0 };
+	}
+
+	async #promoteManagedRevision(agent: HubAgent, revId: string): Promise<void> {
+		try {
+			const result = await promotePresetRevision(agent.name, revId, { discloseUnevaluated: true });
+			await refreshAgentDiscovery(this.#cwd, this.#extensionRoots());
+			await this.#reload();
+			this.#actionError = null;
+			this.#notice = formatPromotedNotice("preset", agent.name, result.revId, result.disclosedUnevaluated);
+			await this.#openRevisionManager(this.#findHubAgent(agent.name) ?? agent);
+		} catch (error) {
+			this.#actionError = error instanceof Error ? error.message : String(error);
+			this.#tui.requestRender();
+		}
+	}
+
+	async #rollbackManagedRevision(agent: HubAgent, revId: string): Promise<void> {
+		try {
+			await rollbackPresetRevision(agent.name, revId);
+			await refreshAgentDiscovery(this.#cwd, this.#extensionRoots());
+			await this.#reload();
+			this.#actionError = null;
+			this.#notice = `Rolled back managed preset ${agent.name} to revision ${revId}`;
+			await this.#openRevisionManager(this.#findHubAgent(agent.name) ?? agent);
+		} catch (error) {
+			this.#actionError = error instanceof Error ? error.message : String(error);
+			this.#tui.requestRender();
+		}
+	}
+
+	#findHubAgent(name: string): HubAgent | undefined {
+		return this.#allAgents.find(entry => entry.name === name);
+	}
+
+	#beginPresetEval(agent: HubAgent, revId: string): void {
+		const input = new Input();
+		this.#presetEvalInput = { agent, revId, step: "task", task: "", input };
+	}
+
+	#advancePresetEval(): void {
+		const evalState = this.#presetEvalInput;
+		if (!evalState) return;
+		if (evalState.step === "task") {
+			const task = evalState.input.getValue().trim();
+			if (!task) {
+				this.#actionError = "Evaluation needs an explicit task.";
+				this.#tui.requestRender();
+				return;
+			}
+			const input = new Input();
+			this.#presetEvalInput = { ...evalState, step: "outcome", task, input };
+			this.#actionError = null;
+			this.#tui.requestRender();
+			return;
+		}
+		const expectedOutcome = evalState.input.getValue().trim();
+		if (!expectedOutcome) {
+			this.#actionError = "Evaluation needs an explicit expected outcome.";
+			this.#tui.requestRender();
+			return;
+		}
+		const { agent, revId, task } = evalState;
+		this.#presetEvalInput = null;
+		this.#startPresetEval(agent, revId, task, expectedOutcome);
+	}
+
+	/**
+	 * Run one preset evaluation through the installed (production) evaluator
+	 * with the owning session context. The run executes outside the revision
+	 * transaction; only the metadata append is serialized there. Late
+	 * callbacks are fenced by generation: closing the manager, disposing the
+	 * hub, or starting a newer run drops stale settlements instead of
+	 * reopening views or rewriting notices.
+	 */
+	#startPresetEval(agent: HubAgent, revId: string, task: string, expectedOutcome: string): void {
+		this.#evalGeneration++;
+		const generation = this.#evalGeneration;
+		const runController = new AbortController();
+		const ownerSignal = this.#evalContext.signal;
+		const forwardAbort =
+			ownerSignal && !ownerSignal.aborted ? () => runController.abort(ownerSignal.reason) : undefined;
+		if (ownerSignal?.aborted) {
+			runController.abort(ownerSignal.reason);
+		} else if (forwardAbort && ownerSignal) {
+			ownerSignal.addEventListener("abort", forwardAbort, { once: true });
+		}
+		const parent = this.#evalContext.parent;
+		const cleanup = (): void => {
+			if (forwardAbort && ownerSignal) ownerSignal.removeEventListener("abort", forwardAbort);
+		};
+		this.#actionError = null;
+		this.#notice = `Evaluating ${agent.name} revision ${revId}…`;
+		this.#presetEvalRunning = {
+			agentName: agent.name,
+			revId,
+			generation,
+			cancel: () => runController.abort(),
+		};
+		this.#tui.requestRender();
+		void evaluatePresetRevision(agent.name, revId, {
+			task,
+			expectedOutcome,
+			parent,
+			signal: runController.signal,
+			sessionId: parent?.getSessionId?.() ?? undefined,
+		})
+			.then(async result => {
+				cleanup();
+				// The revision record changed even when this view is stale:
+				// refresh in place (index preserved) without touching notices.
+				await this.#refreshRevisionItems(agent.name);
+				if (this.#evalGeneration !== generation) return;
+				this.#presetEvalRunning = null;
+				this.#actionError = null;
+				this.#notice =
+					`Evaluation of ${agent.name} revision ${revId} ` +
+					`${result.passed ? "passed" : "FAILED"}: ${result.summary}`;
+				this.#tui.requestRender();
+			})
+			.catch(async error => {
+				cleanup();
+				await this.#refreshRevisionItems(agent.name);
+				const message = error instanceof Error ? error.message : String(error);
+				if (/abort/i.test(message)) {
+					// Cancellation records nothing and never passes/promotes.
+					// Unlike pass/fail settlements this is terminal operator
+					// intent, so the confirmation is never fenced (it never
+					// reopens views — it only lands the status notice).
+					if (this.#presetEvalRunning?.generation === generation) this.#presetEvalRunning = null;
+					this.#actionError = null;
+					this.#notice = `Evaluation of ${agent.name} revision ${revId} cancelled — nothing recorded.`;
+					this.#tui.requestRender();
+					return;
+				}
+				if (this.#evalGeneration !== generation) return;
+				this.#presetEvalRunning = null;
+				if (/parent session context/i.test(message)) {
+					this.#actionError =
+						`Evaluation unavailable: no parent session is wired for this hub. ` +
+						`Production evaluations run the revision through restricted task execution, which needs ` +
+						`the owning session's model, credentials, and restrictions — the revision stays unevaluated.`;
+				} else {
+					this.#actionError = message;
+				}
+				this.#tui.requestRender();
+			});
+	}
+
+	/** Operator cancel for the in-flight evaluation of one revision, if any. */
+	#cancelPresetEval(agent: HubAgent, revId: string): void {
+		const running = this.#presetEvalRunning;
+		if (running && running.agentName === agent.name && running.revId === revId) {
+			running.cancel();
+			return;
+		}
+		this.#notice = `No evaluation is running for ${agent.name} revision ${revId}.`;
+		this.#tui.requestRender();
+	}
+
+	/** Re-list one manager's revisions in place (selection preserved). */
+	async #refreshRevisionItems(agentName: string): Promise<void> {
+		const manager = this.#managingRevisions;
+		if (!manager || manager.agent.name !== agentName) return;
+		try {
+			const { active, revisions } = await listPresetRevisions(agentName);
+			if (this.#managingRevisions !== manager) return;
+			manager.items = revisions.map(rev => ({
+				id: rev.id,
+				state: rev.state,
+				active: rev.id === active,
+				evaluations: rev.evaluations.length,
+				evalStatus: revisionEvalStatus(rev.evaluations),
+			}));
+			manager.active = active;
+			manager.index = Math.max(0, Math.min(manager.index, Math.max(0, manager.items.length - 1)));
+		} catch {
+			// Best-effort: the next explicit reload repairs the list.
+		}
+		this.#tui.requestRender();
+	}
+
+	/**
+	 * Read-only inspection of one managed-preset revision: identity, state,
+	 * provenance, the effective execution restrictions the evaluator will run
+	 * with (declared tools/model, else the production defaults), the
+	 * evaluation history, and a content preview. Never mutates.
+	 */
+	async #inspectManagedRevision(agent: HubAgent, revId: string): Promise<void> {
+		this.#inspectingRevision = { agent, revId, error: null, body: [] };
+		this.#tui.requestRender();
+		try {
+			const { active, revisions } = await listPresetRevisions(agent.name);
+			const rev = revisions.find(entry => entry.id === revId);
+			const current = this.#inspectingRevision;
+			if (!current || current.agent.name !== agent.name || current.revId !== revId) return;
+			if (!rev) {
+				current.error = `Revision ${revId} for preset "${agent.name}" not found.`;
+			} else {
+				const lines: string[] = [];
+				lines.push(`revision ${rev.id} (${rev.state})${rev.id === active ? " [active]" : ""}`);
+				lines.push(`description: ${rev.description}`);
+				const provenance = [`actor=${rev.provenance.actor}`];
+				if (rev.provenance.sessionId) provenance.push(`session=${rev.provenance.sessionId}`);
+				if (rev.provenance.runId) provenance.push(`run=${rev.provenance.runId}`);
+				lines.push(`provenance: ${provenance.join(" ")}`);
+				// Effective restrictions mirror the production evaluator: the
+				// revision's declared tools/model, else the restricted
+				// defaults the run executes with.
+				let tools = "read, glob, grep (default)";
+				let model = `${EVAL_DEFAULT_MODEL_PATTERN} (default)`;
+				try {
+					const parsed = parseAgent(`managed:${agent.name}`, rev.content, "user", "warn");
+					if (parsed.tools && parsed.tools.length > 0) {
+						tools = parsed.tools.join(", ");
+					}
+					if (parsed.model && parsed.model.length > 0) {
+						model = parsed.model.join(", ");
+					}
+				} catch {
+					// Unparseable content keeps the defaults above; the eval
+					// path itself reports the contract failure.
+				}
+				lines.push(`effective restrictions: tools=[${tools}] model=${model}`);
+				lines.push(`evaluations (${rev.evaluations.length}):`);
+				for (const evaluation of rev.evaluations) {
+					lines.push(...formatEvaluationLines(evaluation));
+				}
+				lines.push(`content (${Buffer.byteLength(rev.content, "utf8")} bytes):`);
+				for (const contentLine of rev.content.split("\n").slice(0, 8)) {
+					lines.push(`  ${contentLine}`);
+				}
+				current.body = lines;
+			}
+		} catch (error) {
+			const current = this.#inspectingRevision;
+			if (current && current.agent.name === agent.name && current.revId === revId) {
+				current.error = error instanceof Error ? error.message : String(error);
+			}
+		}
+		this.#tui.requestRender();
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// Input
 	// ═══════════════════════════════════════════════════════════════════════
@@ -848,8 +1485,20 @@ export class AgentsHubComponent implements Component {
 			return;
 		}
 
+		if (this.#presetEvalInput) {
+			this.#handlePresetEvalInput(data);
+			this.#tui.requestRender();
+			return;
+		}
+
 		if (this.#createActive) {
 			this.#handleCreateInput(data);
+			this.#tui.requestRender();
+			return;
+		}
+
+		if (this.#managingRevisions) {
+			this.#handleRevisionManagerInput(data);
 			this.#tui.requestRender();
 			return;
 		}
@@ -1013,7 +1662,7 @@ export class AgentsHubComponent implements Component {
 				return;
 			}
 			if (matchesKey(data, "tab") || matchesKey(data, "shift+tab")) {
-				this.#createScope = this.#createScope === "project" ? "user" : "project";
+				this.#cycleCreateScope();
 				return;
 			}
 			if (data.toLowerCase() === "r") {
@@ -1038,7 +1687,7 @@ export class AgentsHubComponent implements Component {
 			return;
 		}
 		if (matchesKey(data, "tab") || matchesKey(data, "shift+tab")) {
-			this.#createScope = this.#createScope === "project" ? "user" : "project";
+			this.#cycleCreateScope();
 			return;
 		}
 		if (matchesKey(data, "enter") || matchesKey(data, "return") || data === "\n") {
@@ -1048,6 +1697,52 @@ export class AgentsHubComponent implements Component {
 		}
 		this.#createInput?.handleInput(data);
 		this.#createDescription = this.#createInput?.getExpandedText() ?? "";
+	}
+
+	/** Cycle the create-flow save scope: project → user → managed. */
+	#cycleCreateScope(): void {
+		this.#createScope =
+			this.#createScope === "project" ? "user" : this.#createScope === "user" ? "managed" : "project";
+	}
+
+	#handlePresetEvalInput(data: string): void {
+		const evalState = this.#presetEvalInput;
+		if (!evalState) return;
+		if (matchesSelectCancel(data)) {
+			this.#presetEvalInput = null;
+			this.#actionError = null;
+			return;
+		}
+		if (matchesKey(data, "enter") || matchesKey(data, "return") || data === "\n") {
+			this.#advancePresetEval();
+			return;
+		}
+		evalState.input.handleInput(data);
+	}
+
+	#handleRevisionManagerInput(data: string): void {
+		const manager = this.#managingRevisions;
+		if (!manager) return;
+		if (this.#inspectingRevision) {
+			if (matchesSelectCancel(data)) this.#inspectingRevision = null;
+			return;
+		}
+		if (matchesSelectCancel(data)) {
+			this.#closeRevisionManager();
+			return;
+		}
+		if (matchesSelectUp(data)) {
+			manager.index = Math.max(0, manager.index - 1);
+			return;
+		}
+		if (matchesSelectDown(data)) {
+			manager.index = Math.min(Math.max(0, manager.items.length - 1), manager.index + 1);
+			return;
+		}
+		if (matchesKey(data, "enter") || matchesKey(data, "return") || data === "\n") {
+			const rev = this.#selectedRevision();
+			if (rev) this.#openRevisionStrip(manager.agent, rev);
+		}
 	}
 
 	#moveSidebar(delta: number): void {
@@ -1077,11 +1772,11 @@ export class AgentsHubComponent implements Component {
 	#routeMouseEvent(event: SgrMouseEvent): boolean {
 		const contentLine = event.row - this.#contentRowStart;
 		const overContent = contentLine >= 0 && contentLine < this.#contentRowCount;
-		const sidebarColEnd = 2 + this.#sidebarWidthLast;
-		const bodyColStart = this.#sidebarWidthLast + 5;
-		const overSidebar = overContent && event.col >= 0 && event.col < sidebarColEnd;
-		const overBody = overContent && event.col >= bodyColStart;
-		const bodyLine = contentLine - 1; // body row 0 is the status row
+		const sidebarColEnd = this.#splitVisible ? 2 + this.#sidebarWidthLast : Infinity;
+		const bodyColStart = this.#splitVisible ? this.#sidebarWidthLast + 5 : this.#contentInset;
+		const overSidebar = overContent && (this.#splitVisible || this.#scopeOnly) && event.col >= 0 && event.col < sidebarColEnd;
+		const overBody = overContent && !this.#scopeOnly && event.col >= bodyColStart;
+		const bodyLine = contentLine - this.#bodyHeaderRows;
 
 		if (event.row === this.#footerRow && this.#strip?.kind === "chips") {
 			const strip = this.#strip;
@@ -1101,7 +1796,7 @@ export class AgentsHubComponent implements Component {
 			if (overBody) this.#browser.routeMouse(event, bodyLine);
 			return true;
 		}
-		if (this.#createActive || this.#strip) return true;
+		if (this.#createActive || this.#strip || this.#managingRevisions || this.#presetEvalInput) return true;
 
 		if (event.wheel !== null) {
 			if (overSidebar) {
@@ -1159,7 +1854,8 @@ export class AgentsHubComponent implements Component {
 		// Short-terminal budget: never render taller than the viewport itself.
 		// The old Math.max(16, …) floor overflowed viewports under 16 rows and
 		// pushed the search row, selected row, and footer into scrollback.
-		return Math.max(6, this.#tui.terminal?.rows || process.stdout.rows || 40);
+		const terminalRows = this.#tui.terminal?.rows || process.stdout.rows || 40;
+		return Math.max(1, Math.min(this.#maxHeight ?? terminalRows, terminalRows));
 	}
 
 	#sidebarWidth(): number {
@@ -1183,7 +1879,7 @@ export class AgentsHubComponent implements Component {
 			const entry = this.#entries[i];
 			if (!entry) continue;
 			if (entry.kind === "separator") {
-				lines.push(theme.fg("border", "─".repeat(width)));
+				lines.push(theme.fg("border", theme.symbol("boxRound.horizontal").repeat(width)));
 				continue;
 			}
 			const active = entry.id === this.#activeEntryId;
@@ -1218,6 +1914,17 @@ export class AgentsHubComponent implements Component {
 		if (this.#createActive) {
 			return truncateToWidth(theme.fg("accent", " New agent — describe it and let the architect draft it"), width);
 		}
+		if (this.#managingRevisions) {
+			const manager = this.#managingRevisions;
+			const error = manager.error ?? this.#actionError;
+			if (error) return truncateToWidth(theme.fg("error", ` ${error}`), width);
+			const active = manager.active ? `active ${manager.active}` : "no active revision";
+			return truncateToWidth(
+				theme.fg("accent", ` Revisions for ${theme.bold(manager.agent.name)} — ${active}`),
+				width,
+			);
+		}
+		if (this.#actionError) return truncateToWidth(theme.fg("error", ` ${this.#actionError}`), width);
 		if (this.#notice) return truncateToWidth(theme.fg("success", ` ${this.#notice}`), width);
 		const entry = this.#activeEntry();
 		const scopeLabel = entry.kind === "source" ? `${entry.label} agents` : "All agents";
@@ -1228,15 +1935,15 @@ export class AgentsHubComponent implements Component {
 	#renderList(width: number, rows: number): string[] {
 		const lines: string[] = [];
 		const searchText = this.#searchQuery ? theme.fg("accent", this.#searchQuery) : theme.fg("dim", "type to filter");
-		lines.push(truncateToWidth(` ${theme.fg("muted", "search:")} ${searchText}`, width));
-		lines.push("");
+		if (rows >= 3) lines.push(truncateToWidth(` ${theme.fg("muted", "search:")} ${searchText}`, width));
+		if (rows >= 8) lines.push("");
 		this.#listRowStart = lines.length;
 
 		const detailRows = 4;
 		// Short terminals collapse the detail block first: the search row and
 		// the selected agent row keep their rows, the detail block is cut by
 		// the trailing slice below.
-		const visibleRows = Math.max(1, rows - lines.length - detailRows);
+		const visibleRows = Math.max(1, rows - lines.length - (rows >= 8 ? detailRows : 0));
 		if (this.#rowIndex < this.#listScroll) this.#listScroll = this.#rowIndex;
 		else if (this.#rowIndex >= this.#listScroll + visibleRows) this.#listScroll = this.#rowIndex - visibleRows + 1;
 		this.#listScroll = Math.max(0, Math.min(this.#listScroll, Math.max(0, this.#rows.length - visibleRows)));
@@ -1254,8 +1961,8 @@ export class AgentsHubComponent implements Component {
 			const hovered = i === this.#rowHover;
 			const cursor = selected && listFocused ? theme.fg("accent", theme.nav.cursor) : " ";
 			if (rowDef.kind === "new") {
-				let line = ` ${cursor} ${theme.fg(selected ? "accent" : "dim", "+ New agent…")}`;
-				if (hovered) line = theme.bg("selectedBg", line);
+				let line = ` ${cursor} ${theme.fg(selected ? "accent" : "dim", `+ New agent${theme.symbol("sep.ellipsis")}`)}`;
+				if (selected || hovered) line = theme.bgFill("selectedBg", truncateToWidth(line, width).padEnd(width));
 				lines.push(truncateToWidth(line, width));
 				continue;
 			}
@@ -1271,6 +1978,7 @@ export class AgentsHubComponent implements Component {
 					: name;
 			const badges: string[] = [];
 			if (agent.overrideModel) badges.push(theme.fg("warning", agent.overrideModel));
+			if (agent.managedDraftOnly) badges.push(theme.fg("accent", `draft${theme.sep.dot}unevaluated`));
 			const prewalk = this.#effectivePrewalkPattern(agent);
 			if (prewalk) badges.push(theme.fg("dim", `pre:${prewalk}`));
 			const advisor = this.#effectiveAdvisorPattern(agent);
@@ -1284,10 +1992,10 @@ export class AgentsHubComponent implements Component {
 				line = `${line}${" ".repeat(width - lineWidth - rightWidth - 1)}${right}`;
 			}
 			line = truncateToWidth(line, width);
-			if (hovered) {
+			if (selected || hovered) {
 				const w = visibleWidth(line);
 				if (w < width) line += " ".repeat(width - w);
-				line = theme.bg("selectedBg", line);
+				line = theme.bgFill("selectedBg", line);
 			}
 			lines.push(line);
 		}
@@ -1295,7 +2003,7 @@ export class AgentsHubComponent implements Component {
 		// Selected-agent detail block pinned to the bottom of the body pane.
 		while (lines.length < rows - detailRows) lines.push("");
 		const agent = this.#selectedAgent();
-		lines.push(theme.fg("border", "─".repeat(Math.max(1, width))));
+		lines.push(theme.fg("border", theme.symbol("boxRound.horizontal").repeat(Math.max(1, width))));
 		if (agent) {
 			lines.push(truncateToWidth(` ${theme.fg("dim", replaceTabs(agent.description))}`, width));
 			const patterns = this.#effectiveModelPatterns(agent);
@@ -1320,9 +2028,72 @@ export class AgentsHubComponent implements Component {
 		return lines.slice(0, rows);
 	}
 
-	#renderCreate(width: number, rows: number): string[] {
+	#renderRevisions(width: number, rows: number): string[] {
+		const manager = this.#managingRevisions;
 		const lines: string[] = [];
-		lines.push("");
+		if (!manager) return lines;
+		const inspecting = this.#inspectingRevision;
+		if (inspecting && inspecting.agent.name === manager.agent.name) {
+			if (inspecting.error) {
+				lines.push(truncateToWidth(theme.fg("error", ` ${replaceTabs(inspecting.error)}`), width));
+			} else if (inspecting.body.length === 0) {
+				lines.push(truncateToWidth(theme.fg("dim", " Loading revision…"), width));
+			} else {
+				for (const bodyLine of inspecting.body.slice(0, Math.max(1, rows))) {
+					lines.push(truncateToWidth(` ${replaceTabs(bodyLine)}`, width));
+				}
+			}
+			while (lines.length < rows) lines.push("");
+			return lines.slice(0, rows);
+		}
+		if (manager.error) {
+			lines.push(truncateToWidth(theme.fg("error", ` ${replaceTabs(manager.error)}`), width));
+		}
+		if (manager.items.length === 0 && !manager.error) {
+			lines.push(
+				truncateToWidth(
+					theme.fg("dim", " No revisions yet — generate a draft from + New agent… (managed scope)"),
+					width,
+				),
+			);
+		}
+		const visibleRows = Math.max(1, rows - lines.length);
+		if (manager.index < manager.scroll) manager.scroll = manager.index;
+		else if (manager.index >= manager.scroll + visibleRows) manager.scroll = manager.index - visibleRows + 1;
+		manager.scroll = Math.max(0, Math.min(manager.scroll, Math.max(0, manager.items.length - visibleRows)));
+		for (let i = manager.scroll; i < Math.min(manager.items.length, manager.scroll + visibleRows); i++) {
+			const rev = manager.items[i];
+			if (!rev) continue;
+			const selected = i === manager.index;
+			const cursor = selected ? theme.fg("accent", theme.nav.cursor) : " ";
+			const running =
+				this.#presetEvalRunning?.agentName === manager.agent.name && this.#presetEvalRunning.revId === rev.id;
+			const evalStyled = running
+				? theme.fg("accent", "evaluating…")
+				: rev.evalStatus === "passing"
+					? theme.fg("success", `passing (${rev.evaluations})`)
+					: rev.evalStatus === "failing"
+						? theme.fg("error", `failing (${rev.evaluations})`)
+						: theme.fg("dim", "unevaluated");
+			const activeMark = rev.active ? theme.fg("success", " [active]") : "";
+			const idStyled = rev.active ? theme.bold(theme.fg("accent", rev.id)) : rev.id;
+			lines.push(
+				truncateToWidth(
+					` ${cursor} ${idStyled}  ${theme.fg("muted", rev.state)}  ${evalStyled}${activeMark}`,
+					width,
+				),
+			);
+		}
+		while (lines.length < rows) lines.push("");
+		return lines.slice(0, rows);
+	}
+
+	#renderCreate(width: number, rows: number): string[] {
+		if (!this.#createSpec && !this.#createGenerating && this.#createInput) {
+			this.#createInput.setMaxHeight(Math.max(1, rows));
+			return this.#createInput.render(Math.max(1, width)).slice(0, rows).map(line => truncateToWidth(line, width));
+		}
+		const lines: string[] = [];
 		if (this.#createSpec) {
 			const spec = this.#createSpec;
 			lines.push(truncateToWidth(theme.bold(theme.fg("accent", " Review generated agent")), width));
@@ -1331,12 +2102,12 @@ export class AgentsHubComponent implements Component {
 			lines.push(truncateToWidth(theme.fg("muted", ` Scope: ${this.#createScope}`), width));
 			lines.push("");
 			lines.push(theme.fg("muted", " whenToUse:"));
-			for (const line of wrapTextWithAnsi(replaceTabs(spec.whenToUse), Math.max(20, width - 2)).slice(0, 6)) {
+			for (const line of wrapTextWithAnsi(replaceTabs(spec.whenToUse), Math.max(1, width - 2)).slice(0, 6)) {
 				lines.push(truncateToWidth(` ${line}`, width));
 			}
 			lines.push("");
 			lines.push(theme.fg("muted", " systemPrompt preview:"));
-			const promptWidth = Math.max(20, width - 4);
+			const promptWidth = Math.max(1, width - 4);
 			const wrapped: string[] = [];
 			for (const raw of spec.systemPrompt.split("\n")) {
 				for (const w of wrapTextWithAnsi(replaceTabs(raw), promptWidth)) wrapped.push(w);
@@ -1359,14 +2130,14 @@ export class AgentsHubComponent implements Component {
 			);
 			lines.push("");
 			if (this.#createInput && !this.#createGenerating) {
-				for (const line of this.#createInput.render(Math.max(20, width - 2))) {
+				for (const line of this.#createInput.render(Math.max(1, width - 2))) {
 					lines.push(truncateToWidth(line, width));
 				}
 			}
 			if (this.#createGenerating) {
 				lines.push(theme.fg("muted", " Generating…"));
 				lines.push("");
-				const contentWidth = Math.max(20, width - 4);
+				const contentWidth = Math.max(1, width - 4);
 				const wrapped: string[] = [];
 				for (const raw of this.#createStreamingText.split("\n")) {
 					for (const w of wrapTextWithAnsi(replaceTabs(raw), contentWidth)) wrapped.push(w);
@@ -1394,13 +2165,22 @@ export class AgentsHubComponent implements Component {
 			}
 			return this.#strip.property ? "←/→ choose · Enter apply · Esc back" : "←/→ choose · Enter open · Esc cancel";
 		}
+		if (this.#presetEvalInput) {
+			return this.#presetEvalInput.step === "task"
+				? "Enter task · Esc back (evaluation task for this revision)"
+				: "Enter run evaluation · Esc back (expected observable outcome)";
+		}
 		if (this.#assigning) {
 			return "Enter pick · ↑/↓ models · type to search · Esc cancel";
 		}
 		if (this.#createActive) {
-			if (this.#createSpec) return "Enter save · Tab scope · r regenerate · Esc cancel";
+			if (this.#createSpec) return "Enter save · Tab scope (project/user/managed) · r regenerate · Esc cancel";
 			if (this.#createGenerating) return "Generating…";
 			return "Ctrl+Q/Ctrl+Enter generate · Enter newline · Tab scope · Esc cancel";
+		}
+		if (this.#managingRevisions) {
+			if (this.#inspectingRevision) return "Esc back to revisions";
+			return "↑/↓ revisions · Enter actions (inspect/evaluate/promote/rollback) · Esc back";
 		}
 		if (this.#focus === "scope") {
 			return "↑/↓ scopes · →/Enter agents · Esc close";
@@ -1410,6 +2190,16 @@ export class AgentsHubComponent implements Component {
 
 	#renderFooter(width: number): string {
 		this.#chipRanges = [];
+		const evalInput = this.#presetEvalInput;
+		if (evalInput) {
+			const what = evalInput.step === "task" ? "evaluation task" : "expected outcome";
+			const label = theme.fg("accent", `${evalInput.agent.name} ${evalInput.revId} ${what}:`);
+			const labelWidth = visibleWidth(`${evalInput.agent.name} ${evalInput.revId} ${what}:`);
+			const showLabel = width >= labelWidth + 8;
+			const inputWidth = Math.max(1, width - (showLabel ? labelWidth + 1 : 0));
+			const inputLine = evalInput.input.render(inputWidth)[0] ?? "";
+			return truncateToWidth(`${showLabel ? `${label} ` : ""}${inputLine}`, width);
+		}
 		const strip = this.#strip;
 		if (!strip) {
 			return truncateToWidth(theme.fg("dim", this.#footerHint()), width);
@@ -1417,24 +2207,42 @@ export class AgentsHubComponent implements Component {
 		if (strip.kind === "pattern") {
 			const label = theme.fg("accent", `${strip.agent.name} ${strip.property} pattern:`);
 			const labelWidth = visibleWidth(`${strip.agent.name} ${strip.property} pattern:`);
-			const inputWidth = Math.max(8, Math.min(40, width - labelWidth - 4));
+			const showLabel = width >= labelWidth + 8;
+			const inputWidth = Math.max(1, width - (showLabel ? labelWidth + 1 : 0));
 			const inputLine = strip.input.render(inputWidth)[0] ?? "";
-			return truncateToWidth(`${label} ${inputLine}`, width);
+			return truncateToWidth(`${showLabel ? `${label} ` : ""}${inputLine}`, width);
 		}
+		const arrow = theme.getSymbolPreset() === "ascii" ? "->" : "→";
 		const prefix = strip.property
-			? `${theme.fg("accent", strip.agent.name)}${theme.fg("dim", ` · ${strip.property} →`)} `
-			: `${theme.fg("accent", strip.agent.name)}${theme.fg("dim", " →")} `;
-		let line = prefix;
-		let col = 2 + visibleWidth(prefix);
-		for (let i = 0; i < strip.chips.length; i++) {
+			? `${theme.fg("accent", strip.agent.name)}${theme.fg("dim", `${theme.sep.dot}${strip.property} ${arrow}`)} `
+			: `${theme.fg("accent", strip.agent.name)}${theme.fg("dim", ` ${arrow}`)} `;
+		const selectedChip = strip.chips[strip.index];
+		const showPrefix = visibleWidth(prefix) + visibleWidth(selectedChip?.label ?? "") + 4 <= width;
+		let line = showPrefix ? prefix : "";
+		let col = this.#contentInset + visibleWidth(line);
+		let start = strip.index;
+		let remaining = width - visibleWidth(line);
+		for (let i = strip.index - 1; i >= 0; i--) {
+			const cost = visibleWidth(strip.chips[i]?.label ?? "") + 3;
+			const selectedCost = visibleWidth(selectedChip?.label ?? "") + 4;
+			if (cost + selectedCost > remaining) break;
+			remaining -= cost;
+			start = i;
+		}
+		for (let i = start; i < strip.chips.length; i++) {
 			const chip = strip.chips[i];
 			if (!chip) continue;
 			const selected = i === strip.index;
-			const body = ` ${chip.styled} `;
+			const available = Math.max(0, width - visibleWidth(line));
+			if (!selected && visibleWidth(chip.label) + 2 > available) break;
+			const body = selected && available < visibleWidth(chip.label) + 4
+				? truncateToWidth(`${theme.nav.cursor} ${chip.styled}`, available)
+				: ` ${chip.styled} `;
+			const bracket = selected && available >= visibleWidth(chip.label) + 4;
 			const rendered = selected
-				? theme.bg("selectedBg", `${theme.fg("accent", "[")}${body}${theme.fg("accent", "]")}`)
+				? theme.bgFill("selectedBg", bracket ? `${theme.fg("accent", "[")}${body}${theme.fg("accent", "]")}` : body)
 				: body;
-			const w = visibleWidth(body) + (selected ? 2 : 0);
+			const w = visibleWidth(rendered);
 			this.#chipRanges.push({ start: col, end: col + w, index: i });
 			line += rendered;
 			col += w;
@@ -1448,32 +2256,48 @@ export class AgentsHubComponent implements Component {
 		const height = this.#terminalRows();
 		const sidebarWidth = this.#sidebarWidth();
 		this.#sidebarWidthLast = sidebarWidth;
-		const bodyWidth = splitBodyWidth(width, sidebarWidth);
-		const contentRows = Math.max(1, height - 4);
+		this.#contentInset = Math.floor((width - dialogContentWidth(width)) / 2);
+		this.#splitVisible = canSplitPane(width, sidebarWidth);
+		this.#scopeOnly = !this.#splitVisible && this.#focus === "scope" && !this.#createActive && !this.#strip && !this.#assigning && !this.#managingRevisions && !this.#presetEvalInput;
+		const bodyWidth = this.#splitVisible ? splitBodyWidth(width, sidebarWidth) : dialogContentWidth(width);
+		const footer = this.#renderFooter(dialogContentWidth(width));
+		const allocation = renderDialog("Agents", Array.from({ length: height }, () => ""), width, height, footer);
+		const contentRows = allocation.bodyRows;
 		this.#contentRowCount = contentRows;
+		this.#bodyHeaderRows = contentRows >= 4 ? 1 : 0;
 
-		const bodyLines: string[] = [this.#statusRow(bodyWidth)];
-		if (this.#createActive) {
-			bodyLines.push(...this.#renderCreate(bodyWidth, contentRows - 1));
+		const bodyLines: string[] = this.#bodyHeaderRows ? [this.#statusRow(bodyWidth)] : [];
+		const primaryRows = contentRows - this.#bodyHeaderRows;
+		const footerAsControl = height === 1 && (this.#strip || this.#presetEvalInput);
+		if (footerAsControl) {
+			bodyLines.push(footer);
+		} else if (this.#createActive) {
+			bodyLines.push(...this.#renderCreate(bodyWidth, primaryRows));
 		} else if (this.#assigning) {
-			this.#browser.setMaxVisible(Math.max(1, contentRows - 1 - 5));
+			this.#browser.setMaxHeight(primaryRows);
 			this.#browser.setFocused(true);
 			bodyLines.push(...this.#browser.render(bodyWidth));
+		} else if (this.#managingRevisions) {
+			bodyLines.push(...this.#renderRevisions(bodyWidth, primaryRows));
 		} else {
-			bodyLines.push(...this.#renderList(bodyWidth, contentRows - 1));
+			bodyLines.push(...this.#renderList(bodyWidth, primaryRows));
 		}
 
-		const sidebarLines = this.#renderSidebar(sidebarWidth, contentRows);
-		const out: string[] = [];
-		out.push(topBorderSplit(width, "Agents", sidebarWidth));
-		this.#contentRowStart = out.length;
+		const sidebarLines = this.#renderSidebar(this.#splitVisible ? sidebarWidth : bodyWidth, contentRows);
+		const content = this.#scopeOnly ? sidebarLines : bodyLines;
+		while (content.length < contentRows) content.push("");
+		const layout = renderDialog("Agents", content.slice(0, contentRows), width, height, footer);
+		this.#contentRowStart = layout.bodyRowStart;
+		this.#footerRow = footerAsControl ? layout.bodyRowStart : height >= 2 ? layout.bodyRowStart + contentRows : -1;
+		const activeSidebar = this.#entries.findIndex(entry => entry.id === this.#activeEntryId) - this.#sidebarScroll;
 		for (let i = 0; i < contentRows; i++) {
-			out.push(splitRow(sidebarLines[i] ?? "", bodyLines[i] ?? "", width, sidebarWidth));
+			const activeBody = !this.#createActive && !this.#assigning && !this.#managingRevisions && !footerAsControl && i === this.#bodyHeaderRows + this.#listRowStart + this.#rowIndex - this.#listScroll;
+			if (this.#splitVisible) {
+				layout.lines[layout.bodyRowStart + i] = splitRow(sidebarLines[i] ?? "", bodyLines[i] ?? "", width, sidebarWidth, i === activeSidebar ? "selectedBg" : "panelBg");
+			} else {
+				layout.lines[layout.bodyRowStart + i] = row(content[i] ?? "", width, undefined, this.#scopeOnly ? i === activeSidebar ? "selectedBg" : "modalBg" : activeBody ? "selectedBg" : "modalBg");
+			}
 		}
-		out.push(dividerSplit(width, sidebarWidth));
-		this.#footerRow = out.length;
-		out.push(row(this.#renderFooter(width - 4), width));
-		out.push(bottomBorder(width));
-		return out;
+		return layout.lines;
 	}
 }

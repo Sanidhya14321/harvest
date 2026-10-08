@@ -10,7 +10,6 @@ import {
 	ScrollView,
 	type Tab,
 	TabBar,
-	Text,
 	type TUI,
 	truncateToWidth,
 	visibleWidth,
@@ -24,7 +23,7 @@ import type {
 } from "../../extensibility/extensions";
 import { expandKeyHint } from "../../tools/render-utils";
 import { getTabBarTheme } from "../shared";
-import { getMarkdownTheme, highlightCode, theme } from "../theme/theme";
+import { getMarkdownTheme, getThemeEpoch, highlightCode, theme } from "../theme/theme";
 import {
 	matchesAppToolsExpand,
 	matchesSelectCancel,
@@ -35,7 +34,7 @@ import {
 } from "../utils/keybinding-matchers";
 import { CountdownTimer } from "./countdown-timer";
 import { editorKey } from "./keybinding-hints";
-import { bottomBorder, divider, row, topBorder } from "./overlay-box";
+import { bottomBorder, divider, renderDialog, row, topBorder } from "./overlay-box";
 import { handleTabSwitchKey } from "./selector-helpers";
 
 const OTHER_OPTION = "Other (type your own)";
@@ -150,9 +149,8 @@ function wrapQuestionTitle(question: ExtensionAskDialogQuestion, width: number):
 	return wrapTextWithAnsi(questionText, Math.max(1, width));
 }
 
-function renderQuestionTitle(question: ExtensionAskDialogQuestion, width: number, maxRows = MAX_HEADER_ROWS): string[] {
-	const wrapped = wrapQuestionTitle(question, width);
-	if (wrapped.length <= maxRows) return wrapped;
+function renderQuestionTitle(wrapped: readonly string[], width: number, maxRows = MAX_HEADER_ROWS): string[] {
+	if (wrapped.length <= maxRows) return [...wrapped];
 	return [
 		...wrapped.slice(0, maxRows - 1),
 		truncateToWidth(wrapped.slice(maxRows - 1).join(" "), Math.max(1, width), Ellipsis.Unicode),
@@ -221,8 +219,13 @@ function renderPreviewContent(preview: string, width: number): string[] {
 	for (const segment of splitPreviewSegments(preview)) {
 		if (segment.kind === "code") {
 			const highlighted = highlightCode(segment.text, segment.language);
-			const text = new Text(highlighted.join("\n"), 0, 0);
-			out.push(...text.render(Math.max(1, width)));
+			out.push(
+				...Bun.wrapAnsi(highlighted.join("\n"), Math.max(1, width), {
+					hard: true,
+					wordWrap: false,
+					trim: false,
+				}).split("\n"),
+			);
 			continue;
 		}
 		const markdown = new Markdown(segment.text, 0, 0, mdTheme, accentStyle);
@@ -408,7 +411,11 @@ export class AskDialogComponent implements Component {
 	#expanded = false;
 	#contentWidth = 76;
 	#headerExpandable = false;
+	#titleCache = new WeakMap<ExtensionAskDialogQuestion, Map<number, readonly string[]>>();
+	#titleCacheEpoch = getThemeEpoch();
 	readonly #questions: ExtensionAskDialogQuestion[];
+	#maxHeight: number | undefined;
+	#renderCache: { key: string; lines: readonly string[] } | undefined;
 
 	constructor(
 		questions: ExtensionAskDialogQuestion[],
@@ -443,6 +450,7 @@ export class AskDialogComponent implements Component {
 	}
 
 	invalidate(): void {
+		this.#renderCache = undefined;
 		this.#stableHeight = undefined;
 		this.#previewCache.clear();
 		this.#overflowLayouts = new WeakMap();
@@ -462,7 +470,7 @@ export class AskDialogComponent implements Component {
 		if (this.#closed || this.#isSubmitTab()) return false;
 		const question = this.#questions[this.#currentQuestionIndex()];
 		if (!question) return false;
-		const overflows = wrapQuestionTitle(question, this.#contentWidth).length > MAX_HEADER_ROWS;
+		const overflows = this.#wrappedQuestionTitle(question, this.#contentWidth).length > MAX_HEADER_ROWS;
 		if (!overflows) return false;
 		this.#expanded = !this.#expanded;
 		this.invalidate();
@@ -507,6 +515,9 @@ export class AskDialogComponent implements Component {
 		// renders as the next sibling in the same container, so this lands in the
 		// same frame).
 		this.options.inputGuard?.syncPresentation?.();
+		const availableRows = this.#maxHeight ?? this.options.tui?.terminal.rows ?? process.stdout.rows ?? 40;
+		const cacheKey = `${width}:${availableRows}:${getThemeEpoch()}:${this.#remainingSeconds}:${this.options.inputGuard?.isBlocked()}:${this.options.inputGuard?.hint}:${cancelKeyLabel()}:${pageKeysLabel()}:${expandKeyHint()}`;
+		if (this.#renderCache?.key === cacheKey) return this.#renderCache.lines;
 		const innerWidth = Math.max(1, width - 4);
 		this.#contentWidth = innerWidth;
 		// Fixed panel height: measured from the tallest tab at spawn and
@@ -514,7 +525,22 @@ export class AskDialogComponent implements Component {
 		// moves, and later answers never resize the box; content that
 		// outgrows it scrolls. Expanding a truncated question uses the space
 		// available within the existing height cap.
-		const totalRows = this.#dialogHeight(innerWidth, process.stdout.rows || 40);
+		const totalRows = Math.min(availableRows, this.#dialogHeight(innerWidth, availableRows));
+		if (totalRows < MIN_DIALOG_ROWS || width < 40) {
+			const height = Math.max(1, totalRows);
+			const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+			const showQuestion = height >= 5;
+			const bodyRows = Math.max(1, height - chrome - Number(showQuestion));
+			this.#bodyRows = bodyRows;
+			const body = this.#isSubmitTab()
+				? this.#renderSubmitBody(innerWidth, bodyRows)
+				: this.#renderQuestionBody(innerWidth, bodyRows);
+			const header = showQuestion ? this.#renderHeader(innerWidth, 1).slice(-1) : [];
+			const footer = `${cancelKeyLabel()} cancel · Enter ${this.#isSubmitTab() ? "submit" : "select"}${this.#hasSubmitTab() ? " · Tab questions" : ""}`;
+			const lines = renderDialog(this.#titleText(), [...header, ...body.lines], width, height, footer).lines;
+			this.#renderCache = { key: cacheKey, lines };
+			return lines;
+		}
 		const tabBarRows = this.#hasSubmitTab() ? 1 : 0;
 		const maxTitleRows = Math.max(1, totalRows - 5 - MIN_BODY_ROWS - tabBarRows);
 		const headerLines = this.#renderHeader(innerWidth, maxTitleRows);
@@ -529,7 +555,7 @@ export class AskDialogComponent implements Component {
 			? this.#renderSubmitBody(innerWidth, bodyRows)
 			: this.#renderQuestionBody(innerWidth, bodyRows);
 		const footer = this.#footerHintText(bodyLines.indicator);
-		return [
+		const lines = [
 			topBorder(width, this.#titleText()),
 			...headerLines.map(line => row(line, width)),
 			divider(width),
@@ -538,6 +564,16 @@ export class AskDialogComponent implements Component {
 			row(theme.fg("dim", footer), width),
 			bottomBorder(width),
 		];
+		this.#renderCache = { key: cacheKey, lines };
+		return lines;
+	}
+
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
+		this.#renderCache = undefined;
+		this.#stableHeight = undefined;
 	}
 
 	#dialogHeight(width: number, termRows: number): number {
@@ -546,6 +582,25 @@ export class AskDialogComponent implements Component {
 		const total = this.#measureHeight(width, termRows);
 		this.#stableHeight = { key, total };
 		return total;
+	}
+
+	#wrappedQuestionTitle(question: ExtensionAskDialogQuestion, width: number): readonly string[] {
+		const epoch = getThemeEpoch();
+		if (epoch !== this.#titleCacheEpoch) {
+			this.#titleCacheEpoch = epoch;
+			this.#titleCache = new WeakMap();
+		}
+		let byWidth = this.#titleCache.get(question);
+		if (!byWidth) {
+			byWidth = new Map();
+			this.#titleCache.set(question, byWidth);
+		}
+		let wrapped = byWidth.get(width);
+		if (!wrapped) {
+			wrapped = wrapQuestionTitle(question, width);
+			byWidth.set(width, wrapped);
+		}
+		return wrapped;
 	}
 
 	/** Measure the tallest tab's natural content height, clamped to
@@ -563,7 +618,8 @@ export class AskDialogComponent implements Component {
 			const state = this.#states[index];
 			if (!question || !state) continue;
 			const titleRows = this.#expanded ? Number.POSITIVE_INFINITY : MAX_HEADER_ROWS;
-			const headerRows = tabBarRows + renderQuestionTitle(question, width, titleRows).length;
+			const headerRows =
+				tabBarRows + renderQuestionTitle(this.#wrappedQuestionTitle(question, width), width, titleRows).length;
 			const rowItems = this.#questionRows(question);
 			const listRows = (listWidth: number): number => {
 				let total = 0;
@@ -608,6 +664,7 @@ export class AskDialogComponent implements Component {
 	}
 
 	#requestRender(): void {
+		this.#renderCache = undefined;
 		this.options.tui?.requestRender();
 	}
 
@@ -636,10 +693,10 @@ export class AskDialogComponent implements Component {
 			this.#headerExpandable = false;
 			return lines;
 		}
-		const wrapped = wrapQuestionTitle(question, width);
+		const wrapped = this.#wrappedQuestionTitle(question, width);
 		this.#headerExpandable = wrapped.length > MAX_HEADER_ROWS;
-		const maxRows = this.#expanded ? maxTitleRows : MAX_HEADER_ROWS;
-		lines.push(...renderQuestionTitle(question, width, maxRows));
+		const maxRows = this.#expanded ? maxTitleRows : Math.min(MAX_HEADER_ROWS, maxTitleRows);
+		lines.push(...renderQuestionTitle(wrapped, width, maxRows));
 		return lines;
 	}
 
@@ -931,6 +988,22 @@ export class AskDialogComponent implements Component {
 	}
 
 	#renderSubmitBody(width: number, rows: number): RenderedList {
+		if (rows <= 2) {
+			const unanswered = this.#unansweredCount();
+			return {
+				lines: [
+					theme.bgFill(
+						"selectedBg",
+						theme.fg(
+							"accent",
+							`${theme.nav.cursor} ${SUBMIT_OPTION}${unanswered > 0 ? ` (${unanswered} unanswered)` : ""}`,
+						),
+					),
+				],
+				scrollOffset: 0,
+				indicator: "",
+			};
+		}
 		const allLines: string[] = [];
 		const unanswered = this.#unansweredCount();
 		if (unanswered > 0) {

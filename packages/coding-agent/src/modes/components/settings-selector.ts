@@ -3,6 +3,7 @@ import type { Effort } from "@harvest/pi-ai";
 import {
 	type Component,
 	Container,
+	CURSOR_MARKER,
 	extractPrintableText,
 	fuzzyRank,
 	getKeybindings,
@@ -47,7 +48,8 @@ import { AUTO_THINKING, type ConfiguredThinkingLevel } from "../../thinking";
 import { getTabBarTheme } from "../shared";
 import { type ComposerPreviewStatusSource, ComposerShapePreview } from "./composer-shape-preview";
 import { getComposerShapeOptions } from "./composer-shape-registry";
-import { bottomBorder, divider, row, topBorder } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { bottomBorder, divider, renderDialog, row, topBorder } from "./overlay-box";
 import { handleInputOrEscape, PluginSettingsComponent } from "./plugin-settings";
 import { getSettingDef, getSettingsForTab, type SettingDef } from "./settings-defs";
 import { SnapcompactShapePreview } from "./snapcompact-shape-preview";
@@ -553,6 +555,7 @@ function fitContentToBudget(
 			}
 		}
 	}
+	if (anchor < 0) anchor = lines.findIndex(line => line.includes(CURSOR_MARKER));
 	if (anchor < 0) return { rows: lines.slice(0, budget), start: 0 };
 	const start = Math.max(0, Math.min(anchor - Math.floor(budget / 2), lines.length - budget));
 	return { rows: lines.slice(start, start + budget), start };
@@ -626,6 +629,7 @@ export interface SettingsCallbacks {
  * Uses declarative settings definitions from settings-defs.ts.
  */
 export class SettingsSelectorComponent implements Component {
+	#maxHeight: number | undefined;
 	#tabBar: TabBar;
 	#currentList: SettingsList | null = null;
 	#searchList: SettingsList | null = null;
@@ -734,9 +738,36 @@ export class SettingsSelectorComponent implements Component {
 		// Short-terminal budget: never render taller than the viewport itself.
 		// The old Math.max(14, …) floor overflowed viewports under 14 rows and
 		// pushed required controls (tabs, search, footer) into scrollback.
-		const termRows = process.stdout.rows || 40;
-		const height = Math.max(6, termRows);
+		const termRows = this.#maxHeight ?? process.stdout.rows ?? 40;
+		const height = Math.max(1, termRows);
 		const innerWidth = Math.max(1, width - 4);
+
+		if (height < 8 || width < 40) {
+			const searching = this.#searchList !== null;
+			const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+			const contentRows = Math.max(1, height - chrome - Number(searching && height >= 4));
+			const list = this.#searchList ?? this.#currentList;
+			list?.setMaxVisible(contentRows);
+			this.#pluginComponent?.setMaxHeight(contentRows);
+			const content = list?.render(innerWidth) ?? this.#pluginComponent?.render(innerWidth) ?? [];
+			const fitted = fitContentToBudget(content, contentRows, list?.getSelectedItem()?.label);
+			const body = [...fitted.rows];
+			const showSearch = searching && height >= 4;
+			if (showSearch) body.unshift(this.#renderSearchBanner(innerWidth));
+			const layout = renderDialog(
+				`Settings · ${this.#currentTabId}`,
+				body,
+				width,
+				height,
+				`${editorKey("tui.select.cancel") || "Esc"} close · Enter change · Left/Right tab`,
+			);
+			this.#tabRowStart = 0;
+			this.#tabRowCount = 0;
+			this.#contentRowStart = layout.bodyRowStart + Number(showSearch);
+			this.#contentRowCount = Math.min(contentRows, fitted.rows.length);
+			this.#contentWindowStart = fitted.start;
+			return layout.lines;
+		}
 
 		const tabLines = this.#tabBar.render(innerWidth);
 		const searching = this.#searchList !== null;
@@ -757,6 +788,7 @@ export class SettingsSelectorComponent implements Component {
 			bottomDivider = false;
 			contentRows = height - (fixedRows - 1) - previewLines.length;
 		}
+
 		contentRows = Math.max(1, contentRows);
 
 		const list = this.#searchList ?? this.#currentList;
@@ -767,6 +799,7 @@ export class SettingsSelectorComponent implements Component {
 			contentLines = fitted.rows;
 			this.#contentWindowStart = fitted.start;
 		} else if (this.#pluginComponent) {
+			this.#pluginComponent.setMaxHeight(contentRows);
 			contentLines = this.#pluginComponent.render(innerWidth);
 		} else {
 			contentLines = [];
@@ -806,6 +839,12 @@ export class SettingsSelectorComponent implements Component {
 	 * searching), a row click selects, and a click on the already-selected row
 	 * activates it (toggle / open submenu).
 	 */
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
+	}
+
 	#handleMouse(data: string): boolean {
 		return routeSgrMouseInput(data, event => this.#routeMouseEvent(event));
 	}
@@ -830,6 +869,10 @@ export class SettingsSelectorComponent implements Component {
 		const tabLine = event.row - this.#tabRowStart;
 		const overTabs = tabLine >= 0 && tabLine < this.#tabRowCount;
 		const overContent = contentLine >= 0 && contentLine < this.#contentRowCount;
+		if (overContent && !list && this.#pluginComponent) {
+			this.#pluginComponent.routeMouse(event, listLine, innerCol);
+			return true;
+		}
 
 		if (event.wheel !== null) {
 			if (overContent) {

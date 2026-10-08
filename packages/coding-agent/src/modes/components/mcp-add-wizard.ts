@@ -3,15 +3,15 @@
  *
  * Interactive multi-step wizard for adding MCP servers.
  */
-import { Container, Input, matchesKey, replaceTabs, Spacer, Text, truncateToWidth } from "@harvest/pi-tui";
+import { Container, Input, matchesKey, replaceTabs, SelectList, Spacer, Text } from "@harvest/pi-tui";
 import { getMCPConfigPath, getProjectDir } from "@harvest/pi-utils";
 import { validateServerName } from "../../mcp/config-writer";
 import { analyzeAuthError, discoverOAuthEndpoints, fetchResourceMetadataScopes } from "../../mcp/oauth-discovery";
 import type { MCPHttpServerConfig, MCPServerConfig, MCPSseServerConfig, MCPStdioServerConfig } from "../../mcp/types";
 import { shortenPath } from "../../tools/render-utils";
-import { theme } from "../theme/theme";
+import { getSelectListTheme, theme } from "../theme/theme";
 import { matchesAppInterrupt, matchesSelectDown, matchesSelectUp } from "../utils/keybinding-matchers";
-import { OverlayPanel } from "./overlay-box";
+import { InteractiveDialogPanel } from "./overlay-box";
 
 type TransportType = "stdio" | "http" | "sse";
 type AuthMethod = "none" | "oauth" | "manual";
@@ -91,15 +91,12 @@ interface WizardState {
 	scope: Scope | null;
 }
 
-/** Max display width for sanitized error/URL text in wizard TUI */
-const MAX_DISPLAY_WIDTH = 120;
-
-/** Sanitize a string for TUI display: replace tabs and truncate */
+/** Preserve the full payload for the scrollable details view. */
 function sanitize(text: string): string {
-	return truncateToWidth(replaceTabs(text), MAX_DISPLAY_WIDTH);
+	return replaceTabs(text);
 }
 
-export class MCPAddWizard extends OverlayPanel {
+export class MCPAddWizard extends InteractiveDialogPanel {
 	#currentStep: WizardStep = "name";
 	#state: WizardState = {
 		name: "",
@@ -193,6 +190,7 @@ export class MCPAddWizard extends OverlayPanel {
 	}
 
 	#renderStep(): void {
+		this.resetDialogDetails();
 		this.#contentContainer.clear();
 		this.#inputField = null; // Reset input field
 
@@ -254,6 +252,25 @@ export class MCPAddWizard extends OverlayPanel {
 		}
 	}
 
+	#addChoices(labels: readonly string[]): void {
+		const choices = new SelectList(
+			labels.map((label, index) => ({ value: String(index), label })),
+			labels.length,
+			getSelectListTheme(),
+		);
+		choices.setSelectedIndex(this.#selectedIndex);
+		choices.onSelectionChange = item => {
+			this.#selectedIndex = Number(item.value);
+			this.#requestRender();
+		};
+		choices.onSelect = item => {
+			this.#selectedIndex = Number(item.value);
+			this.#selectCurrentOption();
+			this.#requestRender();
+		};
+		this.#contentContainer.addChild(choices);
+	}
+
 	#renderNameStep(): void {
 		this.#contentContainer.addChild(new Text(theme.fg("accent", "Step 1: Server Name")));
 		this.#contentContainer.addChild(new Spacer(1));
@@ -267,7 +284,9 @@ export class MCPAddWizard extends OverlayPanel {
 
 		// Show validation error if any
 		if (this.#validationError) {
-			this.#contentContainer.addChild(new Text(theme.fg("error", `✗ ${sanitize(this.#validationError)}`), 0, 0));
+			this.#contentContainer.addChild(
+				new Text(theme.fg("error", `${theme.status.error} ${sanitize(this.#validationError)}`), 0, 0),
+			);
 			this.#contentContainer.addChild(new Spacer(1));
 		}
 
@@ -289,17 +308,11 @@ export class MCPAddWizard extends OverlayPanel {
 			{ value: "sse" as const, label: "sse (Server-Sent Events)" },
 		];
 
-		for (let i = 0; i < options.length; i++) {
-			const option = options[i];
-			const isSelected = i === this.#selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ";
-			const text = isSelected ? theme.fg("accent", option.label) : option.label;
-			this.#contentContainer.addChild(new Text(prefix + text, 0, 0));
-		}
+		this.#addChoices(options.map(option => option.label));
 
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(
-			new Text(theme.fg("muted", "[↑↓ to navigate, Enter to select, Esc to cancel]"), 0, 0),
+			new Text(theme.fg("muted", "[Up/Down to navigate, Enter to select, Esc to cancel]"), 0, 0),
 		);
 	}
 
@@ -342,7 +355,9 @@ export class MCPAddWizard extends OverlayPanel {
 
 		// Show validation error if any
 		if (this.#validationError) {
-			this.#contentContainer.addChild(new Text(theme.fg("error", `✗ ${sanitize(this.#validationError)}`), 0, 0));
+			this.#contentContainer.addChild(
+				new Text(theme.fg("error", `${theme.status.error} ${sanitize(this.#validationError)}`), 0, 0),
+			);
 			this.#contentContainer.addChild(new Spacer(1));
 		}
 
@@ -359,17 +374,11 @@ export class MCPAddWizard extends OverlayPanel {
 			{ value: "header" as const, label: "HTTP header" },
 		];
 
-		for (let i = 0; i < options.length; i++) {
-			const option = options[i];
-			const isSelected = i === this.#selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ";
-			const text = isSelected ? theme.fg("accent", option.label) : option.label;
-			this.#contentContainer.addChild(new Text(prefix + text, 0, 0));
-		}
+		this.#addChoices(options.map(option => option.label));
 
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(
-			new Text(theme.fg("muted", "[↑↓ to navigate, Enter to select, Esc to go back]"), 0, 0),
+			new Text(theme.fg("muted", "[Up/Down to navigate, Enter to select, Esc to go back]"), 0, 0),
 		);
 	}
 
@@ -412,17 +421,11 @@ export class MCPAddWizard extends OverlayPanel {
 			{ value: "project" as const, label: `Project level (${projectPathLabel})` },
 		];
 
-		for (let i = 0; i < options.length; i++) {
-			const option = options[i];
-			const isSelected = i === this.#selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ";
-			const text = isSelected ? theme.fg("accent", option.label) : option.label;
-			this.#contentContainer.addChild(new Text(prefix + text, 0, 0));
-		}
+		this.#addChoices(options.map(option => option.label));
 
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(
-			new Text(theme.fg("muted", "[↑↓ to navigate, Enter to select, Esc to go back]"), 0, 0),
+			new Text(theme.fg("muted", "[Up/Down to navigate, Enter to select, Esc to go back]"), 0, 0),
 		);
 	}
 
@@ -464,16 +467,11 @@ export class MCPAddWizard extends OverlayPanel {
 		this.#contentContainer.addChild(new Spacer(1));
 
 		const options = ["Yes", "No"];
-		for (let i = 0; i < options.length; i++) {
-			const isSelected = i === this.#selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ";
-			const text = isSelected ? theme.fg("accent", options[i]) : options[i];
-			this.#contentContainer.addChild(new Text(prefix + text, 0, 0));
-		}
+		this.#addChoices(options);
 
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(
-			new Text(theme.fg("muted", "[↑↓ to navigate, Enter to select, Esc to go back]"), 0, 0),
+			new Text(theme.fg("muted", "[Up/Down to navigate, Enter to select, Esc to go back]"), 0, 0),
 		);
 	}
 
@@ -503,6 +501,10 @@ export class MCPAddWizard extends OverlayPanel {
 			}
 			// Go back to previous step
 			this.#goBack();
+			return;
+		}
+		if (this.handleDialogInput(keyData)) {
+			this.#requestRender();
 			return;
 		}
 
@@ -831,20 +833,11 @@ export class MCPAddWizard extends OverlayPanel {
 			{ value: "manual" as const, label: "Manual API key/token", desc: "(paste or use shell command)" },
 		];
 
-		for (let i = 0; i < options.length; i++) {
-			const option = options[i];
-			const isSelected = i === this.#selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ";
-			const text = isSelected ? theme.fg("accent", option.label) : option.label;
-			this.#contentContainer.addChild(new Text(prefix + text, 0, 0));
-			if (!isSelected) {
-				this.#contentContainer.addChild(new Text(`    ${theme.fg("dim", option.desc)}`, 0, 0));
-			}
-		}
+		this.#addChoices(options.map(option => `${option.label} ${option.desc}`));
 
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(
-			new Text(theme.fg("muted", "[↑↓ to navigate, Enter to select, Esc to go back]"), 0, 0),
+			new Text(theme.fg("muted", "[Up/Down to navigate, Enter to select, Esc to go back]"), 0, 0),
 		);
 	}
 
@@ -929,16 +922,11 @@ export class MCPAddWizard extends OverlayPanel {
 		this.#contentContainer.addChild(new Spacer(1));
 
 		const options = ["Retry OAuth authentication", "Edit OAuth settings"];
-		for (let i = 0; i < options.length; i++) {
-			const isSelected = i === this.#selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ";
-			const text = isSelected ? theme.fg("accent", options[i]) : options[i];
-			this.#contentContainer.addChild(new Text(prefix + text, 0, 0));
-		}
+		this.#addChoices(options);
 
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(
-			new Text(theme.fg("muted", "[↑↓ to navigate, Enter to select, Esc to go back]"), 0, 0),
+			new Text(theme.fg("muted", "[Up/Down to navigate, Enter to select, Esc to go back]"), 0, 0),
 		);
 	}
 
@@ -976,7 +964,9 @@ export class MCPAddWizard extends OverlayPanel {
 
 			// Success! No auth required
 			this.#contentContainer.clear();
-			this.#contentContainer.addChild(new Text(theme.fg("success", "✓ Connection successful!"), 0, 0));
+			this.#contentContainer.addChild(
+				new Text(theme.fg("success", `${theme.status.success} Connection successful!`), 0, 0),
+			);
 			this.#contentContainer.addChild(new Spacer(1));
 			this.#contentContainer.addChild(new Text("No authentication required", 0, 0));
 			this.#contentContainer.addChild(new Spacer(1));
@@ -1026,7 +1016,9 @@ export class MCPAddWizard extends OverlayPanel {
 					this.#state.authMethod = "oauth";
 
 					this.#contentContainer.clear();
-					this.#contentContainer.addChild(new Text(theme.fg("success", "✓ OAuth detected"), 0, 0));
+					this.#contentContainer.addChild(
+						new Text(theme.fg("success", `${theme.status.success} OAuth detected`), 0, 0),
+					);
 					this.#contentContainer.addChild(new Spacer(1));
 					this.#contentContainer.addChild(new Text("Launching browser for authorization...", 0, 0));
 					this.#contentContainer.addChild(new Spacer(1));
@@ -1037,7 +1029,9 @@ export class MCPAddWizard extends OverlayPanel {
 
 				// OAuth metadata unavailable: fallback to manual API key.
 				this.#contentContainer.clear();
-				this.#contentContainer.addChild(new Text(theme.fg("warning", "⚠ Authentication required"), 0, 0));
+				this.#contentContainer.addChild(
+					new Text(theme.fg("warning", `${theme.status.warning} Authentication required`), 0, 0),
+				);
 				this.#contentContainer.addChild(new Spacer(1));
 				this.#contentContainer.addChild(new Text("OAuth parameters could not be discovered.", 0, 0));
 				this.#contentContainer.addChild(new Text("Provide API key/token manually.", 0, 0));
@@ -1048,7 +1042,9 @@ export class MCPAddWizard extends OverlayPanel {
 				// Not an auth error - just a connection failure
 				const errorMsg = sanitize(error instanceof Error ? error.message : String(error));
 				this.#contentContainer.clear();
-				this.#contentContainer.addChild(new Text(theme.fg("error", "✗ Connection failed"), 0, 0));
+				this.#contentContainer.addChild(
+					new Text(theme.fg("error", `${theme.status.error} Connection failed`), 0, 0),
+				);
 				this.#contentContainer.addChild(new Spacer(1));
 				this.#contentContainer.addChild(new Text(errorMsg, 0, 0));
 				this.#contentContainer.addChild(new Spacer(1));
@@ -1209,7 +1205,9 @@ export class MCPAddWizard extends OverlayPanel {
 
 			// Show success message
 			this.#contentContainer.clear();
-			this.#contentContainer.addChild(new Text(theme.fg("success", "✓ Authentication successful!"), 0, 0));
+			this.#contentContainer.addChild(
+				new Text(theme.fg("success", `${theme.status.success} Authentication successful!`), 0, 0),
+			);
 			this.#contentContainer.addChild(new Spacer(1));
 			this.#contentContainer.addChild(new Text(theme.fg("muted", "Running connection health check..."), 0, 0));
 			const spinnerFrames = theme.spinnerFrames;
@@ -1251,9 +1249,11 @@ export class MCPAddWizard extends OverlayPanel {
 
 			clearInterval(spinner);
 			if (healthPassed) {
-				healthText.setText(theme.fg("success", "✓ Health check passed"));
+				healthText.setText(theme.fg("success", `${theme.status.success} Health check passed`));
 			} else {
-				healthText.setText(theme.fg("warning", "⚠ Health check failed (will still save config)"));
+				healthText.setText(
+					theme.fg("warning", `${theme.status.warning} Health check failed (will still save config)`),
+				);
 				this.#contentContainer.addChild(new Spacer(1));
 				this.#contentContainer.addChild(new Text(theme.fg("muted", healthError), 0, 0));
 			}
@@ -1278,7 +1278,9 @@ export class MCPAddWizard extends OverlayPanel {
 			this.#contentContainer.clear();
 			this.#contentContainer.addChild(
 				new Text(
-					cancelled ? theme.fg("muted", "○ OAuth cancelled") : theme.fg("error", "✗ OAuth authentication failed"),
+					cancelled
+						? theme.fg("muted", `${theme.status.pending} OAuth cancelled`)
+						: theme.fg("error", `${theme.status.error} OAuth authentication failed`),
 					0,
 					0,
 				),
@@ -1307,11 +1309,12 @@ export class MCPAddWizard extends OverlayPanel {
 			}
 
 			this.#contentContainer.addChild(new Spacer(1));
-			this.#contentContainer.addChild(new Text(`${theme.fg("accent", "→ ")}Retry`, 0, 0));
-			this.#contentContainer.addChild(new Text("  Edit OAuth settings", 0, 0));
+			this.resetDialogDetails();
+			this.#selectedIndex = 0;
+			this.#addChoices(["Retry", "Edit OAuth settings"]);
 			this.#contentContainer.addChild(new Spacer(1));
 			this.#contentContainer.addChild(
-				new Text(theme.fg("muted", "[↑↓ to navigate, Enter to select, Esc to go back]"), 0, 0),
+				new Text(theme.fg("muted", "[Up/Down to navigate, Enter to select, Esc to go back]"), 0, 0),
 			);
 			this.#requestRender();
 

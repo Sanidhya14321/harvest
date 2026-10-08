@@ -1,14 +1,15 @@
 import { getOAuthProviders } from "@harvest/pi-ai/oauth";
-import { Container, getKeybindings, Input, Spacer, Text, type TUI, wrapTextWithAnsi } from "@harvest/pi-tui";
+import { type Component, Container, getKeybindings, Input, Spacer, Text, type TUI } from "@harvest/pi-tui";
 import { theme } from "../../modes/theme/theme";
 import { urlHyperlinkAlways, WidthAwareText } from "../../tui";
 import { openPath } from "../../utils/open";
-import { OverlayPanel } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { InteractiveDialogPanel } from "./overlay-box";
 
 /**
  * Login dialog component - replaces editor during OAuth login flow
  */
-export class LoginDialogComponent extends OverlayPanel {
+export class LoginDialogComponent extends InteractiveDialogPanel {
 	#contentContainer: Container;
 	#input: Input;
 	#tui: TUI;
@@ -23,7 +24,7 @@ export class LoginDialogComponent extends OverlayPanel {
 		private onComplete: (success: boolean, message?: string) => void,
 	) {
 		const providerInfo = getOAuthProviders().find(p => p.id === providerId);
-		const providerName = providerId === "custom" ? "Custom Provider" : (providerInfo?.name || providerId);
+		const providerName = providerId === "custom" ? "Custom Provider" : providerInfo?.name || providerId;
 		super(providerId === "custom" ? "Configure Custom Provider" : `Login to ${providerName}`);
 		this.#tui = tui;
 
@@ -68,12 +69,14 @@ export class LoginDialogComponent extends OverlayPanel {
 	 * link to the full URL, so clicking any wrapped fragment opens the same target.
 	 */
 	showAuth(url: string, instructions?: string, launchUrl?: string): void {
+		this.resetDialogDetails();
 		this.#contentContainer.clear();
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(
 			new WidthAwareText(
 				contentWidth =>
-					wrapTextWithAnsi(url, contentWidth)
+					Bun.wrapAnsi(url, Math.max(1, contentWidth), { hard: true, wordWrap: false, trim: false })
+						.split("\n")
 						.map(row => theme.fg("accent", urlHyperlinkAlways(url, row)))
 						.join("\n"),
 				0,
@@ -106,6 +109,7 @@ export class LoginDialogComponent extends OverlayPanel {
 	 * Show input for manual code/URL entry (for callback server providers)
 	 */
 	showManualInput(prompt: string, signal?: AbortSignal): Promise<string> {
+		this.resetDialogDetails();
 		// Invalid pastes re-prompt (the OAuth callback loop calls this again), so
 		// reuse the already-mounted input instead of stacking duplicate prompt and
 		// hint lines beneath the dialog. Reset the value so each retry starts clean.
@@ -141,6 +145,7 @@ export class LoginDialogComponent extends OverlayPanel {
 	 * Note: Does NOT clear content, appends to existing (preserves URL from showAuth)
 	 */
 	showPrompt(message: string, placeholder?: string): Promise<string> {
+		this.resetDialogDetails();
 		this.#contentContainer.addChild(new Spacer(1));
 		this.#contentContainer.addChild(new Text(theme.fg("text", message), 0, 0));
 		if (placeholder) {
@@ -192,11 +197,23 @@ export class LoginDialogComponent extends OverlayPanel {
 		this.#input.pasteText(text);
 	}
 
+	protected override dialogControl(): Component | undefined {
+		return this.#inputResolver && this.#contentContainer.children.includes(this.#input) ? this.#input : undefined;
+	}
+
+	protected override dialogFooter(): string {
+		return [`${editorKey("tui.select.cancel") || "Esc"} cancel`, "Enter submit", "F2 details"].join(theme.sep.dot);
+	}
+
 	handleInput(data: string): void {
 		const kb = getKeybindings();
 
 		if (kb.matches(data, "tui.select.cancel")) {
 			this.#cancel();
+			return;
+		}
+		if (this.handleDialogInput(data)) {
+			this.#tui.requestRender();
 			return;
 		}
 

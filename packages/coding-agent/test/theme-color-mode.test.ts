@@ -21,6 +21,8 @@ describe("theme color mode", () => {
 				cwd: path.resolve(import.meta.dir, "../../.."),
 				env: {
 					...process.env,
+					FORCE_COLOR: "2",
+					NO_COLOR: "",
 					KITTY_WINDOW_ID: "",
 					GHOSTTY_RESOURCES_DIR: "",
 					WEZTERM_PANE: "",
@@ -43,5 +45,28 @@ describe("theme color mode", () => {
 
 		expect(exitCode, stderr).toBe(0);
 		expect(stdout).toBe("\x1b[38;5;223m");
+	});
+
+	it("omits session accent color when color is disabled", async () => {
+		const proc = Bun.spawn(
+			[
+				process.execPath,
+				"--eval",
+				'import { getSessionAccentAnsi } from "./packages/coding-agent/src/utils/session-color.ts"; process.stdout.write(getSessionAccentAnsi("#f5e0ac") ?? "plain");',
+			],
+			{
+				cwd: path.resolve(import.meta.dir, "../../.."),
+				env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1", COLORTERM: "truecolor", TERM: "xterm-256color" },
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		);
+		const [exitCode, stdout, stderr] = await Promise.all([
+			proc.exited,
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+		]);
+		expect(exitCode, stderr).toBe(0);
+		expect(stdout).toBe("plain");
 	});
 });

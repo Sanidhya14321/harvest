@@ -65,16 +65,17 @@ class ComposerSceneController implements SetupSceneController {
 
 	render(width: number, maxLines?: number): readonly string[] {
 		const budget = maxLines ?? Number.POSITIVE_INFINITY;
-		const lines = [theme.fg("muted", "Select a layout; live preview updates below. Press Enter to confirm."), ""];
+		const lines = budget >= this.#items.length + 3 ? [theme.fg("muted", "Select a layout; live preview updates below. Press Enter to confirm."), ""] : [];
 
-		const previewLines = renderComposerShapePreview(this.#currentShape, width, this.host.ctx.statusLine);
-		if (budget - lines.length - previewLines.length - 2 >= this.#items.length) {
-			lines.push(theme.fg("muted", "Preview:"), ...previewLines, "");
+		if (width >= 24 && budget - lines.length > this.#items.length + 4) {
+			const previewLines = renderComposerShapePreview(this.#currentShape, width, this.host.ctx.statusLine);
+			if (budget - lines.length - previewLines.length - 2 >= this.#items.length) lines.push(theme.fg("muted", "Preview:"), ...previewLines, "");
 		}
 
 		this.#listRowStart = lines.length;
+		this.#selectList.setMaxVisible(Math.max(1, Math.min(this.#items.length, budget - lines.length - 1)));
 		lines.push(...this.#selectList.render(width));
-		return lines;
+		return maxLines === undefined ? lines : lines.slice(0, Math.max(1, maxLines));
 	}
 
 	async #commit(shape: ComposerShape): Promise<void> {

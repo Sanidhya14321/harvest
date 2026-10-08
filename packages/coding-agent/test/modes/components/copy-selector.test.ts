@@ -10,9 +10,11 @@ import type { AgentMessage } from "@harvest/pi-agent-core";
 import { KeybindingsManager } from "@harvest/pi-coding-agent/config/keybindings";
 import { resetSettingsForTest, Settings } from "@harvest/pi-coding-agent/config/settings";
 import { CopySelectorComponent } from "@harvest/pi-coding-agent/modes/components/copy-selector";
-import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { initTheme, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { SessionMessageEntry } from "@harvest/pi-coding-agent/session/session-entries";
-import { setKeybindings, type TUI } from "@harvest/pi-tui";
+import { setKeybindings, type TUI, visibleWidth } from "@harvest/pi-tui";
+import { VirtualTerminal } from "../../../../tui/test/virtual-terminal";
 
 const UP = "\x1b[A";
 const LEFT = "\x1b[D";
@@ -163,6 +165,72 @@ describe("CopySelectorComponent", () => {
 		// The newest item is the assistant turn (bash result folded into it);
 		// its item-level copy is the assistant prose, not tool noise.
 		expect(picks).toEqual([{ content: ASSISTANT_TEXT, label: "assistant message" }]);
+	});
+
+	it("keeps tiny allocated frames bounded and copies the complete payload after resize", () => {
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const payload = "COMPLETE_CLIPBOARD_PAYLOAD\nNEXT_LINE";
+		const picks: Array<{ content: string; label: string }> = [];
+		const selector = makeSelector(picks, () => {}, undefined, [
+			entry("narrow", null, { role: "user", content: payload, timestamp: 1 } as AgentMessage),
+		]);
+		try {
+			selector.setMaxHeight(1);
+			const compact = selector.render(2);
+			expect(compact).toHaveLength(1);
+			expect(visibleWidth(compact[0]!)).toBeLessThanOrEqual(2);
+			expect(Bun.stripANSI(compact[0]!).trimStart()).toStartWith("C");
+			expect(compact.join("\n")).not.toMatch(/[^\x00-\x7f]/);
+			selector.handleInput(ENTER);
+			selector.setMaxHeight(4);
+			const resized = selector.render(24);
+			expect(resized).toHaveLength(4);
+			expect(resized.every(line => visibleWidth(line) <= 24)).toBe(true);
+			selector.handleInput(ENTER);
+			expect(picks).toEqual([
+				{ content: payload, label: "user message" },
+				{ content: payload, label: "user message" },
+			]);
+		} finally {
+			selector.dispose();
+			setThemeInstance(previousTheme);
+		}
+	});
+
+	it("maps caption clicks through the current visible chrome and paints the allocated manager surface", () => {
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "truecolor", symbolPresetOverride: "ascii" }));
+		const picks: Array<{ content: string; label: string }> = [];
+		const selector = makeSelector(picks);
+		try {
+			selector.handleInput(RIGHT);
+			selector.setMaxHeight(2);
+			const compact = selector.render(40);
+			const control = locate(compact, `${theme.cmd.copy} copy`);
+			expect(control.row).toBe(0);
+			selector.handleInput(click(control.row, control.col));
+			selector.handleInput(click(1, control.col));
+			selector.setMaxHeight(3);
+			const titled = selector.render(40);
+			const moved = locate(titled, `${theme.cmd.copy} copy`);
+			expect(moved.row).toBe(1);
+			selector.handleInput(click(0, moved.col));
+			selector.handleInput(click(moved.row, moved.col));
+			expect(picks).toEqual([
+				{ content: CODE, label: "ts code" },
+				{ content: CODE, label: "ts code" },
+			]);
+			const terminal = new VirtualTerminal(40, 4);
+			terminal.write(titled.join("\r\n"));
+			for (const row of [0, 1, 2]) {
+				expect(terminal.getViewportRowBackgroundColumns(row)).toEqual(Array.from({ length: 40 }, (_, col) => col));
+			}
+			expect(titled.map(line => Bun.stripANSI(line)).join("\n")).not.toMatch(/[^\x00-\x7f]/);
+		} finally {
+			selector.dispose();
+			setThemeInstance(previousTheme);
+		}
 	});
 
 	it("folds lazily created grouped reads into the assistant turn so Enter copies the yield", () => {
@@ -383,7 +451,7 @@ describe("CopySelectorComponent", () => {
 		const selector = makeSelector([]);
 		const itemView = selector.render(100).map(line => Bun.stripANSI(line));
 		// The outline advertises the descent affordance before Right is pressed.
-		expect(itemView.join("\n")).toContain("4 blocks →");
+		expect(itemView.join("\n")).toContain(`4 blocks ${theme.nav.expand}`);
 		selector.handleInput(RIGHT);
 		const lines = selector.render(100).map(line => Bun.stripANSI(line));
 		selector.handleInput(LEFT);

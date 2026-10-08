@@ -32,7 +32,11 @@ export function sanitizeDisplayText(text: string): string {
 
 /** Sanitize a line for TUI display and truncate it to the viewport width. */
 export function sanitizeLine(text: string, maxWidth?: number): string {
-	return truncateToWidth(sanitizeDisplayText(text), maxWidth ?? contentWidth());
+	return truncateToWidth(
+		sanitizeDisplayText(text),
+		maxWidth ?? contentWidth(),
+		theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+	);
 }
 
 export function clampHubLine(line: string, width: number): string {
@@ -111,7 +115,7 @@ export function modelBadge(ref: AgentRef, observed: ObservableSession | undefine
 		(progress?.resolvedModelIsFallback ? progress.resolvedModel : undefined) ??
 		(ref.history?.resolvedModelIsFallback ? ref.history.resolvedModel : undefined);
 	if (fallbackSelector) {
-		return `${theme.fg("warning", "fallback →")} ${formatResolvedModelBadge(fallbackSelector, true, liveThinkingLevel)}`;
+		return `${theme.fg("warning", theme.getSymbolPreset() === "ascii" ? "fallback ->" : "fallback →")} ${formatResolvedModelBadge(fallbackSelector, true, liveThinkingLevel)}`;
 	}
 	const resolvedModel = progress?.resolvedModel ?? ref.history?.resolvedModel ?? serving?.selector;
 	if (resolvedModel) return formatResolvedModelBadge(resolvedModel, false, liveThinkingLevel);
@@ -138,7 +142,7 @@ export function formatCost(cost: number): string {
 export function formatMetrics(metrics: AgentMetrics): string {
 	return [
 		formatCost(metrics.cost),
-		formatMetricDuration(metrics) ?? "time —",
+		formatMetricDuration(metrics) ?? (theme.getSymbolPreset() === "ascii" ? "time -" : "time —"),
 		`${formatNumber(metrics.requests)} req`,
 		`${formatNumber(metrics.tools)} tools`,
 		`${formatNumber(metrics.tokens)} tok`,
@@ -152,7 +156,7 @@ export function formatMetricColumns(metrics: AgentMetrics, age: string): string 
 	const cost = formatCost(metrics.cost);
 	return [
 		cost + padding(8 - visibleWidth(cost)),
-		alignRightCell(formatMetricDuration(metrics) ?? "—", 13),
+		alignRightCell(formatMetricDuration(metrics) ?? (theme.getSymbolPreset() === "ascii" ? "-" : "—"), 13),
 		alignRightCell(`${formatNumber(metrics.requests)} req`, 8),
 		alignRightCell(`${formatNumber(metrics.tools)} tools`, 9),
 		alignRightCell(`${formatNumber(metrics.tokens)} tok`, 8),
@@ -163,7 +167,7 @@ export function formatMetricColumns(metrics: AgentMetrics, age: string): string 
 export function contextGauge(tokens: number, window: number): string {
 	const ratio = Math.max(0, Math.min(1, tokens / window));
 	const filled = Math.round(ratio * 10);
-	return `${theme.fg("accent", "━".repeat(filled))}${theme.fg("dim", "─".repeat(10 - filled))} ${formatNumber(tokens)}/${formatNumber(window)} ${Math.round(ratio * 100)}%`;
+	return `${theme.fg("accent", theme.symbol("progress.filled").repeat(filled))}${theme.fg("dim", theme.symbol("progress.empty").repeat(10 - filled))} ${formatNumber(tokens)}/${formatNumber(window)} ${Math.round(ratio * 100)}%`;
 }
 
 /** Fit a child-id preview without joining an arbitrarily large child set. */
@@ -175,11 +179,14 @@ export function formatChildIds(children: readonly AgentRef[], width: number): st
 		const id = sanitizeLine(children[shown].id, max);
 		const candidate = text ? `${text}, ${id}` : id;
 		const remaining = children.length - shown - 1;
-		const suffix = remaining > 0 ? `, … +${remaining}` : "";
+		const suffix = remaining > 0 ? `, ${theme.symbol("sep.ellipsis")} +${remaining}` : "";
 		if (visibleWidth(candidate + suffix) > max) {
 			const includesCurrent = text.length === 0;
 			const omitted = children.length - shown - Number(includesCurrent);
-			return truncateToWidth(`${includesCurrent ? id : text}${omitted > 0 ? `, … +${omitted}` : ""}`, max);
+			return sanitizeLine(
+				`${includesCurrent ? id : text}${omitted > 0 ? `, ${theme.symbol("sep.ellipsis")} +${omitted}` : ""}`,
+				max,
+			);
 		}
 		text = candidate;
 		shown++;
@@ -201,7 +208,15 @@ function treePrefix(
 ): string {
 	if ((depthById.get(ref.id) ?? 0) === 0) return "";
 	const lastSibling = lastSiblingById.get(ref.id);
-	const segments: string[] = [continuation ? (lastSibling ? "    " : "│   ") : lastSibling ? "└── " : "├── "];
+	const vertical = `${theme.symbol("tree.vertical")}   `;
+	const branch = theme.symbol(lastSibling ? "tree.last" : "tree.branch");
+	const segments: string[] = [
+		continuation
+			? lastSibling
+				? "    "
+				: vertical
+			: `${branch}${theme.symbol("tree.horizontal").repeat(Math.max(0, TREE_SEGMENT_WIDTH - 1 - visibleWidth(branch)))} `,
+	];
 	const ancestry = new Set<string>();
 	let parent = parentById.get(ref.id);
 	while (parent && parent !== MAIN_AGENT_ID && !ancestry.has(parent)) {
@@ -210,13 +225,13 @@ function treePrefix(
 		// rail column — its children's connectors sit directly under that dot.
 		if (!grandparent || grandparent === MAIN_AGENT_ID) break;
 		ancestry.add(parent);
-		segments.push(lastSiblingById.get(parent) ? "    " : "│   ");
+		segments.push(lastSiblingById.get(parent) ? "    " : vertical);
 		parent = grandparent;
 	}
 	const maxSegments = Math.max(1, Math.floor(Math.max(TREE_SEGMENT_WIDTH, maxWidth - 2) / TREE_SEGMENT_WIDTH));
 	const omitted = Math.max(0, segments.length - maxSegments);
 	const prefix = segments.slice(0, maxSegments).reverse().join("");
-	const omittedPrefix = omitted > 0 ? (continuation ? "  " : "… ") : "";
+	const omittedPrefix = omitted > 0 ? (continuation ? "  " : `${theme.symbol("sep.ellipsis")} `) : "";
 	return theme.fg("dim", `${omittedPrefix}${prefix}`);
 }
 

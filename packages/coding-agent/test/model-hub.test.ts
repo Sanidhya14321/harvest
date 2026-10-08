@@ -1113,12 +1113,12 @@ describe("ModelHub", () => {
 			const { hub } = createHub({ models: [noMatch, withMatch] });
 			installTestTheme();
 
-			// Sidebar cell = the first `│`-delimited column of each split row;
-			// body rows may also mention provider names, so scope the check.
+			// Provider labels sit at the start of a filled category row. Body
+			// model names follow the category region, so scope the check to it.
 			const sidebarIndexOf = (provider: string): number =>
 				hub
 					.render(220)
-					.map(line => stripVTControlCharacters(line).split("│")[1] ?? "")
+					.map(line => stripVTControlCharacters(line).slice(0, 35))
 					.findIndex(cell => cell.includes(provider));
 
 			expect(sidebarIndexOf("aaa-provider")).toBeLessThan(sidebarIndexOf("zzz-provider"));

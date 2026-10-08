@@ -95,11 +95,13 @@ describe("MoveOverlay", () => {
 		const plainLines = lines.map(stripAnsi);
 
 		expect(lines.map(line => visibleWidth(line))).toEqual(Array(lines.length).fill(72));
-		expect(plainLines[0]!.endsWith(uiTheme.boxRound.topRight)).toBe(true);
-		expect(plainLines.at(-1)!.endsWith(uiTheme.boxRound.bottomRight)).toBe(true);
-		for (const line of plainLines.slice(1, -1)) {
-			expect(line.endsWith(uiTheme.boxRound.vertical)).toBe(true);
-		}
+		expect(plainLines.some(line => line.includes("alpha/"))).toBe(true);
+		overlay.setMaxHeight(4);
+		overlay.handleInput("\x1b[B");
+		const compact = overlay.render(24);
+		expect(compact.length).toBeLessThanOrEqual(4);
+		expect(compact.map(line => visibleWidth(line))).toEqual(Array(compact.length).fill(24));
+		expect(strip(compact)).toContain("beta/");
 	});
 
 	it("lists child directories (excluding hidden and files) on empty input", () => {

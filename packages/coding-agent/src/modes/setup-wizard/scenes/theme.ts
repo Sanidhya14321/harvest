@@ -8,6 +8,7 @@ import {
 	previewTheme,
 	type SymbolPreset,
 	setColorBlindMode,
+	setAutoThemeMapping,
 	setSymbolPreset,
 	theme,
 } from "../../theme/theme";
@@ -17,12 +18,14 @@ import { renderComposerShapePreview } from "../../components/composer-shape-prev
 type ThemeMode = "curated" | "all";
 
 const CURATED_ITEMS: readonly SelectItem[] = [
-	{ value: "auto", label: "Match terminal", description: "Titanium in dark terminals, Light in light terminals" },
-	{ value: "theme:titanium", label: "Titanium", description: "Default dark theme" },
-	{ value: "theme:light", label: "Light", description: "Default light theme" },
+	{ value: "auto", label: "Match terminal", description: "Harvest in dark terminals, Harvest Light in light terminals" },
+	{ value: "theme:harvest", label: "Harvest", description: "Default dark theme" },
+	{ value: "theme:harvest-light", label: "Harvest Light", description: "Default light theme" },
+	{ value: "theme:titanium", label: "Titanium", description: "Classic dark theme" },
+	{ value: "theme:light", label: "Light", description: "Classic light theme" },
 	{ value: "colorblind", label: "Colorblind colors", description: "Adjust red/green contrast" },
 	{ value: "ansi", label: "ANSI-safe", description: "ASCII glyphs with the dark terminal theme" },
-	{ value: "browse", label: "Browse all…", description: "Show every built-in and custom theme" },
+	{ value: "browse", label: "Browse all", description: "Show every built-in and custom theme" },
 ];
 
 class ThemeSceneController implements SetupSceneController {
@@ -75,25 +78,25 @@ class ThemeSceneController implements SetupSceneController {
 
 	render(width: number, maxLines?: number): readonly string[] {
 		const budget = maxLines ?? Number.POSITIVE_INFINITY;
-		const lines = [
+		const lines = budget >= CURATED_ITEMS.length + 3 ? [
 			theme.fg("muted", "Theme changes preview live. Nothing is saved until you press Enter."),
 			this.#mode === "all"
 				? theme.fg("dim", "Browsing all themes · Esc returns to curated choices")
 				: theme.fg("dim", "Esc skips this step"),
 			"",
-		];
+		] : [];
 		// The live status-line/composer block below renders through the same
 		// real pipeline as runtime (the wizard itself also re-renders in the
 		// highlighted theme) — so it yields to the list when it would squeeze
 		// the window below the six curated rows (+1 for the list's own
 		// search-status row).
-		const preview = this.#renderThemePreview(width);
-		if (budget - lines.length - (preview.length + 1) - 1 >= CURATED_ITEMS.length) {
-			lines.push(...preview, "");
+		if (width >= 24 && budget - lines.length > CURATED_ITEMS.length + 6) {
+			const preview = this.#renderThemePreview(width);
+			if (budget - lines.length - (preview.length + 1) - 1 >= CURATED_ITEMS.length) lines.push(...preview, "");
 		}
 		if (this.#loadingAllThemes) {
 			this.#listRowStart = -1;
-			lines.push(theme.fg("dim", "Loading themes…"));
+			lines.push(theme.fg("dim", `Loading themes${theme.symbol("sep.ellipsis")}`));
 		} else {
 			this.#listRowStart = lines.length;
 			if (maxLines !== undefined) {
@@ -104,7 +107,7 @@ class ThemeSceneController implements SetupSceneController {
 		if (this.#message) {
 			lines.push("", this.#message);
 		}
-		return lines;
+		return maxLines === undefined ? lines : lines.slice(0, Math.max(1, maxLines));
 	}
 
 	#createSelectList(items: readonly SelectItem[], selectedIndex: number): SelectList {
@@ -131,9 +134,8 @@ class ThemeSceneController implements SetupSceneController {
 
 	#currentCuratedIndex(): number {
 		const current = getCurrentThemeName();
-		if (current === "titanium") return 1;
-		if (current === "light") return 2;
-		return 0;
+		const index = CURATED_ITEMS.findIndex(item => item.value === `theme:${current}`);
+		return Math.max(0, index);
 	}
 
 	/**
@@ -199,8 +201,10 @@ class ThemeSceneController implements SetupSceneController {
 
 	async #commit(value: string): Promise<void> {
 		if (value === "auto") {
-			this.host.ctx.settings.set("theme.dark", "titanium");
-			this.host.ctx.settings.set("theme.light", "light");
+			this.host.ctx.settings.set("theme.dark", "harvest");
+			this.host.ctx.settings.set("theme.light", "harvest-light");
+			setAutoThemeMapping("dark", "harvest");
+			setAutoThemeMapping("light", "harvest-light");
 			await this.#applyPreviewPresentation(this.#originalSymbolPreset, this.#originalColorBlindMode);
 			enableAutoTheme();
 			return;

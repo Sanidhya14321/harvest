@@ -18,6 +18,7 @@ class ProvidersSceneController implements SetupSceneController {
 	#tabBar: TabBar;
 	/** Lines the tab bar occupied in the last render (body starts one blank line below). */
 	#tabRowCount = 1;
+	#tabSpacerRows = 1;
 
 	constructor(host: SetupSceneHost) {
 		this.#tabs = [new SignInTab(host), new WebSearchTab(host)];
@@ -74,8 +75,7 @@ class ProvidersSceneController implements SetupSceneController {
 			return;
 		}
 		if (event.motion) this.#tabBar.setHoverTab(null);
-		const spacerRowsAfterTabs = 1;
-		const bodyLine = line - this.#tabRowCount - spacerRowsAfterTabs;
+		const bodyLine = line - this.#tabRowCount - this.#tabSpacerRows;
 		if (tab.routeMouse) {
 			tab.routeMouse(event, bodyLine, col);
 			return;
@@ -86,10 +86,13 @@ class ProvidersSceneController implements SetupSceneController {
 	}
 
 	render(width: number, maxLines?: number): readonly string[] {
-		const tabLines = this.#tabBar.render(width);
+		const renderedTabs = this.#tabBar.render(width);
+		const tabLines = maxLines !== undefined && renderedTabs.length + 2 >= maxLines ? [] : renderedTabs;
 		this.#tabRowCount = tabLines.length;
-		const tabBudget = maxLines === undefined ? undefined : Math.max(1, maxLines - tabLines.length - 1);
-		return [...tabLines, "", ...this.#activeTab().render(width, tabBudget)];
+		this.#tabSpacerRows = tabLines.length > 0 ? 1 : 0;
+		const tabBudget =
+			maxLines === undefined ? undefined : Math.max(1, maxLines - tabLines.length - this.#tabSpacerRows);
+		return [...tabLines, ...(this.#tabSpacerRows ? [""] : []), ...this.#activeTab().render(width, tabBudget)];
 	}
 
 	dispose(): void {

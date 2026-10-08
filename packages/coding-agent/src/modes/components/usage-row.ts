@@ -106,7 +106,7 @@ export function formatCompletionEndcap(options: {
 		parts.push(`${theme.icon.time}${formatDuration(Math.round(options.elapsedMs))}`);
 	}
 	if (parts.length === 0) return undefined;
-	return theme.fg("dim", parts.join(` ${theme.sep.dot} `));
+	return theme.fg("dim", parts.join(theme.sep.dot));
 }
 
 export function createCompletionEndcapBlock(options: {

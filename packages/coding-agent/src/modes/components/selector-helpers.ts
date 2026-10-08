@@ -6,7 +6,7 @@
  * replace.
  */
 import { extractPrintableText, matchesKey, ScrollView } from "@harvest/pi-tui";
-import { theme } from "../theme/theme";
+import { getSymbolTheme, theme } from "../theme/theme";
 
 /**
  * Render `rows` through a {@link ScrollView} with the shared list theme (muted
@@ -21,6 +21,7 @@ export function renderScrollableList(
 		height: rows.length,
 		scrollbar: "auto",
 		totalRows: options.totalRows,
+		symbols: getSymbolTheme(),
 		theme: { track: t => theme.fg("muted", t), thumb: t => theme.fg("accent", t) },
 	});
 	sv.setScrollOffset(options.scrollOffset);

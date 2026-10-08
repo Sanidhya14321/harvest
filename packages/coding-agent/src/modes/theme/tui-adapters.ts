@@ -6,7 +6,6 @@ import {
 	warmHighlighter as nativeWarmHighlighter,
 } from "@harvest/pi-natives";
 import type { EditorTheme, MarkdownTheme, SelectListTheme, SettingsListTheme, SymbolTheme } from "@harvest/pi-tui";
-import chalk from "@harvest/pi-utils/chalk";
 import { LRUCache } from "@harvest/pi-utils/lru";
 import { resolveMermaidAscii } from "./mermaid-cache";
 import type { SlashCommandIconName } from "./symbols";
@@ -59,7 +58,7 @@ const highlightCache = new LRUCache<string, string>({ max: HIGHLIGHT_CACHE_MAX }
 let highlightCacheTheme: Theme | undefined;
 
 function highlightCached(code: string, validLang: string | undefined, highlightTheme: Theme): string | null {
-	if (validLang === undefined) return code;
+	if (validLang === undefined || highlightTheme.getColorMode() === "none") return code;
 	if (highlightCacheTheme !== highlightTheme) {
 		highlightCache.clear();
 		highlightCacheTheme = highlightTheme;
@@ -93,6 +92,7 @@ export function highlightCode(code: string, lang?: string, highlightTheme: Theme
 
 /** Create a stateful highlighter for progressive terminal rendering. */
 export function createHighlightStream(lang?: string, highlightTheme: Theme = theme): NativeHighlightStream | null {
+	if (highlightTheme.getColorMode() === "none") return null;
 	const validLang = lang && nativeSupportsLanguage(lang) ? lang : undefined;
 	if (!validLang) return null;
 	// Workspace loads skip the natives version sentinel, so a stale local
@@ -147,6 +147,8 @@ export function getSymbolTheme(): SymbolTheme {
 			hrChar: "-",
 			colorSwatch: "[]",
 			spinnerFrames: ["-", "\\", "|", "/"],
+			scrollbar: { track: "|", thumb: "#" },
+			composer: { rail: "|", leftCap: "|", rightCap: "|", promptGutter: "> ", bandGutter: "+- " },
 		};
 	}
 	const preset = theme.getSymbolPreset();
@@ -161,6 +163,14 @@ export function getSymbolTheme(): SymbolTheme {
 		hrChar: theme.md.hrChar,
 		colorSwatch: theme.md.colorSwatch,
 		spinnerFrames: theme.getSpinnerFrames("activity"),
+		scrollbar: { track: theme.boxRound.vertical, thumb: preset === "ascii" ? "#" : "█" },
+		composer: {
+			rail: preset === "ascii" ? theme.boxRound.vertical : "▎",
+			leftCap: preset === "ascii" ? theme.boxRound.vertical : "▐",
+			rightCap: preset === "ascii" ? theme.boxRound.vertical : "▌",
+			promptGutter: `${theme.nav.cursor} `,
+			bandGutter: `${theme.boxRound.bottomLeft}${theme.boxRound.horizontal} `,
+		},
 	};
 }
 
@@ -183,7 +193,11 @@ export function getMarkdownTheme(): MarkdownTheme {
 				// Diagram geometry is content, so keep every structural stroke on the
 				// theme's readable muted foreground instead of subtle UI chrome borders.
 				const mermaidColorMode =
-					theme.getColorMode() === "truecolor" ? ("truecolor" as const) : ("ansi256" as const);
+					theme.getColorMode() === "none"
+						? ("none" as const)
+						: theme.getColorMode() === "truecolor"
+							? ("truecolor" as const)
+							: ("ansi256" as const);
 				const mermaidTheme = {
 					fg: theme.getColorHex("text"),
 					border: theme.getColorHex("muted"),
@@ -209,8 +223,9 @@ export function getMarkdownTheme(): MarkdownTheme {
 		bold: (text: string) => theme.bold(text),
 		italic: (text: string) => theme.italic(text),
 		underline: (text: string) => theme.underline(text),
-		strikethrough: (text: string) => chalk.strikethrough(text),
+		strikethrough: (text: string) => theme.strikethrough(text),
 		symbols: getSymbolTheme(),
+		colorSwatches: theme.getColorMode() !== "none",
 		resolveMermaidAscii: mermaid
 			? (source, maxWidth) =>
 					resolveMermaidAscii(source, {
@@ -245,6 +260,7 @@ export function getSelectListTheme(): SelectListTheme {
 			symbols: getSymbolTheme(),
 			icon: (text: string) => text,
 			hovered: (text: string) => text,
+			selected: (text: string) => text,
 		};
 	}
 	return {
@@ -255,7 +271,8 @@ export function getSelectListTheme(): SelectListTheme {
 		noMatch: (text: string) => theme.fg("muted", text),
 		symbols: getSymbolTheme(),
 		icon: (text: string) => theme.fg("muted", text),
-		hovered: (text: string) => theme.bg("selectedBg", text),
+		hovered: (text: string) => theme.bgFill("raisedBg", text),
+		selected: (text: string) => theme.bgFill("selectedBg", theme.fgOnBg("text", "selectedBg", text)),
 	};
 }
 /**
@@ -286,8 +303,7 @@ export function getEditorTheme(): EditorTheme {
 	return {
 		borderColor: (text: string) => theme.fg("borderMuted", text),
 		accentColor: (text: string) => theme.fg("accent", text),
-		surfaceColor: (text: string) =>
-			theme.bgFill("userMessageBg", theme.fgOnBg("userMessageText", "userMessageBg", text)),
+		surfaceColor: (text: string) => theme.bgFill("composerBg", theme.fgOnBg("text", "composerBg", text)),
 		textColor: (text: string) => theme.fgResolved("text", text),
 		selectList: getSelectListTheme(),
 		symbols: getSymbolTheme(),
@@ -313,6 +329,8 @@ export function getSettingsListTheme(): SettingsListTheme {
 			heading: (text: string) => text,
 			section: (text: string) => text,
 			hovered: (text: string) => text,
+			selected: (text: string) => text,
+			symbols: getSymbolTheme(),
 		};
 	}
 	return {
@@ -329,6 +347,8 @@ export function getSettingsListTheme(): SettingsListTheme {
 			dimmed ? theme.fg("dim", theme.underline(text)) : theme.fg("muted", theme.bold(theme.underline(text))),
 		section: (text: string, active: boolean) =>
 			active ? theme.fg("accent", theme.bold(text)) : theme.fg("muted", text),
-		hovered: (text: string) => theme.bg("selectedBg", text),
+		hovered: (text: string) => theme.bgFill("raisedBg", text),
+		selected: (text: string) => theme.bgFill("selectedBg", theme.fgOnBg("text", "selectedBg", text)),
+		symbols: getSymbolTheme(),
 	};
 }

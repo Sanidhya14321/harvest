@@ -68,11 +68,12 @@ class GlyphSceneController implements SetupSceneController {
 		routeSelectListMouse(this.#selectList, event, line - this.#listRowStart);
 	}
 
-	render(width: number): readonly string[] {
-		const lines = [theme.fg("muted", "If a row shows boxes, tofu, or misaligned icons, pick another."), ""];
+	render(width: number, maxLines?: number): readonly string[] {
+		const lines = maxLines === undefined || maxLines >= GLYPH_ITEMS.length + 3 ? [theme.fg("muted", "If a row shows boxes, tofu, or misaligned icons, pick another."), ""] : [];
 		this.#listRowStart = lines.length;
+		this.#selectList.setMaxVisible(Math.max(1, Math.min(GLYPH_ITEMS.length, (maxLines ?? Number.POSITIVE_INFINITY) - lines.length - 1)));
 		lines.push(...this.#selectList.render(width));
-		return lines;
+		return maxLines === undefined ? lines : lines.slice(0, Math.max(1, maxLines));
 	}
 
 	async #commit(preset: SymbolPreset): Promise<void> {

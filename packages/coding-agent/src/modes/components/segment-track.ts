@@ -61,6 +61,11 @@ export function resolveSegmentPalette(count: number): ThemeColor[] {
  * frame it as they need.
  */
 export function renderSegmentTrack(segments: TrackSegment[], activeIndex: number): string {
+	if (theme.getColorMode() === "none") {
+		return segments
+			.map((segment, index) => (index === activeIndex ? `[${segment.label}]` : segment.label))
+			.join("  ");
+	}
 	// Powerline triangles point *into* the chip so the colored caps merge with
 	// the filled body: left cap points left, right cap points right.
 	const capLeft = theme.sep.powerlineRight;

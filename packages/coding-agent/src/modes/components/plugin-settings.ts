@@ -8,10 +8,13 @@
 import {
 	type Component,
 	Container,
+	type Focusable,
+	getKeybindings,
 	Input,
 	matchesKey,
 	type SelectItem,
 	SelectList,
+	type SgrMouseEvent,
 	type SettingItem,
 	SettingsList,
 	Spacer,
@@ -32,7 +35,7 @@ import {
 import type { InstalledPlugin, PluginSettingSchema } from "../../extensibility/plugins/types";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../../modes/theme/theme";
 import { shortenPath } from "../../tools/render-utils";
-import { OverlayPanel } from "./overlay-box";
+import { InteractiveDialogPanel } from "./overlay-box";
 
 /**
  * Forwards a keystroke to `input`, but cancels via `onCancel` when the user presses Escape.
@@ -47,7 +50,12 @@ export function handleInputOrEscape(
 	input: { handleInput(data: string): void },
 	onCancel: () => void,
 ): void {
-	if (data === "\x1b" || data === "\x1b\x1b" || matchesKey(data, "escape")) {
+	if (
+		getKeybindings().matches(data, "tui.select.cancel") ||
+		data === "\x1b" ||
+		data === "\x1b\x1b" ||
+		matchesKey(data, "escape")
+	) {
 		onCancel();
 		return;
 	}
@@ -94,7 +102,7 @@ async function buildPluginConfigItems(
 	for (const key in schemaSettings) {
 		const schema = schemaSettings[key];
 		const currentValue = settings[key] ?? schema.default;
-		const displayValue = schema.secret && currentValue ? "••••••••" : String(currentValue ?? "(not set)");
+		const displayValue = schema.secret && currentValue ? "********" : String(currentValue ?? "(not set)");
 
 		if (schema.type === "boolean") {
 			items.push({
@@ -166,7 +174,7 @@ function findEntryByValue(entries: ReadonlyArray<PluginListEntry>, value: string
  * enable/disable status, scope tag, and shadow indicator. Selecting an entry
  * fans out to the kind-specific detail callback.
  */
-export class PluginListComponent extends OverlayPanel {
+export class PluginListComponent extends InteractiveDialogPanel {
 	readonly #selectList: SelectList;
 
 	constructor(
@@ -179,9 +187,15 @@ export class PluginListComponent extends OverlayPanel {
 		if (entries.length === 0) {
 			this.addChild(new Text(theme.fg("muted", "No plugins installed"), 0, 0));
 			this.addChild(new Spacer(1));
-			this.addChild(new Text(theme.fg("dim", `Install npm plugins:        ${APP_NAME} plugin install <package>`), 0, 0));
 			this.addChild(
-				new Text(theme.fg("dim", `Install marketplace plugins: ${APP_NAME} plugin install <name>@<marketplace>`), 0, 0),
+				new Text(theme.fg("dim", `Install npm plugins:        ${APP_NAME} plugin install <package>`), 0, 0),
+			);
+			this.addChild(
+				new Text(
+					theme.fg("dim", `Install marketplace plugins: ${APP_NAME} plugin install <name>@<marketplace>`),
+					0,
+					0,
+				),
 			);
 			this.addChild(new Spacer(1));
 
@@ -212,7 +226,7 @@ export class PluginListComponent extends OverlayPanel {
 
 		this.addChild(this.#selectList);
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "Enter to configure · Esc to go back"), 0, 0));
+		this.addChild(new Text(theme.fg("dim", ["Enter to configure", "Esc to go back"].join(theme.sep.dot)), 0, 0));
 	}
 
 	#renderItem(entry: PluginListEntry): SelectItem {
@@ -258,6 +272,7 @@ export class PluginListComponent extends OverlayPanel {
 	}
 
 	handleInput(data: string): void {
+		if (this.handleDialogInput(data)) return;
 		this.#selectList.handleInput(data);
 	}
 }
@@ -279,7 +294,7 @@ export interface PluginDetailCallbacks {
  * - Feature toggles
  * - Config settings
  */
-export class PluginDetailComponent extends OverlayPanel {
+export class PluginDetailComponent extends InteractiveDialogPanel {
 	#settingsList!: SettingsList;
 
 	constructor(
@@ -371,10 +386,11 @@ export class PluginDetailComponent extends OverlayPanel {
 
 		this.addChild(this.#settingsList);
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "Enter to edit · Esc to go back"), 0, 0));
+		this.addChild(new Text(theme.fg("dim", ["Enter to edit", "Esc to go back"].join(theme.sep.dot)), 0, 0));
 	}
 
 	handleInput(data: string): void {
+		if (this.handleDialogInput(data)) return;
 		if (!this.#settingsList) return;
 		this.#settingsList.handleInput(data);
 	}
@@ -396,7 +412,7 @@ export interface MarketplacePluginDetailCallbacks {
  * Detail view for a marketplace plugin, including settings declared by its
  * runtime package and metadata from the installed-plugins registry.
  */
-export class MarketplacePluginDetailComponent extends OverlayPanel {
+export class MarketplacePluginDetailComponent extends InteractiveDialogPanel {
 	#settingsList!: SettingsList;
 
 	constructor(
@@ -492,10 +508,11 @@ export class MarketplacePluginDetailComponent extends OverlayPanel {
 		}
 
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "Enter to edit · Esc to go back"), 0, 0));
+		this.addChild(new Text(theme.fg("dim", ["Enter to edit", "Esc to go back"].join(theme.sep.dot)), 0, 0));
 	}
 
 	handleInput(data: string): void {
+		if (this.handleDialogInput(data)) return;
 		this.#settingsList.handleInput(data);
 	}
 }
@@ -507,7 +524,7 @@ export class MarketplacePluginDetailComponent extends OverlayPanel {
 /**
  * Submenu for enum config values.
  */
-class ConfigEnumSubmenu extends OverlayPanel {
+class ConfigEnumSubmenu extends InteractiveDialogPanel {
 	#selectList: SelectList;
 
 	constructor(
@@ -538,10 +555,11 @@ class ConfigEnumSubmenu extends OverlayPanel {
 
 		this.addChild(this.#selectList);
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "Enter to select · Esc to cancel"), 0, 0));
+		this.addChild(new Text(theme.fg("dim", ["Enter to select", "Esc to cancel"].join(theme.sep.dot)), 0, 0));
 	}
 
 	handleInput(data: string): void {
+		if (this.handleDialogInput(data)) return;
 		this.#selectList.handleInput(data);
 	}
 }
@@ -549,7 +567,7 @@ class ConfigEnumSubmenu extends OverlayPanel {
 /**
  * Submenu for string/number config values with text input.
  */
-class ConfigInputSubmenu extends OverlayPanel {
+class ConfigInputSubmenu extends InteractiveDialogPanel {
 	#input: Input;
 
 	constructor(
@@ -580,6 +598,7 @@ class ConfigInputSubmenu extends OverlayPanel {
 
 		// Input field
 		this.#input = new Input();
+		this.#input.mask = schema.secret ?? false;
 		if (!schema.secret && currentValue) {
 			this.#input.setValue(currentValue);
 		}
@@ -594,10 +613,11 @@ class ConfigInputSubmenu extends OverlayPanel {
 
 		this.addChild(this.#input);
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "Enter to save · Esc to cancel"), 0, 0));
+		this.addChild(new Text(theme.fg("dim", ["Enter to save", "Esc to cancel"].join(theme.sep.dot)), 0, 0));
 	}
 
 	handleInput(data: string): void {
+		if (this.handleDialogInput(data)) return;
 		handleInputOrEscape(data, this.#input, this.onCancel);
 	}
 }
@@ -622,7 +642,9 @@ interface InputHandler {
  * Top-level plugin settings component.
  * Manages navigation between plugin list and plugin detail views.
  */
-export class PluginSettingsComponent extends Container {
+export class PluginSettingsComponent extends Container implements Focusable {
+	focused = true;
+	#maxHeight: number | undefined;
 	#cwd: string;
 	#manager: PluginManager;
 	#viewComponent: (Component & InputHandler) | null = null;
@@ -777,5 +799,22 @@ export class PluginSettingsComponent extends Container {
 			return;
 		}
 		this.#viewComponent.handleInput(data);
+	}
+
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (next === this.#maxHeight) return;
+		this.#maxHeight = next;
+		this.#viewComponent?.setMaxHeight?.(next);
+	}
+
+	override render(width: number): readonly string[] {
+		this.#viewComponent?.setMaxHeight?.(this.#maxHeight ?? Math.max(1, process.stdout.rows || 40));
+		if (this.#viewComponent instanceof InteractiveDialogPanel) this.#viewComponent.focused = this.focused;
+		return super.render(width);
+	}
+
+	routeMouse(event: SgrMouseEvent, line: number, col: number): void {
+		if (this.#viewComponent instanceof InteractiveDialogPanel) this.#viewComponent.routeMouse(event, line, col);
 	}
 }

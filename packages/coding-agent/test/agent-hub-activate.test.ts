@@ -73,9 +73,7 @@ const ROSTER_ENTRY_PATTERN = /^(❯| ) (?:(?:(?:│ {3}| {4})*)(?:├── |└
 function renderedRosterEntry(hub: AgentHubOverlayComponent, id: string, width: number): string {
 	const cells = hub.render(width).map(raw => {
 		const line = Bun.stripANSI(raw);
-		if (!line.startsWith("│ ")) return undefined;
-		const divider = line.indexOf("│", Math.max(2, Math.floor(line.length / 3)));
-		return divider < 0 ? undefined : line.slice(2, Math.max(2, divider - 1));
+		return line.startsWith("  ") ? line.slice(2) : undefined;
 	});
 	const start = cells.findIndex(cell => {
 		const match = cell ? ROSTER_ENTRY_PATTERN.exec(cell) : null;
@@ -96,10 +94,8 @@ function renderedRosterIds(hub: AgentHubOverlayComponent, width: number): string
 	const ids: string[] = [];
 	for (const raw of hub.render(width)) {
 		const line = Bun.stripANSI(raw);
-		if (!line.startsWith("│ ")) continue;
-		const divider = line.indexOf("│", Math.max(2, Math.floor(line.length / 3)));
-		if (divider < 0) continue;
-		const cell = line.slice(2, Math.max(2, divider - 1));
+		if (!line.startsWith("  ")) continue;
+		const cell = line.slice(2);
 		const match = ROSTER_ENTRY_PATTERN.exec(cell);
 		if (match?.[3]) ids.push(match[3]);
 	}
@@ -580,7 +576,7 @@ describe("Agent hub Enter activation", () => {
 				focusResolved.resolve();
 			},
 			session: { getToolByName: () => undefined, extensionRunner: undefined },
-			sessionManager: { getCwd: () => TEST_CWD, getSessionFile: () => null },
+			sessionManager: { getCwd: () => TEST_CWD, getSessionFile: () => null, getSessionName: () => undefined },
 			hideThinkingBlock: false,
 		};
 		const controller = new SelectorController(ctx as unknown as InteractiveModeContext);
@@ -637,7 +633,7 @@ describe("Agent hub double-← gating", () => {
 			collabGuest: { agentRegistry: agents, hubRemote: undefined },
 			focusAgentSession: async () => {},
 			session: { getToolByName: () => undefined, extensionRunner: undefined },
-			sessionManager: { getCwd: () => TEST_CWD, getSessionFile: () => sessionFile },
+			sessionManager: { getCwd: () => TEST_CWD, getSessionFile: () => sessionFile, getSessionName: () => undefined },
 			hideThinkingBlock: false,
 		};
 		const controller = new SelectorController(ctx as unknown as InteractiveModeContext);

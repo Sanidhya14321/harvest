@@ -734,7 +734,7 @@ export const SETTINGS_SCHEMA = {
 	// Theme
 	"theme.dark": {
 		type: "string",
-		default: "titanium",
+		default: "harvest",
 		ui: {
 			tab: "appearance",
 			group: "Theme",
@@ -746,7 +746,7 @@ export const SETTINGS_SCHEMA = {
 
 	"theme.light": {
 		type: "string",
-		default: "light",
+		default: "harvest-light",
 		ui: {
 			tab: "appearance",
 			group: "Theme",

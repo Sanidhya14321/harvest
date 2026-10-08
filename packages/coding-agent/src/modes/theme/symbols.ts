@@ -73,6 +73,7 @@ export type SymbolKey =
 	| "sep.asciiLeft"
 	| "sep.asciiRight"
 	| "sep.dot"
+	| "sep.ellipsis"
 	| "sep.slash"
 	| "sep.pipe"
 	// Icons
@@ -426,6 +427,7 @@ const UNICODE_SYMBOLS: SymbolMap = {
 	"sep.asciiLeft": ">",
 	"sep.asciiRight": "<",
 	"sep.dot": " · ",
+	"sep.ellipsis": "…",
 	"sep.slash": " / ",
 	"sep.pipe": " │ ",
 	// Icons
@@ -753,6 +755,7 @@ const NERD_SYMBOLS: SymbolMap = {
 	"sep.asciiRight": "<",
 	// pick: · | alt: • ⋅
 	"sep.dot": " · ",
+	"sep.ellipsis": "…",
 	// pick:  | alt: / ∕ ⁄
 	"sep.slash": "\ue0bb",
 	// pick:  | alt: │ ┃ |
@@ -1134,6 +1137,7 @@ const ASCII_SYMBOLS: SymbolMap = {
 	"sep.asciiLeft": ">",
 	"sep.asciiRight": "<",
 	"sep.dot": " - ",
+	"sep.ellipsis": "...",
 	"sep.slash": " / ",
 	"sep.pipe": " | ",
 	// Icons

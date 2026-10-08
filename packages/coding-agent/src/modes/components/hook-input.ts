@@ -1,11 +1,12 @@
 /**
  * Simple text input component for hooks.
  */
-import { Input, matchesKey, Spacer, Text, type TUI } from "@harvest/pi-tui";
+import { type Focusable, Input, matchesKey, Spacer, Text, type TUI } from "@harvest/pi-tui";
 import { theme } from "../../modes/theme/theme";
 import { matchesAppInterrupt } from "../../modes/utils/keybinding-matchers";
 import { CountdownTimer } from "./countdown-timer";
-import { OverlayPanel } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { OverlayPanel, renderDialog } from "./overlay-box";
 
 export interface HookInputOptions {
 	tui?: TUI;
@@ -13,16 +14,18 @@ export interface HookInputOptions {
 	onTimeout?: () => void;
 }
 
-export class HookInputComponent extends OverlayPanel {
+export class HookInputComponent extends OverlayPanel implements Focusable {
+	focused = false;
 	#input: Input;
 	#onSubmitCallback: (value: string) => void;
 	#onCancelCallback: () => void;
 	#baseTitle: string;
 	#countdown: CountdownTimer | undefined;
+	#placeholder: string | undefined;
 
 	constructor(
 		title: string,
-		_placeholder: string | undefined,
+		placeholder: string | undefined,
 		onSubmit: (value: string) => void,
 		onCancel: () => void,
 		opts?: HookInputOptions,
@@ -32,6 +35,7 @@ export class HookInputComponent extends OverlayPanel {
 		this.#onSubmitCallback = onSubmit;
 		this.#onCancelCallback = onCancel;
 		this.#baseTitle = title;
+		this.#placeholder = placeholder;
 
 		this.addChild(new Spacer(1));
 
@@ -52,6 +56,15 @@ export class HookInputComponent extends OverlayPanel {
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("dim", "enter submit  esc cancel"), 0, 0));
 		this.addChild(new Spacer(1));
+	}
+
+	override render(width: number): readonly string[] {
+		this.#input.focused = this.focused;
+		const body = [...this.#input.render(Math.max(1, width - 4))];
+		const hint = `${editorKey("app.interrupt") || "Esc"} cancel · Enter submit`;
+		const height = this.getMaxHeight();
+		if (this.#placeholder && height >= 5) body.unshift(theme.fg("muted", this.#placeholder));
+		return renderDialog(this.title, body, width, height, hint, body.length - 1).lines;
 	}
 
 	handleInput(keyData: string): void {

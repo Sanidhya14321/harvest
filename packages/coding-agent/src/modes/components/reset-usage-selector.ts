@@ -1,8 +1,17 @@
-import { Container, matchesKey, ScrollView, Spacer, TruncatedText } from "@harvest/pi-tui";
+import {
+	Container,
+	matchesKey,
+	parseSgrMouse,
+	ScrollView,
+	type SgrMouseEvent,
+	Spacer,
+	TruncatedText,
+} from "@harvest/pi-tui";
 import { theme } from "../../modes/theme/theme";
 import { matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../../modes/utils/keybinding-matchers";
 import type { ResetUsageAccount } from "../../slash-commands/helpers/reset-usage";
-import { OverlayPanel } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { type DialogLayout, OverlayPanel, renderChoiceDialog } from "./overlay-box";
 
 const RESET_SELECTOR_MAX_VISIBLE = 10;
 
@@ -19,6 +28,7 @@ export class ResetUsageSelectorComponent extends OverlayPanel {
 	#statusMessage: string | undefined;
 	#onSelectCallback: (account: ResetUsageAccount) => void;
 	#onCancelCallback: () => void;
+	#layout: DialogLayout | undefined;
 
 	constructor(accounts: ResetUsageAccount[], onSelect: (account: ResetUsageAccount) => void, onCancel: () => void) {
 		super("Spend a saved rate-limit reset");
@@ -88,7 +98,7 @@ export class ResetUsageSelectorComponent extends OverlayPanel {
 		const pending = this.#pendingIndex !== null ? this.#accounts[this.#pendingIndex] : undefined;
 		const hint = pending
 			? theme.fg("warning", `Press Enter again to spend 1 reset for ${pending.label}, Esc to cancel`)
-			: theme.fg("muted", "↑/↓ select · ↵ spend a reset · Esc cancel");
+			: theme.fg("muted", ["Up/Down select", "Enter spend a reset", "Esc cancel"].join(theme.sep.dot));
 		this.#listContainer.addChild(new TruncatedText(hint, 0, 0));
 
 		if (this.#statusMessage) {
@@ -98,6 +108,11 @@ export class ResetUsageSelectorComponent extends OverlayPanel {
 	}
 
 	handleInput(keyData: string): void {
+		const mouse = parseSgrMouse(keyData);
+		if (mouse) {
+			this.routeMouse(mouse, mouse.row, mouse.col);
+			return;
+		}
 		if (matchesSelectCancel(keyData)) {
 			if (this.#pendingIndex !== null) {
 				this.#pendingIndex = null;
@@ -148,6 +163,55 @@ export class ResetUsageSelectorComponent extends OverlayPanel {
 				return;
 			}
 			this.#pendingIndex = this.#selectedIndex;
+			this.#statusMessage = undefined;
+			this.#updateList();
+		}
+	}
+
+	override render(width: number): readonly string[] {
+		const pending = this.#pendingIndex !== null ? this.#accounts[this.#pendingIndex] : undefined;
+		const choices = this.#accounts.map((account, index) => {
+			if (this.getMaxHeight() === 1 && index === this.#selectedIndex) {
+				if (this.#statusMessage) return theme.fg("warning", this.#statusMessage);
+				if (pending) return theme.fg("warning", `Enter again: ${account.label}`);
+			}
+			const count =
+				account.error ?? `${account.availableCount} saved reset${account.availableCount === 1 ? "" : "s"}`;
+			return `${index === this.#selectedIndex ? theme.nav.cursor : " "} ${account.label}${account.active ? " (active)" : ""}  ${theme.fg(account.error ? "error" : account.availableCount > 0 ? "success" : "dim", count)}`;
+		});
+		if (choices.length === 0) choices.push(theme.fg("muted", "No Codex accounts with saved resets"));
+		const cancel = editorKey("tui.select.cancel") || "Esc";
+		const footer = pending
+			? ["Enter again: spend 1 reset", `${cancel} cancel`].join(theme.sep.dot)
+			: (this.#statusMessage ?? [`${cancel} cancel`, "Enter spend a reset"].join(theme.sep.dot));
+		this.#layout = renderChoiceDialog(
+			this.title,
+			choices,
+			this.#selectedIndex,
+			width,
+			Math.min(this.getMaxHeight(), RESET_SELECTOR_MAX_VISIBLE + 3),
+			footer,
+		);
+		return this.#layout.lines;
+	}
+
+	routeMouse(event: SgrMouseEvent, line: number, _col: number): void {
+		const layout = this.#layout;
+		if (!layout) return;
+		const row = line - layout.bodyRowStart;
+		if (row < 0 || row >= layout.bodyRows) return;
+		if (event.wheel !== null) {
+			if (this.#accounts.length)
+				this.#selectedIndex = (this.#selectedIndex + event.wheel + this.#accounts.length) % this.#accounts.length;
+			this.#pendingIndex = null;
+			this.#statusMessage = undefined;
+			this.#updateList();
+		} else if (event.leftClick) {
+			const index = layout.bodyWindowStart + row;
+			if (!this.#accounts[index]) return;
+			this.#selectedIndex = index;
+			// A click only selects. Spending remains the explicit two-Enter action.
+			this.#pendingIndex = null;
 			this.#statusMessage = undefined;
 			this.#updateList();
 		}

@@ -31,6 +31,7 @@ import {
 	tableCells,
 } from "./ps-data";
 import { runPsTop } from "./ps-tui";
+import { initConfiguredTheme } from "../config/theme";
 
 export type PsAction = "list" | "info" | "logs" | "stop" | "kill" | "restart";
 
@@ -66,8 +67,10 @@ export async function runPsCommand(cmd: PsCommandArgs): Promise<void> {
 		if (cmd.action === "list") {
 			const interactive =
 				!cmd.flags.json && !cmd.flags.plain && process.stdout.isTTY === true && process.stdin.isTTY === true;
-			if (interactive) await runPsTop(cmd.flags);
-			else await runList(cmd);
+			if (interactive) {
+				await initConfiguredTheme();
+				await runPsTop(cmd.flags);
+			} else await runList(cmd);
 			return;
 		}
 		if (!cmd.name) {

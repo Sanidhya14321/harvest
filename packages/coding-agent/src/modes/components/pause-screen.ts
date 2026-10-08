@@ -14,10 +14,13 @@
 import { agentPauseGate } from "@harvest/pi-agent-core";
 import {
 	type Component,
+	Ellipsis,
 	matchesKey,
 	type OverlayFocusOwner,
 	type OverlayHandle,
 	type OverlayOptions,
+	replaceTabs,
+	truncateToWidth,
 	visibleWidth,
 } from "@harvest/pi-tui";
 import { formatDuration } from "../../slash-commands/helpers/format";
@@ -59,8 +62,13 @@ const BODY_LINES = [
 const RESUME_HINT = "esc · enter · space — resume";
 
 function centerLine(line: string, width: number): string {
-	const pad = Math.max(0, Math.floor((width - visibleWidth(line)) / 2));
-	return pad > 0 ? " ".repeat(pad) + line : line;
+	const clipped = truncateToWidth(
+		replaceTabs(line).replace(/[\r\n]+/g, " "),
+		width,
+		theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+	);
+	const pad = Math.max(0, Math.floor((width - visibleWidth(clipped)) / 2));
+	return pad > 0 ? " ".repeat(pad) + clipped : clipped;
 }
 
 /** Live hold clock, seconds-precise: `0:07`, `12:34`, `1:02:03`. */
@@ -78,25 +86,31 @@ function formatClock(ms: number): string {
  * Exported for tests.
  */
 export function renderPauseScreen(width: number, height: number, elapsedMs: number, sessionName?: string): string[] {
-	const compact = width < MIN_FULL_WIDTH || height < MIN_FULL_HEIGHT;
+	width = Math.max(0, Math.floor(width));
+	height = Math.max(0, Math.floor(height));
+	if (height === 0) return [];
+	if (width === 0) return Array.from({ length: height }, () => "");
+	const ascii = theme.getSymbolPreset() === "ascii";
+	const compact = width < MIN_FULL_WIDTH || height < MIN_FULL_HEIGHT + (sessionName ? 3 : 0);
 	const content: string[] = [];
 
 	if (compact) {
-		if (sessionName) {
+		if (sessionName && height >= 4) {
 			content.push(centerLine(theme.bold(sessionName), width));
-			content.push("");
+			if (height >= 6) content.push("");
 		}
-		content.push(centerLine(theme.bold(theme.fg("accent", `▌▌ ${TITLE}`)), width));
-		content.push("");
-		content.push(centerLine(theme.fg("dim", `paused for ${formatClock(elapsedMs)}`), width));
-		content.push(centerLine(theme.fg("dim", "esc to resume"), width));
+		if (height >= 2)
+			content.push(centerLine(theme.bold(theme.fg("accent", `${ascii ? "||" : "▌▌"} ${TITLE}`)), width));
+		if (height >= 6) content.push("");
+		if (height >= 3) content.push(centerLine(theme.fg("dim", `paused for ${formatClock(elapsedMs)}`), width));
+		content.push(centerLine(theme.fg("dim", width < 13 ? "esc resume" : "esc to resume"), width));
 	} else {
 		if (sessionName) {
 			content.push(centerLine(theme.bold(sessionName), width));
 			content.push("");
 			content.push("");
 		}
-		const bar = "█".repeat(BAR_WIDTH);
+		const bar = (ascii ? "#" : "█").repeat(BAR_WIDTH);
 		const glyphRow = `${bar}${" ".repeat(BAR_GAP)}${bar}`;
 		for (let i = 0; i < BAR_ROWS; i++) {
 			content.push(centerLine(theme.fg("accent", glyphRow), width));
@@ -110,7 +124,7 @@ export function renderPauseScreen(width: number, height: number, elapsedMs: numb
 		content.push("");
 		content.push(centerLine(theme.fg("dim", `paused for ${formatClock(elapsedMs)}`), width));
 		content.push("");
-		content.push(centerLine(theme.fg("dim", RESUME_HINT), width));
+		content.push(centerLine(theme.fg("dim", ascii ? "esc / enter / space - resume" : RESUME_HINT), width));
 	}
 
 	const topPad = Math.max(0, Math.floor((height - content.length) / 2));
@@ -118,7 +132,9 @@ export function renderPauseScreen(width: number, height: number, elapsedMs: numb
 	const lines: string[] = new Array(topPad).fill("");
 	lines.push(...content);
 	while (lines.length < height) lines.push("");
-	return lines.slice(0, Math.max(1, height));
+	return lines
+		.slice(0, height)
+		.map(line => theme.bgFill("panelBg", line + " ".repeat(Math.max(0, width - visibleWidth(line)))));
 }
 
 /** Fullscreen overlay component; resolves {@link run} when a resume key lands. */
@@ -127,8 +143,13 @@ export class PauseScreenComponent implements Component, OverlayFocusOwner {
 	#done = Promise.withResolvers<void>();
 	#disposed = false;
 	#startedAt = Date.now();
+	#maxHeight: number | undefined;
 
 	constructor(readonly host: PauseScreenHost) {}
+
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
 
 	/** Start the clock; resolves once the user asks to resume. */
 	run(): Promise<void> {
@@ -170,8 +191,8 @@ export class PauseScreenComponent implements Component, OverlayFocusOwner {
 	render(width: number): readonly string[] {
 		const elapsed = Date.now() - this.#startedAt;
 		return renderPauseScreen(
-			Math.max(1, width),
-			Math.max(1, this.host.ui.terminal.rows),
+			Math.max(0, width),
+			this.#maxHeight ?? Math.max(1, this.host.ui.terminal.rows),
 			elapsed,
 			this.host.sessionName,
 		);
@@ -203,7 +224,9 @@ export async function runPauseScreen(host: PauseScreenHost): Promise<void> {
 		overlay.hide();
 		const heldMs = agentPauseGate.resume();
 		if (heldMs !== undefined) {
-			host.showStatus(`Resumed after ${formatDuration(heldMs)} — agents are running again.`);
+			host.showStatus(
+				`Resumed after ${formatDuration(heldMs)} ${theme.getSymbolPreset() === "ascii" ? "-" : "—"} agents are running again.`,
+			);
 		}
 	}
 }

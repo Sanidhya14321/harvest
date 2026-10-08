@@ -4,6 +4,7 @@ import { KeybindingsManager } from "@harvest/pi-coding-agent/config/keybindings"
 import type { ExtensionAskDialogQuestion } from "@harvest/pi-coding-agent/extensibility/extensions/types";
 import { AskDialogComponent } from "@harvest/pi-coding-agent/modes/components/ask-dialog";
 import { getThemeByName, setThemeInstance } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { loadTheme } from "@harvest/pi-coding-agent/modes/theme/loader";
 import { setKeybindings } from "@harvest/pi-tui";
 
 const DOWN = "\x1b[B";
@@ -1162,10 +1163,11 @@ describe("AskDialogComponent", () => {
 			);
 		const previewLine = (component: AskDialogComponent): string =>
 			component.render(80).find(line => line.includes("CACHE-PREVIEW")) ?? "";
-		const originalTheme = darkTheme;
+		const originalTheme = await loadTheme("dark", { mode: "truecolor" });
 		if (!originalTheme) throw new Error("Failed to load dark theme");
-		const lightTheme = await getThemeByName("light");
+		const lightTheme = await loadTheme("light", { mode: "truecolor" });
 		if (!lightTheme) throw new Error("Failed to load light theme");
+		setThemeInstance(originalTheme);
 		const cachedComponent = createComponent();
 		const before = previewLine(cachedComponent);
 		expect(stripVTControlCharacters(before)).toContain("│ CACHE-PREVIEW");
@@ -1205,6 +1207,12 @@ describe("AskDialogComponent", () => {
 			const cached = render(component);
 			expect(initial).toContain("Ω");
 			expect(cached).toBe(initial);
+			const stableRows = component.render(80);
+			component.setMaxHeight(24);
+			const allocatedRows = component.render(80);
+			component.setMaxHeight(24);
+			expect(component.render(80)).toBe(allocatedRows);
+			expect(stableRows).not.toBe(allocatedRows);
 		} finally {
 			if (originalRows) Object.defineProperty(process.stdout, "rows", originalRows);
 			else Reflect.deleteProperty(process.stdout, "rows");
@@ -1487,8 +1495,8 @@ describe("AskDialogComponent", () => {
 		const lines = output.split("\n");
 		const first = lines.find(line => line.includes("This is a deliberately")) ?? "";
 		const continuation = lines.find(line => line.includes("option label") && !line.includes("❯")) ?? "";
-		expect(first).toMatch(/│ ❯/);
-		expect(continuation).toMatch(/│ {3}/);
+		expect(first).toMatch(/ {2}❯/);
+		expect(continuation).toMatch(/^ {6}/);
 	});
 
 	it("does not wrap an option label that fits the dialog content width", () => {

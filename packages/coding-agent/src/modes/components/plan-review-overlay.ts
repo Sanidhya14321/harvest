@@ -26,12 +26,13 @@ import {
 	replaceTabs,
 	routeSgrMouseInput,
 	ScrollView,
+	padding,
 	truncateToWidth,
 	visibleWidth,
 } from "@harvest/pi-tui";
 import { sanitizeText } from "@harvest/pi-utils";
 import { sanitizeStatusText } from "../shared";
-import { getMarkdownTheme, theme } from "../theme/theme";
+import { getMarkdownTheme, getSymbolTheme, theme } from "../theme/theme";
 import {
 	matchesAppExternalEditor,
 	matchesSelectCancel,
@@ -43,10 +44,12 @@ import {
 	bottomBorder,
 	divider,
 	dividerSplit,
+	dialogContentWidth,
 	fit,
 	row,
 	splitBodyWidth,
 	splitRow,
+	surfaceRow,
 	topBorder,
 	topBorderSplit,
 } from "./overlay-box";
@@ -183,6 +186,7 @@ export class PlanReviewOverlay implements Component {
 	#focus: Focus = "actions";
 	#tocCursor = 0;
 	#sidebarShown = false;
+	#maxHeight: number | undefined;
 	#pendingScrollToToc = false;
 	/** Last meaningful relative body position, retained while a frame cannot scroll. */
 	#scrollProgress = 0;
@@ -249,6 +253,10 @@ export class PlanReviewOverlay implements Component {
 
 	invalidate(): void {
 		for (const section of this.#sections) section.md.invalidate();
+	}
+
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
 	}
 
 	/** Swap the displayed plan (e.g. after an external-editor round-trip) and
@@ -902,13 +910,14 @@ export class PlanReviewOverlay implements Component {
 		if (!slider) return [];
 		const active = this.#sliderIndex;
 		const track = renderSegmentTrack(slider.segments, active);
-		const leftArrow = theme.fg(active > 0 ? "accent" : "dim", "◂");
-		const rightArrow = theme.fg(active < slider.segments.length - 1 ? "accent" : "dim", "▸");
+		const ascii = theme.getSymbolPreset() === "ascii";
+		const leftArrow = theme.fg(active > 0 ? "accent" : "dim", ascii ? "<" : "◂");
+		const rightArrow = theme.fg(active < slider.segments.length - 1 ? "accent" : "dim", ascii ? ">" : "▸");
 		const caption = slider.caption ? `${theme.fg("dim", slider.caption)}  ` : "";
 		const trackLine = `${caption}${leftArrow}  ${track}  ${rightArrow}`;
 		const detail = slider.segments[active]?.detail;
 		if (!detail) return [trackLine];
-		return [trackLine, `  ${theme.fg("dim", "↳")} ${theme.fg("muted", detail)}`];
+		return [trackLine, `  ${theme.fg("dim", ascii ? "->" : "↳")} ${theme.fg("muted", detail)}`];
 	}
 
 	#renderOptionLines(): string[] {
@@ -934,18 +943,19 @@ export class PlanReviewOverlay implements Component {
 	}
 
 	#buildHelp(): string {
-		const sep = " · ";
+		const sep = theme.sep.dot;
+		const ascii = theme.getSymbolPreset() === "ascii";
 		const parts: string[] = [];
 		switch (this.#focus) {
 			case "actions":
-				parts.push("↑↓ select", "⏎ confirm");
-				if (this.#slider) parts.push("◂▸ model");
+				parts.push(ascii ? "up/down select" : "↑↓ select", "enter confirm");
+				if (this.#slider) parts.push(ascii ? "left/right model" : "◂▸ model");
 				break;
 			case "toc":
-				parts.push("↑↓ section", "⏎ open", "a annotate", "d delete", "u undo");
+				parts.push(ascii ? "up/down section" : "↑↓ section", "enter open", "a annotate", "d delete", "u undo");
 				break;
 			case "body":
-				parts.push("↑↓ scroll", "⇧ faster", "pgup/pgdn", "g/G ends", "a annotate");
+				parts.push(ascii ? "up/down scroll" : "↑↓ scroll", "shift faster", "pgup/pgdn", "g/G ends", "a annotate");
 				break;
 		}
 		if (this.callbacks.onCopyPlan) parts.push("c copy");
@@ -1065,10 +1075,11 @@ export class PlanReviewOverlay implements Component {
 	): void {
 		const noteLines = note.split(/\r?\n/);
 		for (let i = 0; i < noteLines.length; i++) {
+			const rail = theme.getSymbolPreset() === "ascii" ? "|" : "▎";
 			const prefix =
 				i === 0
-					? `${theme.fg("warning", "▎ ")}${theme.fg("dim", "note: ")}`
-					: `${theme.fg("warning", "▎ ")}${theme.fg("dim", "      ")}`;
+					? `${theme.fg("warning", `${rail} `)}${theme.fg("dim", "note: ")}`
+					: `${theme.fg("warning", `${rail} `)}${theme.fg("dim", "      ")}`;
 			const available = Math.max(0, bodyContentWidth - visibleWidth(prefix));
 			const displayLine = truncateToWidth(
 				replaceTabs(sanitizeText(noteLines[i] ?? "")),
@@ -1122,7 +1133,7 @@ export class PlanReviewOverlay implements Component {
 		// Compact, VS Code-like rows: a single-column gutter, one space of indent
 		// per nesting level, then the title and an annotation marker.
 		const indent = " ".repeat(Math.max(0, section.level - this.#tocBaseLevel));
-		const ann = section.annotations.length > 0 ? " ✎" : "";
+		const ann = section.annotations.length > 0 ? (theme.getSymbolPreset() === "ascii" ? " *" : " ✎") : "";
 		const avail = Math.max(0, width - 1 - indent.length - visibleWidth(ann));
 		const title = truncateToWidth(section.title || "(untitled)", avail, Ellipsis.Unicode);
 		const body = indent + title + ann;
@@ -1130,7 +1141,7 @@ export class PlanReviewOverlay implements Component {
 		// accent bar `▎` on the current scrolled section, otherwise blank. The
 		// glyph keeps the cursor legible even where the selection background is
 		// subtle; the focused row also gets the full-row highlight.
-		const gutter = selected ? "›" : glow ? "▎" : " ";
+		const gutter = selected ? theme.nav.cursor : glow ? (theme.getSymbolPreset() === "ascii" ? "|" : "▎") : " ";
 		const line = gutter + body;
 		if (selected) return theme.bg("selectedBg", theme.bold(fit(line, width)));
 		if (glow) return theme.fg("accent", line);
@@ -1142,10 +1153,12 @@ export class PlanReviewOverlay implements Component {
 			const target = this.#annotationTarget;
 			const section = target ? this.#sections[target.sectionIndex] : undefined;
 			const title = sanitizeStatusText(section?.title || "Plan preamble");
+			const ascii = theme.getSymbolPreset() === "ascii";
+			const titleLabel = ascii ? `<${title}>` : `‹${title}›`;
 			const location =
 				target?.row === null
-					? `‹${title}›`
-					: `‹${title}› · ${truncateToWidth(target?.context ?? "", Math.max(1, innerWidth - 16), Ellipsis.Unicode)}`;
+					? titleLabel
+					: `${titleLabel}${theme.sep.dot}${truncateToWidth(target?.context ?? "", Math.max(1, innerWidth - 16), ascii ? Ellipsis.Ascii : Ellipsis.Unicode)}`;
 			const caption = truncateToWidth(
 				`${theme.fg("dim", "Annotate")} ${theme.fg("accent", location)}`,
 				innerWidth,
@@ -1153,31 +1166,37 @@ export class PlanReviewOverlay implements Component {
 			);
 			const hintParts = ["enter save", "esc cancel"];
 			if (this.#externalEditorLabel) hintParts.push(`${this.#externalEditorLabel} editor`);
-			return [caption, this.#input.render(innerWidth)[0] ?? "", theme.fg("dim", hintParts.join(" · "))];
+			return [caption, this.#input.render(innerWidth)[0] ?? "", theme.fg("dim", hintParts.join(theme.sep.dot))];
 		}
 		return [theme.fg("dim", this.#buildHelp())];
 	}
 
 	render(width: number): readonly string[] {
-		const termHeight = process.stdout.rows || 40;
+		this.#scrollView.setSymbols(getSymbolTheme());
+		const termHeight = this.#maxHeight ?? Math.max(1, process.stdout.rows || 40);
 		const sidebarShown = this.#sidebarVisible(width);
 		this.#sidebarShown = sidebarShown;
 		const sidebarWidth = sidebarShown ? this.#sidebarWidthFor(width) : 0;
-		const innerWidth = Math.max(1, width - 4);
+		const innerWidth = dialogContentWidth(width);
 		const bodyContentWidth = sidebarShown ? splitBodyWidth(width, sidebarWidth) : innerWidth;
 
 		const committed = this.#committed;
 		const sliderLines = committed ? [] : this.#renderSliderLines();
-		const submittingLabel = this.#committedLabel ? `${this.#committedLabel} — submitting…` : "Submitting…";
+		const submittingLabel = this.#committedLabel
+			? `${this.#committedLabel}${theme.getSymbolPreset() === "ascii" ? " -- " : " — "}submitting${theme.symbol("sep.ellipsis")}`
+			: `Submitting${theme.symbol("sep.ellipsis")}`;
 		const optionLines = committed ? [theme.bold(theme.fg("accent", submittingLabel))] : this.#renderOptionLines();
 		const promptLines = this.#promptTitle ? [theme.bold(theme.fg("accent", this.#promptTitle))] : [];
 		const footerLines = committed
-			? [theme.fg("dim", "Applying your selection — this can take a moment while context is prepared.")]
+			? [theme.fg("dim", "Applying your selection; context is being prepared.")]
 			: this.#renderFooterLines(innerWidth);
 
 		// Chrome rows: top border, two dividers, bottom border, plus the
 		// prompt/slider/option/footer rows between them.
 		const chrome = 4 + promptLines.length + sliderLines.length + optionLines.length + footerLines.length;
+		if (termHeight < chrome + MIN_BODY_ROWS) {
+			return this.#renderCompact(width, termHeight, optionLines, footerLines, committed);
+		}
 		const regionRows = Math.max(MIN_BODY_ROWS, termHeight - chrome);
 
 		const bodyLines = this.#buildBody(bodyContentWidth);
@@ -1217,11 +1236,53 @@ export class PlanReviewOverlay implements Component {
 		for (const line of sliderLines) out.push(row(line, width));
 		for (let i = 0; i < optionLines.length; i++) {
 			if (!committed) this.#optionClickRows.set(out.length, i);
-			out.push(row(optionLines[i]!, width));
+			out.push(this.#optionRow(optionLines[i]!, i, width, committed));
 		}
 		out.push(divider(width));
 		for (const line of footerLines) out.push(row(line, width));
 		out.push(bottomBorder(width));
+		return out;
+	}
+
+	#optionRow(line: string, index: number, width: number, committed: boolean): string {
+		if (committed || (index !== this.#selectedIndex && index !== this.#hoveredOption)) return row(line, width);
+		const inset = (Math.max(0, width) - dialogContentWidth(width)) / 2;
+		return surfaceRow(padding(inset) + fit(line, dialogContentWidth(width)) + padding(inset), width, "selectedBg");
+	}
+
+	#renderCompact(
+		width: number,
+		height: number,
+		options: readonly string[],
+		footer: readonly string[],
+		committed: boolean,
+	): readonly string[] {
+		this.#sidebarShown = false;
+		if (this.#focus === "toc") this.#focus = "body";
+		this.#optionClickRows.clear();
+		this.#tocClickRows.clear();
+		this.#bodyClickRows.clear();
+		this.#sidebarClickMaxCol = 0;
+		const contentWidth = dialogContentWidth(width);
+		const showTitle = height >= 4;
+		const showFooter = height >= 2;
+		const bodyRows = Math.max(0, height - 1 - Number(showTitle) - Number(showFooter));
+		this.#layoutBody(this.#buildBody(contentWidth), Math.max(1, bodyRows));
+		const out = showTitle ? [topBorder(width, OVERLAY_TITLE)] : [];
+		for (const line of this.#scrollView.render(contentWidth).slice(0, bodyRows)) {
+			this.#bodyClickRows.add(out.length);
+			out.push(row(line, width));
+		}
+		if (this.#annotating) {
+			out.push(row(this.#input.render(contentWidth)[0] ?? "", width));
+		} else {
+			const index = committed ? 0 : this.#selectedIndex;
+			if (!committed) this.#optionClickRows.set(out.length, index);
+			const slider = this.#slider?.segments[this.#sliderIndex];
+			const state = slider ? `${theme.sep.dot}${slider.label}` : "";
+			out.push(this.#optionRow((options[index] ?? "") + state, index, width, committed));
+		}
+		if (showFooter) out.push(row(footer.at(-1) ?? "", width));
 		return out;
 	}
 }

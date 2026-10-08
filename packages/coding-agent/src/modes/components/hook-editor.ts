@@ -7,7 +7,7 @@
  *   (Ctrl+Q / Ctrl+Enter) submits, bordered popup
  * - Prompt-style (ask): Enter submits, Shift+Enter inserts newline, legacy ask chrome
  */
-import { Editor, type Focusable, matchesKey, Spacer, Text, type TUI } from "@harvest/pi-tui";
+import { CURSOR_MARKER, Editor, type Focusable, matchesKey, Spacer, Text, type TUI } from "@harvest/pi-tui";
 import { BracketedPasteHandler } from "@harvest/pi-tui/bracketed-paste";
 import { getEditorTheme, theme } from "../../modes/theme/theme";
 import {
@@ -16,7 +16,8 @@ import {
 	matchesAppInterrupt,
 } from "../../modes/utils/keybinding-matchers";
 import { getEditorCommand, openInEditor } from "../../utils/external-editor";
-import { OverlayPanel } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { OverlayPanel, renderDialog } from "./overlay-box";
 
 export interface HookEditorOptions {
 	/** When true, use prompt-style keybindings with the legacy ask prompt chrome. */
@@ -41,6 +42,8 @@ export class HookEditorComponent extends OverlayPanel implements Focusable {
 	#pendingPastes: { settled: boolean; text: string | undefined }[] = [];
 	#submitQueued = false;
 	#disposed = false;
+	#configuredMaxHeight: number | undefined;
+	#detailLines: string[];
 	/** Focus state mirrored to the nested editor during rendering. */
 	focused = false;
 
@@ -62,6 +65,8 @@ export class HookEditorComponent extends OverlayPanel implements Focusable {
 		this.#onSubmitCallback = onSubmit;
 		this.#onCancelCallback = onCancel;
 		this.#promptStyle = options?.promptStyle ?? false;
+		this.#configuredMaxHeight = options?.maxHeight;
+		this.#detailLines = detailLines;
 
 		this.addChild(new Spacer(1));
 		if (detailLines.length > 0) {
@@ -71,6 +76,8 @@ export class HookEditorComponent extends OverlayPanel implements Focusable {
 
 		// Editor
 		this.#editor = new Editor(getEditorTheme());
+		this.#editor.setBorderVisible(false);
+		this.#editor.setPromptGutter("> ");
 		if (this.#promptStyle) {
 			this.#editor.setBorderVisible(false);
 			this.#editor.setPromptGutter("> ");
@@ -105,7 +112,46 @@ export class HookEditorComponent extends OverlayPanel implements Focusable {
 	/** Render the dialog after forwarding its focus state to the nested editor. */
 	override render(width: number): readonly string[] {
 		this.#editor.focused = this.focused;
-		return super.render(width);
+		const height = Math.min(this.getMaxHeight(), this.#tui.terminal?.rows ?? this.getMaxHeight());
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		const body = this.#renderBody(Math.max(1, width - 4), Math.max(1, height - chrome));
+		return renderDialog(
+			this.title,
+			body,
+			width,
+			height,
+			this.#hint(),
+			Math.max(
+				0,
+				body.findIndex(line => line.includes(CURSOR_MARKER)),
+			),
+		).lines;
+	}
+
+	#hint(): string {
+		const followUp = editorKey("app.message.followUp") || "Ctrl+Q";
+		const cancel = this.#promptStyle ? "Esc" : editorKey("app.interrupt") || "Esc";
+		const external = editorKey("app.editor.external") || "Ctrl+G";
+		return `${cancel} cancel · ${this.#promptStyle ? "Enter/" : ""}${followUp} submit · ${external} editor`;
+	}
+
+	#renderBody(width: number, height: number): string[] {
+		const detailRows =
+			height >= 5 ? this.#detailLines.flatMap(line => new Text(theme.fg("accent", line), 0, 0).render(width)) : [];
+		const visibleDetails = detailRows.slice(0, Math.max(0, height - 2));
+		this.#editor.setMaxHeight(
+			Math.max(1, Math.min(this.#configuredMaxHeight ?? height, height - visibleDetails.length)),
+		);
+		return [...visibleDetails, ...this.#editor.render(width)];
+	}
+
+	override renderContent(width: number): string[] {
+		this.#editor.focused = this.focused;
+		const height = this.getMaxHeight();
+		return [
+			...this.#renderBody(width, Math.max(1, height - Number(height >= 2))),
+			...(height >= 2 ? [theme.fg("dim", this.#hint())] : []),
+		];
 	}
 
 	handleInput(keyData: string): void {

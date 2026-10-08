@@ -10,8 +10,11 @@ import {
 	type MarkdownTheme,
 	matchesKey,
 	padding,
+	parseSgrMouse,
 	renderInlineMarkdown,
 	replaceTabs,
+	ScrollView,
+	type SgrMouseEvent,
 	Spacer,
 	Text,
 	type TUI,
@@ -19,7 +22,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@harvest/pi-tui";
-import { getMarkdownTheme, type ThemeColor, theme } from "../../modes/theme/theme";
+import { getMarkdownTheme, getSymbolTheme, getThemeEpoch, type ThemeColor, theme } from "../../modes/theme/theme";
 import {
 	matchesAppExternalEditor,
 	matchesSelectCancel,
@@ -27,7 +30,7 @@ import {
 	matchesSelectUp,
 } from "../../modes/utils/keybinding-matchers";
 import { CountdownTimer } from "./countdown-timer";
-import { OverlayPanel } from "./overlay-box";
+import { type DialogLayout, dialogContentWidth, OverlayPanel, renderDialog, row } from "./overlay-box";
 import { renderSegmentTrack } from "./segment-track";
 
 /** One segment of a {@link HookSelectorSlider} — a label and an optional
@@ -118,7 +121,7 @@ function splitLeadingSpacesForWrap(line: string, width: number): { indent: strin
  *  causes the row (and its wrapped continuations, plus trailing padding) to be
  *  painted with the theme's `selectedBg` band — the focus cue that survives
  *  themes where `accent` fg is close to the terminal foreground. */
-type SelectorRow = { text: string; highlight: boolean };
+type SelectorRow = { text: string; highlight: boolean; optionIndex?: number };
 
 /** Paint `content` with the `selectedBg` background, applied AFTER any inner
  *  ANSI styling so the band spans padding as well as content. */
@@ -183,6 +186,14 @@ export class HookSelectorComponent extends OverlayPanel {
 	#sliderIndex: number = 0;
 	#sliderComponent: Text | undefined;
 	#lastRenderWidth: number | undefined;
+	#lastThemeEpoch = -1;
+	#renderedRows: SelectorRow[] = [];
+	#titleDetails: string[];
+	#helpText: string;
+	#details = false;
+	#detailScroll = new ScrollView([], { height: 1, scrollbar: "never" });
+	#layout: DialogLayout | undefined;
+	#hitRows: (number | undefined)[] = [];
 	constructor(
 		title: string,
 		options: HookSelectorOptionInput[],
@@ -211,6 +222,8 @@ export class HookSelectorComponent extends OverlayPanel {
 		this.#onSelectCallback = onSelect;
 		this.#onCancelCallback = onCancel;
 		this.#baseTitle = this.title;
+		this.#titleDetails = title.split(/\r?\n/).slice(1);
+		this.#helpText = opts?.helpText ?? "up/down navigate  enter select  esc cancel";
 		this.#onLeftCallback = opts?.onLeft;
 		this.#onRightCallback = opts?.onRight;
 		this.#onExternalEditorCallback = opts?.onExternalEditor;
@@ -374,7 +387,11 @@ export class HookSelectorComponent extends OverlayPanel {
 		const wrapped = wrapTextWithAnsi(colored, bodyWidth);
 		if (wrapped.length <= maxRows) return wrapped.map(row => indent + row);
 		const kept = wrapped.slice(0, maxRows);
-		kept[maxRows - 1] = truncateToWidth(wrapped.slice(maxRows - 1).join(" "), bodyWidth, Ellipsis.Unicode);
+		kept[maxRows - 1] = truncateToWidth(
+			wrapped.slice(maxRows - 1).join(" "),
+			bodyWidth,
+			theme.symbol("sep.ellipsis") === "..." ? Ellipsis.Ascii : Ellipsis.Unicode,
+		);
 		return kept.map(row => indent + row);
 	}
 
@@ -529,7 +546,7 @@ export class HookSelectorComponent extends OverlayPanel {
 				renderWidth,
 				filtered.index,
 			)) {
-				rows.push({ text, highlight });
+				rows.push({ text, highlight, optionIndex: i });
 			}
 		}
 
@@ -540,6 +557,7 @@ export class HookSelectorComponent extends OverlayPanel {
 		if (startIndex > 0 || endIndex < total || this.#shouldRenderSearchStatus(renderWidth, mdTheme)) {
 			rows.push({ text: this.#renderStatusLine(total), highlight: false });
 		}
+		this.#renderedRows = rows;
 		if (this.#outlinedList) {
 			this.#outlinedList.setLines(rows);
 			return;
@@ -565,13 +583,14 @@ export class HookSelectorComponent extends OverlayPanel {
 		const active = this.#sliderIndex;
 		const track = renderSegmentTrack(segments, active);
 
-		const leftArrow = theme.fg(active > 0 ? "accent" : "dim", "◂");
-		const rightArrow = theme.fg(active < segments.length - 1 ? "accent" : "dim", "▸");
+		const ascii = theme.symbol("sep.ellipsis") === "...";
+		const leftArrow = theme.fg(active > 0 ? "accent" : "dim", ascii ? "<" : "◂");
+		const rightArrow = theme.fg(active < segments.length - 1 ? "accent" : "dim", ascii ? ">" : "▸");
 		const caption = slider.caption ? `${theme.fg("dim", slider.caption)}  ` : "";
 		const trackLine = `${caption}${leftArrow}  ${track}  ${rightArrow}`;
 		const detail = segments[active]?.detail;
 		if (!detail) return trackLine;
-		return `${trackLine}\n  ${theme.fg("dim", "↳")} ${theme.fg("muted", detail)}`;
+		return `${trackLine}\n  ${theme.fg("dim", ascii ? ">" : "↳")} ${theme.fg("muted", detail)}`;
 	}
 
 	/** Move the slider by `delta`, clamped to the segment range, refresh the
@@ -660,6 +679,20 @@ export class HookSelectorComponent extends OverlayPanel {
 			this.#onCancelCallback();
 			return;
 		}
+		if (matchesKey(keyData, "f2")) {
+			this.#details = !this.#details;
+			return;
+		}
+		const mouse = parseSgrMouse(keyData);
+		if (mouse) {
+			this.routeMouse(mouse, mouse.row, mouse.col);
+			return;
+		}
+		if (this.#details) {
+			if (matchesKey(keyData, "enter")) this.#details = false;
+			else this.#detailScroll.handleScrollKey(keyData);
+			return;
+		}
 
 		if (this.#handleQuickSelect(keyData)) {
 			return;
@@ -694,12 +727,101 @@ export class HookSelectorComponent extends OverlayPanel {
 	}
 
 	override render(width: number): readonly string[] {
-		const renderWidth = Math.max(1, width - 4);
-		if (this.#lastRenderWidth !== renderWidth) {
+		const renderWidth = dialogContentWidth(width);
+		const themeEpoch = getThemeEpoch();
+		if (this.#lastRenderWidth !== renderWidth || this.#lastThemeEpoch !== themeEpoch) {
 			this.#lastRenderWidth = renderWidth;
+			this.#lastThemeEpoch = themeEpoch;
 			this.#updateList(renderWidth);
 		}
-		return super.render(width);
+		const height = this.getMaxHeight();
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		const body: string[] = [];
+		this.#hitRows = [];
+		const addLines = (text: string, optionIndex?: number): void => {
+			for (const line of wrapTextWithAnsi(replaceTabs(text), renderWidth, { hard: true })) {
+				body.push(line);
+				this.#hitRows.push(optionIndex);
+			}
+		};
+		for (const detail of this.#titleDetails) addLines(theme.fg("accent", detail));
+		if (this.#slider) addLines(this.#renderSliderLine());
+		let activeRow = body.length;
+		if (this.#details) {
+			const mdTheme = getMarkdownTheme();
+			for (let i = 0; i < this.#filteredOptions.length; i++) {
+				const filtered = this.#filteredOptions[i]!;
+				for (const text of this.#renderOptionLines(
+					filtered.option,
+					i === this.#selectedIndex,
+					this.#isDisabled(filtered.index),
+					mdTheme,
+					"full",
+					renderWidth,
+					filtered.index,
+				))
+					addLines(text, i);
+			}
+			this.#detailScroll.setSymbols(getSymbolTheme());
+			this.#detailScroll.setLines(body);
+			this.#detailScroll.setHeight(Math.max(1, height - chrome));
+			this.#layout = renderDialog(
+				this.title,
+				this.#detailScroll.render(renderWidth),
+				width,
+				height,
+				["F2 controls", "PgUp/PgDn scroll", "Esc cancel"].join(theme.sep.dot),
+			);
+			return this.#layout.lines;
+		}
+		for (const rendered of this.#renderedRows) {
+			addLines(rendered.text, rendered.optionIndex);
+		}
+		const firstSelected = this.#hitRows.findIndex(index => index === this.#selectedIndex);
+		if (firstSelected >= 0) activeRow = firstSelected;
+		this.#layout = renderDialog(
+			this.title,
+			body,
+			width,
+			height,
+			[this.#helpText, "F2 details"].join(theme.sep.dot),
+			activeRow,
+		);
+		for (let i = 0; i < this.#layout.bodyRows; i++) {
+			const bodyIndex = this.#layout.bodyWindowStart + i;
+			if (
+				this.#hitRows[bodyIndex] === this.#selectedIndex &&
+				!this.#isDisabled(this.#filteredOptions[this.#selectedIndex]?.index ?? -1)
+			)
+				this.#layout.lines[this.#layout.bodyRowStart + i] = row(
+					body[bodyIndex] ?? "",
+					width,
+					undefined,
+					"selectedBg",
+				);
+		}
+		return this.#layout.lines;
+	}
+
+	routeMouse(event: SgrMouseEvent, line: number, _col: number): void {
+		if (this.#details) {
+			if (event.wheel !== null) this.#detailScroll.scroll(event.wheel);
+			return;
+		}
+		const layout = this.#layout;
+		if (!layout) return;
+		const local = line - layout.bodyRowStart;
+		if (local < 0 || local >= layout.bodyRows) return;
+		if (event.wheel !== null) this.#moveSelection(event.wheel);
+		else if (event.leftClick) {
+			const index = this.#hitRows[layout.bodyWindowStart + local];
+			if (index === undefined) return;
+			const option = this.#filteredOptions[index];
+			if (!option || this.#isDisabled(option.index)) return;
+			this.#selectedIndex = index;
+			this.#updateList();
+			this.#onSelectCallback(option.option.label);
+		}
 	}
 
 	override dispose(): void {

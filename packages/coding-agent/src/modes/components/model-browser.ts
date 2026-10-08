@@ -28,6 +28,7 @@ import { getKnownRoleIds, getRoleInfo, MODEL_ROLE_IDS } from "../../config/model
 import type { Settings } from "../../config/settings";
 import type { ModelPerfStats } from "../../session/agent-storage";
 import { AUTO_THINKING, type ConfiguredThinkingLevel, parseConfiguredThinkingLevel } from "../../thinking";
+import { fit } from "./overlay-box";
 import { type ThemeColor, theme } from "../theme/theme";
 import {
 	matchesSelectCancel,
@@ -469,6 +470,8 @@ export class ModelBrowser implements Component {
 	#selectedIndex = 0;
 	#hoveredIndex: number | null = null;
 	#maxVisible = 10;
+	#maxHeight: number | undefined;
+	#listRowStart = LIST_ROW_START;
 	#showProvider: boolean;
 	#currentContextTokens: number;
 	#markOverContext: boolean;
@@ -477,6 +480,7 @@ export class ModelBrowser implements Component {
 	#preserveQueryOrder = false;
 	/** First visible list row; panned by the wheel, snapped to the selection on keyboard navigation. */
 	#windowStart = 0;
+	#renderBudgetLast: number | undefined;
 	#windowCount = 0;
 	/** Whether the host pane owns arrow keys; drives cursor strength and the selected-row band. */
 	#focused = true;
@@ -538,6 +542,13 @@ export class ModelBrowser implements Component {
 		// No selection snap here: hosts call this on every render, and it must
 		// not undo wheel panning. render() re-clamps the window.
 		this.#maxVisible = Math.max(1, rows);
+	}
+
+	setMaxHeight(rows: number | undefined): void {
+		const next = rows === undefined ? undefined : Math.max(1, Math.floor(rows));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
+		this.#ensureSelectedVisible();
 	}
 
 	setShowProvider(show: boolean): void {
@@ -879,7 +890,7 @@ export class ModelBrowser implements Component {
 
 	/** List index under a frame-local row, or null when off-list or on a disabled row. */
 	#hoverIndexAt(line: number): number | null {
-		const listLine = line - LIST_ROW_START;
+		const listLine = line - this.#listRowStart;
 		if (listLine < 0 || listLine >= this.#windowCount) return null;
 		const index = this.#windowStart + listLine;
 		const item = this.#visibleItems[index];
@@ -913,12 +924,12 @@ export class ModelBrowser implements Component {
 	): string {
 		if (item.id === "separator") {
 			const dashCount = Math.max(0, width - 4);
-			const line = theme.fg("muted", "─".repeat(dashCount));
+			const line = theme.fg("muted", theme.boxRound.horizontal.repeat(dashCount));
 			return `  ${line}  `;
 		}
 		const overContext = this.isOverContext(item);
 		const prefix = selected && this.#focused ? `${theme.fg("accent", theme.nav.cursor)} ` : "  ";
-		const providerPrefix = this.#showProvider ? theme.fg("dim", `${item.provider}/`) : "";
+		const providerPrefix = this.#showProvider && width >= 40 ? theme.fg("dim", `${item.provider}/`) : "";
 		const name = item.labelColor
 			? theme.fg(item.labelColor, item.id)
 			: selected
@@ -938,28 +949,31 @@ export class ModelBrowser implements Component {
 				: "";
 		const perfCol =
 			perfWidth > 0 ? `${theme.fg("dim", padLeftVisible(this.#perfCell(item, perfMode), perfWidth))}  ` : "";
-		const meta = `${intelligenceCol}${perfCol}${theme.fg("dim", padLeftVisible(formatContext(item.model), ctxWidth))}  ${theme.fg("dim", padLeftVisible(formatCostPair(item.model), costWidth))}`;
+		const meta =
+			width >= 45
+				? `${intelligenceCol}${perfCol}${theme.fg("dim", padLeftVisible(formatContext(item.model), ctxWidth))}  ${theme.fg("dim", padLeftVisible(formatCostPair(item.model), costWidth))}`
+				: "";
 		const metaWidth =
 			ctxWidth +
 			costWidth +
 			2 +
 			(intelligenceWidth > 0 ? intelligenceWidth + 2 : 0) +
 			(perfWidth > 0 ? perfWidth + 2 : 0);
-		const available = Math.max(1, width - metaWidth - 1);
+		const available = Math.max(1, width - (meta ? metaWidth + 1 : 0));
 		left = truncateToWidth(left, available);
 		const gap = Math.max(0, available - visibleWidth(left));
 
-		let line = `${left}${" ".repeat(gap)} ${meta}`;
+		let line = fit(`${left}${" ".repeat(gap)}${meta ? ` ${meta}` : ""}`, width);
 		if (overContext) {
 			// Gray the whole row but keep the selection cursor visible: over-context
 			// models stay selectable (the host compacts before switching).
 			const plainPrefix = Bun.stripANSI(prefix);
 			line = `${prefix}${theme.fg("dim", Bun.stripANSI(line).slice(plainPrefix.length))}`;
 		}
-		// The bg band is reserved for the mouse: it marks hover, nothing else.
-		// Keyboard selection is the cursor glyph + accent name.
-		if (hovered) {
-			line = theme.bg("selectedBg", line);
+		if (selected && this.#focused) {
+			line = theme.bgFill("selectedBg", line);
+		} else if (hovered) {
+			line = theme.bgFill("raisedBg", line);
 		}
 		return line;
 	}
@@ -1021,11 +1035,23 @@ export class ModelBrowser implements Component {
 
 	render(width: number): string[] {
 		const lines: string[] = [];
-
-		const searchIcon = theme.fg("accent", theme.symbol("icon.search"));
-		const inputWidth = Math.max(4, width - visibleWidth(theme.symbol("icon.search")) - 2);
-		lines.push(` ${searchIcon} ${this.#searchInput.render(inputWidth)[0] ?? ""}`);
-		lines.push("");
+		const height = this.#maxHeight ?? Number.POSITIVE_INFINITY;
+		const showQuery = height >= 2;
+		const showGap = height >= 8;
+		const showDetails = height >= 6;
+		const chrome = Number(showQuery) + Number(showGap) + (showDetails ? DETAIL_ROWS : 0);
+		this.setMaxVisible(Math.min(this.#maxVisible, Math.max(1, height - chrome)));
+		if (this.#renderBudgetLast !== this.#maxVisible) {
+			this.#renderBudgetLast = this.#maxVisible;
+			this.#ensureSelectedVisible();
+		}
+		if (showQuery) {
+			const prefix = width >= 4 ? ` ${theme.fg("accent", theme.symbol("icon.search"))} ` : "";
+			const inputWidth = Math.max(1, width - visibleWidth(prefix));
+			lines.push(fit(`${prefix}${this.#searchInput.render(inputWidth)[0] ?? ""}`, width));
+		}
+		if (showGap) lines.push("");
+		this.#listRowStart = lines.length;
 
 		const total = this.#visibleItems.length;
 		// The window is persistent state: wheel scrolling panned it, keyboard
@@ -1089,10 +1115,12 @@ export class ModelBrowser implements Component {
 			for (let i = rows.length; i < this.#maxVisible; i++) lines.push("");
 		}
 
-		lines.push("");
-		const [detail1, detail2] = this.#detailLines(width);
-		lines.push(detail1);
-		lines.push(detail2);
+		if (showDetails) {
+			lines.push("");
+			const [detail1, detail2] = this.#detailLines(width);
+			lines.push(detail1);
+			lines.push(detail2);
+		}
 		return lines;
 	}
 

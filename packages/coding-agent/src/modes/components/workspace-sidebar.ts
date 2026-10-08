@@ -1,5 +1,5 @@
 import type { Component } from "@harvest/pi-tui";
-import { truncateToWidth, visibleWidth } from "@harvest/pi-tui";
+import { applyBackgroundToLine, padding, replaceTabs, truncateToWidth } from "@harvest/pi-tui";
 import { shortenPath } from "../../tools/render-utils";
 import { theme } from "../theme/theme";
 import { WORKSPACE_LAYOUT } from "../workspace-layout";
@@ -63,12 +63,6 @@ export interface SidebarSectionState {
 
 function sectionKey(title: string): string {
 	return title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-}
-
-function padRow(text: string, width: number): string {
-	const w = visibleWidth(text);
-	if (w >= width) return truncateToWidth(text, width);
-	return text + " ".repeat(width - w);
 }
 
 /**
@@ -237,10 +231,20 @@ export class WorkspaceSidebar implements Component {
 		const state = this.#getState();
 		const maxOffset = Math.max(0, this.#rowCount() - this.#lastViewportHeight);
 		state.scrollOffset = Math.max(0, Math.min(state.scrollOffset, maxOffset));
-		if (state.focusIndex < state.scrollOffset) state.scrollOffset = state.focusIndex;
-		else if (state.focusIndex >= state.scrollOffset + this.#lastViewportHeight) {
-			state.scrollOffset = state.focusIndex - this.#lastViewportHeight + 1;
+		const sections = this.#buildSections();
+		let focusRow = 0;
+		for (let index = 0; index < Math.min(state.focusIndex, sections.length); index++) {
+			const section = sections[index]!;
+			focusRow++;
+			if (!this.isCollapsed(section.title)) {
+				focusRow += section.rows.length + (index < sections.length - 1 ? 1 : 0);
+			}
 		}
+		if (focusRow < state.scrollOffset) state.scrollOffset = focusRow;
+		else if (focusRow >= state.scrollOffset + this.#lastViewportHeight) {
+			state.scrollOffset = focusRow - this.#lastViewportHeight + 1;
+		}
+		state.scrollOffset = Math.min(state.scrollOffset, maxOffset);
 	}
 
 	sectionTitles(): string[] {
@@ -264,24 +268,26 @@ export class WorkspaceSidebar implements Component {
 		if (snap.mcpServers.length > 0) {
 			sections.push({
 				title: "MCP",
-				rows: snap.mcpServers.map(s => (s.connected ? `● ${s.name}` : `○ ${s.name}`)),
+				rows: snap.mcpServers.map(s => `${s.connected ? theme.status.enabled : theme.status.disabled} ${s.name}`),
 			});
 		}
 		if (snap.lspServers.length > 0) {
-			sections.push({ title: "LSP", rows: snap.lspServers.map(s => `${s.name} · ${s.status}`) });
+			sections.push({ title: "LSP", rows: snap.lspServers.map(s => `${s.name}${theme.sep.dot}${s.status}`) });
 		}
 		if (snap.todos.length > 0) {
 			sections.push({
 				title: "Todo",
-				rows: snap.todos.slice(0, 12).map(t => `${t.done ? "✓" : "○"} ${truncateToWidth(t.label, 36)}`),
+				rows: snap.todos
+					.slice(0, 12)
+					.map(t => `${t.done ? theme.status.success : theme.status.pending} ${t.label}`),
 			});
 		}
 		if (snap.agents.length > 0) {
-			sections.push({ title: "Agents", rows: snap.agents.map(a => `${a.label} · ${a.state}`) });
+			sections.push({ title: "Agents", rows: snap.agents.map(a => `${a.label}${theme.sep.dot}${a.state}`) });
 		}
 		if (snap.changesState === "ready" && snap.changes.length > 0) {
 			const rows = snap.changes.slice(0, 20).map(c => {
-				const mark = c.untracked ? "?" : c.staged ? "●" : "○";
+				const mark = c.untracked ? "?" : c.staged ? theme.status.enabled : theme.status.pending;
 				return `${mark} ${truncateToWidth(shortenPath(c.path), 34)}`;
 			});
 			if (snap.changesTruncated) rows.push(theme.fg("muted", `+ more changes`));
@@ -289,7 +295,10 @@ export class WorkspaceSidebar implements Component {
 		} else if (snap.changesState === "ready") {
 			sections.push({ title: "Workspace Changes", rows: [theme.fg("muted", "clean")] });
 		} else if (snap.changesState === "loading") {
-			sections.push({ title: "Workspace Changes", rows: [theme.fg("muted", "loading…")] });
+			sections.push({
+				title: "Workspace Changes",
+				rows: [theme.fg("muted", `loading${theme.symbol("sep.ellipsis")}`)],
+			});
 		} else if (snap.changesState === "non-repository") {
 			sections.push({ title: "Workspace Changes", rows: [theme.fg("muted", "not a repository")] });
 		} else if (snap.changesState === "error") {
@@ -305,27 +314,35 @@ export class WorkspaceSidebar implements Component {
 	}
 
 	render(width: number, viewportHeight?: number): readonly string[] {
-		const inner = Math.max(1, width - WORKSPACE_LAYOUT.sidebarInnerPaddingX * 2);
-		const pad = " ".repeat(WORKSPACE_LAYOUT.sidebarInnerPaddingX);
+		const safeWidth = Math.max(1, Math.floor(width));
+		const inset = Math.min(WORKSPACE_LAYOUT.sidebarInnerPaddingX, Math.floor((safeWidth - 1) / 2));
+		const inner = Math.max(1, safeWidth - inset * 2);
+		const pad = padding(inset);
 		const rows: string[] = [];
 		const sections = this.#buildSections();
+		const state = this.#getState();
+		const paintRow = (text: string, selected = false): string => {
+			const background = selected ? "selectedBg" : "panelBg";
+			return applyBackgroundToLine(truncateToWidth(pad + replaceTabs(text), safeWidth), safeWidth, line =>
+				theme.bgFill(background, line),
+			);
+		};
 		sections.forEach((section, index) => {
 			const collapsed = this.isCollapsed(section.title);
 			const marker =
 				index === 0 ? "" : collapsed ? ` ${theme.symbol("nav.expand")}` : ` ${theme.symbol("nav.collapse")}`;
 			const titleRow =
 				index === 0
-					? theme.bold(theme.fg("text", truncateToWidth(section.title, inner)))
-					: theme.fg("muted", truncateToWidth(section.title + marker, inner));
-			rows.push(pad + padRow(titleRow, inner));
+					? theme.bold(theme.fgOnBg("text", "panelBg", truncateToWidth(replaceTabs(section.title), inner)))
+					: theme.fg("muted", truncateToWidth(replaceTabs(section.title + marker), inner));
+			rows.push(paintRow(titleRow, state.focused && index === state.focusIndex));
 			if (collapsed) return;
-			for (const r of section.rows) rows.push(pad + padRow(truncateToWidth(r, inner), inner));
-			if (index < sections.length - 1) rows.push(pad + padRow("", inner));
+			for (const r of section.rows) rows.push(paintRow(truncateToWidth(replaceTabs(r), inner)));
+			if (index < sections.length - 1) rows.push(paintRow(""));
 		});
 		if (this.#snapshot.version) {
-			rows.push(pad + padRow(theme.fg("dim", truncateToWidth(`harvest ${this.#snapshot.version}`, inner)), inner));
+			rows.push(paintRow(theme.fg("dim", truncateToWidth(`harvest ${this.#snapshot.version}`, inner))));
 		}
-		const state = this.#getState();
 		if (viewportHeight !== undefined) {
 			const height = Math.max(0, Math.floor(viewportHeight));
 			this.#lastViewportHeight = height;
@@ -334,7 +351,9 @@ export class WorkspaceSidebar implements Component {
 			const maxOffset = Math.max(0, rows.length - height);
 			state.scrollOffset = Math.max(0, Math.min(state.scrollOffset, maxOffset));
 			state.focusIndex = Math.max(0, Math.min(state.focusIndex, Math.max(0, sections.length - 1)));
-			return rows.slice(state.scrollOffset, state.scrollOffset + height);
+			const visible = rows.slice(state.scrollOffset, state.scrollOffset + height);
+			while (visible.length < height) visible.push(paintRow(""));
+			return visible;
 		}
 		const offset = Math.min(state.scrollOffset, Math.max(0, rows.length - 1));
 		return rows.slice(offset);

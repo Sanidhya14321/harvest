@@ -14,7 +14,8 @@ import { settings } from "../../config/settings";
 import { theme } from "../../modes/theme/theme";
 import { matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../../modes/utils/keybinding-matchers";
 import type { AuthStorage, CredentialOriginKind } from "../../session/auth-storage";
-import { OverlayPanel } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { fit, OverlayPanel, renderDialog } from "./overlay-box";
 
 const OAUTH_SELECTOR_MAX_VISIBLE = 10;
 
@@ -62,6 +63,8 @@ export class OAuthSelectorComponent extends OverlayPanel {
 	#visibleCount = 0;
 	/** Visible list window, shrunk by {@link setMaxHeight} on short screens. */
 	#maxVisible = OAUTH_SELECTOR_MAX_VISIBLE;
+	#rowWidth = 76;
+	#listRowOffset = LIST_ROW_OFFSET;
 	#mode: "login" | "logout";
 	#authStorage: AuthStorage;
 	#onSelectCallback: (providerId: string) => void;
@@ -112,7 +115,9 @@ export class OAuthSelectorComponent extends OverlayPanel {
 	 * spacers, title, search status — but sacrifices the trailing spacer/border
 	 * (clipped by the host) before dropping below three visible rows.
 	 */
-	setMaxHeight(lines: number): void {
+	override setMaxHeight(lines: number): void {
+		if (this.getMaxHeight() === Math.max(1, Math.floor(lines))) return;
+		super.setMaxHeight(lines);
 		// Above the rows: LIST_ROW_OFFSET; below: search status + border.
 		const strict = lines - LIST_ROW_OFFSET - 2;
 		// Keeps only the rows + search status inside `lines`.
@@ -122,6 +127,34 @@ export class OAuthSelectorComponent extends OverlayPanel {
 		this.#maxVisible = rows;
 		this.#updateList();
 	}
+	override render(width: number): readonly string[] {
+		const height = this.getMaxHeight();
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		const bodyRows = Math.max(1, height - chrome);
+		const showSearch = bodyRows >= 2 && (this.#allProviders.length > 1 || this.#searchQuery.length > 0);
+		const showStatus = this.#statusMessage !== undefined && bodyRows >= 3;
+		this.#maxVisible = Math.max(
+			1,
+			Math.min(OAUTH_SELECTOR_MAX_VISIBLE, bodyRows - Number(showSearch) - Number(showStatus)),
+		);
+		this.#rowWidth = Math.max(1, width - 4);
+		this.#updateList();
+		const list = this.#listContainer.children[0]?.render(this.#rowWidth) ?? [];
+		const body = [...list];
+		if (showSearch)
+			body.unshift(theme.fg("muted", `${theme.symbol("icon.search")} ${this.#searchQuery || "Type to search"}`));
+		if (showStatus) body.unshift(theme.fg("warning", this.#statusMessage ?? ""));
+		const layout = renderDialog(
+			this.title,
+			body,
+			width,
+			height,
+			`${editorKey("tui.select.cancel") || "Esc"} cancel · Enter ${this.#mode === "login" ? "connect" : "logout"}`,
+		);
+		this.#listRowOffset = layout.bodyRowStart + Number(showSearch) + Number(showStatus);
+		return layout.lines;
+	}
+
 	#hasSelectableAuth(providerId: string): boolean {
 		if (providerId === "custom") {
 			return this.#authStorage.has(providerId) || this.#authStorage.hasAuth(providerId);
@@ -334,8 +367,11 @@ export class OAuthSelectorComponent extends OverlayPanel {
 				const text = isAvailable ? `  ${provider.name}` : theme.fg("dim", `  ${provider.name}`);
 				line = text + statusIndicator;
 			}
-			if (!isSelected && i === this.#hoveredIndex) {
-				line = theme.bg("selectedBg", line);
+			line = fit(line, Math.max(1, this.#rowWidth - Number(total > maxVisible)));
+			if (isSelected) {
+				line = theme.bgFill("selectedBg", line);
+			} else if (i === this.#hoveredIndex) {
+				line = theme.bgFill("raisedBg", line);
 			}
 			rows.push(line);
 		}
@@ -456,7 +492,7 @@ export class OAuthSelectorComponent extends OverlayPanel {
 			this.handleWheel(event.wheel);
 			return;
 		}
-		const localRow = line - LIST_ROW_OFFSET;
+		const localRow = line - this.#listRowOffset;
 		const index = localRow >= 0 && localRow < this.#visibleCount ? this.#scrollStart + localRow : undefined;
 		const target = index !== undefined && index < this.#filteredProviders.length ? index : null;
 		if (event.motion) {

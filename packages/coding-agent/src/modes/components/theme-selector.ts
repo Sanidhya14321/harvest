@@ -57,6 +57,12 @@ export class ThemeSelectorComponent extends OverlayPanel {
 	}
 
 	routeMouse(event: SgrMouseEvent, line: number, col: number): void {
-		routeSelectListMouseWithTopBorder(this.#selectList, event, line, col);
+		routeSelectListMouseWithTopBorder(
+			this.#selectList,
+			event,
+			line,
+			col,
+			this.contentRowStart - this.contentWindowStart,
+		);
 	}
 }

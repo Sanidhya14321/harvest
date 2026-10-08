@@ -7,7 +7,7 @@ import { parseArgs } from "../cli/args";
 import { setupHelp as commandHelp } from "../cli/command-help";
 import { runSetupCommand, type SetupCommandArgs, type SetupComponent } from "../cli/setup-cli";
 import { runRootCommand } from "../main";
-import { initTheme } from "../modes/theme/theme";
+import { initConfiguredTheme } from "../config/theme";
 
 const COMPONENTS: SetupComponent[] = ["python", "speech"];
 
@@ -64,7 +64,7 @@ export default class Setup extends Command {
 				check: flags.check,
 			},
 		};
-		await initTheme();
+		await initConfiguredTheme();
 		await runSetupCommand(cmd);
 	}
 }

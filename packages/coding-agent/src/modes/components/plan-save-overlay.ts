@@ -1,6 +1,6 @@
 import { type Component, CURSOR_MARKER, type Focusable, Input, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
 import { theme } from "../theme/theme";
-import { bottomBorder, row, topBorder } from "./overlay-box";
+import { dialogContentWidth, renderDialog } from "./overlay-box";
 
 /** A confirmed destination chosen from {@link PlanSaveOverlay}. */
 export interface PlanSaveOverlayResult {
@@ -13,6 +13,7 @@ export class PlanSaveOverlay implements Component, Focusable {
 	#suggestedPath: string;
 	#done: (result: PlanSaveOverlayResult | undefined) => void;
 	#focused = false;
+	#maxHeight = 4;
 
 	constructor(suggestedPath: string, done: (result: PlanSaveOverlayResult | undefined) => void) {
 		this.#suggestedPath = suggestedPath;
@@ -48,18 +49,24 @@ export class PlanSaveOverlay implements Component, Focusable {
 		this.#input.invalidate();
 	}
 
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
+
 	render(width: number): readonly string[] {
-		const innerWidth = Math.max(0, width - 4);
+		const innerWidth = dialogContentWidth(width);
 		this.#input.focused = this.#focused;
-		return [
-			topBorder(width, "Save and quit"),
-			row(this.#renderInput(innerWidth), width),
-			row(theme.fg("dim", "Enter save and quit · Esc cancel"), width),
-			bottomBorder(width),
-		];
+		return renderDialog(
+			"Save and quit",
+			[this.#renderInput(innerWidth)],
+			width,
+			Math.min(4, this.#maxHeight),
+			`Enter save and quit${theme.sep.dot}Esc cancel`,
+		).lines;
 	}
 
 	#renderInput(width: number): string {
+		this.#input.prompt = width >= 8 ? theme.fg("dim", "Path: ") : "";
 		if (this.#input.getValue().length > 0) return this.#input.render(width)[0] ?? "";
 		const prompt = this.#input.prompt;
 		const available = width - visibleWidth(prompt);

@@ -37,10 +37,13 @@ import {
 	matchesAppToolsExpand,
 	matchesSelectPageDown,
 	matchesSelectPageUp,
+	matchesSelectDown,
+	matchesSelectUp,
 } from "../../../modes/utils/keybinding-matchers";
 import { expandKeyHint } from "../../../tools/render-utils";
 import type { EventBus } from "../../../utils/event-bus";
-import { bottomBorder, divider, row, topBorder } from "../overlay-box";
+import { renderDialog } from "../overlay-box";
+import { editorKey } from "../keybinding-hints";
 import { ExtensionList } from "./extension-list";
 import { InspectorPanel, type ToolRuntimeSource } from "./inspector-panel";
 import { snapshotToolRuntimeSource } from "./live-tool-session";
@@ -102,6 +105,9 @@ export class ExtensionDashboard implements Component {
 	#tabRowCount = 0;
 	#bodyRowStart = 0;
 	#bodyRowCount = 0;
+	#maxHeight: number | undefined;
+	#narrow = false;
+	#showInspector = false;
 
 	onClose?: () => void;
 	onRequestRender?: () => void;
@@ -194,34 +200,44 @@ export class ExtensionDashboard implements Component {
 	 * the bottom border. Records row geometry for mouse hit-testing.
 	 */
 	render(width: number): readonly string[] {
-		const height = Math.max(14, this.#terminalRows());
+		const height = Math.max(1, this.#maxHeight ?? this.#terminalRows());
 		const innerWidth = Math.max(1, width - 4);
 
-		const tabLines = this.#tabBar.render(innerWidth);
+		this.#narrow = width < 76 || height < 8;
+		const tabLines = this.#narrow ? [] : this.#tabBar.render(innerWidth);
 		// Fixed chrome: top border + tab rows + divider + divider + footer + bottom border.
-		const fixedRows = 1 + tabLines.length + 1 + 1 + 1 + 1;
-		const contentRows = Math.max(5, height - fixedRows);
+		const fixedRows = Number(height >= 3) + Number(height >= 2) + Number(height >= 6) + tabLines.length;
+		const contentRows = Math.max(1, height - fixedRows);
 
-		this.#mainList.setMaxVisible(Math.max(3, contentRows - 2));
+		this.#mainList.setMaxVisible(contentRows);
+		this.#mainList.setMaxHeight(contentRows);
 		this.#body.setMaxHeight(contentRows);
+		this.#body.setMode(this.#narrow ? (this.#showInspector ? "inspector" : "list") : "split");
 		const toolFrame = snapshotToolRuntimeSource(this.toolSource);
 		this.#mainList.setToolSource(toolFrame);
 		this.#inspector.setToolSource(toolFrame);
 		const bodyLines = this.#body.render(innerWidth);
 
-		const out: string[] = [];
-		out.push(topBorder(width, "Extension Control Center"));
-		this.#tabRowStart = out.length;
+		const provider = this.#state.tabs[this.#state.activeTabIndex]?.label ?? "All";
+		const footer = `${editorKey("app.interrupt") || "Esc"} close · ${this.#narrow ? `F2 ${this.#showInspector ? "list" : "details"} · Tab provider · ` : ""}${extFooter()}`;
+		const layout = renderDialog(
+			`Extension Control Center${this.#narrow ? ` · ${provider}` : ""}`,
+			[...tabLines, ...bodyLines],
+			width,
+			height,
+			footer,
+		);
+		this.#tabRowStart = layout.bodyRowStart;
 		this.#tabRowCount = tabLines.length;
-		for (const line of tabLines) out.push(row(line, width));
-		out.push(divider(width));
-		this.#bodyRowStart = out.length;
+		this.#bodyRowStart = layout.bodyRowStart + tabLines.length;
 		this.#bodyRowCount = contentRows;
-		for (let i = 0; i < contentRows; i++) out.push(row(bodyLines[i] ?? "", width));
-		out.push(divider(width));
-		out.push(row(theme.fg("dim", extFooter()), width));
-		out.push(bottomBorder(width));
-		return out;
+		return layout.lines;
+	}
+
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
 	}
 
 	invalidate(): void {
@@ -246,8 +262,8 @@ export class ExtensionDashboard implements Component {
 		const bodyLine = event.row - this.#bodyRowStart;
 		const overBody = bodyLine >= 0 && bodyLine < this.#bodyRowCount;
 		const leftWidth = this.#body.leftWidth;
-		const overList = overBody && innerCol < leftWidth;
-		const overInspector = overBody && innerCol >= leftWidth + 3;
+		const overList = overBody && !this.#body.inspectorOnly && innerCol < leftWidth;
+		const overInspector = overBody && (this.#body.inspectorOnly || innerCol >= leftWidth + 3);
 
 		if (event.wheel !== null) {
 			if (overList) {
@@ -525,6 +541,11 @@ export class ExtensionDashboard implements Component {
 			return;
 		}
 
+		if (this.#narrow && matchesKey(data, "f2")) {
+			this.#showInspector = !this.#showInspector;
+			this.onRequestRender?.();
+			return;
+		}
 		if (matchesAppToolsExpand(data)) {
 			this.#inspector.toggleExpanded();
 			this.onRequestRender?.();
@@ -538,6 +559,14 @@ export class ExtensionDashboard implements Component {
 
 		// Tab/Shift+Tab or ←/→: switch provider tabs (fires onTabChange).
 		if (this.#tabBar.handleInput(data)) {
+			return;
+		}
+
+		if (this.#body.inspectorOnly) {
+			if (matchesSelectUp(data) || matchesSelectDown(data)) {
+				this.#body.scrollInspector(matchesSelectUp(data) ? -1 : 1);
+				this.onRequestRender?.();
+			}
 			return;
 		}
 
@@ -602,6 +631,7 @@ class TwoColumnBody implements Component {
 	#rightScroll = 0;
 	#rightTotal = 0;
 	#leftWidth = 0;
+	#mode: "split" | "list" | "inspector" = "split";
 
 	constructor(
 		private readonly leftPane: ExtensionList,
@@ -612,7 +642,17 @@ class TwoColumnBody implements Component {
 	}
 
 	setMaxHeight(maxHeight: number): void {
-		this.#maxHeight = maxHeight;
+		const next = Math.max(1, Math.floor(maxHeight));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
+	}
+
+	setMode(mode: "split" | "list" | "inspector"): void {
+		this.#mode = mode;
+	}
+
+	get inspectorOnly(): boolean {
+		return this.#mode === "inspector";
 	}
 
 	/** Content width of the left (list) column from the last render. */
@@ -640,6 +680,23 @@ class TwoColumnBody implements Component {
 	}
 
 	render(width: number): readonly string[] {
+		if (this.#mode === "list") {
+			this.#leftWidth = width;
+			return this.leftPane.render(width);
+		}
+		if (this.#mode === "inspector") {
+			this.#leftWidth = 0;
+			this.rightPane.setHeight(this.#maxHeight);
+			const lines = this.rightPane.render(width);
+			this.#rightTotal = lines.length;
+			const view = new ScrollView(lines, {
+				height: this.#maxHeight,
+				scrollbar: "auto",
+				theme: { track: text => theme.fg("muted", text), thumb: text => theme.fg("accent", text) },
+			});
+			view.setScrollOffset(this.#rightScroll);
+			return view.render(width);
+		}
 		const leftWidth = Math.floor(width * 0.5);
 		this.#leftWidth = leftWidth;
 		const rightWidth = Math.max(0, width - leftWidth - 3);

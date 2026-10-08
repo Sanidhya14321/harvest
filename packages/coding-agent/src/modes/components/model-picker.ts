@@ -9,7 +9,7 @@ import { addKeyAliases, type Component, canonicalKeyId, type KeyId, parseKey, ty
 import type { ModelRegistry } from "../../config/model-registry";
 import type { Settings } from "../../config/settings";
 import type { ResolvedRoleModel } from "../../session/agent-session";
-import { type ThemeColor, theme } from "../theme/theme";
+import { theme } from "../theme/theme";
 import {
 	buildBrowserItems,
 	ModelBrowser,
@@ -18,7 +18,8 @@ import {
 	sortModelItems,
 } from "./model-browser";
 import type { ScopedModelItem } from "./model-hub";
-import { bottomBorder, row, topBorder } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
+import { renderDialog } from "./overlay-box";
 import { resolveSegmentPalette } from "./segment-track";
 
 export interface ModelPickerCallbacks {
@@ -58,21 +59,12 @@ export interface ModelPickerOptions {
 	taskSelector?: string;
 }
 
-/** Fixed chrome rows: top border, status row, footer, bottom border. */
-const CHROME_ROWS = 4;
-/** Rows the browser renders around its list window (search + blank, blank + two detail rows). */
-const BROWSER_FRAME_ROWS = 5;
-/** Minimum rows for the browser list window on short terminals. */
-const MIN_VISIBLE = 5;
 /** Fraction of the terminal height the floating overlay occupies. */
 const HEIGHT_FRACTION = 0.4;
 
 const STATUS_HINT = "Session-only switch — role models stay unchanged";
 const QUICK_ROLE_STATUS_HINT = "Quick role switch — applies its model and thinking for this session";
 const TASK_STATUS_HINT = "Task subagent switch — spawned task agents use this model (session-only)";
-const FOOTER_HINT = "↑/↓ models · Enter use for this session · type to search · @ quick roles · Esc close";
-const QUICK_ROLE_FOOTER_HINT = "↑/↓ roles · Enter apply role model · type to search · Esc close";
-const TASK_FOOTER_HINT = "↑/↓ models · Enter use for Task subagents · type to search · Esc close";
 
 /**
  * The alt+p picker component. Hosted as a non-fullscreen bottom-anchored
@@ -80,6 +72,7 @@ const TASK_FOOTER_HINT = "↑/↓ models · Enter use for Task subagents · type
  * since mouse tracking is reserved for fullscreen overlays.
  */
 export class ModelPickerComponent implements Component {
+	#maxHeight: number | undefined;
 	#tui: TUI;
 	#settings: Settings;
 	#registry: ModelRegistry;
@@ -261,31 +254,33 @@ export class ModelPickerComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		const termRows = Math.max(16, this.#tui.terminal?.rows || process.stdout.rows || 40);
-		const listBudget = Math.floor(termRows * HEIGHT_FRACTION) - CHROME_ROWS - BROWSER_FRAME_ROWS;
-		this.#browser.setMaxVisible(Math.max(MIN_VISIBLE, listBudget));
-
+		const termRows = Math.max(1, this.#tui.terminal?.rows || process.stdout.rows || 40);
+		const height = Math.min(this.#maxHeight ?? termRows, Math.max(12, Math.floor(termRows * HEIGHT_FRACTION)));
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		const showStatus = height >= 8;
+		const browserRows = Math.max(1, height - chrome - Number(showStatus));
+		this.#browser.setMaxVisible(browserRows);
+		this.#browser.setMaxHeight(browserRows);
 		const inner = Math.max(1, width - 4);
 		const status = this.#configError
 			? theme.fg("error", ` ${this.#configError}`)
 			: this.#taskMode
-				? theme.fg("error", ` ${TASK_STATUS_HINT}`)
+				? theme.fg("muted", ` ${TASK_STATUS_HINT}`)
 				: theme.fg("muted", ` ${this.#roleMode ? QUICK_ROLE_STATUS_HINT : STATUS_HINT}`);
 
-		const borderColor: ThemeColor | undefined = this.#taskMode ? "error" : undefined;
-		let footer = this.#taskMode ? TASK_FOOTER_HINT : this.#roleMode ? QUICK_ROLE_FOOTER_HINT : FOOTER_HINT;
+		let footer = `${editorKey("tui.select.cancel") || "Esc"} close · Enter ${this.#taskMode ? "task model" : this.#roleMode ? "apply role" : "use model"} · Type search${this.#roleMode ? "" : " · @ roles"}`;
 		if (this.#taskMatchKeys.size > 0 && !this.#roleMode) {
 			footer += ` · ${this.#taskModeKeyLabel} ${this.#taskMode ? "session model" : "task model"}`;
 		}
 
-		const out: string[] = [];
-		out.push(topBorder(width, this.#taskMode ? "Switch Task Model" : "Switch Model", borderColor));
-		out.push(row(status, width, borderColor));
-		for (const line of this.#browser.render(inner)) {
-			out.push(row(line, width, borderColor));
-		}
-		out.push(row(theme.fg("dim", footer), width, borderColor));
-		out.push(bottomBorder(width, borderColor));
-		return out;
+		const body = this.#browser.render(inner);
+		if (showStatus) body.unshift(status);
+		return renderDialog(this.#taskMode ? "Switch Task Model" : "Switch Model", body, width, height, footer).lines;
+	}
+
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
 	}
 }

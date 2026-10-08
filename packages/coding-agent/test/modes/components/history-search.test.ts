@@ -1,10 +1,18 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import { stripVTControlCharacters } from "node:util";
+import { visibleWidth } from "@harvest/pi-tui";
 import { HistorySearchComponent } from "@harvest/pi-coding-agent/modes/components/history-search";
-import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { HistoryEntry, HistoryStorage } from "@harvest/pi-coding-agent/session/history-storage";
 
-beforeAll(async () => {
-	await initTheme();
+let previousTheme: Theme;
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "truecolor" }));
+});
+afterEach(() => {
+	setThemeInstance(previousTheme);
 });
 
 const NOW_SECONDS = Math.floor(Date.now() / 1000);
@@ -40,6 +48,43 @@ function type(component: HistorySearchComponent, text: string): void {
 }
 
 describe("HistorySearchComponent", () => {
+	it("retains the navigated selection after shrinking and selects the complete prompt", () => {
+		const entries = Array.from({ length: 20 }, (_, id) => makeEntry(id, `item ${id} full saved prompt`));
+		const select = vi.fn();
+		const component = new HistorySearchComponent(fakeStorage(entries), select, () => {});
+		component.render(80);
+		for (let i = 0; i < 12; i++) component.handleInput("\x1b[B");
+		component.setMaxHeight(4);
+		const small = component.render(30);
+		expect(small.length).toBeLessThanOrEqual(4);
+		expect(stripVTControlCharacters(small.join("\n"))).toContain("item 12");
+		component.setMaxHeight(1);
+		expect(stripVTControlCharacters(component.render(30).join("\n"))).toContain("item 12");
+		component.handleInput("\r");
+		expect(select).toHaveBeenCalledWith(entries[12]!.prompt);
+	});
+
+	it("keeps the query editable at one row and restores filtered results after expanding", () => {
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const selected = vi.fn();
+		const component = new HistorySearchComponent(
+			fakeStorage([makeEntry(1, "wanted complete prompt"), makeEntry(2, "other")]),
+			selected,
+			() => {},
+		);
+		component.setMaxHeight(1);
+		type(component, "wanted");
+		const tiny = component.render(3);
+		expect(tiny).toHaveLength(1);
+		expect(visibleWidth(tiny[0]!)).toBe(3);
+		component.setMaxHeight(8);
+		const expanded = stripVTControlCharacters(component.render(40).join("\n"));
+		expect(expanded).toContain("wanted complete prompt");
+		expect(expanded).not.toContain("other");
+		expect(expanded).not.toMatch(/[^\x20-\x7e\n]/);
+		component.handleInput("\r");
+		expect(selected).toHaveBeenCalledWith("wanted complete prompt");
+	});
 	it("paints the selected row with the selectedBg highlight bar and a relative timestamp", () => {
 		const component = new HistorySearchComponent(
 			fakeStorage([makeEntry(1, "deploy the release"), makeEntry(2, "older prompt", 7200)]),

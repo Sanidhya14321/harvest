@@ -50,6 +50,12 @@ export class SessionAccountSelectorComponent extends OverlayPanel {
 
 	/** Route mouse selection through the title rows into the account list. */
 	routeMouse(event: SgrMouseEvent, line: number, col: number): void {
-		routeSelectListMouseWithTopBorder(this.#selectList, event, line, col);
+		routeSelectListMouseWithTopBorder(
+			this.#selectList,
+			event,
+			line,
+			col,
+			this.contentRowStart - this.contentWindowStart,
+		);
 	}
 }

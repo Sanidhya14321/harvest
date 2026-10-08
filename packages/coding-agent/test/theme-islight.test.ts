@@ -63,14 +63,14 @@ describe("empty foreground contrast", () => {
 		expect(porcelain.getFgOnBgAnsi("userMessageText", "userMessageBg")).toBe("\x1b[38;2;229;229;231m");
 	});
 
-	it("preserves terminal defaults when the message background is also default", () => {
+	it("preserves terminal defaults when the composer background is also default", () => {
 		const { dark } = createBaseThemes();
 		const darkJson = getBuiltinThemes().dark;
 		if (!darkJson) throw new Error("Base dark theme is unavailable");
 		const terminalDefault = createTheme(
 			{
 				...darkJson,
-				colors: { ...darkJson.colors, userMessageBg: "", userMessageText: "" },
+				colors: { ...darkJson.colors, composerBg: "", text: "" },
 			},
 			{ mode: "truecolor" },
 		);
@@ -85,14 +85,14 @@ describe("empty foreground contrast", () => {
 		}
 	});
 
-	it("pairs the editor surface with its user-message foreground", () => {
+	it("pairs the editor foreground with its composer surface", () => {
 		const { light, dark } = createBaseThemes();
 		try {
 			setThemeInstance(light);
 			const surfaceColor = getEditorTheme().surfaceColor;
 			if (!surfaceColor) throw new Error("Editor surface color is unavailable");
 
-			expect(surfaceColor("typed")).toContain("\x1b[48;2;232;232;232m\x1b[38;2;0;0;0mtyped");
+			expect(surfaceColor("typed")).toContain("\x1b[48;2;208;208;224m\x1b[38;2;0;0;0mtyped");
 		} finally {
 			setThemeInstance(dark);
 		}
@@ -124,7 +124,7 @@ describe("empty foreground contrast", () => {
 			editor.setBorderStyle("field");
 			editor.setText("typed");
 
-			expect(editor.render(40).join("\n")).toContain("\x1b[48;2;80;112;160m\x1b[38;2;229;229;231m typed");
+			expect(editor.render(40).join("\n")).toContain("\x1b[48;2;232;238;248m\x1b[38;2;0;0;0m typed");
 		} finally {
 			setThemeInstance(dark);
 		}
@@ -139,7 +139,7 @@ describe("empty foreground contrast", () => {
 
 			const styled = surfaceColor("before\x1b[39mafter-default\x1b[0mafter-full");
 			expect(styled).toContain("\x1b[39m\x1b[38;2;0;0;0mafter-default");
-			expect(styled).toContain("\x1b[0m\x1b[48;2;232;232;232m\x1b[38;2;0;0;0mafter-full");
+			expect(styled).toContain("\x1b[0m\x1b[48;2;208;208;224m\x1b[38;2;0;0;0mafter-full");
 		} finally {
 			setThemeInstance(dark);
 		}

@@ -9,6 +9,7 @@ import { type Component, matchesKey, padding, truncateToWidth, visibleWidth } fr
 import { isForeignUserProvider, isProviderEnabled, isUserSourceEnabled } from "../../../discovery";
 import { theme } from "../../../modes/theme/theme";
 import { matchesSelectDown, matchesSelectUp } from "../../utils/keybinding-matchers";
+import { fit } from "../overlay-box";
 import { clampSelection, contentRowWidth, renderScrollableList, searchableChar } from "../selector-helpers";
 import { sanitizeDisplayLine } from "./display-text";
 import {
@@ -56,6 +57,8 @@ export class ExtensionList implements Component {
 	#focused = false;
 	#masterSwitchProvider: string | null = null;
 	#maxVisible: number;
+	#maxHeight: number | undefined;
+	#listRowStart = 2;
 	#hoveredIndex: number | null = null;
 	/** Item rows rendered in the last frame, for mouse hit-testing. */
 	#visibleCount = 0;
@@ -76,8 +79,14 @@ export class ExtensionList implements Component {
 	}
 
 	setMaxVisible(maxVisible: number): void {
-		this.#maxVisible = maxVisible;
+		this.#maxVisible = Math.max(1, maxVisible);
 		this.#clampSelection();
+	}
+
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
 	}
 
 	setExtensions(extensions: Extension[]): void {
@@ -147,8 +156,11 @@ export class ExtensionList implements Component {
 		const searchPrefix = theme.fg("muted", "Search: ");
 		const searchText = this.#searchQuery || (this.#focused ? "" : theme.fg("dim", "type to filter"));
 		const cursor = this.#focused ? theme.fg("accent", "_") : "";
-		lines.push(searchPrefix + searchText + cursor);
-		lines.push("");
+		const height = this.#maxHeight ?? Number.POSITIVE_INFINITY;
+		if (height >= 2) lines.push(fit(searchPrefix + searchText + cursor, width));
+		if (height >= 8) lines.push("");
+		this.#listRowStart = lines.length;
+		this.setMaxVisible(Math.min(this.#maxVisible, Math.max(1, height - lines.length)));
 
 		if (this.#listItems.length === 0) {
 			lines.push(theme.fg("muted", "  No extensions found for this provider."));
@@ -182,7 +194,9 @@ export class ExtensionList implements Component {
 			} else {
 				rowStr = this.#renderExtensionRow(listItem.item, isSelected, rowWidth, masterDisabled);
 			}
-			if (isHovered) rowStr = theme.bg("selectedBg", rowStr);
+			rowStr = fit(rowStr, rowWidth);
+			if (isSelected) rowStr = theme.bgFill("selectedBg", rowStr);
+			else if (isHovered) rowStr = theme.bgFill("raisedBg", rowStr);
 			rows.push(rowStr);
 		}
 		this.#visibleCount = rows.length;
@@ -523,7 +537,7 @@ export class ExtensionList implements Component {
 	 * separator; item rows follow, windowed at the current scroll offset.
 	 */
 	hitTest(line: number): number | null {
-		const rowLine = line - 2;
+		const rowLine = line - this.#listRowStart;
 		if (rowLine < 0 || rowLine >= this.#visibleCount) return null;
 		const index = this.#scrollOffset + rowLine;
 		return index < this.#listItems.length ? index : null;

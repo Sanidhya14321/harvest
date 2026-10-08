@@ -43,7 +43,7 @@ describe("OAuthSelectorComponent", () => {
 			.map(line => Bun.stripANSI(line))
 			.join("\n");
 		expect(rendered).toContain(target.name);
-		expect(rendered).toContain(`Search: ${target.id}`);
+		expect(rendered).toContain(target.id);
 
 		component.handleInput("\n");
 		expect(selected).toEqual([target.id]);

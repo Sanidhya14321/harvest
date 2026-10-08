@@ -1,6 +1,7 @@
-import { Box, Container, Spacer, Text } from "@harvest/pi-tui";
+import { Container, Spacer, Text } from "@harvest/pi-tui";
 import type { Rule } from "../../capability/rule";
 import { theme } from "../../modes/theme/theme";
+import { OutputPanel } from "../../tui/output-block";
 
 /** Collapsed view shows at most this many rules before eliding the rest. */
 const MAX_COLLAPSED_RULES = 4;
@@ -13,7 +14,7 @@ const MAX_COLLAPSED_RULES = 4;
  * {@link addRules} while it is still the live transcript tail.
  */
 export class TtsrNotificationComponent extends Container {
-	#box: Box;
+	#box: OutputPanel;
 	#expanded = false;
 	#rules: Rule[];
 	#toolActivityVisible = true;
@@ -24,8 +25,7 @@ export class TtsrNotificationComponent extends Container {
 
 		this.addChild(new Spacer(1));
 
-		// Use inverse warning color for yellow background effect
-		this.#box = new Box(1, 1, t => theme.inverse(theme.fg("warning", t)));
+		this.#box = new OutputPanel(() => theme, "warning");
 		this.#box.setIgnoreTight(true);
 		this.addChild(this.#box);
 
@@ -67,8 +67,6 @@ export class TtsrNotificationComponent extends Container {
 
 	#rebuild(): void {
 		this.#box.clear();
-		// fg colors conflict with inverse, so styling inside the block is limited
-		// to bold (names) and italic (descriptions).
 		if (this.#rules.length === 1) {
 			this.#rebuildSingle(this.#rules[0]!);
 		} else {
@@ -77,7 +75,10 @@ export class TtsrNotificationComponent extends Container {
 	}
 
 	#rebuildSingle(rule: Rule): void {
-		const header = `${theme.icon.warning} Injecting rule: ${theme.bold(rule.name)}  ${theme.icon.rewind}`;
+		const header = theme.fg(
+			"warning",
+			`${theme.icon.warning} Injecting rule: ${theme.bold(rule.name)}  ${theme.icon.rewind}`,
+		);
 		this.#box.addChild(new Text(header, 0, 0));
 
 		const desc = (rule.description || rule.content)?.trim();
@@ -88,7 +89,7 @@ export class TtsrNotificationComponent extends Container {
 		if (!this.#expanded) {
 			const lines = desc.split("\n");
 			if (lines.length > 2) {
-				displayText = `${lines.slice(0, 2).join("\n")}…`;
+				displayText = `${lines.slice(0, 2).join("\n")}${theme.symbol("sep.ellipsis")}`;
 				truncated = true;
 			}
 		}
@@ -101,7 +102,10 @@ export class TtsrNotificationComponent extends Container {
 	}
 
 	#rebuildMulti(): void {
-		const header = `${theme.icon.warning} Injecting ${this.#rules.length} rules:  ${theme.icon.rewind}`;
+		const header = theme.fg(
+			"warning",
+			`${theme.icon.warning} Injecting ${this.#rules.length} rules:  ${theme.icon.rewind}`,
+		);
 		this.#box.addChild(new Text(header, 0, 0));
 		this.#box.addChild(new Spacer(1));
 
@@ -116,7 +120,7 @@ export class TtsrNotificationComponent extends Container {
 					// One line per rule when collapsed; full description when expanded.
 					const newline = desc.indexOf("\n");
 					if (newline !== -1) {
-						displayText = `${desc.slice(0, newline).trimEnd()}…`;
+						displayText = `${desc.slice(0, newline).trimEnd()}${theme.symbol("sep.ellipsis")}`;
 						elidedDetail = true;
 					}
 				}
@@ -127,7 +131,9 @@ export class TtsrNotificationComponent extends Container {
 
 		const hidden = this.#rules.length - visible.length;
 		if (hidden > 0) {
-			this.#box.addChild(new Text(theme.italic(`… +${hidden} more (ctrl+o to expand)`), 0, 0));
+			this.#box.addChild(
+				new Text(theme.italic(`${theme.symbol("sep.ellipsis")} +${hidden} more (ctrl+o to expand)`), 0, 0),
+			);
 		} else if (elidedDetail) {
 			this.#box.addChild(new Text(theme.italic(" (ctrl+o to expand)"), 0, 0));
 		}

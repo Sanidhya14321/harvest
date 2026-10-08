@@ -43,7 +43,8 @@ import {
 	sortModelItems,
 	thinkingLevelGlyph,
 } from "./model-browser";
-import { bottomBorder, dividerSplit, row, splitBodyWidth, splitRow, topBorderSplit } from "./overlay-box";
+import { canSplitPane, fit, renderDialog, splitBodyWidth, splitRow, surfaceRow } from "./overlay-box";
+import { editorKey } from "./keybinding-hints";
 import { renderSegmentTrack } from "./segment-track";
 
 /**
@@ -240,6 +241,9 @@ export class ModelHubComponent implements Component {
 	/** Browser row budget of the last render; gates the selection re-snap below. */
 	#browserBudgetLast: number | undefined;
 	#sidebarWidthLast = SIDEBAR_MIN_WIDTH;
+	#maxHeight: number | undefined;
+	#splitLayout = true;
+	#bodyStatusRows = 1;
 	#footerRow = 0;
 	#chipRanges: ChipRange[] = [];
 	#lockedLoginLine: number | null = null;
@@ -1533,10 +1537,11 @@ export class ModelHubComponent implements Component {
 		const overContent = contentLine >= 0 && contentLine < this.#contentRowCount;
 		const sidebarColStart = 2;
 		const sidebarColEnd = sidebarColStart + this.#sidebarWidthLast;
-		const bodyColStart = this.#sidebarWidthLast + 5;
-		const overSidebar = overContent && event.col >= 0 && event.col < sidebarColEnd;
-		const overBody = overContent && event.col >= bodyColStart;
-		const bodyLine = contentLine - 1; // body row 0 is the status row
+		const bodyColStart = this.#splitLayout ? this.#sidebarWidthLast + 5 : 2;
+		const overSidebar =
+			overContent && (this.#splitLayout ? event.col >= 0 && event.col < sidebarColEnd : this.#focus === "scope");
+		const overBody = overContent && !overSidebar && event.col >= bodyColStart;
+		const bodyLine = contentLine - this.#bodyStatusRows;
 		const entry = this.#activeEntry();
 
 		// Footer strip chips.
@@ -1733,8 +1738,10 @@ export class ModelHubComponent implements Component {
 				const lineWidth = visibleWidth(line);
 				if (lineWidth < width) line += " ".repeat(width - lineWidth);
 			}
-			if (hovered) {
-				line = theme.bg("selectedBg", line);
+			if (active && this.#focus === "scope") {
+				line = theme.bgFill("selectedBg", line);
+			} else if (hovered) {
+				line = theme.bgFill("raisedBg", line);
 			}
 			lines.push(line);
 		}
@@ -1799,14 +1806,14 @@ export class ModelHubComponent implements Component {
 		if (hovered) {
 			const w = visibleWidth(out);
 			if (w < width) out += " ".repeat(width - w);
-			return theme.bg("selectedBg", out);
+			return theme.bgFill("selectedBg", out);
 		}
 		return out;
 	}
 
 	#renderRolesView(width: number, rows: number): string[] {
 		const lines: string[] = [];
-		lines.push("");
+		if (rows >= 6) lines.push("");
 		// First row's offset in bodyLine coordinates: the mouse router's
 		// `bodyLine` has already dropped the status row, so this is just the
 		// leading blank line — no extra status-row offset here.
@@ -1824,9 +1831,9 @@ export class ModelHubComponent implements Component {
 		// Window the list around the cursor so entries past the panel height stay
 		// reachable; the trailing indicator line steals one row when clipped.
 		const total = this.#rolesRows.length;
-		const capacity = Math.max(0, rows - 2 - this.#rolesRowStart);
+		const capacity = Math.max(1, rows - (rows >= 6 ? 2 : 0) - this.#rolesRowStart);
 		const overflow = total > capacity;
-		const viewHeight = overflow ? Math.max(0, capacity - 1) : capacity;
+		const viewHeight = overflow && rows >= 6 ? Math.max(1, capacity - 1) : capacity;
 		this.#roleScrollStart = this.#ensureRoleVisible(viewHeight, total);
 		const endIndex = Math.min(this.#roleScrollStart + viewHeight, total);
 		this.#rolesVisibleCount = Math.max(0, endIndex - this.#roleScrollStart);
@@ -1839,14 +1846,14 @@ export class ModelHubComponent implements Component {
 			const cursor = selected && listFocused ? theme.fg("accent", theme.nav.cursor) : " ";
 
 			if (rowDef.kind === "separator") {
-				lines.push(`   ${theme.fg("border", "─".repeat(Math.max(1, width - 6)))}`);
+				lines.push(`   ${theme.fg("border", theme.boxRound.horizontal.repeat(Math.max(1, width - 6)))}`);
 				continue;
 			}
 
 			if (rowDef.kind === "newRole" || rowDef.kind === "newFallback") {
 				const label = rowDef.kind === "newRole" ? "+ New role…" : "+ New fallback…";
 				let line = ` ${cursor} ${theme.fg(selected ? "accent" : "dim", label)}`;
-				line = this.#finishRolesRow(line, width, hovered);
+				line = this.#finishRolesRow(line, width, hovered || (selected && listFocused));
 				lines.push(line);
 				continue;
 			}
@@ -1857,7 +1864,7 @@ export class ModelHubComponent implements Component {
 				const tail = key.slice(slash + 1);
 				const keyStyled = theme.fg("dim", key.slice(0, slash + 1)) + (selected ? theme.fg("accent", tail) : tail);
 				let line = ` ${cursor} ${theme.fg("dim", theme.status.shadowed)} ${keyStyled}`;
-				line = this.#finishRolesRow(line, width, hovered);
+				line = this.#finishRolesRow(line, width, hovered || (selected && listFocused));
 				lines.push(line);
 				continue;
 			}
@@ -1866,7 +1873,7 @@ export class ModelHubComponent implements Component {
 				const branch = theme.fg("dim", `${"".padEnd(tagWidth + 3)}↳`);
 				const selector = selected ? theme.fg("accent", rowDef.selector) : theme.fg("muted", rowDef.selector);
 				let line = ` ${cursor} ${branch} ${selector}`;
-				line = this.#finishRolesRow(line, width, hovered);
+				line = this.#finishRolesRow(line, width, hovered || (selected && listFocused));
 				lines.push(line);
 				continue;
 			}
@@ -1910,10 +1917,11 @@ export class ModelHubComponent implements Component {
 			if (rightWidth > 0 && lineWidth + rightWidth + 2 <= width) {
 				line = `${line}${" ".repeat(width - lineWidth - rightWidth - 1)}${right}`;
 			}
-			line = this.#finishRolesRow(line, width, hovered);
+			line = this.#finishRolesRow(line, width, hovered || (selected && listFocused));
 			lines.push(line);
 		}
 
+		if (rows < 6) return lines;
 		if (overflow) {
 			const hiddenAbove = this.#roleScrollStart;
 			const hiddenBelow = total - endIndex;
@@ -2102,23 +2110,34 @@ export class ModelHubComponent implements Component {
 		// Short-terminal budget: never render taller than the viewport itself.
 		// The old Math.max(16, …) floor overflowed viewports under 16 rows and
 		// pushed the search row, selected row, and footer into scrollback.
-		const termRows = this.#tui.terminal?.rows || process.stdout.rows || 40;
-		const height = Math.max(6, termRows);
+		const termRows = this.#maxHeight ?? this.#tui.terminal?.rows ?? process.stdout.rows ?? 40;
+		const height = Math.max(1, termRows);
 		const sidebarWidth = this.#sidebarWidth();
+		this.#splitLayout = canSplitPane(width, sidebarWidth);
 		this.#sidebarWidthLast = sidebarWidth;
-		const bodyWidth = splitBodyWidth(width, sidebarWidth);
-		const contentRows = Math.max(1, height - 4);
+		const bodyWidth = this.#splitLayout ? splitBodyWidth(width, sidebarWidth) : Math.max(1, width - 4);
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		const contentRows = Math.max(1, height - chrome);
 		this.#contentRowCount = contentRows;
 
 		const entry = this.#activeEntry();
-		const bodyLines: string[] = [this.#statusRow(bodyWidth)];
-		if (entry.kind === "roles" && this.#assigning === null) {
-			bodyLines.push(...this.#renderRolesView(bodyWidth, contentRows - 1));
+		const showScope = !this.#splitLayout && this.#focus === "scope";
+		this.#bodyStatusRows = !showScope && contentRows >= 4 ? 1 : 0;
+		const bodyLines: string[] = this.#bodyStatusRows ? [this.#statusRow(bodyWidth)] : [];
+		if (showScope) {
+			bodyLines.push(...this.#renderSidebar(bodyWidth, contentRows));
+		} else if (entry.kind === "roles" && this.#assigning === null) {
+			bodyLines.push(...this.#renderRolesView(bodyWidth, contentRows - this.#bodyStatusRows));
 		} else if (entry.kind === "provider" && entry.locked && this.#assigning === null) {
-			bodyLines.push(...this.#renderLockedView(entry, bodyWidth, contentRows - 1));
+			bodyLines.push(...this.#renderLockedView(entry, bodyWidth, contentRows - this.#bodyStatusRows));
 		} else {
-			const maxVisible = Math.max(1, contentRows - 1 - 5);
+			const browserRows = Math.max(1, contentRows - this.#bodyStatusRows);
+			const maxVisible = Math.max(
+				1,
+				browserRows - (browserRows >= 8 ? 5 : browserRows >= 6 ? 4 : browserRows >= 2 ? 1 : 0),
+			);
 			this.#browser.setMaxVisible(maxVisible);
+			this.#browser.setMaxHeight(browserRows);
 			// Re-snap the scroll window when the budget changed: keyboard
 			// navigation may have run against a different budget (first open
 			// before the first render, or a viewport resize), which leaves the
@@ -2135,18 +2154,36 @@ export class ModelHubComponent implements Component {
 			bodyLines.push(...this.#browser.render(bodyWidth));
 		}
 
-		const sidebarLines = this.#renderSidebar(sidebarWidth, contentRows);
-
-		const out: string[] = [];
-		out.push(topBorderSplit(width, "Models", sidebarWidth));
-		this.#contentRowStart = out.length;
-		for (let i = 0; i < contentRows; i++) {
-			out.push(splitRow(sidebarLines[i] ?? "", bodyLines[i] ?? "", width, sidebarWidth));
+		const sidebarLines = this.#splitLayout ? this.#renderSidebar(sidebarWidth, contentRows) : [];
+		const content = this.#splitLayout
+			? Array.from({ length: contentRows }, (_, index) =>
+					splitRow(sidebarLines[index] ?? "", bodyLines[index] ?? "", width, sidebarWidth),
+				)
+			: bodyLines.map(line => fit(line, bodyWidth));
+		const footer =
+			this.#strip || this.#splitLayout
+				? this.#renderFooter(Math.max(1, width - 4))
+				: `${editorKey("tui.select.cancel") || "Esc"} close · Tab ${this.#focus === "scope" ? "models" : "categories"} · Enter choose`;
+		const layout = renderDialog(
+			`Models${this.#splitLayout ? "" : ` · ${entry.label}`}`,
+			content,
+			width,
+			height,
+			footer,
+		);
+		if (this.#splitLayout) {
+			for (let index = 0; index < layout.bodyRows; index++)
+				layout.lines[layout.bodyRowStart + index] = surfaceRow(content[index] ?? "", width);
 		}
-		out.push(dividerSplit(width, sidebarWidth));
-		this.#footerRow = out.length;
-		out.push(row(this.#renderFooter(width - 4), width));
-		out.push(bottomBorder(width));
-		return out;
+		this.#contentRowStart = layout.bodyRowStart;
+		this.#contentRowCount = layout.bodyRows;
+		this.#footerRow = height >= 2 ? layout.lines.length - (height >= 6 ? 2 : 1) : -1;
+		return layout.lines;
+	}
+
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
 	}
 }

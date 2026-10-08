@@ -13,9 +13,10 @@ import {
 	type BranchVariantPath,
 	RewindSelectorComponent,
 } from "@harvest/pi-coding-agent/modes/components/rewind-selector";
-import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { initTheme, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { SessionMessageEntry } from "@harvest/pi-coding-agent/session/session-entries";
-import { setKeybindings, type TUI } from "@harvest/pi-tui";
+import { setKeybindings, type TUI, visibleWidth } from "@harvest/pi-tui";
 
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
@@ -169,6 +170,45 @@ describe("RewindSelectorComponent", () => {
 		selector.dispose();
 
 		expect(selected).toEqual(["u2b", "u2"]);
+	});
+
+	it("keeps the active narrow branch usable through allocation and width changes with ASCII chrome", () => {
+		const previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const selected: string[] = [];
+		const selector = makeSelector(
+			id => selected.push(id),
+			entryId =>
+				entryId === "u2" ? [{ rootId: "u2b", entries: [entry("u2b", "a2", userMessage("alternate prompt"))] }] : [],
+		);
+		try {
+			selector.setMaxHeight(2);
+			const initial = selector.render(24);
+			expect(initial).toHaveLength(2);
+			expect(Bun.stripANSI(initial[0]!)).toContain("second prompt");
+			selector.handleInput(RIGHT);
+			const sibling = selector.render(24);
+			expect(sibling).toHaveLength(2);
+			expect(Bun.stripANSI(sibling[0]!)).toContain("alternate prompt");
+			selector.handleInput(ENTER);
+			selector.setMaxHeight(1);
+			const tiny = selector.render(2);
+			expect(tiny).toHaveLength(1);
+			expect(visibleWidth(tiny[0]!)).toBeLessThanOrEqual(2);
+			expect(tiny.join("\n")).not.toMatch(/[^\x00-\x7f]/);
+			selector.handleInput(ENTER);
+			selector.handleInput(LEFT);
+			selector.setMaxHeight(12);
+			const expanded = selector.render(120);
+			expect(expanded).toHaveLength(12);
+			expect(expanded.every(line => visibleWidth(line) <= 120)).toBe(true);
+			expect(expanded.map(line => Bun.stripANSI(line)).join("\n")).not.toMatch(/[^\x00-\x7f]/);
+			selector.handleInput(ENTER);
+			expect(selected).toEqual(["u2b", "u2b", "u2"]);
+		} finally {
+			selector.dispose();
+			setThemeInstance(previousTheme);
+		}
 	});
 
 	it("renders sibling branches as a half-width column strip at the fork", () => {

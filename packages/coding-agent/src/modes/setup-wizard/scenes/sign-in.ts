@@ -3,10 +3,12 @@ import { PASTE_CODE_LOGIN_PROVIDERS } from "@harvest/pi-ai";
 import type { OAuthProvider } from "@harvest/pi-ai/oauth/types";
 import {
 	type Component,
+	Ellipsis,
 	type Focusable,
 	Input,
 	matchesKey,
 	type SgrMouseEvent,
+	truncateToWidth,
 	wrapTextWithAnsi,
 } from "@harvest/pi-tui";
 import { getAgentDbPath } from "@harvest/pi-utils";
@@ -148,6 +150,9 @@ export class SignInTab implements SetupTab {
 	}
 
 	render(width: number, maxLines?: number): readonly string[] {
+		if (maxLines !== undefined && (this.#loggingInProvider || this.#configuredSuccess)) {
+			return this.#renderBoundedLogin(width, Math.max(1, Math.floor(maxLines)));
+		}
 		const lines: string[] = [];
 		if (this.#loggingInProvider) {
 			lines.push(
@@ -192,7 +197,33 @@ export class SignInTab implements SetupTab {
 		if (this.#statusLines.length > 0) {
 			lines.push(...this.#statusLines.flatMap(line => wrapTextWithAnsi(line, width)));
 		}
-		return lines;
+		return maxLines === undefined ? lines : lines.slice(0, Math.max(1, maxLines));
+	}
+
+	/** Manual input takes precedence over URL previews and status on short screens. */
+	#renderBoundedLogin(width: number, rows: number): readonly string[] {
+		const lines: string[] = [];
+		if (this.#prompt) {
+			if (rows >= 4) lines.push(theme.bold(`Signing in to ${this.#loggingInProvider}`));
+			if (rows >= 3 && this.#authUrl) lines.push(loginUrlLink(this.#authUrl));
+			if (rows >= 2) lines.push(theme.fg("warning", this.#prompt.message));
+			lines.push(this.#prompt.input.render(width)[0] ?? "");
+		} else {
+			if (this.#loggingInProvider && rows >= 2) lines.push(theme.bold(`Signing in to ${this.#loggingInProvider}`));
+			if (this.#authUrl && rows >= 3) lines.push(loginUrlLink(this.#authUrl));
+			const status = this.#statusLines.at(-1);
+			if (status) lines.push(status);
+			else if (this.#authUrl) lines.push(loginUrlLink(this.#authUrl));
+		}
+		if (this.#authUrl && lines.length < rows) {
+			lines.push(theme.fg("dim", "Alt+C copies the full login URL"));
+			lines.push(...wrapTextWithAnsi(theme.fg("dim", this.#authUrl), Math.max(1, width), { hard: true }));
+		}
+		return lines
+			.slice(0, rows)
+			.map(line =>
+				truncateToWidth(line, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+			);
 	}
 
 	#createSelector(): OAuthSelectorComponent {

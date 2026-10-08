@@ -1,4 +1,5 @@
 import { detectTerminalId, getTerminalInfo } from "@harvest/pi-tui";
+import { detectColorLevel } from "@harvest/pi-utils/chalk";
 import type { ColorMode, ColorValue } from "./schema";
 
 // ============================================================================
@@ -7,12 +8,18 @@ import type { ColorMode, ColorValue } from "./schema";
 
 /** Resolve theme color depth from the shared terminal capability model. */
 export function detectColorMode(env: NodeJS.ProcessEnv = Bun.env): ColorMode {
+	// TUI capability negotiation owns interactivity; share the project's explicit
+	// disable/force precedence without treating test/SDK output pipes as dumb TTYs.
+	const level = detectColorLevel(env, true);
+	if (level === 0) return "none";
+	if (env.FORCE_COLOR !== undefined) return level === 3 ? "truecolor" : "256color";
 	if (env.WT_SESSION) return "truecolor";
 	const terminal = getTerminalInfo(detectTerminalId(env), process.platform, env);
 	return terminal.trueColor ? "truecolor" : "256color";
 }
 
 export function colorToAnsi(color: string, mode: ColorMode): string {
+	if (mode === "none") return "";
 	const format = mode === "truecolor" ? "ansi-16m" : "ansi-256";
 	const ansi = Bun.color(color, format);
 	if (ansi === null) {
@@ -22,6 +29,7 @@ export function colorToAnsi(color: string, mode: ColorMode): string {
 }
 
 export function fgAnsi(color: string | number, mode: ColorMode): string {
+	if (mode === "none") return "";
 	if (color === "") return "\x1b[39m";
 	if (typeof color === "number") return `\x1b[38;5;${color}m`;
 	if (typeof color === "string") {
@@ -31,6 +39,7 @@ export function fgAnsi(color: string | number, mode: ColorMode): string {
 }
 
 export function bgAnsi(color: string | number, mode: ColorMode): string {
+	if (mode === "none") return "";
 	if (color === "") return "\x1b[49m";
 	if (typeof color === "number") return `\x1b[48;5;${color}m`;
 	const ansi = colorToAnsi(color, mode);

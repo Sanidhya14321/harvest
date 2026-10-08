@@ -1,14 +1,18 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
 	renderSegmentTrack,
 	resolveSegmentPalette,
 	type TrackSegment,
 } from "@harvest/pi-coding-agent/modes/components/segment-track";
-import { initTheme, type ThemeColor, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, type ThemeColor, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 
-beforeAll(async () => {
-	await initTheme();
+let previousTheme = theme;
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "truecolor" }));
 });
+afterEach(() => setThemeInstance(previousTheme));
 
 const SEGMENTS: TrackSegment[] = [{ label: "smol" }, { label: "default" }, { label: "slow" }];
 
@@ -38,6 +42,13 @@ describe("resolveSegmentPalette", () => {
 });
 
 describe("renderSegmentTrack", () => {
+	it("retains the active model choice without generated control codes in color-free mode", () => {
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const selected = renderSegmentTrack(SEGMENTS, 1);
+		expect(selected).toBe("smol  [default]  slow");
+		expect(selected).not.toContain("\x1b");
+		expect(renderSegmentTrack(SEGMENTS, 2)).toBe("smol  default  [slow]");
+	});
 	it("colors each segment by position from the theme palette", () => {
 		const raw = renderSegmentTrack(SEGMENTS, 1);
 		expect(Bun.stripANSI(raw)).toContain("smol");

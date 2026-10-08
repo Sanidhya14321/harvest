@@ -4,7 +4,7 @@ import { HookEditorComponent } from "@harvest/pi-coding-agent/modes/components/h
 import { ExtensionUiController } from "@harvest/pi-coding-agent/modes/controllers/extension-ui-controller";
 import { getThemeByName, setThemeInstance } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { InteractiveModeContext } from "@harvest/pi-coding-agent/modes/types";
-import { CURSOR_MARKER, isFocusable, setKeybindings, type TUI } from "@harvest/pi-tui";
+import { CURSOR_MARKER, isFocusable, setKeybindings, type TUI, visibleWidth } from "@harvest/pi-tui";
 
 beforeAll(async () => {
 	const theme = await getThemeByName("dark");
@@ -389,20 +389,21 @@ describe("HookEditorComponent prompt-style mode", () => {
 		expect(onCancel).not.toHaveBeenCalled();
 	});
 
-	it("renders prompt-style editor with rounded overlay chrome", () => {
-		const component = new HookEditorComponent(createTui(), "Prompt", undefined, vi.fn(), vi.fn(), {
+	it("keeps the focused draft and submit/cancel controls inside a four-row prompt allocation", () => {
+		const submit = vi.fn();
+		const component = new HookEditorComponent(createTui(), "Prompt", "draft", submit, vi.fn(), {
 			promptStyle: true,
 		});
-
-		const rendered = renderText(component);
-		const lines = renderLines(component);
-
-		expect(lines[0]).toMatch(/^╭─ Prompt .*╮$/);
-		expect(lines.at(-1)).toMatch(/^╰.*╯$/);
-		expect(lines.some(line => line.includes("> "))).toBe(true);
-		expect(rendered).toContain("enter or ctrl+q submit  esc cancel");
-		expect(rendered).not.toContain("shift+enter newline");
-		expect(rendered).toContain("ctrl+g external editor");
+		component.focused = true;
+		component.setUseTerminalCursor(true);
+		component.setMaxHeight(4);
+		const lines = component.render(24);
+		expect(lines.length).toBeLessThanOrEqual(4);
+		expect(lines.every(line => visibleWidth(line) === 24)).toBe(true);
+		expect(lines.some(line => line.includes(CURSOR_MARKER) && line.includes("draft"))).toBe(true);
+		expect(lines.map(line => Bun.stripANSI(line.replaceAll(CURSOR_MARKER, ""))).join("\n")).toMatch(/Esc cancel/i);
+		component.handleInput("\r");
+		expect(submit).toHaveBeenCalledWith("draft");
 	});
 
 	it("anchors the hardware cursor while entering an Other response", () => {
@@ -476,7 +477,7 @@ describe("HookEditorComponent prompt-style mode", () => {
 		expect(onSubmit).not.toHaveBeenCalled();
 	});
 
-	it("renders the title in the border, detail lines, hint, and prompt gutter", () => {
+	it("retains the question details beside the draft and its cancel control", () => {
 		const title = "◆ Other (type your own)\nEnter your response:";
 		const component = new HookEditorComponent(createTui(), title, "不太清楚，", vi.fn(), vi.fn(), {
 			promptStyle: true,
@@ -489,7 +490,7 @@ describe("HookEditorComponent prompt-style mode", () => {
 		const content = component.renderContent(80).map(line => Bun.stripANSI(line));
 		expect(content.some(line => line.startsWith("Enter your response:"))).toBe(true);
 		expect(content.some(line => line.startsWith("> "))).toBe(true);
-		expect(content.some(line => line.includes("esc cancel"))).toBe(true);
+		expect(content.some(line => /Esc cancel/i.test(line))).toBe(true);
 	});
 });
 

@@ -1,7 +1,7 @@
 import { type Component, Markdown, Spacer, Text, type TUI } from "@harvest/pi-tui";
 import { replaceTabs } from "../../tools/render-utils";
-import { getMarkdownTheme, theme } from "../theme/theme";
-import { OverlayPanel } from "./overlay-box";
+import { getMarkdownTheme, getThemeEpoch, theme } from "../theme/theme";
+import { dialogContentWidth, OverlayPanel, renderDialog } from "./overlay-box";
 
 export type OmfgPanelState =
 	| "generating"
@@ -21,11 +21,13 @@ interface OmfgPanelComponentOptions {
 export class OmfgPanelComponent extends OverlayPanel {
 	#tui: TUI;
 	#state: OmfgPanelState = "generating";
-	#status = "Generating TTSR rule…";
+	#status = "Generating TTSR rule";
 	#preview = "";
 	#savedPath: string | undefined;
 	#errorMessage: string | undefined;
 	#closed = false;
+	#body!: Component;
+	#bodyThemeEpoch = -1;
 
 	constructor(options: OmfgPanelComponentOptions) {
 		super(`/omfg ${replaceTabs(options.complaint)}`);
@@ -90,12 +92,26 @@ export class OmfgPanelComponent extends OverlayPanel {
 		this.#closed = true;
 	}
 
+	override render(width: number): readonly string[] {
+		if (this.#bodyThemeEpoch !== getThemeEpoch()) {
+			this.#body = this.#contentComponent();
+			this.#bodyThemeEpoch = getThemeEpoch();
+		}
+		const height = this.getMaxHeight();
+		const footer = this.#footerLine();
+		const content = this.#body.render(dialogContentWidth(width));
+		const body = height === 1 ? [footer] : height < 5 ? content : [theme.fg("muted", replaceTabs(this.#status)), ...content];
+		return renderDialog(this.title, body, width, height, height > 1 ? footer : "").lines;
+	}
+
 	#rebuild(): void {
 		this.clear();
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("muted", replaceTabs(this.#status)), 0, 0));
 		this.addChild(new Spacer(1));
-		this.addChild(this.#contentComponent());
+		this.#body = this.#contentComponent();
+		this.#bodyThemeEpoch = getThemeEpoch();
+		this.addChild(this.#body);
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(this.#footerLine(), 0, 0));
 		this.#tui.requestRender();
@@ -111,14 +127,14 @@ export class OmfgPanelComponent extends OverlayPanel {
 			case "saved":
 				return theme.fg(
 					"success",
-					`${theme.status.success} Registered live · ${replaceTabs(this.#savedPath ?? "saved")} · Esc dismiss`,
+					`${theme.status.success} Registered live${theme.sep.dot}${replaceTabs(this.#savedPath ?? "saved")}${theme.sep.dot}Esc dismiss`,
 				);
 			case "rejected":
-				return theme.fg("warning", `${theme.status.warning} Not saved · Esc dismiss`);
+				return theme.fg("warning", `${theme.status.warning} Not saved${theme.sep.dot}Esc dismiss`);
 			case "aborted":
-				return theme.fg("warning", `${theme.status.warning} Cancelled · Esc dismiss`);
+				return theme.fg("warning", `${theme.status.warning} Cancelled${theme.sep.dot}Esc dismiss`);
 			case "error":
-				return theme.fg("error", `${theme.status.error} Error · Esc dismiss`);
+				return theme.fg("error", `${theme.status.error} Error${theme.sep.dot}Esc dismiss`);
 		}
 	}
 
@@ -128,7 +144,7 @@ export class OmfgPanelComponent extends OverlayPanel {
 		}
 		const text = replaceTabs(this.#preview).trim();
 		if (!text) {
-			return new Text(theme.fg("dim", `${theme.status.pending} Waiting for candidate rule…`), 0, 0);
+			return new Text(theme.fg("dim", `${theme.status.pending} Waiting for candidate rule${theme.symbol("sep.ellipsis")}`), 0, 0);
 		}
 		return new Markdown(text, 0, 0, getMarkdownTheme());
 	}

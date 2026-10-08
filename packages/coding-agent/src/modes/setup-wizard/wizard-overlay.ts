@@ -18,7 +18,6 @@ import type { SetupScene, SetupSceneController, SetupSceneHost, SetupSceneResult
 type WizardPhase = "splash" | "transition" | "scene" | "outro" | "done";
 
 const SCENE_MARGIN_X = 4;
-const MIN_CONTENT_WIDTH = 20;
 /** Cross-dissolve duration from the splash into the first scene. */
 const SCENE_TRANSITION_MS = 420;
 
@@ -71,6 +70,9 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 	#disposed = false;
 	/** Screen row where the active scene's body began in the last rendered frame. */
 	#bodyRowStart = 0;
+	#bodyInset = 0;
+	#bodyRows = 0;
+	#maxHeight: number | undefined;
 	#sceneFocusTarget: Component | undefined;
 
 	constructor(
@@ -143,8 +145,10 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 		}
 		const scene = this.#activeScene;
 		if (!scene) return;
+		const bodyLine = event.row - this.#bodyRowStart;
+		if (event.wheel === null && (bodyLine < 0 || bodyLine >= this.#bodyRows || event.col < this.#bodyInset)) return;
 		if (scene.routeMouse) {
-			scene.routeMouse(event, event.row - this.#bodyRowStart, event.col - SCENE_MARGIN_X);
+			scene.routeMouse(event, bodyLine, event.col - this.#bodyInset);
 			return;
 		}
 		if (event.wheel !== null) {
@@ -152,9 +156,13 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 		}
 	}
 
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
+
 	render(width: number): readonly string[] {
 		const safeWidth = Math.max(1, width);
-		const height = Math.max(1, this.ctx.ui.terminal.rows);
+		const height = this.#maxHeight ?? Math.max(1, this.ctx.ui.terminal.rows);
 		let lines: string[];
 		switch (this.#phase) {
 			case "splash":
@@ -185,29 +193,40 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 		const scene = this.scenes[this.#sceneIndex];
 		const title = this.#activeScene?.title ?? scene?.title ?? "Setup";
 		const subtitle = this.#activeScene?.subtitle;
-		const contentWidth = Math.max(MIN_CONTENT_WIDTH, width - SCENE_MARGIN_X * 2);
-		const logo = gradientLogo(PI_LOGO, 0);
-		const header = [
-			"",
-			...logo.map(line => centerLine(line, width)),
-			centerLine(theme.bold(theme.fg("accent", "Harvest")), width),
-			centerLine(theme.fg("muted", `Setup step ${this.#sceneIndex + 1} of ${this.scenes.length}`), width),
-			"",
-			indentLine(theme.bold(title), width, SCENE_MARGIN_X),
-		];
-		if (subtitle) {
-			header.push(indentLine(theme.fg("muted", subtitle), width, SCENE_MARGIN_X));
+		this.#bodyInset = Math.min(SCENE_MARGIN_X, Math.floor((width - 1) / 2));
+		const contentWidth = Math.max(1, width - this.#bodyInset * 2);
+		const header: string[] = [];
+		if (height >= 24 && width >= 50) {
+			header.push(
+				"",
+				...gradientLogo(PI_LOGO, 0).map(line => centerLine(line, width)),
+				centerLine(theme.bold(theme.fg("accent", "Harvest")), width),
+				centerLine(theme.fg("muted", `Setup step ${this.#sceneIndex + 1} of ${this.scenes.length}`), width),
+				"",
+			);
 		}
-		header.push("");
+		if (height >= 5) header.push(indentLine(theme.bold(title), width, this.#bodyInset));
+		if (subtitle && height >= 12) header.push(indentLine(theme.fg("muted", subtitle), width, this.#bodyInset));
+		if (height >= 20) header.push("");
 		this.#bodyRowStart = header.length;
 
-		const footer = [
-			"",
-			centerLine(theme.fg("dim", "↑/↓ select · enter confirm · esc skip · ctrl+c exit setup"), width),
-		];
-		const maxBodyLines = Math.max(0, height - header.length - footer.length);
+		const nav = theme.getSymbolPreset() === "ascii" ? "up/down" : "↑/↓";
+		const footer =
+			height >= 4
+				? [
+						centerLine(
+							theme.fg(
+								"dim",
+								`${nav} select${theme.sep.dot}enter confirm${theme.sep.dot}esc skip${theme.sep.dot}ctrl+c exit setup`,
+							),
+							width,
+						),
+					]
+				: [];
+		const maxBodyLines = Math.max(1, height - header.length - footer.length);
 		const body = this.#activeScene?.render(contentWidth, maxBodyLines).slice(0, maxBodyLines) ?? [];
-		const lines = [...header, ...body.map(line => indentLine(line, width, SCENE_MARGIN_X))];
+		this.#bodyRows = body.length;
+		const lines = [...header, ...body.map(line => indentLine(line, width, this.#bodyInset))];
 		while (lines.length + footer.length < height) {
 			lines.push("");
 		}
@@ -216,9 +235,9 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 	}
 
 	#fitToScreen(lines: string[], width: number, height: number): string[] {
-		const fitted = lines.slice(0, height).map(line => clampLine(line, width));
+		const fitted = lines.slice(0, height).map(line => theme.bgFill("modalBg", clampLine(line, width)));
 		while (fitted.length < height) {
-			fitted.push(padding(width));
+			fitted.push(theme.bgFill("modalBg", padding(width)));
 		}
 		return fitted;
 	}
@@ -229,10 +248,11 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 			if (this.#disposed) return;
 			const elapsed = performance.now() - this.#phaseStartedAt;
 			if (this.#phase === "splash" && elapsed >= SETUP_SPLASH_MS) {
-				this.#beginScene();
+				this.#beginScene(true);
 			} else if (this.#phase === "transition" && elapsed >= SCENE_TRANSITION_MS) {
 				this.#phase = "scene";
 				this.#phaseStartedAt = performance.now();
+				this.#stopTimer();
 				this.ctx.ui.requestRender();
 			} else if (this.#phase === "outro" && elapsed >= SETUP_OUTRO_MS) {
 				this.#complete();
@@ -271,6 +291,7 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 		};
 		this.#activeScene = scene.mount(host);
 		this.#phase = targetPhase;
+		if (targetPhase === "scene") this.#stopTimer();
 		this.#phaseStartedAt = performance.now();
 		this.#sceneFocusTarget = undefined;
 		this.ctx.ui.setFocus(this);
@@ -278,9 +299,9 @@ export class SetupWizardComponent implements Component, OverlayFocusOwner {
 		this.ctx.ui.requestRender();
 	}
 
-	/** Enter the first scene through a dissolve from the splash. */
-	#beginScene(): void {
-		this.#mountSceneController("transition");
+	/** Explicit input opens controls immediately; automatic splash completion may dissolve. */
+	#beginScene(animate = false): void {
+		this.#mountSceneController(animate ? "transition" : "scene");
 	}
 
 	#mountCurrentScene(): void {

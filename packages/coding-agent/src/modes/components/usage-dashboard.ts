@@ -7,7 +7,14 @@
  */
 import { resolveUsedFraction, type UsageLimit, type UsageReport } from "@harvest/pi-ai";
 import type { DailyActivityPoint } from "@harvest/omp-stats/shared-types";
-import { type Component, matchesKey, routeSgrMouseInput, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
+import {
+	type Component,
+	Ellipsis,
+	matchesKey,
+	routeSgrMouseInput,
+	truncateToWidth,
+	visibleWidth,
+} from "@harvest/pi-tui";
 import { colorLuma, formatDuration, hexToRgb, rgbToHex } from "@harvest/pi-utils";
 import { formatProviderName } from "../../slash-commands/helpers/format";
 import { colorToAnsi } from "../theme/color";
@@ -19,7 +26,7 @@ import {
 	matchesSelectPageUp,
 	matchesSelectUp,
 } from "../utils/keybinding-matchers";
-import { bottomBorder, divider, row, topBorder } from "./overlay-box";
+import { dialogContentWidth, renderDialog } from "./overlay-box";
 
 // =============================================================================
 // Subscriptions grid model
@@ -319,6 +326,7 @@ export class UsageDashboardComponent implements Component {
 	#syncing = true;
 	#detailCache: { width: number; lines: string[] } | null = null;
 	#lastViewportRows = 10;
+	#maxHeight: number | undefined;
 	#closed = false;
 	readonly #closeController = new AbortController();
 
@@ -349,6 +357,14 @@ export class UsageDashboardComponent implements Component {
 		this.#closeController.abort();
 	}
 
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
+
+	invalidate(): void {
+		this.#detailCache = null;
+	}
+
 	// ---------------------------------------------------------------------------
 	// Subscriptions grid rendering
 	// ---------------------------------------------------------------------------
@@ -368,22 +384,25 @@ export class UsageDashboardComponent implements Component {
 	}
 
 	#miniBar(fraction: number | undefined, status: UsageLimit["status"], width: number): string {
-		if (fraction === undefined) return theme.fg("dim", "·".repeat(width));
+		if (fraction === undefined) return theme.fg("dim", theme.progress.empty.repeat(width));
 		const clamped = Math.min(Math.max(fraction, 0), 1);
 		const filled = Math.round(clamped * width);
-		const bar = "█".repeat(filled);
-		const empty = "░".repeat(width - filled);
+		const bar = theme.progress.filled.repeat(filled);
+		const empty = theme.progress.empty.repeat(width - filled);
 		return `${theme.fg(this.#statusColor(status), bar)}${theme.fg("dim", empty)}`;
 	}
 
 	#renderCardLines(card: ProviderCard, width: number): string[] {
 		const lines: string[] = [];
+		const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
 		const cardStatus = card.unlimited ? "ok" : aggregateRowStatus(card.windows);
+		const statusIcon = this.#statusIcon(cardStatus);
+		const prefixWidth = visibleWidth(statusIcon) + 1;
 		const accountsText = card.accounts > 1 ? theme.fg("dim", `${card.accounts} accts`) : "";
-		const titleBudget = width - 2 - visibleWidth(accountsText) - (accountsText ? 1 : 0);
-		const title = theme.bold(truncateToWidth(card.name, Math.max(4, titleBudget)));
-		const titlePad = Math.max(0, width - 2 - visibleWidth(title) - visibleWidth(accountsText));
-		lines.push(`${this.#statusIcon(cardStatus)} ${title}${" ".repeat(titlePad)}${accountsText}`);
+		const titleBudget = width - prefixWidth - visibleWidth(accountsText) - (accountsText ? 1 : 0);
+		const title = theme.bold(truncateToWidth(card.name, Math.max(0, titleBudget), ellipsis));
+		const titlePad = Math.max(0, width - prefixWidth - visibleWidth(title) - visibleWidth(accountsText));
+		lines.push(`${statusIcon} ${title}${" ".repeat(titlePad)}${accountsText}`);
 
 		if (card.unlimited) {
 			lines.push(`  ${theme.fg("dim", "no limits")}`);
@@ -392,6 +411,18 @@ export class UsageDashboardComponent implements Component {
 
 		const hidden = card.windows.length - CARD_MAX_WINDOWS;
 		const visibleWindows = card.windows.slice(0, CARD_MAX_WINDOWS);
+		if (width < CARD_MIN_WIDTH) {
+			for (const window of visibleWindows) {
+				const value =
+					window.fraction === undefined
+						? (window.usedText ?? "no data")
+						: `${Math.max(0, Math.round((1 - window.fraction) * 100))}% free`;
+				const label = window.windowTag ? `${window.label} ${window.windowTag}` : window.label;
+				lines.push(truncateToWidth(`${value} ${label}`, width, ellipsis));
+			}
+			if (hidden > 0) lines.push(theme.fg("dim", `+${hidden} more`));
+			return lines;
+		}
 		// Fixed columns across every row of the card so bars all start and end
 		// at the same x: label | bar | pct | reset. The reset column sizes to
 		// the card's widest countdown instead of flexing per row.
@@ -403,16 +434,16 @@ export class UsageDashboardComponent implements Component {
 		const barWidth = Math.max(5, width - 2 - labelWidth - 1 - 5 - (resetWidth > 0 ? resetWidth + 1 : 0));
 		for (const window of visibleWindows) {
 			const tagPlain = window.windowTag
-				? truncateToWidth(window.windowTag, Math.max(2, Math.floor(labelWidth / 2) - 1))
+				? truncateToWidth(window.windowTag, Math.max(2, Math.floor(labelWidth / 2) - 1), ellipsis)
 				: "";
 			const baseWidth = tagPlain ? labelWidth - visibleWidth(tagPlain) - 1 : labelWidth;
-			const basePlain = truncateToWidth(window.label, baseWidth).padEnd(baseWidth);
+			const basePlain = truncateToWidth(window.label, baseWidth, ellipsis).padEnd(baseWidth);
 			const label = tagPlain
 				? `${theme.fg("muted", basePlain)} ${theme.fg("dim", tagPlain)}`
 				: theme.fg("muted", basePlain);
 			if (window.fraction === undefined) {
 				const text = theme.fg("dim", window.usedText ?? "no data");
-				lines.push(truncateToWidth(`  ${label} ${text}`, width));
+				lines.push(truncateToWidth(`  ${label} ${text}`, width, ellipsis));
 				continue;
 			}
 			const freePct = Math.max(0, Math.round((1 - window.fraction) * 100));
@@ -448,9 +479,15 @@ export class UsageDashboardComponent implements Component {
 		// are all at 100% free (or have no limits), so per-window bars are noise.
 		if (idle.length > 0) {
 			if (active.length > 0) lines.push("");
-			const names = idle.map(card => card.name).join(" · ");
+			const names = idle.map(card => card.name).join(theme.sep.dot);
 			const prefix = `${theme.fg("success", theme.status.success)} `;
-			lines.push(truncateToWidth(`${prefix}${theme.fg("dim", `untouched: ${names}`)}`, innerWidth));
+			lines.push(
+				truncateToWidth(
+					`${prefix}${theme.fg("dim", `untouched: ${names}`)}`,
+					innerWidth,
+					theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+				),
+			);
 		}
 		return lines;
 	}
@@ -486,12 +523,13 @@ export class UsageDashboardComponent implements Component {
 			return [theme.fg("dim", "Usage history unavailable (stats database could not be read).")];
 		}
 		const points = this.#activity;
-		if (!points) return [theme.fg("dim", "Loading usage history…")];
+		if (!points) return [theme.fg("dim", `Loading usage history${theme.symbol("sep.ellipsis")}`)];
 
 		const labelWidth = 2;
-		const weeks = Math.max(4, Math.min(53, Math.floor((innerWidth - labelWidth) / 2)));
+		const weeks = Math.max(1, Math.min(53, Math.floor((innerWidth - labelWidth) / 2)));
 		const layout = buildHeatmapLayout(points, weeks);
-		const ramp = this.#heatRamp();
+		const plainCells = theme.getSymbolPreset() === "ascii" || theme.getColorMode() === "none";
+		const ramp = plainCells ? [] : this.#heatRamp();
 		const reset = "\x1b[39m";
 
 		const cost =
@@ -502,7 +540,7 @@ export class UsageDashboardComponent implements Component {
 			layout.totalRequests,
 		);
 		summary.push(
-			`${theme.bold(theme.fg("accent", "Activity"))} ${theme.fg("dim", `${cost} · ${requests} requests · last ${weeks} weeks`)}${this.#syncing ? theme.fg("dim", " · syncing…") : ""}`,
+			`${theme.bold(theme.fg("accent", "Activity"))} ${theme.fg("dim", `${cost}${theme.sep.dot}${requests} requests${theme.sep.dot}last ${weeks} weeks`)}${this.#syncing ? theme.fg("dim", `${theme.sep.dot}syncing${theme.symbol("sep.ellipsis")}`) : ""}`,
 		);
 		summary.push("");
 
@@ -514,18 +552,29 @@ export class UsageDashboardComponent implements Component {
 				monthLine = monthLine.padEnd(targetCol) + label;
 			}
 		}
-		summary.push(theme.fg("dim", truncateToWidth(monthLine, innerWidth)));
+		summary.push(
+			theme.fg(
+				"dim",
+				truncateToWidth(
+					monthLine,
+					innerWidth,
+					theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+				),
+			),
+		);
 
 		for (let day = 0; day < 7; day++) {
 			let line = theme.fg("dim", HEATMAP_DAY_LABELS[day]) + " ";
 			for (let week = 0; week < weeks; week++) {
 				const cell = layout.cells[day][week];
 				if (cell === null) line += "  ";
+				else if (plainCells) line += `${cell === 0 ? "." : cell} `;
 				else if (cell === 0) line += `${theme.fg("dim", "·")} `;
 				else line += `${ramp[cell - 1]}■${reset} `;
 			}
 			summary.push(line.trimEnd());
 		}
+		if (plainCells) summary.push(theme.fg("dim", "Intensity: . 1 2 3 4 (low to high)"));
 		return summary;
 	}
 
@@ -549,35 +598,40 @@ export class UsageDashboardComponent implements Component {
 	}
 
 	render(width: number): readonly string[] {
-		// Short-terminal budget: never render taller than the viewport itself.
-		// The old Math.max(14, …) floor overflowed viewports under 14 rows and
-		// pushed the hint/footer into scrollback.
-		const height = Math.max(6, process.stdout.rows || 40);
-		const innerWidth = Math.max(20, width - 4);
+		const height = this.#maxHeight ?? Math.max(1, process.stdout.rows || 40);
+		const innerWidth = dialogContentWidth(width);
 
 		const contentSource = this.#view === "detail" ? this.#detailLines(innerWidth) : this.#overviewLines(innerWidth);
-		// Fixed chrome: top border, blank, content…, divider, hint, bottom border.
-		const contentRows = Math.max(1, height - 5);
+		// Shared dialog chrome drops before data; checked-at and section space
+		// return once the allocation can show at least three content rows.
+		const showExtraRows = height >= 8;
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6) + (showExtraRows ? 2 : 0);
+		const contentRows = Math.max(1, height - chrome);
 		this.#lastViewportRows = contentRows;
 		const maxScroll = Math.max(0, contentSource.length - contentRows);
 		if (this.#scroll > maxScroll) this.#scroll = maxScroll;
 
 		const latestFetchedAt = Math.max(0, ...this.#options.reports.map(report => report.fetchedAt ?? 0));
 		const checkedText = latestFetchedAt ? `checked ${formatDuration(this.#nowMs - latestFetchedAt)} ago` : "";
-		const title = this.#view === "detail" ? "Usage · Details" : "Usage";
+		const title = this.#view === "detail" ? `Usage${theme.sep.dot}Details` : "Usage";
 
 		const out: string[] = [];
-		out.push(topBorder(width, title));
-		out.push(row(checkedText ? theme.fg("dim", checkedText) : "", width));
+		if (showExtraRows) out.push(checkedText ? theme.fg("dim", checkedText) : "");
+		const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
 		for (let i = 0; i < contentRows; i++) {
-			out.push(row(contentSource[this.#scroll + i] ?? "", width));
+			out.push(contentSource[this.#scroll + i] ?? "");
 		}
-		out.push(divider(width));
-		const scrollHint = maxScroll > 0 ? "↑/↓ scroll · " : "";
-		const hint = this.#view === "detail" ? `${scrollHint}Esc back` : `${scrollHint}↵ details · Esc close`;
-		out.push(row(theme.fg("dim", hint), width));
-		out.push(bottomBorder(width));
-		return out;
+		if (showExtraRows) out.push("");
+		const scrollHint = maxScroll > 0 ? `${theme.sep.dot}Up/Down scroll` : "";
+		const hint =
+			this.#view === "detail" ? `Esc back${scrollHint}` : `Esc close${theme.sep.dot}Enter details${scrollHint}`;
+		return renderDialog(
+			truncateToWidth(title, innerWidth, ellipsis),
+			out.map(line => truncateToWidth(line, innerWidth, ellipsis)),
+			width,
+			height,
+			truncateToWidth(hint, innerWidth, ellipsis),
+		).lines;
 	}
 
 	#scrollBy(delta: number): void {

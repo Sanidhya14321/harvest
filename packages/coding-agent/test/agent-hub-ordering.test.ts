@@ -71,10 +71,9 @@ function rosterEntryMatch(cell: string | undefined): RegExpExecArray | null {
 
 function rosterCell(raw: string): string | undefined {
 	const line = Bun.stripANSI(raw);
-	if (!line.startsWith("│ ")) return undefined;
-	const divider = line.indexOf("│", Math.max(2, Math.floor(line.length / 3)));
-	if (divider < 0) return undefined;
-	return line.slice(2, Math.max(2, divider - 1));
+	// The filled roster surface insets content by two cells. Match identities
+	// and tree rails from the consumer-visible content, independent of frames.
+	return line.startsWith("  ") ? line.slice(2) : undefined;
 }
 
 function renderedAgentRows(hub: AgentHubOverlayComponent, width = 120): RenderedAgentRow[] {
@@ -454,7 +453,7 @@ describe("Agent hub row ordering", () => {
 			expect(selectedAgentId(hub)).toBe("Beta");
 
 			const frame = hub.render(120);
-			const alphaRow = frame.findIndex(line => /^│ {3}\S+ Alpha/u.test(Bun.stripANSI(line)));
+			const alphaRow = frame.findIndex(line => rosterEntryMatch(rosterCell(line))?.[3] === "Alpha");
 			expect(alphaRow).toBeGreaterThanOrEqual(0);
 			hub.handleInput(`\x1b[<0;110;${alphaRow + 1}M`);
 			expect(selectedAgentId(hub)).toBe("Beta");

@@ -21,6 +21,7 @@ import { getSupportedEfforts } from "@harvest/pi-catalog/model-thinking";
 import {
 	type Component,
 	Input,
+	matchesKey,
 	type MouseRoutable,
 	routeSgrMouseInput,
 	type SelectItem,
@@ -42,18 +43,11 @@ import type { PerAdvisorStat } from "../../session/agent-session";
 import type { OAuthAccountIdentity } from "../../session/auth-storage";
 import { formatCompactQuota } from "../controllers/command-controller";
 import { getSelectListTheme, theme } from "../theme/theme";
+import { matchesSelectDown, matchesSelectUp } from "../utils/keybinding-matchers";
+import { editorKey } from "./keybinding-hints";
 import { HookEditorComponent } from "./hook-editor";
 import { buildBrowserItems, ModelBrowser, sortModelItems } from "./model-browser";
-import {
-	bottomBorder,
-	divider,
-	dividerSplit,
-	row,
-	splitBodyWidth,
-	splitRow,
-	topBorder,
-	topBorderSplit,
-} from "./overlay-box";
+import { canSplitPane, renderDialog, splitBodyWidth, splitRow, surfaceRow } from "./overlay-box";
 
 /** Host callbacks: all disk + live-runtime effects flow through these. */
 export interface AdvisorConfigCallbacks {
@@ -148,6 +142,9 @@ export class AdvisorConfigOverlayComponent implements Component {
 	// so SGR `event.row`/`event.col` — already 0-based — index it directly).
 	#bodyRowStart = 0;
 	#dividerCol = 0;
+	#maxHeight: number | undefined;
+	#splitLayout = true;
+	#previewOnly = false;
 
 	constructor(
 		tui: TUI,
@@ -182,39 +179,70 @@ export class AdvisorConfigOverlayComponent implements Component {
 	// ───────────────────────────── render ─────────────────────────────
 
 	render(width: number): readonly string[] {
-		const height = Math.max(14, process.stdout.rows || 40);
-		const bodyRows = Math.max(3, height - 4);
-		const title = `Advisor configuration · ${this.#scope}${this.#dirty ? "  ● unsaved" : ""}`;
-		const out: string[] = [];
-
-		if (this.#screen === "list") {
-			const sidebarWidth = Math.max(22, Math.min(42, Math.floor(width * 0.34)));
-			this.#dividerCol = sidebarWidth + 3;
-			const bodyWidth = splitBodyWidth(width, sidebarWidth);
-			const sidebar = this.#active.render(sidebarWidth);
-			const preview = this.#previewWindow(bodyWidth, bodyRows);
-			out.push(topBorderSplit(width, title, sidebarWidth));
-			this.#bodyRowStart = out.length;
-			for (let i = 0; i < bodyRows; i++) {
-				out.push(splitRow(sidebar[i] ?? "", preview[i] ?? "", width, sidebarWidth));
-			}
-			out.push(dividerSplit(width, sidebarWidth));
-		} else {
-			out.push(topBorder(width, title));
-			this.#bodyRowStart = out.length;
-			const lines = this.#active.render(Math.max(1, width - 4));
-			for (let i = 0; i < bodyRows; i++) out.push(row(lines[i] ?? "", width));
-			out.push(divider(width));
+		const height = Math.max(1, this.#maxHeight ?? this.#tui.terminal.rows ?? process.stdout.rows ?? 40);
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		const bodyRows = Math.max(1, height - chrome);
+		const sidebarWidth = Math.max(22, Math.min(42, Math.floor(width * 0.34)));
+		this.#splitLayout = this.#screen === "list" && canSplitPane(width, sidebarWidth);
+		this.#dividerCol = this.#splitLayout ? sidebarWidth + 3 : Number.POSITIVE_INFINITY;
+		const bodyWidth = this.#splitLayout ? splitBodyWidth(width, sidebarWidth) : Math.max(1, width - 4);
+		if (this.#active instanceof SelectList) this.#active.setMaxVisible(Math.max(1, bodyRows - 1));
+		if (this.#active instanceof ModelBrowser) {
+			this.#active.setMaxVisible(bodyRows);
+			this.#active.setMaxHeight(bodyRows);
 		}
+		if (this.#active instanceof HookEditorComponent) {
+			this.#active.setMaxHeight(bodyRows);
+			this.#active.focused = true;
+		}
+		if (this.#active instanceof Input) this.#active.focused = true;
+		const active =
+			this.#active instanceof HookEditorComponent
+				? this.#active.renderContent(bodyWidth)
+				: this.#active.render(this.#splitLayout ? sidebarWidth : bodyWidth);
+		const preview =
+			this.#screen === "list" && (this.#splitLayout || this.#previewOnly)
+				? this.#previewWindow(bodyWidth, bodyRows)
+				: [];
+		const body = this.#splitLayout
+			? Array.from({ length: bodyRows }, (_, index) =>
+					splitRow(active[index] ?? "", preview[index] ?? "", width, sidebarWidth),
+				)
+			: (this.#previewOnly && this.#screen === "list" ? preview : active).slice(0, bodyRows);
+		const title = `Advisor configuration · ${this.#scope}${this.#dirty ? " · unsaved" : ""}`;
+		const footer = `${editorKey("tui.select.cancel") || "Esc"} back · ${this.#screen === "list" && !this.#splitLayout ? `F2 ${this.#previewOnly ? "list" : "preview"} · ` : ""}${this.#footerHint}`;
+		const layout = renderDialog(title, body, width, height, footer);
+		if (this.#splitLayout)
+			for (let index = 0; index < layout.bodyRows; index++)
+				layout.lines[layout.bodyRowStart + index] = surfaceRow(body[index] ?? "", width);
+		this.#bodyRowStart = layout.bodyRowStart;
+		return layout.lines;
+	}
 
-		out.push(row(theme.fg("dim", this.#footerHint), width));
-		out.push(bottomBorder(width));
-		return out;
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (this.#maxHeight === next) return;
+		this.#maxHeight = next;
 	}
 
 	// ───────────────────────────── input ─────────────────────────────
 
 	handleInput(data: string): void {
+		if (this.#screen === "list" && !this.#splitLayout && matchesKey(data, "f2")) {
+			this.#previewOnly = !this.#previewOnly;
+			this.#cb.requestRender();
+			return;
+		}
+		if (
+			this.#screen === "list" &&
+			!this.#splitLayout &&
+			this.#previewOnly &&
+			(matchesSelectUp(data) || matchesSelectDown(data))
+		) {
+			this.#previewScroll = Math.max(0, this.#previewScroll + (matchesSelectDown(data) ? 1 : -1));
+			this.#cb.requestRender();
+			return;
+		}
 		if (data.startsWith("\x1b[<")) {
 			routeSgrMouseInput(data, event => this.#routeMouseEvent(event));
 			return;
@@ -230,7 +258,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 	#routeMouseEvent(event: SgrMouseEvent): boolean {
 		// Right pane of the split (the preview) only scrolls; everything left of the
 		// divider routes into the active list/component at frame-local coordinates.
-		if (this.#screen === "list" && event.col >= this.#dividerCol) {
+		if (this.#screen === "list" && (event.col >= this.#dividerCol || (!this.#splitLayout && this.#previewOnly))) {
 			if (event.wheel !== null) {
 				this.#previewScroll = Math.max(0, this.#previewScroll + event.wheel);
 				this.#cb.requestRender();

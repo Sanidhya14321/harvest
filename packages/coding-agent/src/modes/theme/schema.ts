@@ -268,4 +268,4 @@ export type ThemeBg =
 	| "composerBg"
 	| "modalBg";
 
-export type ColorMode = "truecolor" | "256color";
+export type ColorMode = "truecolor" | "256color" | "none";

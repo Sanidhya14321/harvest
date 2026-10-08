@@ -19,7 +19,7 @@ import {
 } from "../../modes/utils/keybinding-matchers";
 import type { HistoryEntry, HistoryStorage } from "../../session/history-storage";
 import { rawKeyHint } from "./keybinding-hints";
-import { OverlayPanel } from "./overlay-box";
+import { dialogContentWidth, OverlayPanel, renderDialog } from "./overlay-box";
 import { centeredWindow, contentRowWidth, renderScrollableList } from "./selector-helpers";
 
 /** Visible result rows; also the jump distance for PageUp/PageDown. */
@@ -111,7 +111,7 @@ class HistoryResultsList implements Component {
 			return lines;
 		}
 
-		const cursorSymbol = `${theme.nav.cursor} `;
+		const cursorSymbol = width > 2 ? `${theme.nav.cursor} ` : "";
 		const gutterWidth = visibleWidth(cursorSymbol);
 
 		const { startIndex, endIndex } = centeredWindow(this.#selectedIndex, this.#results.length, this.#maxVisible);
@@ -127,9 +127,13 @@ class HistoryResultsList implements Component {
 			const timeWidth = visibleWidth(timeStr);
 			const showTime = rowWidth >= gutterWidth + 12 + timeWidth;
 
-			const promptBudget = Math.max(4, rowWidth - gutterWidth - (showTime ? timeWidth + 1 : 0));
+			const promptBudget = Math.max(0, rowWidth - gutterWidth - (showTime ? timeWidth + 1 : 0));
 			const normalized = entry.prompt.replace(/\s+/g, " ").trim();
-			const plain = truncateToWidth(normalized, promptBudget);
+			const plain = truncateToWidth(
+				normalized,
+				promptBudget,
+				theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+			);
 			const highlighted = highlightTokens(plain, this.#tokens);
 
 			const cursor = isSelected ? theme.fg("accent", cursorSymbol) : padding(gutterWidth);
@@ -161,6 +165,7 @@ export class HistorySearchComponent extends OverlayPanel {
 	#onSelect: (prompt: string) => void;
 	#onCancel: () => void;
 	#resultLimit = 100;
+	#selectionActive = true;
 
 	constructor(historyStorage: HistoryStorage, onSelect: (prompt: string) => void, onCancel: () => void) {
 		super("History");
@@ -204,14 +209,17 @@ export class HistorySearchComponent extends OverlayPanel {
 	 * input row on a narrow terminal).
 	 */
 	override render(width: number): readonly string[] {
-		const termRows = process.stdout.rows || 40;
-		// Chrome: top + bottom borders (2), spacers (4), input (1), hint (1).
-		this.#resultsList.setMaxVisible(Math.max(1, termRows - 8));
-		const lines = super.render(width);
-		return lines.length > termRows ? lines.slice(0, Math.max(0, termRows)) : lines;
+		const height = this.getMaxHeight();
+		const contentWidth = dialogContentWidth(width);
+		const footer = height >= 4 ? `Enter select${theme.sep.dot}Esc cancel` : "";
+		const chrome = Number(height >= 3) + Number(footer.length > 0) + Number(height >= 6);
+		this.#resultsList.setMaxVisible(Math.min(MAX_VISIBLE, Math.max(1, height - chrome - 1)));
+		const body = [...this.#searchInput.render(contentWidth), ...this.#resultsList.render(contentWidth)];
+		return renderDialog(this.title, body, width, height, footer, this.#selectionActive ? 1 : 0).lines;
 	}
 
 	handleInput(keyData: string): void {
+		this.#selectionActive = true;
 		if (matchesSelectUp(keyData)) {
 			if (this.#results.length === 0) return;
 			this.#selectedIndex = Math.max(0, this.#selectedIndex - 1);
@@ -268,6 +276,7 @@ export class HistorySearchComponent extends OverlayPanel {
 		}
 
 		this.#searchInput.handleInput(keyData);
+		this.#selectionActive = false;
 		this.#updateResults();
 	}
 

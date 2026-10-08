@@ -102,6 +102,22 @@ export class SessionTabStrip implements Component {
 		return this.#closeCells.get(`${row}:${col}`);
 	}
 
+	/**
+	 * Restrict hit-testing to the first `count` rendered rows. The composer
+	 * may clip trailing strip rows under height pressure after the strip
+	 * renders; clipped rows keep no hit targets (hidden controls never
+	 * respond). Only ever shrinks the visible window.
+	 */
+	clipDisplayedRows(count: number): void {
+		const visible = Math.max(0, Math.min(this.#workspaceVisibleRows, Math.floor(count)));
+		this.#workspaceVisibleRows = visible;
+		// Deleting the current entry during Map iteration is safe; only the
+		// current key is ever removed.
+		for (const [key] of this.#closeCells) {
+			if (Number(key.split(":")[0]!) >= visible) this.#closeCells.delete(key);
+		}
+	}
+
 	#label(path: string, current: string | undefined, limit: number): string {
 		const snapshot = this.liveSnapshot?.(path);
 		const active = current && normalizePathForComparison(path) === normalizePathForComparison(current);
@@ -196,11 +212,14 @@ export class SessionTabStrip implements Component {
 			this.#flashWorkspaceTabId = null;
 		}
 		this.#lastSelectedKey = currentKey;
-		if (width < 12 || (paths.length < 2 && !hasConversation)) {
+		if (width < 12 || paths.length < 1) {
 			this.#workspaceBar.setTabs([]);
 			this.#closeCells.clear();
 			return [];
 		}
+		// A single open tab still renders (its × plus + New session): Home
+		// layouts with one session keep close/select/new/hover mouse targets
+		// instead of stranding the operator without pointer affordances.
 		const activeIndex = current ? this.tabs.indexOf(current) : -1;
 		const start = Math.max(0, Math.min(activeIndex - 2, Math.max(0, paths.length - 5)));
 		const visible = paths.slice(start, start + 5);

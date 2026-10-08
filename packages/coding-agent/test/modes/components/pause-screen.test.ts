@@ -1,14 +1,16 @@
-import { afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { agentPauseGate } from "@harvest/pi-agent-core";
-import type { Component } from "@harvest/pi-tui";
-import { Settings } from "../../../src/config/settings";
+import { type Component, visibleWidth } from "@harvest/pi-tui";
+import { VirtualTerminal } from "../../../../tui/test/virtual-terminal";
+import { resetSettingsForTest, Settings } from "../../../src/config/settings";
 import {
 	PauseScreenComponent,
 	type PauseScreenHost,
 	renderPauseScreen,
 	runPauseScreen,
 } from "../../../src/modes/components/pause-screen";
-import { getThemeByName, setThemeInstance } from "../../../src/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "../../../src/modes/theme/loader";
+import { initTheme, setThemeInstance, type Theme, theme } from "../../../src/modes/theme/theme";
 
 // Strip SGR colors so assertions see visible text only.
 const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, "");
@@ -48,16 +50,21 @@ function makeHost(rows = 24): FakeHost {
 }
 
 describe("pause screen", () => {
+	let previousTheme: Theme;
 	beforeAll(async () => {
+		await initTheme(false);
+	});
+	beforeEach(async () => {
 		await Settings.init({ inMemory: true });
-		const loaded = await getThemeByName("dark");
-		if (!loaded) throw new Error("theme unavailable");
-		setThemeInstance(loaded);
+		previousTheme = theme;
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "truecolor", symbolPresetOverride: "unicode" }));
 	});
 
 	afterEach(() => {
 		// The gate is process-global: never leak an engaged pause into other files.
 		agentPauseGate.resume();
+		setThemeInstance(previousTheme);
+		resetSettingsForTest();
 	});
 
 	describe("renderPauseScreen", () => {
@@ -99,6 +106,48 @@ describe("pause screen", () => {
 			const text = lines.map(stripAnsi).join("\n");
 			expect(text).toContain("Compact Session Title");
 			expect(text).toContain("▌▌ P A U S E D");
+		});
+
+		it("keeps resume reachable when the allocation cannot also show the session and clock", () => {
+			const one = renderPauseScreen(24, 1, 3_000, "Very long session title").map(stripAnsi);
+			expect(one).toHaveLength(1);
+			expect(one[0]).toContain("esc to resume");
+			const two = renderPauseScreen(24, 2, 3_000, "Very long session title").map(stripAnsi);
+			expect(two.join("\n")).toContain("P A U S E D");
+			expect(two[1]).toContain("esc to resume");
+			const four = renderPauseScreen(24, 4, 3_000, "Very long session title").map(stripAnsi);
+			expect(four).toHaveLength(4);
+			expect(four.join("\n")).toContain("paused for 0:03");
+			expect(four[3]).toContain("esc to resume");
+			expect(four.every(line => visibleWidth(line) <= 24)).toBe(true);
+		});
+
+		it("uses ASCII chrome without colors and fills every row of the pause surface when colors are enabled", () => {
+			setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+			const full = renderPauseScreen(80, 24, 3_000);
+			expect(full.join("\n")).not.toMatch(/[^\x00-\x7f]/);
+			expect(full.join("\n")).toContain("#####");
+			const narrow = renderPauseScreen(2, 4, 3_000, "Long\tSession\nTitle");
+			expect(narrow.every(line => visibleWidth(line) <= 2)).toBe(true);
+			expect(narrow.join("\n")).not.toContain("\x1b");
+			setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "truecolor" }));
+			const colored = renderPauseScreen(24, 4, 3_000);
+			const terminal = new VirtualTerminal(24, 5);
+			terminal.write(colored.join("\r\n"));
+			for (let row = 0; row < 4; row++)
+				expect(terminal.getViewportRowBackgroundColumns(row)).toEqual(Array.from({ length: 24 }, (_, col) => col));
+		});
+
+		it("uses the overlay allocation during resize rather than the full terminal height", () => {
+			const { host } = makeHost(24);
+			const component = new PauseScreenComponent({ ...host, sessionName: "Selected session" });
+			component.setMaxHeight(4);
+			expect(component.render(24)).toHaveLength(4);
+			expect(component.render(24).map(stripAnsi).join("\n")).toContain("esc to resume");
+			component.setMaxHeight(24);
+			expect(component.render(80)).toHaveLength(24);
+			expect(component.render(80).map(stripAnsi).join("\n")).toContain("Selected session");
+			component.dispose();
 		});
 	});
 

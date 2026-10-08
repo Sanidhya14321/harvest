@@ -82,12 +82,12 @@ export class WebSearchTab implements SetupTab {
 	}
 
 	render(width: number, maxLines?: number): readonly string[] {
-		const lines = [theme.fg("muted", "Choose the provider the web_search tool should prefer."), ""];
+		const lines = maxLines === undefined || maxLines >= 8 ? [theme.fg("muted", "Choose the provider the web_search tool should prefer."), ""] : [];
 		this.#listRowStart = lines.length;
 		if (maxLines !== undefined) {
 			// Above: hint + blank. Below: the list's own search-status row plus
 			// blank + readiness line. Shrinking keeps the selection centered.
-			this.#list.setMaxVisible(Math.max(1, Math.min(MAX_VISIBLE, maxLines - 5)));
+			this.#list.setMaxVisible(Math.max(1, Math.min(MAX_VISIBLE, maxLines - lines.length - 1)));
 		}
 		lines.push(...this.#list.render(width));
 		const selected = this.#list.getSelectedItem();
@@ -97,7 +97,7 @@ export class WebSearchTab implements SetupTab {
 		if (this.#status.length > 0) {
 			lines.push("", ...this.#status.map(line => truncateToWidth(line, width)));
 		}
-		return lines;
+		return maxLines === undefined ? lines : lines.slice(0, Math.max(1, maxLines));
 	}
 
 	#onHighlight(value: string): void {

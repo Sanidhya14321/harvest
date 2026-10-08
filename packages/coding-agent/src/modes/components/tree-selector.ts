@@ -2,6 +2,7 @@ import { ThinkingLevel } from "@harvest/pi-agent-core";
 import {
 	type Component,
 	Container,
+	Ellipsis,
 	extractPrintableText,
 	fuzzyMatch,
 	Input,
@@ -25,7 +26,7 @@ import { toPathList } from "../../tools/path-utils";
 import { shortenPath } from "../../tools/render-utils";
 import { canonicalizeMessage } from "../../utils/thinking-display";
 import { resolveAssistantErrorPresentation } from "../utils/transcript-render-helpers";
-import { OverlayPanel, PanelDivider } from "./overlay-box";
+import { dialogContentWidth, OverlayPanel, PanelDivider, renderDialog } from "./overlay-box";
 import { centeredWindow, contentRowWidth, renderScrollableList } from "./selector-helpers";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
@@ -164,7 +165,7 @@ class TreeList implements Component {
 	constructor(
 		tree: SessionTreeNode[],
 		private readonly currentLeafId: string | null,
-		private readonly maxVisibleLines: number,
+		private maxVisibleLines: number,
 		initialFilterMode: FilterMode = "default",
 		initialSelectedId?: string,
 	) {
@@ -563,6 +564,10 @@ class TreeList implements Component {
 		}
 	}
 
+	setMaxVisible(rows: number): void {
+		this.maxVisibleLines = Math.max(1, Math.floor(rows));
+	}
+
 	render(width: number): readonly string[] {
 		const lines: string[] = [];
 
@@ -624,7 +629,7 @@ class TreeList implements Component {
 			const isSelected = i === this.#selectedIndex;
 
 			// Build line: cursor + prefix + path marker + label + content
-			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
+			const cursor = width > 4 ? (isSelected ? theme.fg("accent", `${theme.nav.cursor} `) : "  ") : "";
 
 			// If multiple roots, shift display (roots at 0, not 1)
 			const displayIndent = this.#multipleRoots ? Math.max(0, flatNode.indent - 1) : flatNode.indent;
@@ -675,13 +680,13 @@ class TreeList implements Component {
 			}
 			// Mark the leftmost cell when ancestors were compressed off-screen.
 			if (scrollOffset > 0 && prefixChars.length > 0) {
-				prefixChars[0] = "…";
+				prefixChars[0] = theme.getSymbolPreset() === "ascii" ? "." : "…";
 			}
-			const prefix = prefixChars.join("");
+			const prefix = width > 12 ? prefixChars.join("") : "";
 
 			// Active path marker - shown right before the entry text
 			const isOnActivePath = this.#activePathIds.has(entry.id);
-			const pathMarker = isOnActivePath ? theme.fg("accent", `${theme.md.bullet} `) : "";
+			const pathMarker = isOnActivePath && width > 12 ? theme.fg("accent", `${theme.md.bullet} `) : "";
 
 			const label = flatNode.node.label ? theme.fg("warning", `[${flatNode.node.label}] `) : "";
 			const content = this.#getEntryDisplayText(flatNode.node, isSelected);
@@ -690,7 +695,9 @@ class TreeList implements Component {
 			if (isSelected) {
 				line = theme.bg("selectedBg", line);
 			}
-			rows.push(truncateToWidth(line, rowWidth));
+			rows.push(
+				truncateToWidth(line, rowWidth, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode),
+			);
 		}
 
 		lines.push(
@@ -1046,7 +1053,13 @@ class SearchLine implements Component {
 	render(width: number): readonly string[] {
 		const query = this.treeList.getSearchQuery();
 		if (query) {
-			return [truncateToWidth(`${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`, width)];
+			return [
+				truncateToWidth(
+					`${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`,
+					width,
+					theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+				),
+			];
 		}
 		return [truncateToWidth(theme.fg("muted", "Search:"), width)];
 	}
@@ -1100,6 +1113,8 @@ export class TreeSelectorComponent extends OverlayPanel {
 	#labelInput: LabelInput | null = null;
 	#labelInputContainer: Container;
 	#treeContainer: Container;
+	#searchLine: SearchLine;
+	#selectionActive = true;
 
 	constructor(
 		tree: SessionTreeNode[],
@@ -1140,7 +1155,8 @@ export class TreeSelectorComponent extends OverlayPanel {
 				0,
 			),
 		);
-		this.addChild(new SearchLine(this.#treeList));
+		this.#searchLine = new SearchLine(this.#treeList);
+		this.addChild(this.#searchLine);
 		this.addChild(new PanelDivider());
 		this.addChild(new Spacer(1));
 		this.addChild(this.#treeContainer);
@@ -1150,6 +1166,21 @@ export class TreeSelectorComponent extends OverlayPanel {
 		if (tree.length === 0) {
 			setTimeout(() => onCancel(), 100);
 		}
+		this.setMaxHeight(terminalHeight);
+	}
+
+	override render(width: number): readonly string[] {
+		const height = this.getMaxHeight();
+		const contentWidth = dialogContentWidth(width);
+		const footer = height >= 4 ? `Enter switch${theme.sep.dot}Esc cancel${theme.sep.dot}Ctrl+O filter` : "";
+		if (this.#labelInput) {
+			const label = this.#labelInput.render(contentWidth);
+			return renderDialog("Edit label", height <= 2 ? [label[1] ?? ""] : label, width, height, footer, 1).lines;
+		}
+		const chrome = Number(height >= 3) + Number(footer.length > 0) + Number(height >= 6);
+		this.#treeList.setMaxVisible(Math.max(1, height - chrome - 2));
+		const body = [...this.#searchLine.render(contentWidth), ...this.#treeList.render(contentWidth)];
+		return renderDialog(this.title, body, width, height, footer, this.#selectionActive ? 1 : 0).lines;
 	}
 
 	#showLabelInput(entryId: string, currentLabel: string | undefined): void {
@@ -1178,6 +1209,7 @@ export class TreeSelectorComponent extends OverlayPanel {
 			this.#labelInput.handleInput(keyData);
 		} else {
 			this.#treeList.handleInput(keyData);
+			this.#selectionActive = this.#treeList.getSearchQuery().length === 0;
 		}
 	}
 

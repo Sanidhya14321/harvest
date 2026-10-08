@@ -19,6 +19,7 @@ describe("SignInTab", () => {
 	it("keeps the OSC8 login link and manual-code prompt above clipped wizard rows", async () => {
 		const url = `https://example.com/oauth/authorize?client_id=omp&redirect_uri=http%3A%2F%2Flocalhost%3A45454%2Fcallback&state=${"a".repeat(96)}`;
 		const loginGate = Promise.withResolvers<void>();
+		const suppliedCode = Promise.withResolvers<string>();
 		const copySpy = vi.spyOn(clipboard, "copyToClipboard").mockResolvedValue(undefined);
 		let focusTarget: Component | undefined;
 		const openedUrls: string[] = [];
@@ -31,7 +32,7 @@ describe("SignInTab", () => {
 				ctrl.onAuth({ url });
 				const prompt = ctrl.onManualCodeInput?.();
 				await loginGate.promise;
-				await prompt;
+				suppliedCode.resolve((await prompt) ?? "");
 			},
 		} as unknown as AuthStorage;
 
@@ -83,6 +84,19 @@ describe("SignInTab", () => {
 			expect(clippedBody).toContain("Paste the authorization code (or full redirect URL):");
 			expect(inputIndex).toBeGreaterThanOrEqual(0);
 			expect(plainUrlIndex).toBeLessThan(inputIndex);
+
+			// The bounded path prioritizes the focused control while preserving
+			// the full URL in clipboard/link state and the full submitted code.
+			const code = "complete-authorization-code";
+			focusTarget?.handleInput?.(code);
+			for (const rows of [1, 2, 3, 4]) {
+				const bounded = tab.render(36, rows);
+				expect(bounded.length).toBeLessThanOrEqual(rows);
+				expect(bounded.map(line => Bun.stripANSI(line)).join("\n")).toContain(code);
+			}
+			focusTarget?.handleInput?.("\r");
+			loginGate.resolve();
+			expect(await suppliedCode.promise).toBe(code);
 		} finally {
 			tab.dispose();
 			loginGate.resolve();

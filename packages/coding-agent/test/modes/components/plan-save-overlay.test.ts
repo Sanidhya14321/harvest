@@ -50,4 +50,22 @@ describe("PlanSaveOverlay", () => {
 
 		expect(result).toEqual({ path: "plans/review.md" });
 	});
+
+	it("keeps the path input reachable in a one-row allocation without shortening the saved payload", () => {
+		let result: PlanSaveOverlayResult | undefined;
+		const overlay = new PlanSaveOverlay("suggested.md", value => {
+			result = value;
+		});
+		overlay.focused = true;
+		overlay.setMaxHeight(1);
+		const fullPath = "plans/a-very-long-review-destination.md";
+		overlay.pasteText(fullPath);
+		const lines = overlay.render(3);
+		expect(lines).toHaveLength(1);
+		expect(visibleWidth(lines[0]!)).toBeLessThanOrEqual(3);
+		overlay.setMaxHeight(4);
+		expect(overlay.render(80).join("\n")).toContain(fullPath);
+		overlay.handleInput("\r");
+		expect(result).toEqual({ path: fullPath });
+	});
 });

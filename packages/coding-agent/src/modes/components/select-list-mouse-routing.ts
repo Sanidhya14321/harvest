@@ -13,8 +13,9 @@ export function routeSelectListMouseWithTopBorder(
 	event: SgrMouseEvent,
 	line: number,
 	col: number,
+	contentRowOffset = 1,
 ): void {
-	const localLine = line - 1;
+	const localLine = line - contentRowOffset;
 	const target = selectList as RoutableSelectList;
 	if (typeof target.routeMouse === "function") {
 		target.routeMouse(event, localLine, col);

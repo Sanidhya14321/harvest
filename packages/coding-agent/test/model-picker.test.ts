@@ -234,7 +234,7 @@ describe("ModelPicker", () => {
 		expect(normalize(rendered)).toContain("@slow");
 		const palette = resolveSegmentPalette(2);
 		expect(frame).toContain(`${theme.getFgAnsi(palette[0])}@smol`);
-		expect(frame).toContain(`${theme.getFgAnsi(palette[1])}@slow`);
+		expect(frame).toContain(`${theme.getFgAnsi(palette[1 % palette.length])}@slow`);
 
 		picker.handleInput("\n");
 		expect(onPickRole).toHaveBeenCalledWith(quickRoles[1]);
@@ -250,5 +250,17 @@ describe("ModelPicker", () => {
 
 		picker.handleInput(ESC);
 		expect(onCancel).toHaveBeenCalledTimes(1);
+	});
+
+	test("shrinking to four rows keeps the current model visible and picks that displayed model", () => {
+		const models = Array.from({ length: 20 }, (_, index) => makeModel("test", `model-${index}`));
+		const { picker, onPick } = createPicker({ models, scoped: true, picker: { currentSelector: "test/model-19" } });
+		picker.render(80);
+		picker.setMaxHeight(4);
+		const compact = picker.render(24);
+		expect(compact.length).toBeLessThanOrEqual(4);
+		expect(normalize(compact)).toContain("model-19");
+		picker.handleInput("\n");
+		expect(onPick.mock.calls[0]?.[0]?.id).toBe("model-19");
 	});
 });

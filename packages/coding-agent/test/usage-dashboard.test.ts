@@ -1,7 +1,15 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import type { DailyActivityPoint } from "@harvest/omp-stats/shared-types";
 import type { UsageReport } from "@harvest/pi-ai";
-import { buildHeatmapLayout, buildProviderCards } from "@harvest/pi-coding-agent/modes/components/usage-dashboard";
+import {
+	buildHeatmapLayout,
+	buildProviderCards,
+	UsageDashboardComponent,
+	type UsageDashboardOptions,
+} from "@harvest/pi-coding-agent/modes/components/usage-dashboard";
+import { loadThemeSync } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { visibleWidth } from "@harvest/pi-tui";
 
 function day(day: string, cost: number, requests = 1): DailyActivityPoint {
 	return { day, cost, requests, totalTokens: 0 };
@@ -106,5 +114,154 @@ describe("buildProviderCards", () => {
 		expect(idle.sort()).toEqual(["cursor", "ollama-cloud"]);
 		const unlimited = cards.find(card => card.provider === "ollama-cloud");
 		expect(unlimited?.unlimited).toBe(true);
+	});
+});
+
+describe("UsageDashboardComponent", () => {
+	let previousTheme: Theme | undefined;
+	const dashboards: UsageDashboardComponent[] = [];
+
+	beforeEach(() => {
+		previousTheme = theme;
+		setThemeInstance(loadThemeSync("harvest", { mode: "none", symbolPresetOverride: "ascii" }));
+	});
+
+	afterEach(() => {
+		for (const dashboard of dashboards.splice(0)) dashboard.dispose();
+		if (previousTheme) setThemeInstance(previousTheme);
+		vi.restoreAllMocks();
+	});
+
+	function dashboard(overrides: Partial<UsageDashboardOptions> = {}): UsageDashboardComponent {
+		const component = new UsageDashboardComponent({
+			reports: [],
+			renderDetail: () => "first-line\nsecond-line\nthird-line\nlast-line",
+			loadActivity: async push => push([]),
+			requestRender: () => {},
+			onClose: () => {},
+			...overrides,
+		});
+		dashboards.push(component);
+		return component;
+	}
+
+	it("keeps data visible within one to four allocated rows and tiny widths after resize", () => {
+		const component = dashboard();
+		component.handleInput("\r");
+		for (const height of [1, 2, 3, 4]) {
+			component.setMaxHeight(height);
+			for (const width of [1, 2, 3, 20, 24]) {
+				component.handleInput("\x1b[H");
+				const lines = component.render(width);
+				expect(lines).toHaveLength(height);
+				expect(lines.map(visibleWidth)).toEqual(Array(height).fill(width));
+				const contentWidth = width < 4 ? (width === 2 ? 2 : 1) : width - 4;
+				expect(lines.map(line => Bun.stripANSI(line).trim())).toContain(
+					contentWidth < 3 ? "first-line".slice(0, contentWidth) : "first-line",
+				);
+			}
+		}
+	});
+
+	it("keeps narrow quota values readable and distinguishes activity intensity without color or Unicode glyphs", () => {
+		const today = new Date();
+		const points = [100, 8, 1].map((requests, offset) => {
+			const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+			return day(
+				`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+				0,
+				requests,
+			);
+		});
+		const reports = [
+			report("openai-codex", "fake@example.invalid", [limit("openai-codex", "fake", "7d", "Weekly", 0.4, "ok")]),
+		];
+		for (const options of [
+			{ mode: "truecolor", symbolPresetOverride: "ascii" },
+			{ mode: "none", symbolPresetOverride: "unicode" },
+		] as const) {
+			setThemeInstance(loadThemeSync("harvest", options));
+			const component = dashboard({ reports, loadActivity: async push => push(points) });
+			component.setMaxHeight(40);
+			const wide = component.render(80).map(line => Bun.stripANSI(line));
+			const cells = wide.filter(line => /^\s*[MTWFS] [ .1-4]+$/.test(line)).join("\n");
+			expect(cells).toContain("1");
+			expect(cells).toContain("2");
+			expect(cells).toContain("4");
+			expect(cells).toContain(".");
+			if (options.symbolPresetOverride === "ascii") {
+				expect(wide.join("\n")).not.toMatch(/[^\x00-\x7f]/);
+				expect(wide.join("\n")).toMatch(/={2,}-{2,}/);
+			}
+			const narrow = component.render(24).map(line => Bun.stripANSI(line));
+			expect(narrow.join("\n")).toContain("60% free Weekly");
+			expect(narrow.map(visibleWidth)).toEqual(Array(narrow.length).fill(24));
+		}
+	});
+
+	it("scrolls details with the mouse and restores overview before closing and aborting the loader", () => {
+		const onClose = vi.fn();
+		let loadSignal: AbortSignal | undefined;
+		const component = dashboard({
+			onClose,
+			loadActivity: async (_push, signal) => {
+				loadSignal = signal;
+			},
+		});
+		component.setMaxHeight(4);
+		component.handleInput("\r");
+		component.render(24);
+		component.handleInput("\x1b[<65;1;1M");
+		expect(Bun.stripANSI(component.render(24).join("\n"))).toContain("third-line");
+		component.handleInput("\x1b");
+		expect(onClose).not.toHaveBeenCalled();
+		expect(Bun.stripANSI(component.render(24).join("\n"))).toContain("No usage data");
+		component.handleInput("\x1b");
+		expect(onClose).toHaveBeenCalledTimes(1);
+		expect(loadSignal?.aborted).toBe(true);
+	});
+
+	it("refreshes detail formatting for the assigned width and invalidation while preserving user Unicode", () => {
+		const renderDetail = vi.fn((width: number) => `mañana ${width}`);
+		const component = dashboard({ renderDetail });
+		component.setMaxHeight(4);
+		component.handleInput("\r");
+		expect(Bun.stripANSI(component.render(24).join("\n"))).toContain("mañana 20");
+		component.render(24);
+		expect(renderDetail).toHaveBeenCalledTimes(1);
+		expect(Bun.stripANSI(component.render(32).join("\n"))).toContain("mañana 28");
+		component.invalidate();
+		component.render(32);
+		expect(renderDetail).toHaveBeenCalledTimes(3);
+	});
+
+	it("surfaces a local history load failure and suppresses late redraws after disposal", async () => {
+		const failed = dashboard({
+			loadActivity: async () => {
+				throw new Error("fake local database failure");
+			},
+		});
+		failed.setMaxHeight(10);
+		await Promise.resolve();
+		expect(Bun.stripANSI(failed.render(80).join("\n"))).toContain("stats database could not be read");
+
+		const requestRender = vi.fn();
+		const pending = Promise.withResolvers<void>();
+		let pushActivity: ((points: DailyActivityPoint[]) => void) | undefined;
+		let loadSignal: AbortSignal | undefined;
+		const closed = dashboard({
+			requestRender,
+			loadActivity: (push, signal) => {
+				pushActivity = push;
+				loadSignal = signal;
+				return pending.promise;
+			},
+		});
+		closed.dispose();
+		pushActivity?.([day("2026-10-08", 1)]);
+		pending.resolve();
+		await Promise.resolve();
+		expect(loadSignal?.aborted).toBe(true);
+		expect(requestRender).not.toHaveBeenCalled();
 	});
 });

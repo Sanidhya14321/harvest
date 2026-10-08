@@ -25,6 +25,7 @@
 import type { AgentTool } from "@harvest/pi-agent-core";
 import {
 	type Component,
+	Ellipsis,
 	matchesKey,
 	padding,
 	routeSgrMouseInput,
@@ -35,7 +36,7 @@ import {
 } from "@harvest/pi-tui";
 import type { MessageRenderer } from "../../extensibility/extensions/types";
 import type { SessionMessageEntry } from "../../session/session-entries";
-import { theme } from "../theme/theme";
+import { getSymbolTheme, theme } from "../theme/theme";
 import {
 	matchesAppToolsExpand,
 	matchesSelectCancel,
@@ -43,14 +44,14 @@ import {
 	matchesSelectUp,
 } from "../utils/keybinding-matchers";
 import { ChatTranscriptBuilder } from "./chat-transcript-builder";
-import { DynamicBorder } from "./dynamic-border";
-import { fit } from "./overlay-box";
+import { dialogContentWidth, fit, surfaceRow, topBorder } from "./overlay-box";
 import {
 	appendOutlineEntries,
 	type ComposedColumn,
 	composeOutlineColumn,
 	OutlineRowCache,
 	type OutlineTarget,
+	outlineContentWidth,
 	outlineVisibility,
 	positionRail,
 	userMessageHasText,
@@ -90,8 +91,6 @@ interface SiblingColumn {
 	label: string;
 }
 
-/** Rows the frame chrome occupies: top rule, header, rule, footer hint, bottom rule. */
-const CHROME_ROWS = 5;
 /** Blank columns between branch-strip columns. */
 const STRIP_GAP = 2;
 /** Duration of the branch-swap camera slide. */
@@ -100,7 +99,8 @@ const SLIDE_MS = 160;
 export class RewindSelectorComponent implements Component {
 	#builder: ChatTranscriptBuilder;
 	#scrollView: ScrollView;
-	#border = new DynamicBorder();
+	#maxHeight: number | undefined;
+	#lastWidth = 0;
 	#targets: OutlineTarget[] = [];
 	#selected = 0;
 	/** Per-main-target "renders at least one non-blank row", refreshed each frame. */
@@ -139,6 +139,14 @@ export class RewindSelectorComponent implements Component {
 	/** Number of selectable rewind points on the current path; hosts skip mounting when zero. */
 	get targetCount(): number {
 		return this.#targets.length;
+	}
+
+	/** Use the live overlay allocation rather than the process terminal's full height. */
+	setMaxHeight(height: number): void {
+		const next = Math.max(1, Math.floor(height));
+		if (next === this.#maxHeight) return;
+		this.#maxHeight = next;
+		this.#scrollToSelection = true;
 	}
 
 	#newBuilder(): ChatTranscriptBuilder {
@@ -348,13 +356,24 @@ export class RewindSelectorComponent implements Component {
 	// ========================================================================
 
 	render(width: number): readonly string[] {
-		const termHeight = process.stdout.rows || 40;
+		const safeWidth = Math.max(0, Math.floor(width));
+		if (safeWidth === 0) return [];
+		const termHeight = this.#maxHeight ?? Math.max(1, process.stdout.rows || 40);
+		const showTitle = termHeight >= 3;
+		const showFooter = termHeight >= 2;
+		const showBottom = termHeight >= 6;
+		const viewportHeight = Math.max(1, termHeight - Number(showTitle) - Number(showFooter) - Number(showBottom));
+		const compact = viewportHeight < 3 || safeWidth < 5;
+		if (safeWidth !== this.#lastWidth) this.#scrollToSelection = true;
+		this.#lastWidth = safeWidth;
+		this.#scrollView.setScrollbar(safeWidth >= 5 ? "auto" : "never");
+		this.#scrollView.setSymbols(getSymbolTheme());
 		// ScrollView reserves the last column for the scrollbar; the outline
 		// consumes two columns each side ("┆ " / " ┆"), unselected rows a
 		// matching two-column left gutter so blocks never shift while stepping.
-		const contentWidth = Math.max(1, width - 1);
+		const contentWidth = safeWidth >= 5 ? safeWidth - 1 : safeWidth;
 		const children = this.#builder.container.children;
-		const mainInner = Math.max(10, contentWidth - 4);
+		const mainInner = outlineContentWidth(contentWidth, compact);
 		const childRows = this.#rowCache.rows(children, mainInner);
 
 		this.#mainVisible = outlineVisibility(childRows, this.#targets);
@@ -374,7 +393,7 @@ export class RewindSelectorComponent implements Component {
 		const columns = this.#stripColumns();
 		const composed =
 			columns.length > 0
-				? this.#renderStrip(childRows, columns, contentWidth)
+				? this.#renderStrip(childRows, columns, contentWidth, compact, viewportHeight >= 3)
 				: composeOutlineColumn(
 						childRows,
 						0,
@@ -383,32 +402,55 @@ export class RewindSelectorComponent implements Component {
 						this.#selected,
 						contentWidth,
 						undefined,
+						{ compact },
 					);
 		const lines = composed.lines;
 
-		const viewportHeight = Math.max(3, termHeight - CHROME_ROWS);
 		this.#scrollView.setLines(lines);
 		this.#scrollView.setHeight(viewportHeight);
 		if (this.#scrollToSelection && composed.selStart >= 0) {
 			const offset = this.#scrollView.getScrollOffset();
 			const top = Math.max(0, composed.selStart - 1);
 			const bottom = Math.min(lines.length, composed.selEnd + 1);
-			if (top < offset) this.#scrollView.setScrollOffset(top);
+			if (composed.selEnd - composed.selStart >= viewportHeight) this.#scrollView.setScrollOffset(composed.selStart);
+			else if (top < offset) this.#scrollView.setScrollOffset(top);
 			else if (bottom > offset + viewportHeight) this.#scrollView.setScrollOffset(bottom - viewportHeight);
 			this.#scrollToSelection = false;
 		}
 
 		const output: string[] = [];
-		output.push(...this.#border.render(width));
-		output.push(
-			` ${theme.icon.rewind} ${theme.bold("Rewind")}${theme.sep.dot}${theme.fg("dim", "pick the point to continue from")}`,
-		);
-		output.push(...this.#border.render(width));
-		output.push(...this.#scrollView.render(width));
+		const ellipsis = theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode;
+		if (showTitle)
+			output.push(
+				topBorder(
+					safeWidth,
+					truncateToWidth(
+						`${theme.icon.rewind} Rewind${theme.sep.dot}pick the point to continue from`,
+						dialogContentWidth(safeWidth),
+						ellipsis,
+					),
+				),
+			);
+		output.push(...this.#scrollView.render(safeWidth).map(line => surfaceRow(line, safeWidth)));
 		const position = this.#targets.length > 0 ? `${this.#selected + 1}/${this.#targets.length}  ` : "";
-		const lateral = columns.length > 0 ? "←/→ branches" : "←/→ user turns";
-		output.push(` ${theme.fg("dim", `${position}↑/↓ step  ${lateral}  enter rewind  ctrl+o expand  esc cancel`)}`);
-		output.push(...this.#border.render(width));
+		const ascii = theme.getSymbolPreset() === "ascii";
+		const step = ascii ? "up/down" : "↑/↓";
+		const lateral = `${ascii ? "left/right" : "←/→"} ${columns.length > 0 ? "branches" : "user turns"}`;
+		if (showFooter)
+			output.push(
+				surfaceRow(
+					theme.fg(
+						"dim",
+						truncateToWidth(
+							`${position}${step} step  ${lateral}  enter rewind  ctrl+o expand  esc cancel`,
+							safeWidth,
+							ellipsis,
+						),
+					),
+					safeWidth,
+				),
+			);
+		if (showBottom) output.push(surfaceRow("", safeWidth));
 		return output;
 	}
 
@@ -416,14 +458,21 @@ export class RewindSelectorComponent implements Component {
 	 * Shared prefix at full width, then the divergence as a camera-positioned
 	 * strip of half-width branch columns (current path first, siblings after).
 	 */
-	#renderStrip(mainRows: (readonly string[])[], columns: SiblingColumn[], contentWidth: number): ComposedColumn {
+	#renderStrip(
+		mainRows: (readonly string[])[],
+		columns: SiblingColumn[],
+		contentWidth: number,
+		compact: boolean,
+		showHeaders: boolean,
+	): ComposedColumn {
 		const anchor = this.#targets[this.#selected]!;
-		const colWidth = Math.max(24, Math.floor((contentWidth - STRIP_GAP) / 2));
-		const colInner = Math.max(10, colWidth - 4);
+		const singleColumn = contentWidth < 50;
+		const colWidth = singleColumn ? contentWidth : Math.floor((contentWidth - STRIP_GAP) / 2);
+		const colInner = outlineContentWidth(colWidth, compact);
 		const count = columns.length + 1;
 
 		// Shared history above the fork, full width, never outlined.
-		const prefix = composeOutlineColumn(mainRows, 0, anchor.start, [], -1, contentWidth, undefined);
+		const prefix = composeOutlineColumn(mainRows, 0, anchor.start, [], -1, contentWidth, undefined, { compact });
 
 		// Column 0: the current path from the fork down, re-rendered at column width.
 		const suffixRows = this.#rowCache.rows(this.#builder.container.children.slice(anchor.start), colInner);
@@ -440,7 +489,8 @@ export class RewindSelectorComponent implements Component {
 				suffixTargets,
 				this.#activeVariant === 0 ? 0 : -1,
 				colWidth,
-				this.#columnHeader(0, count, "current", colWidth),
+				showHeaders ? this.#columnHeader(0, count, "current", colWidth) : undefined,
+				{ compact },
 			),
 		];
 		for (let index = 0; index < columns.length; index++) {
@@ -457,9 +507,19 @@ export class RewindSelectorComponent implements Component {
 					column.targets,
 					this.#activeVariant === index + 1 ? this.#siblingSelected : -1,
 					colWidth,
-					this.#columnHeader(index + 1, count, column.label, colWidth),
+					showHeaders ? this.#columnHeader(index + 1, count, column.label, colWidth) : undefined,
+					{ compact },
 				),
 			);
+		}
+		if (singleColumn) {
+			const active = composedColumns[this.#activeVariant]!;
+			const prefixLength = prefix.lines.length;
+			return {
+				lines: [...prefix.lines, ...active.lines],
+				selStart: active.selStart >= 0 ? prefixLength + active.selStart : -1,
+				selEnd: active.selEnd >= 0 ? prefixLength + active.selEnd : -1,
+			};
 		}
 
 		// Camera over the strip: keep the active (possibly mid-slide) column centered.
@@ -518,7 +578,8 @@ export class RewindSelectorComponent implements Component {
 	#columnHeader(index: number, count: number, label: string, columnWidth: number): string[] {
 		const caption = truncateToWidth(
 			`${theme.icon.branch} ${index + 1}/${count} ${theme.sep.dot} ${label}`,
-			columnWidth - 2,
+			Math.max(0, columnWidth - 2),
+			theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
 		);
 		const active = index === this.#activeVariant;
 		return [` ${theme.fg(active ? "accent" : "dim", caption)}`, ""];
