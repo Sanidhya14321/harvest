@@ -1,0 +1,31 @@
+name: Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - rust-agent/README.md
+      - .github/workflows/wiki.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Publish the wiki
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: The package readme names the agent commands
+        run: |
+          set -euo pipefail
+          grep -q 'omp run' rust-agent/README.md
+          grep -q 'omp tools' rust-agent/README.md

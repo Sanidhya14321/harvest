@@ -1,0 +1,301 @@
+name: Hygiene
+
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hygiene-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: rust-agent
+
+jobs:
+  repo:
+    name: Repository rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Every tracked file is comment-free
+        run: |
+          python3 scripts/check_comments.py --selftest
+          python3 scripts/check_comments.py
+      - name: Rust files stay focused
+        run: |
+          python3 scripts/check_rust_sizes.py --selftest
+          python3 scripts/check_rust_sizes.py
+      - name: The Homebrew formula template renders
+        run: python3 scripts/homebrew_formula.py --selftest
+      - name: The Winget manifest templates render
+        run: python3 scripts/winget_manifest.py --selftest
+      - name: No committed secrets
+        run: |
+          python3 scripts/check_secrets.py --selftest
+          python3 scripts/check_secrets.py
+      - name: No stray debug markers
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          if git grep -nE '\b(dbg!|todo!|unimplemented!|FIXME|XXX[^X]|eprintln!)' -- 'rust-agent/src/**/*.rs'; then
+            echo "remove the markers above before merging" >&2
+            exit 1
+          fi
+      - name: No large files
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          oversized=$(git ls-files -z rust-agent | xargs -0 -r -I{} find {} -size +512k -print)
+          if [ -n "${oversized}" ]; then
+            echo "${oversized}" >&2
+            echo "tracked files over 512k" >&2
+            exit 1
+          fi
+      - name: Text files end with a newline
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          rc=0
+          while IFS= read -r -d '' file; do
+            if [ -s "${file}" ] && [ -n "$(tail -c 1 "${file}")" ]; then
+              echo "${file}: missing trailing newline" >&2
+              rc=1
+            fi
+          done < <(git ls-files -z rust-agent .gitleaks.toml \
+            .github/dependabot.yml .github/labeler.yml .github/zizmor.yml \
+            .github/actionlint.yaml .github/workflows)
+          exit "${rc}"
+
+  typos:
+    name: Spelling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: crate-ci/typos@8a48f81b6c64dcfea44b3633223084c4be58ac5f
+        with:
+          files: rust-agent
+
+  editorconfig:
+    name: EditorConfig
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: editorconfig-checker
+      - run: editorconfig-checker rust-agent
+        working-directory: ${{ github.workspace }}
+
+  toml:
+    name: TOML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: taplo-cli,cargo-sort
+      - run: taplo fmt --check --diff
+      - run: taplo lint
+      - run: cargo sort --check --check-format
+
+  doc-comments:
+    name: Doc comment spelling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: cargo-spellcheck
+      - run: cargo spellcheck --code 1 check
+
+  yaml:
+    name: YAML
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: pipx install yamllint
+      - name: YAML
+        run: |
+          set -euo pipefail
+          yamllint --strict -c rust-agent/.yamllint.yml rust-agent \
+            .github/dependabot.yml .github/labeler.yml .github/zizmor.yml \
+            .github/actionlint.yaml
+          for file in .github/workflows/*.yml; do
+            case "${file}" in
+              .github/workflows/ci.yml | .github/workflows/release.yml) continue ;;
+            esac
+            yamllint --strict -c rust-agent/.yamllint.yml "${file}"
+          done
+
+  markdown:
+    name: Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff
+        with:
+          globs: rust-agent/**/*.md
+
+  shell:
+    name: Shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: shellcheck,shfmt
+      - run: shellcheck --severity=style --enable=all install.sh tests/install.sh scripts/update_homebrew_tap.sh scripts/submit_winget.sh
+      - run: shfmt --diff --indent 4 --case-indent install.sh tests/install.sh scripts/update_homebrew_tap.sh scripts/submit_winget.sh
+
+  powershell:
+    name: PowerShell
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $findings = Invoke-ScriptAnalyzer -Path rust-agent -Recurse -Settings ./rust-agent/PSScriptAnalyzerSettings.psd1
+          if ($findings) { $findings | Format-Table -AutoSize; exit 1 }
+
+  python:
+    name: Python scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89
+        with:
+          args: check scripts
+          src: rust-agent
+      - name: Format
+        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89
+        with:
+          args: format --check scripts
+          src: rust-agent
+
+  actions:
+    name: Workflows
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: zizmor
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+          cache: false
+      - name: actionlint
+        run: >-
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
+          .github/workflows/rust-ci.yml .github/workflows/rust-release.yml
+          .github/workflows/hygiene.yml .github/workflows/security.yml
+          .github/workflows/performance.yml .github/workflows/pr.yml
+          .github/workflows/deep.yml .github/workflows/nightly.yml
+          .github/workflows/pages.yml .github/workflows/winget.yml
+          .github/workflows/wiki.yml .github/workflows/stale.yml
+          .github/workflows/labeler.yml
+      - name: zizmor
+        run: >-
+          zizmor --persona=pedantic --format=plain
+          .github/workflows/rust-ci.yml .github/workflows/rust-release.yml
+          .github/workflows/hygiene.yml .github/workflows/security.yml
+          .github/workflows/performance.yml .github/workflows/pr.yml
+          .github/workflows/deep.yml .github/workflows/nightly.yml
+          .github/workflows/pages.yml .github/workflows/winget.yml
+          .github/workflows/wiki.yml .github/workflows/stale.yml
+          .github/workflows/labeler.yml
+
+  links:
+    name: Links
+    if: github.event_name != 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8
+        with:
+          args: --offline --no-progress rust-agent/README.md
+          fail: true
+
+  wiki:
+    name: Wiki
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Package readme names the agent commands
+        run: |
+          set -euo pipefail
+          grep -q 'omp run' README.md
+          grep -q 'omp tools' README.md
+
+  hygiene:
+    name: Hygiene
+    if: always()
+    needs:
+      - repo
+      - typos
+      - editorconfig
+      - toml
+      - doc-comments
+      - yaml
+      - markdown
+      - shell
+      - powershell
+      - python
+      - actions
+      - links
+      - wiki
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Fail if any check failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "hygiene is clean"

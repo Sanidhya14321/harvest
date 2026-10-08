@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+PackageIdentifier: Pulkitxm.Omp
+PackageVersion: "@VERSION@"
+PackageLocale: en-US
+Publisher: Pulkit
+PublisherUrl: https://github.com/pulkitxm
+PublisherSupportUrl: https://github.com/Sanidhya14321/harvest/issues
+PackageName: Omp
+PackageUrl: https://github.com/Sanidhya14321/harvest
+License: MIT
+LicenseUrl: https://github.com/Sanidhya14321/harvest/blob/v@VERSION@/LICENSE
+ShortDescription: Rust coding agent for the terminal
+Description: >-
+  Omp reads, edits, and searches a workspace, runs commands, and talks to an
+  OpenAI-compatible model.
+Tags:
+  - cli
+  - agent
+  - coding
+  - terminal
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

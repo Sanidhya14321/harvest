@@ -1,0 +1,28 @@
+rules:
+  superfluous-actions:
+    ignore:
+      - ci.yml
+      - deep.yml
+      - hygiene.yml
+      - nightly.yml
+      - release.yml
+      - security.yml
+  adhoc-packages:
+    ignore:
+      - nightly.yml
+  dangerous-triggers:
+    ignore:
+      - labeler.yml
+  undocumented-permissions:
+    ignore:
+      - labeler.yml
+      - nightly.yml
+      - pages.yml
+      - pr.yml
+      - release.yml
+      - security.yml
+      - stale.yml
+      - wiki.yml
+  use-trusted-publishing:
+    ignore:
+      - release.yml

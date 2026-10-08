@@ -1,0 +1,19 @@
+title = "harvest"
+
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''^packages/''',
+  '''^crates/''',
+  '''^docs/''',
+  '''^python/''',
+  '''^scripts/''',
+  '''^assets/''',
+  '''^infra/''',
+  '''^bazel/''',
+  '''^nix/''',
+  '''^scratch/''',
+  '''^types/''',
+]
