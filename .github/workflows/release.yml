@@ -39,7 +39,10 @@ jobs:
           - { runner: ubuntu-24.04, target: win32-x64, native: win32-x64-baseline }
           - { runner: windows-11-arm, target: win32-arm64, native: host }
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    # Cold Bazel builds run ~40 minutes without a cache (see
+    # docs/natives-build-release-debugging.md); the compiled-binary step
+    # follows on top.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +53,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-08-08
+      - name: Set up Bazelisk
+        # Explicit //:natives-* targets always build through Bazel; only the
+        # `host` pseudo-target can fall back to the local Cargo/N-API build.
+        # The installed launcher reads the pinned version from .bazelversion.
+        if: matrix.native != 'host'
+        uses: bazelbuild/setup-bazelisk@v3
       - name: Check tag matches package version
         run: bun -e 'const pkg = await Bun.file("packages/coding-agent/package.json").json(); if (process.env.GITHUB_REF_NAME !== "v" + pkg.version) throw new Error("Release tag does not match coding-agent version");'
       - run: bun install --frozen-lockfile
