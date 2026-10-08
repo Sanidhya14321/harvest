@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "bun:test";
+import { visibleWidth } from "@harvest/pi-tui";
 import { SessionSelectorComponent } from "@harvest/pi-coding-agent/modes/components/session-selector";
 import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { SessionInfo } from "@harvest/pi-coding-agent/session/session-listing";
@@ -181,7 +182,7 @@ describe("SessionSelectorComponent fill-height footer", () => {
 		const topHint = top.findIndex(line => line.includes("Esc cancel"));
 		expect(top.length).toBe(rows);
 		expect(topHint).toBe(rows - 3);
-		expect(top[rows - 1]!.trim().length).toBeGreaterThan(0); // bottom border on the last row
+		expect(visibleWidth(top[rows - 1]!)).toBe(80); // filled bottom row owns every assigned cell
 
 		// Scroll to the bottom of the list (now an untitled window of a different
 		// height); the footer must not move.
@@ -190,6 +191,6 @@ describe("SessionSelectorComponent fill-height footer", () => {
 		const bottomHint = bottom.findIndex(line => line.includes("Esc cancel"));
 		expect(bottom.length).toBe(rows);
 		expect(bottomHint).toBe(topHint);
-		expect(bottom[rows - 1]!.trim().length).toBeGreaterThan(0);
+		expect(visibleWidth(bottom[rows - 1]!)).toBe(80);
 	});
 });

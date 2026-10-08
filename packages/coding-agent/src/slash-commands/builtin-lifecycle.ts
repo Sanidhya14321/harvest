@@ -106,9 +106,10 @@ async function fatalMoveFailure(text: string, runtime: SlashCommandRuntime): Pro
  * Relocate the headless session to `resolvedPath` (an existing directory):
  * flush settings, move the session file, re-scope the process, rolling back
  * on failure. Returns a result when the move did not complete; `undefined`
- * on success so the caller can report its own confirmation.
+ * on success so the caller can report its own confirmation. Exported as a
+ * seam so UI tests can cover failed-relocate-keeps-workspace directly.
  */
-async function relocateHeadlessSession(
+export async function relocateHeadlessSession(
 	runtime: SlashCommandRuntime,
 	resolvedPath: string,
 ): Promise<SlashCommandResult | undefined> {

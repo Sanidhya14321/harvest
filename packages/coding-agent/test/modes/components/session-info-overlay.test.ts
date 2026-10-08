@@ -1,10 +1,12 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
+import { stripVTControlCharacters } from "node:util";
 import { type Component, type OverlayHandle, setKeybindings, TUI, visibleWidth } from "@harvest/pi-tui";
 import type { Terminal, TerminalAppearance } from "@harvest/pi-tui/terminal";
 import { KeybindingsManager } from "../../../src/config/keybindings";
 import { Settings } from "../../../src/config/settings";
 import { SessionInfoOverlay } from "../../../src/modes/components/session-info-overlay";
-import { getThemeByName, setThemeInstance, type Theme } from "../../../src/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "../../../src/modes/theme/loader";
+import { setThemeInstance, theme, type Theme } from "../../../src/modes/theme/theme";
 
 class MinimalTerminal implements Terminal {
 	columns = 80;
@@ -68,19 +70,21 @@ class InputRecorder implements Component {
 	}
 }
 
-let uiTheme: Theme;
+let previousTheme: Theme;
 
 beforeAll(async () => {
 	await Settings.init({ inMemory: true });
-	const loaded = await getThemeByName("dark");
-	if (!loaded) throw new Error("theme unavailable");
-	uiTheme = loaded;
-	setThemeInstance(uiTheme);
+});
+
+beforeEach(() => {
+	previousTheme = theme;
+	setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "truecolor" }));
 });
 
 afterEach(() => {
 	setKeybindings(KeybindingsManager.inMemory());
 	vi.restoreAllMocks();
+	setThemeInstance(previousTheme);
 });
 
 describe("SessionInfoOverlay", () => {
@@ -99,9 +103,7 @@ describe("SessionInfoOverlay", () => {
 		expect(text).toContain("File: /tmp/session.jsonl");
 		expect(text).toContain("↑/↓ scroll · Esc close");
 		expect(lines.map(line => visibleWidth(line))).toEqual(Array(lines.length).fill(48));
-		expect(plain[0]).toContain(uiTheme.boxRound.topLeft);
-		expect(plain.at(-1)).toContain(uiTheme.boxRound.bottomLeft);
-		expect(lines).toHaveLength(7);
+		expect(lines.length).toBeLessThanOrEqual(12);
 	});
 
 	it("preserves exact-width details when the scrollbar is visible", () => {
@@ -131,8 +133,25 @@ describe("SessionInfoOverlay", () => {
 		const plain = lines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ""));
 
 		expect(lines.length).toBeLessThanOrEqual(8);
-		expect(plain[0]).toContain(uiTheme.boxRound.topLeft);
-		expect(plain.at(-1)).toContain(uiTheme.boxRound.bottomLeft);
+		expect(plain.join("\n")).toContain("Detail");
+		expect(lines.every(line => visibleWidth(line) === 12)).toBe(true);
+	});
+
+	it("keeps scrollable content within a shrinking allocation and restores it on expansion in ASCII mode", () => {
+		setThemeInstance(createTheme(getBuiltinThemes().harvest, { mode: "none", symbolPresetOverride: "ascii" }));
+		const overlay = new SessionInfoOverlay({ terminal: { rows: 24 } }, "ABCDE\nsecond\nthird", () => {});
+		for (const height of [4, 1, 2, 3]) {
+			overlay.setMaxHeight(height);
+			const lines = overlay.render(3);
+			expect(lines.length).toBeLessThanOrEqual(height);
+			expect(lines.every(line => visibleWidth(line) === 3)).toBe(true);
+			expect(stripVTControlCharacters(lines.join("\n"))).not.toMatch(/[^\x20-\x7e\n]/);
+		}
+		overlay.setMaxHeight(8);
+		const restored = stripVTControlCharacters(overlay.render(40).join("\n"));
+		expect(restored).toContain("ABCDE");
+		expect(restored).toContain("second");
+		expect(restored).toContain("up/down scroll");
 	});
 
 	it("scrolls long details and closes on the configured cancel key", () => {

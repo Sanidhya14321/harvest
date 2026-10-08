@@ -119,3 +119,29 @@ function isTabRef(value: unknown): value is { path: string; label?: string; sess
 	if (value.sessionId !== undefined && typeof value.sessionId !== "string") return false;
 	return true;
 }
+
+/**
+ * Legacy path-only recovery: v1 payloads (and tabs persisted before an owner
+ * noted IDs) carry paths without stable session IDs. Fill every missing ID
+ * through a trusted lookup — the live registry snapshot first, then
+ * persisted-session metadata — without fabricating IDs for unknown paths.
+ * Entries with no resolvable ID stay path-only; the active ID falls back to
+ * the lookup for the active path when absent.
+ */
+export function backfillMissingTabIds(
+	snapshot: PersistedSessionTabs,
+	lookup: (path: string) => string | undefined,
+): PersistedSessionTabs {
+	const tabs = snapshot.tabs.map(entry => {
+		if (entry.sessionId) return entry;
+		const sessionId = lookup(entry.path);
+		return sessionId ? { ...entry, sessionId } : entry;
+	});
+	const recentlyClosed = snapshot.recentlyClosed.map(entry => {
+		if (entry.sessionId) return entry;
+		const sessionId = lookup(entry.path);
+		return sessionId ? { ...entry, sessionId } : entry;
+	});
+	const activeSessionId = snapshot.activeSessionId ?? (snapshot.activePath ? lookup(snapshot.activePath) : undefined);
+	return { ...snapshot, tabs, recentlyClosed, activeSessionId };
+}

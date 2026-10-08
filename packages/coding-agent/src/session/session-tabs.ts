@@ -110,6 +110,24 @@ export class SessionTabs {
 		this.#ids.set(normalizePathForComparison(path), sessionId);
 	}
 
+	/**
+	 * Ensure a tab is open for `path` and carries `sessionId`, without
+	 * disturbing its order. Every session transition (create, warm select,
+	 * cold reopen, tab open, model-created open) routes through this helper
+	 * so the path→UUID binding can never go missing: a tab without a noted
+	 * ID falls back to path matching, which collides after forks and moves.
+	 */
+	ensureTabId(path: string, sessionId: string, label?: string): void {
+		if (label) this.#labels.set(normalizePathForComparison(path), label);
+		if (this.indexOf(path) < 0) {
+			if (this.#paths.length >= this.#capacity) {
+				throw new Error(`At most ${this.#capacity} session tabs can be open`);
+			}
+			this.#paths.push(path);
+		}
+		this.#ids.set(normalizePathForComparison(path), sessionId);
+	}
+
 	#same(a: string, b: string): boolean {
 		return normalizePathForComparison(a) === normalizePathForComparison(b);
 	}
@@ -203,4 +221,59 @@ export class SessionTabs {
 		if (index < 0) return undefined;
 		return this.#paths[(index + direction + this.#paths.length) % this.#paths.length];
 	}
+
+	/**
+	 * Close-then-select target for `current`: the right neighbor when one is
+	 * open, else the left neighbor. Unlike {@link neighbor} (which wraps for
+	 * keyboard next/prev cycling), this never wraps: closing the rightmost
+	 * tab selects the tab to its left, never the first tab. Returns undefined
+	 * when `current` is unknown or it is the only open tab (the owner enters
+	 * detached Home instead of selecting anything).
+	 *
+	 * Owner wiring (selector-controller `handleSessionTabsCommand` close path,
+	 * interactive-mode strip × close path): close-then-select must use this
+	 * helper; keyboard next/prev keeps using {@link neighbor}.
+	 */
+	closeNeighbor(current: string): string | undefined {
+		if (this.#paths.length < 2) return undefined;
+		const index = this.indexOf(current);
+		if (index < 0) return undefined;
+		return this.#paths[index + 1] ?? this.#paths[index - 1];
+	}
+}
+
+/**
+ * Screen-space origin of the rendered tab strip, in terminal cells. The
+ * composer layout owns this (it stacks header/transcript/strip rows); the
+ * strip itself only ever sees strip-local rows.
+ */
+export interface TabStripScreenOrigin {
+	readonly row: number;
+	readonly col: number;
+}
+
+/**
+ * Translate one screen-space mouse hit into strip-local coordinates. The
+ * strip hit map (`closeTargetAt`, `tabAt`, hover/click/new-target zones) is
+ * built from just-rendered rows, so every hit-test input must already be
+ * local: owners translate with this helper BEFORE hit-testing and drop hits
+ * that fall outside the strip (`undefined`). Hits above/left of the origin
+ * are outside by construction — the strip never assumes screen row zero.
+ *
+ * Pure: no I/O, no component state. Owner wiring (interactive-mode mouse
+ * path): resolve the strip origin from the composer layout for the current
+ * frame, translate `event.row/event.col` through this helper, and only then
+ * call the strip's hover/click/close-target entry points.
+ */
+export function translateStripHitToLocal(
+	screenRow: number,
+	screenCol: number,
+	origin: TabStripScreenOrigin,
+): { row: number; col: number } | undefined {
+	if (!Number.isInteger(screenRow) || !Number.isInteger(screenCol)) return undefined;
+	if (!Number.isInteger(origin.row) || !Number.isInteger(origin.col)) return undefined;
+	const row = screenRow - origin.row;
+	const col = screenCol - origin.col;
+	if (row < 0 || col < 0) return undefined;
+	return { row, col };
 }

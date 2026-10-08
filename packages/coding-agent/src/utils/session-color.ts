@@ -1,5 +1,6 @@
 import { TERMINAL } from "@harvest/pi-tui";
 import { hexToOklch, oklchCusp, oklchToHex, relativeLuminance } from "@harvest/pi-utils";
+import { detectColorLevel } from "@harvest/pi-utils/chalk";
 
 /**
  * Derive a stable 32-bit hash from a string using djb2.
@@ -249,5 +250,6 @@ export function getSessionAccentHex(name: string, theme: SessionAccentTheme): st
  */
 export function getSessionAccentAnsi(hex: string | undefined): string | undefined {
 	if (!hex) return undefined;
+	if (detectColorLevel(Bun.env, true) === 0) return undefined;
 	return Bun.color(hex, TERMINAL.trueColor ? "ansi-16m" : "ansi-256") ?? undefined;
 }

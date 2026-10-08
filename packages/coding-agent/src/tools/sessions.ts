@@ -36,8 +36,43 @@ export interface OpenManagedSessionInput {
 	cwd: string;
 	task?: string;
 	callerId: string | null;
-	/** Caller task depth + 1, computed by the trusted tool (never model input). */
+	/** Caller task depth, computed by the trusted tool (never model input). */
+	callerTaskDepth?: number;
+	/** Child task depth (caller depth + 1), computed by the trusted tool (never model input). */
 	taskDepth?: number;
+	/**
+	 * Creation contract: model-created sessions are background-only. Owners
+	 * MUST honor this with hasUI:false and no selection/focus change; unknown
+	 * callers never inherit a foreground runtime through this path. Optional
+	 * so session-scoped host bindings (which are background by construction)
+	 * need not restate it.
+	 */
+	background?: true;
+	/**
+	 * Trusted caller tool/spawn/permission facts from the executing
+	 * ToolSession. Owners merge these UNDER live-session facts (live wins
+	 * when present) so a restricted background caller cannot spawn an
+	 * unrestricted child. See `snapshotTrustedCaller(..., { policyFallback })`.
+	 */
+	callerPolicy?: ManagedCallerPolicy;
+}
+
+/**
+ * Tool, spawn, and permission facts a trusted caller forwards to the
+ * live-session owner. Every field is optional; absent fields fall back to
+ * the safe default. Never model input — resolved server-side per call.
+ */
+export interface ManagedCallerPolicy {
+	/** Explicit tool surface; undefined means the caller's full surface. */
+	toolNames?: string[];
+	/** Constrain the child to its explicit tool names. */
+	restrictToolNames?: boolean;
+	/** Spawn frontmatter (`*` default); null/undefined means unrestricted. */
+	spawns?: string | null;
+	/** Auto-approve policy; never escalated by the child path. */
+	autoApprove?: boolean;
+	/** Whether MCP capabilities may be forwarded; false prohibits inherited managers. */
+	enableMCP?: boolean;
 }
 
 export interface OpenedManagedSession {
@@ -69,6 +104,31 @@ let sessionToolDeps: SessionToolDeps = {};
 /** Serializes capacity check + creation so parallel creates cannot oversubscribe maxConcurrency. */
 const createSerial = new Serial();
 
+/**
+ * Effective-policy readers for child creation (S2). `toolNames` and
+ * `autoApprove` are typed ToolSession fields populated by the SDK from
+ * creation options; the shape guard below keeps a hand-built host object
+ * from widening limits with malformed values. Absent stays absent.
+ */
+function readSessionToolNames(session: ToolSession): string[] | undefined {
+	const value = session.toolNames;
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value) || !value.every(entry => typeof entry === "string")) return undefined;
+	return [...value];
+}
+
+function readSessionAutoApprove(session: ToolSession): boolean | undefined {
+	const value = session.autoApprove;
+	if (value === undefined) return undefined;
+	return value === true;
+}
+
+function readSessionDeliverMessage(
+	session: ToolSession,
+): ((target: ManagedLiveSessionLike, message: string) => Promise<string>) | undefined {
+	return typeof session.deliverManagedMessage === "function" ? session.deliverManagedMessage : undefined;
+}
+
 /** Override sessions-tool seams (tests inject deterministic fixtures). */
 export function setSessionToolDeps(deps: SessionToolDeps): void {
 	sessionToolDeps = { ...sessionToolDeps, ...deps };
@@ -77,6 +137,28 @@ export function setSessionToolDeps(deps: SessionToolDeps): void {
 /** Test-only: release sessions-tool seams. */
 export function clearSessionToolDepsForTests(): void {
 	sessionToolDeps = {};
+}
+
+/**
+ * Owner-side initial-task dispatch for a model-created session. The task is
+ * dispatched exactly once, in the background (fire-and-forget): the returned
+ * promise resolves true as soon as the single dispatch is attempted, so
+ * owners report `taskAccepted` truthfully without awaiting the run. A later
+ * prompt failure calls `onError` (owners log it; status stays observable via
+ * inspect) but never un-accepts the task and never redispatches. Empty tasks
+ * dispatch nothing and report false.
+ */
+export async function dispatchInitialTaskOnce(
+	target: { prompt: (message: string) => Promise<unknown> },
+	task: string | undefined,
+	onError?: (error: unknown) => void,
+): Promise<boolean> {
+	const firstTask = task?.trim();
+	if (!firstTask) return false;
+	void Promise.resolve()
+		.then(() => target.prompt(firstTask))
+		.catch(error => onError?.(error));
+	return true;
 }
 
 /**
@@ -128,13 +210,85 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 	}
 
 	private registry(): AgentRegistry {
-		const registry = sessionToolDeps.registry ?? this.session.agentRegistry;
+		// Owner binding: the calling session's private registry wins so two
+		// owners sharing this process never resolve through each other's
+		// authority. The process-global override remains only as the fallback
+		// for explicitly-supported adapters (headless hosts, test doubles)
+		// whose ToolSession carries no registry.
+		const registry = this.session.agentRegistry ?? sessionToolDeps.registry;
 		if (!registry) throw new Error("No agent registry is wired for session management.");
 		return registry;
 	}
 
-	private callerId(): string | null {
-		return this.session.getSessionId?.() ?? this.session.getAgentId?.() ?? null;
+	private callerUuid(): string | null {
+		return this.session.getSessionId?.() ?? null;
+	}
+
+	private callerAgentId(): string | null {
+		return this.session.getAgentId?.() ?? null;
+	}
+
+	/**
+	 * Trusted registry identities of the caller. The public stable identity
+	 * is the session UUID, but registry refs are keyed by registry ID
+	 * (`Main`, `tab:<uuid>`), so a bare UUID never matches `ref.id` or
+	 * `ref.parentId` directly. Resolve every trusted spelling: the
+	 * host-provided registry ID, the host-provided session UUID (lineage
+	 * recorded before registry IDs existed compares against it), plus every
+	 * ref whose live runtime carries the caller's UUID. Model params are
+	 * never consulted — only host wiring and live runtime facts.
+	 */
+	private callerRegistryIds(): Set<string> {
+		const ids = new Set<string>();
+		const agentId = this.callerAgentId();
+		if (agentId) ids.add(agentId);
+		const uuid = this.callerUuid();
+		if (uuid) {
+			ids.add(uuid);
+			const registry = this.registry();
+			const direct = registry.get(uuid);
+			if (direct) ids.add(direct.id);
+			for (const ref of registry.list()) {
+				if (this.liveUuid(ref) === uuid) ids.add(ref.id);
+			}
+		}
+		return ids;
+	}
+
+	/**
+	 * Registry identity reported to the live-session owner as the child's
+	 * parent link. Registry space (`Main`, `tab:<uuid>`) keeps lineage
+	 * comparable with `ref.parentId`; falls back to the session UUID when
+	 * the host exposes no registry identity (tests, headless doubles).
+	 */
+	private callerParentLink(): string | null {
+		return this.callerAgentId() ?? this.callerUuid();
+	}
+
+	/**
+	 * Live-session factory seam with owner/session scoping: the
+	 * session-scoped owner factory (`ToolSession.openManagedSession`,
+	 * registered per host session) wins so two owners sharing this process
+	 * never inherit each other's overrides; the legacy process-global seam
+	 * (`setSessionToolDeps`) remains as the fallback for explicitly-supported
+	 * adapters (headless hosts, test doubles) only. Absent both, creation is
+	 * unwired and reported truthfully — never invented.
+	 */
+	private resolveOpenSession(): SessionToolDeps["openSession"] {
+		return (this.session.openManagedSession as SessionToolDeps["openSession"]) ?? sessionToolDeps.openSession;
+	}
+
+	/**
+	 * Message-delivery seam with the same owner/session scoping: the
+	 * session-scoped delivery (`ToolSession.deliverManagedMessage`,
+	 * registered per host session alongside the factory) wins so delivery
+	 * binds to the actual owning session in every supported path, including
+	 * background runtimes; the legacy process-global seam remains as the
+	 * adapter fallback; the live session's prompt entry is the last resort.
+	 * Absent all three, delivery is unwired and reported truthfully.
+	 */
+	private resolveDeliverMessage(): SessionToolDeps["deliverMessage"] {
+		return readSessionDeliverMessage(this.session) ?? sessionToolDeps.deliverMessage;
 	}
 
 	private findRef(sessionId: string): AgentRef {
@@ -164,14 +318,14 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 	 * Returns an error message when access is denied, null when allowed.
 	 */
 	private checkTargetAccess(ref: AgentRef): string | null {
-		const caller = this.callerId();
-		if (caller && ref.id === caller) return null;
-		if (caller && ref.parentId === caller) return null;
+		const callerIds = this.callerRegistryIds();
+		if (callerIds.has(ref.id)) return null;
+		if (ref.parentId && callerIds.has(ref.parentId)) return null;
 		if (this.trustedGrant()) return null;
-		if (!caller) {
+		if (callerIds.size === 0) {
 			return `Session ${ref.id} is outside the current lineage; broader targets require a host-provided grant or the existing approval path.`;
 		}
-		if (ref.parentId && ref.parentId !== caller) {
+		if (ref.parentId) {
 			return `Session ${ref.id} belongs to another lineage (parent ${ref.parentId}); broader targets require a host-provided grant or the existing approval path.`;
 		}
 		return `Session ${ref.id} is outside the current owned lineage; broader targets require a host-provided grant or the existing approval path.`;
@@ -197,22 +351,23 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 	}
 
 	private async listSessions(): Promise<AgentToolResult> {
-		const caller = this.callerId();
+		const callerIds = this.callerRegistryIds();
 		const refs = this.registry().list();
-		const lines = refs.map(
-			ref =>
-				`- ${ref.id} (${ref.kind}, ${ref.status}${ref.id === caller ? ", caller" : ""}${ref.parentId ? `, parent ${ref.parentId}` : ""}): ${ref.displayName}`,
-		);
+		const lines = refs.map(ref => {
+			const uuid = this.liveUuid(ref);
+			return `- ${ref.id} (${ref.kind}, ${ref.status}${callerIds.has(ref.id) ? ", caller" : ""}${ref.parentId ? `, parent ${ref.parentId}` : ""}${uuid && uuid !== ref.id ? `, session ${uuid}` : ""}): ${ref.displayName}`;
+		});
 		return {
 			content: [{ type: "text", text: `Live sessions (${refs.length}):\n${lines.join("\n")}` }],
 			details: {
 				action: "list",
 				sessions: refs.map(ref => ({
 					id: ref.id,
+					uuid: this.liveUuid(ref),
 					kind: ref.kind,
 					status: ref.status,
 					parentId: ref.parentId,
-					caller: ref.id === caller,
+					caller: callerIds.has(ref.id),
 				})),
 			},
 		};
@@ -221,12 +376,14 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 	private async inspectSession(params: SessionsParams): Promise<AgentToolResult> {
 		if (!params.sessionId) throw new Error(`"inspect" requires "sessionId".`);
 		const ref = this.findRef(params.sessionId);
+		const uuid = this.liveUuid(ref);
 		return {
 			content: [
 				{
 					type: "text",
 					text:
 						`Session ${ref.id}: ${ref.displayName} (${ref.kind}, ${ref.status}).` +
+						(uuid && uuid !== ref.id ? ` Session ID: ${uuid}.` : ``) +
 						(ref.sessionFile ? ` File: ${ref.sessionFile}.` : ` No session file.`) +
 						(ref.activity ? ` Activity: ${ref.activity}.` : ``),
 				},
@@ -234,11 +391,12 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 			details: {
 				action: "inspect",
 				id: ref.id,
+				uuid,
 				kind: ref.kind,
 				status: ref.status,
 				parentId: ref.parentId,
 				sessionFile: ref.sessionFile,
-				caller: ref.id === this.callerId(),
+				caller: this.callerRegistryIds().has(ref.id),
 			},
 		};
 	}
@@ -258,8 +416,7 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 		}
 		// Project ownership: stay in the authorized project unless explicitly granted.
 		const cwd = this.session.cwd;
-		const openSession =
-			(this.session.openManagedSession as SessionToolDeps["openSession"]) ?? sessionToolDeps.openSession;
+		const openSession = this.resolveOpenSession();
 		if (!openSession) {
 			throw new Error(
 				"Live session creation is not wired for this host (interactive TUI registers the live-session factory; headless hosts report this instead of creating).",
@@ -282,11 +439,27 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 			// Model-created independent sessions start in the background and never
 			// steal focus: the factory seam contract requires hasUI:false and no
 			// selection change; this path never touches tab visibility itself.
+			// Identity and policy are trusted server-side facts, never model
+			// params: the registry-space parent link plus the caller's
+			// tool/spawn/permission limits, so owners record true lineage and a
+			// restricted background caller cannot spawn an unrestricted child.
+			// `toolNames` travels alongside `restrictToolNames` (a restriction
+			// without its name set is meaningless downstream); absent fields
+			// stay absent and owners intersect them under live-session facts.
 			const opened = await openSession({
 				cwd,
 				task: params.task,
-				callerId: this.callerId(),
+				callerId: this.callerParentLink(),
+				callerTaskDepth: callerDepth,
 				taskDepth: callerDepth + 1,
+				background: true,
+				callerPolicy: {
+					toolNames: readSessionToolNames(this.session),
+					restrictToolNames: this.session.restrictToolNames,
+					spawns: this.session.getSessionSpawns(),
+					autoApprove: readSessionAutoApprove(this.session),
+					enableMCP: this.session.enableMCP,
+				},
 			});
 			const taskNote = params.task?.trim()
 				? opened.taskAccepted
@@ -338,7 +511,7 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 		const denied = this.checkTargetAccess(ref);
 		if (denied) throw new Error(denied);
 		const live = this.liveSession(ref);
-		const deliver = sessionToolDeps.deliverMessage;
+		const deliver = this.resolveDeliverMessage();
 		const receipt = deliver
 			? await deliver(live, params.message.trim())
 			: typeof live.prompt === "function"
@@ -356,10 +529,14 @@ export class SessionsTool implements AgentTool<typeof sessionsSchema> {
 		const ref = this.findRef(params.sessionId);
 		// No synchronous self-stop/delete deadlock: the caller can never abort
 		// its own run through this path — matched by registry ID, public UUID,
-		// or live runtime identity.
-		const caller = this.callerId();
-		const callerUuid = this.session.getSessionId?.() ?? null;
-		if (params.sessionId === caller || ref.id === caller || (callerUuid && this.liveUuid(ref) === callerUuid)) {
+		// or live runtime identity, however the target is spelled.
+		const callerIds = this.callerRegistryIds();
+		const callerUuid = this.callerUuid();
+		if (
+			(params.sessionId && (callerIds.has(params.sessionId) || params.sessionId === callerUuid)) ||
+			callerIds.has(ref.id) ||
+			(callerUuid !== null && this.liveUuid(ref) === callerUuid)
+		) {
 			throw new Error(
 				`Refusing to stop the calling session itself through the sessions tool (would deadlock the synchronous call).`,
 			);

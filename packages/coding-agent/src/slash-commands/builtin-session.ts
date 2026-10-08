@@ -471,6 +471,17 @@ export const BUILTIN_SESSION_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 		},
 	},
 	{
+		name: "skills",
+		icon: "agents",
+		description: "Open the managed skill revision manager (history, evaluate, promote, rollback)",
+		inlineHint: "[name]",
+		allowArgs: true,
+		handleTui: (command, runtime) => {
+			runtime.ctx.showSkillRevisions(command.args.trim() || undefined);
+			runtime.ctx.editor.setText("");
+		},
+	},
+	{
 		name: "git",
 		icon: "branch",
 		description: "Open the git UI (split diff viewer, staging, commit composer)",
