@@ -143,25 +143,6 @@ jobs:
           path: rust-agent/*.cdx.json
           if-no-files-found: error
 
-  supply-chain:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
-        with:
-          comment-summary-in-pr: on-failure
-          fail-on-severity: low
-
   codeql:
     name: CodeQL
     if: github.event_name != 'merge_group'

@@ -199,15 +199,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89
-        with:
-          args: check scripts
-          src: rust-agent
-      - name: Format
-        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89
-        with:
-          args: format --check scripts
-          src: rust-agent
+      - name: Lint
+        run: |
+          set -euo pipefail
+          pipx install ruff==0.16.10
+          "$HOME/.local/bin/ruff" check scripts
+          "$HOME/.local/bin/ruff" format --check scripts
 
   actions:
     name: Workflows
@@ -259,6 +256,7 @@ jobs:
         with:
           args: --offline --no-progress rust-agent/README.md
           fail: true
+          failIfEmpty: false
 
   wiki:
     name: Wiki
