@@ -217,8 +217,8 @@ install_via_bun() {
         }
     fi
     echo ""
-    echo "✓ Installed omp via bun"
-    echo "Run 'omp' to get started!"
+    echo "✓ Installed harvest (omp) via bun"
+    echo "Run 'harvest' or 'omp' to get started!"
 }
 
 # Install binary from GitHub releases
@@ -315,14 +315,22 @@ install_binary() {
         exit 1
     fi
     mv -f "${TMP_DOWNLOAD}/${BINARY}" "${INSTALL_DIR}/omp"
+    ln -sf omp "${INSTALL_DIR}/harvest" 2>/dev/null || true
 
     echo ""
-    echo "✓ Installed omp to ${INSTALL_DIR}/omp"
+    echo "✓ Installed omp and harvest to ${INSTALL_DIR}"
 
     # Check if in PATH
     case ":$PATH:" in
-        *":$INSTALL_DIR:"*) echo "Run 'omp' to get started!" ;;
-        *) echo "Add ${INSTALL_DIR} to your PATH, then run 'omp'" ;;
+        *":$INSTALL_DIR:"*) echo "Run 'harvest' or 'omp' to get started!" ;;
+        *)
+            echo "Add ${INSTALL_DIR} to your PATH, then run 'harvest' (or 'omp'):"
+            if [ "$PLATFORM" = "darwin" ]; then
+                echo "    echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+            else
+                echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+            fi
+            ;;
     esac
 }
 
