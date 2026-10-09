@@ -3,6 +3,8 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+	APP_NAME,
+	CONFIG_DIR_NAME,
 	__resetDirsFromEnvForTests,
 	getActiveProfile,
 	getComposerCacheDir,
@@ -29,12 +31,16 @@ describe("document conversion cache directory", () => {
 	let originalOmpProfile: string | undefined;
 	let originalPiProfile: string | undefined;
 	let originalXdgCacheHome: string | undefined;
+	let originalHarvestCodingAgentDir: string | undefined;
+	let originalHarvestProfile: string | undefined;
 
 	beforeEach(async () => {
 		originalPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
 		originalOmpProfile = process.env.OMP_PROFILE;
 		originalPiProfile = process.env.PI_PROFILE;
 		originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+		originalHarvestCodingAgentDir = process.env.HARVEST_CODING_AGENT_DIR;
+		originalHarvestProfile = process.env.HARVEST_PROFILE;
 		tempRoot = path.join(os.tmpdir(), "pi-utils-document-cache", Snowflake.next());
 		await fs.mkdir(tempRoot, { recursive: true });
 	});
@@ -44,6 +50,8 @@ describe("document conversion cache directory", () => {
 		restoreEnv("OMP_PROFILE", originalOmpProfile);
 		restoreEnv("PI_PROFILE", originalPiProfile);
 		restoreEnv("XDG_CACHE_HOME", originalXdgCacheHome);
+		restoreEnv("HARVEST_CODING_AGENT_DIR", originalHarvestCodingAgentDir);
+		restoreEnv("HARVEST_PROFILE", originalHarvestProfile);
 		__resetDirsFromEnvForTests();
 		await fs.rm(tempRoot, { recursive: true, force: true });
 	});
@@ -52,13 +60,13 @@ describe("document conversion cache directory", () => {
 		if (process.platform === "win32") return;
 
 		process.env.XDG_CACHE_HOME = path.join(tempRoot, "cache");
-		await fs.mkdir(path.join(process.env.XDG_CACHE_HOME, "omp"), { recursive: true });
+		await fs.mkdir(path.join(process.env.XDG_CACHE_HOME, APP_NAME), { recursive: true });
 
 		const defaultAgentDir = path.join(os.homedir(), getConfigDirName(), "agent");
 		setAgentDir(defaultAgentDir);
 
 		expect(getDocumentConversionCacheDir()).toBe(
-			path.join(process.env.XDG_CACHE_HOME, "omp", "cache", "document-conversions"),
+			path.join(process.env.XDG_CACHE_HOME, APP_NAME, "cache", "document-conversions"),
 		);
 	});
 
@@ -66,12 +74,12 @@ describe("document conversion cache directory", () => {
 		if (process.platform === "win32") return;
 
 		process.env.XDG_CACHE_HOME = path.join(tempRoot, "cache");
-		await fs.mkdir(path.join(process.env.XDG_CACHE_HOME, "omp"), { recursive: true });
+		await fs.mkdir(path.join(process.env.XDG_CACHE_HOME, APP_NAME), { recursive: true });
 
 		const defaultAgentDir = path.join(os.homedir(), getConfigDirName(), "agent");
 		setAgentDir(defaultAgentDir);
 
-		expect(getComposerCacheDir()).toBe(path.join(process.env.XDG_CACHE_HOME, "omp", "cache", "composer"));
+		expect(getComposerCacheDir()).toBe(path.join(process.env.XDG_CACHE_HOME, APP_NAME, "cache", "composer"));
 	});
 
 	it("stays under a custom PI_CODING_AGENT_DIR", () => {
@@ -86,12 +94,16 @@ describe("document conversion cache directory", () => {
 describe("test directory state cleanup", () => {
 	it("restores the active profile from the current env after setAgentDir mutations", () => {
 		const originalPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
+		const originalHarvestCodingAgentDir = process.env.HARVEST_CODING_AGENT_DIR;
+		const originalHarvestProfile = process.env.HARVEST_PROFILE;
 		const originalOmpProfile = process.env.OMP_PROFILE;
 		const originalPiProfile = process.env.PI_PROFILE;
 		const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
 		try {
 			process.env.OMP_PROFILE = "cache-profile";
+			delete process.env.HARVEST_PROFILE;
 			delete process.env.PI_PROFILE;
+			delete process.env.HARVEST_CODING_AGENT_DIR;
 			delete process.env.PI_CODING_AGENT_DIR;
 			delete process.env.XDG_CACHE_HOME;
 			__resetDirsFromEnvForTests();
@@ -100,7 +112,9 @@ describe("test directory state cleanup", () => {
 			expect(getActiveProfile()).toBeUndefined();
 
 			process.env.OMP_PROFILE = "cache-profile";
+			delete process.env.HARVEST_PROFILE;
 			delete process.env.PI_PROFILE;
+			delete process.env.HARVEST_CODING_AGENT_DIR;
 			delete process.env.PI_CODING_AGENT_DIR;
 			__resetDirsFromEnvForTests();
 
@@ -110,6 +124,8 @@ describe("test directory state cleanup", () => {
 			);
 		} finally {
 			restoreEnv("PI_CODING_AGENT_DIR", originalPiCodingAgentDir);
+			restoreEnv("HARVEST_CODING_AGENT_DIR", originalHarvestCodingAgentDir);
+			restoreEnv("HARVEST_PROFILE", originalHarvestProfile);
 			restoreEnv("OMP_PROFILE", originalOmpProfile);
 			restoreEnv("PI_PROFILE", originalPiProfile);
 			restoreEnv("XDG_CACHE_HOME", originalXdgCacheHome);
@@ -125,6 +141,8 @@ describe("legacy file adoption on XDG paths", () => {
 	let originalPiProfile: string | undefined;
 	let originalXdgStateHome: string | undefined;
 	let originalXdgDataHome: string | undefined;
+	let originalHarvestCodingAgentDir: string | undefined;
+	let originalHarvestConfigDir: string | undefined;
 	let homedirSpy: Mock<() => string> | undefined;
 
 	beforeEach(async () => {
@@ -133,6 +151,8 @@ describe("legacy file adoption on XDG paths", () => {
 		originalPiProfile = process.env.PI_PROFILE;
 		originalXdgStateHome = process.env.XDG_STATE_HOME;
 		originalXdgDataHome = process.env.XDG_DATA_HOME;
+		originalHarvestCodingAgentDir = process.env.HARVEST_CODING_AGENT_DIR;
+		originalHarvestConfigDir = process.env.HARVEST_CONFIG_DIR;
 		tempRoot = path.join(os.tmpdir(), "pi-utils-xdg-adoption", Snowflake.next());
 		await fs.mkdir(tempRoot, { recursive: true });
 	});
@@ -145,6 +165,8 @@ describe("legacy file adoption on XDG paths", () => {
 		restoreEnv("PI_PROFILE", originalPiProfile);
 		restoreEnv("XDG_STATE_HOME", originalXdgStateHome);
 		restoreEnv("XDG_DATA_HOME", originalXdgDataHome);
+		restoreEnv("HARVEST_CODING_AGENT_DIR", originalHarvestCodingAgentDir);
+		restoreEnv("HARVEST_CONFIG_DIR", originalHarvestConfigDir);
 		__resetDirsFromEnvForTests();
 		await fs.rm(tempRoot, { recursive: true, force: true });
 	});
@@ -153,8 +175,12 @@ describe("legacy file adoption on XDG paths", () => {
 	function activateTempHome(xdgEnv: Record<string, string>): void {
 		homedirSpy = spyOn(os, "homedir").mockReturnValue(tempRoot);
 		delete process.env.PI_CODING_AGENT_DIR;
+		delete process.env.HARVEST_CODING_AGENT_DIR;
+		delete process.env.HARVEST_CONFIG_DIR;
+		delete process.env.PI_CONFIG_DIR;
 		delete process.env.OMP_PROFILE;
 		delete process.env.PI_PROFILE;
+		delete process.env.HARVEST_PROFILE;
 		delete process.env.XDG_STATE_HOME;
 		delete process.env.XDG_DATA_HOME;
 		for (const key in xdgEnv) {
@@ -167,20 +193,19 @@ describe("legacy file adoption on XDG paths", () => {
 		if (process.platform === "win32") return;
 		const xdgState = path.join(tempRoot, "xdg-state");
 		const xdgData = path.join(tempRoot, "xdg-data");
-		await fs.mkdir(path.join(xdgState, "omp"), { recursive: true });
-		await fs.mkdir(path.join(xdgData, "omp"), { recursive: true });
-		// Legacy layout: key under ~/.omp/agent, registry under ~/.omp.
-		await fs.mkdir(path.join(tempRoot, ".omp", "agent"), { recursive: true });
-		await fs.writeFile(path.join(tempRoot, ".omp", "agent", "secret-placeholder.key"), "legacy-key");
-		await fs.writeFile(path.join(tempRoot, ".omp", "marketplaces.json"), '{"legacy":true}');
-		// The XDG registry is already populated: adoption must not overwrite it.
-		await fs.writeFile(path.join(xdgData, "omp", "marketplaces.json"), '{"xdg":true}');
+		await fs.mkdir(path.join(xdgState, APP_NAME), { recursive: true });
+		await fs.mkdir(path.join(xdgData, APP_NAME), { recursive: true });
+		const legacyRoot = path.join(tempRoot, CONFIG_DIR_NAME);
+		await fs.mkdir(path.join(legacyRoot, "agent"), { recursive: true });
+		await fs.writeFile(path.join(legacyRoot, "agent", "secret-placeholder.key"), "legacy-key");
+		await fs.writeFile(path.join(legacyRoot, "marketplaces.json"), '{"legacy":true}');
+		await fs.writeFile(path.join(xdgData, APP_NAME, "marketplaces.json"), '{"xdg":true}');
 		activateTempHome({ XDG_STATE_HOME: xdgState, XDG_DATA_HOME: xdgData });
 
 		const key = getSecretPlaceholderKeyPath();
 		const registry = getMarketplacesRegistryPath();
-		expect(key).toBe(path.join(xdgState, "omp", "secret-placeholder.key"));
-		expect(registry).toBe(path.join(xdgData, "omp", "marketplaces.json"));
+		expect(key).toBe(path.join(xdgState, APP_NAME, "secret-placeholder.key"));
+		expect(registry).toBe(path.join(xdgData, APP_NAME, "marketplaces.json"));
 		expect(await fs.readFile(key, "utf8")).toBe("legacy-key");
 		expect(await fs.readFile(registry, "utf8")).toBe('{"xdg":true}');
 	});
@@ -188,7 +213,9 @@ describe("legacy file adoption on XDG paths", () => {
 	it("keeps the legacy paths canonical when XDG is inactive", async () => {
 		if (process.platform === "win32") return;
 		activateTempHome({});
-		expect(getSecretPlaceholderKeyPath()).toBe(path.join(tempRoot, ".omp", "agent", "secret-placeholder.key"));
-		expect(getMarketplacesRegistryPath()).toBe(path.join(tempRoot, ".omp", "marketplaces.json"));
+		expect(getSecretPlaceholderKeyPath()).toBe(
+			path.join(tempRoot, CONFIG_DIR_NAME, "agent", "secret-placeholder.key"),
+		);
+		expect(getMarketplacesRegistryPath()).toBe(path.join(tempRoot, CONFIG_DIR_NAME, "marketplaces.json"));
 	});
 });
