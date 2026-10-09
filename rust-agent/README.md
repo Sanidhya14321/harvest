@@ -20,8 +20,8 @@ omp tools
 omp --version
 ```
 
-Configuration is read from flags, then `OMP_MODEL`, `OMP_BASE_URL`, `OMP_API_KEY`
-or `OPENAI_API_KEY`, then `.omp/config.toml` in the workspace.
+Configuration is read from flags, then `OMP_MODEL`, `OMP_BASE_URL`,
+`OMP_API_KEY` or `OPENAI_API_KEY`, then `.omp/config.toml` in the workspace.
 
 ## Checks
 
