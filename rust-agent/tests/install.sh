@@ -74,6 +74,8 @@ output=
 url=
 effective=0
 timeout=0
+speed_limit=0
+speed_time=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -o | --output)
@@ -87,10 +89,12 @@ while [ "$#" -gt 0 ]; do
             ;;
         --speed-limit)
             [ "$2" = 1000 ] || exit 2
+            speed_limit=1
             shift 2
             ;;
         --speed-time)
             [ "$2" = 30 ] || exit 2
+            speed_time=1
             shift 2
             ;;
         -w | --write-out)
@@ -107,7 +111,12 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
-[ -n "$output" ] && [ -n "$url" ] && [ "$timeout" = 1 ] || exit 2
+[ -n "$output" ] && [ -n "$url" ] || exit 2
+if [ "$effective" = 1 ]; then
+    [ "$timeout" = 1 ] || exit 2
+else
+    [ "$speed_limit" = 1 ] && [ "$speed_time" = 1 ] || exit 2
+fi
 printf '%s\n' "$url" >>"$OMP_TEST_DOWNLOAD_LOG"
 if [ "$effective" = 1 ]; then
     [ "$url" = https://github.com/Sanidhya14321/harvest/releases/latest ] || exit 2

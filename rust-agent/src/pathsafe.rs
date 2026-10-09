@@ -63,6 +63,7 @@ fn existing_ancestor(path: &Path) -> Option<&Path> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::fs;
 
     use super::workspace_file;

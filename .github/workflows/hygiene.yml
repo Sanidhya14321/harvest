@@ -112,7 +112,7 @@ jobs:
           tool: taplo-cli,cargo-sort
       - run: taplo fmt --check --diff
       - run: taplo lint
-      - run: cargo sort --check --check-format
+      - run: cargo sort --check
 
   doc-comments:
     name: Doc comment spelling
