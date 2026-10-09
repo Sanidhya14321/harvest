@@ -1,0 +1,162 @@
+[package]
+name = "harvest-omp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Rust coding agent for Harvest"
+repository = "https://github.com/Sanidhya14321/harvest"
+homepage = "https://github.com/Sanidhya14321/harvest"
+documentation = "https://github.com/Sanidhya14321/harvest/tree/main/rust-agent"
+readme = "README.md"
+license = "MIT"
+keywords = ["agent", "cli", "coding", "harvest", "llm"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["tests/", "target/"]
+
+[package.metadata.binstall]
+pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/omp-{ target-family }-{ target-arch }{ binary-ext }"
+
+[package.metadata.deb]
+maintainer = "Harvest Contributors <harvest@users.noreply.github.com>"
+copyright = "2026, Harvest Contributors"
+extended-description = "omp is the Rust coding agent for Harvest. It reads and edits a workspace, runs shell commands, and talks to an OpenAI-compatible model."
+section = "devel"
+priority = "optional"
+revision = ""
+
+[[bin]]
+name = "omp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.53", features = ["derive"] }
+clap_complete = "4.5.65"
+clap_mangen = "0.2.31"
+regex = "1.12.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+toml = "0.9.8"
+ureq = { version = "2.12.1", default-features = false, features = [
+  "json",
+  "tls",
+] }
+
+[dev-dependencies]
+assert_cmd = "2.1.1"
+predicates = "3.1.3"
+tempfile = "3.23.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+deprecated_in_future = "deny"
+elided_lifetimes_in_paths = "deny"
+explicit_outlives_requirements = "deny"
+ffi_unwind_calls = "deny"
+keyword_idents = { level = "deny", priority = -1 }
+let_underscore_drop = "deny"
+macro_use_extern_crate = "deny"
+meta_variable_misuse = "deny"
+missing_abi = "deny"
+missing_copy_implementations = "deny"
+missing_debug_implementations = "deny"
+non_ascii_idents = "deny"
+noop_method_call = "deny"
+redundant_lifetimes = "deny"
+single_use_lifetimes = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unit_bindings = "deny"
+unnameable_types = "deny"
+unreachable_pub = "deny"
+unused_import_braces = "deny"
+unused_lifetimes = "deny"
+unused_macro_rules = "deny"
+unused_qualifications = "deny"
+unused_results = "deny"
+variant_size_differences = "deny"
+future_incompatible = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+multiple_crate_versions = "allow"
+redundant_pub_crate = "allow"
+multiple_inherent_impl = "allow"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+as_underscore = "deny"
+assertions_on_result_states = "deny"
+clone_on_ref_ptr = "deny"
+create_dir = "deny"
+dbg_macro = "deny"
+empty_drop = "deny"
+empty_enum_variants_with_brackets = "deny"
+empty_structs_with_brackets = "deny"
+exit = "deny"
+filetype_is_file = "deny"
+float_cmp_const = "deny"
+fn_to_numeric_cast_any = "deny"
+format_push_string = "deny"
+get_unwrap = "deny"
+if_then_some_else_none = "deny"
+indexing_slicing = "deny"
+infinite_loop = "deny"
+integer_division = "deny"
+iter_over_hash_type = "deny"
+large_include_file = "deny"
+let_underscore_must_use = "deny"
+lossy_float_literal = "deny"
+mem_forget = "deny"
+missing_assert_message = "deny"
+mixed_read_write_in_expression = "deny"
+mutex_atomic = "deny"
+needless_raw_strings = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+partial_pub_fields = "deny"
+pathbuf_init_then_push = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+pub_without_shorthand = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+redundant_type_annotations = "deny"
+ref_patterns = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+same_name_method = "deny"
+semicolon_inside_block = "deny"
+str_to_string = "deny"
+string_lit_chars_any = "deny"
+string_slice = "deny"
+suspicious_xor_used_as_pow = "deny"
+todo = "deny"
+try_err = "deny"
+undocumented_unsafe_blocks = "deny"
+unnecessary_safety_comment = "deny"
+unnecessary_safety_doc = "deny"
+unnecessary_self_imports = "deny"
+unneeded_field_pattern = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+unseparated_literal_suffix = "deny"
+unwrap_in_result = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+verbose_file_reads = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+debug = 1

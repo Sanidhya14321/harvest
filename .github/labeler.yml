@@ -1,0 +1,7 @@
+rust-agent:
+  - changed-files:
+      - any-glob-to-any-file: rust-agent/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: .github/**

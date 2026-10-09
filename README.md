@@ -19,6 +19,8 @@
   Fork of <a href="https://github.com/badlogic/pi-mono">Pi</a> by <a href="https://github.com/mariozechner">@mariozechner</a> · rewritten as a coding-first surface
 </p>
 
+The Rust agent in [`rust-agent`](rust-agent/README.md) builds `omp` with Cargo. Its checks and releases follow the Quinjet workflow set. The TypeScript tree remains while the rest of the product moves over.
+
 > **30** built-in tools · **60+** providers · **23** search backends · **~80k** lines of Rust core · macOS / Linux / Windows
 
 > [!NOTE]

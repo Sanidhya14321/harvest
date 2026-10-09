@@ -194,7 +194,7 @@ fn run_list_workspace(
 		.collect_with_heartbeat(|| ct.heartbeat())
 		.map_err(iofs::map_walker_error)?;
 
-	let mut entries_truncated = outcome.truncated;
+	let mut entries_truncated = outcome.stats.limited_entries > 0;
 	for entry in outcome.entries {
 		let file_type = iofs::from_walker_file_type(entry.file_type);
 		if is_excluded_workspace_entry(&entry.path, file_type) {
