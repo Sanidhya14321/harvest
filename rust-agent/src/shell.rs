@@ -12,7 +12,10 @@ pub(crate) struct Layout {
 }
 
 pub(crate) fn auto_install() {
-    if cfg!(debug_assertions) || env::var_os("OMP_SKIP_INTEGRATIONS").is_some() {
+    if cfg!(debug_assertions)
+        || env::var_os("OMP_SKIP_INTEGRATIONS").is_some()
+        || already_installed()
+    {
         return;
     }
     match install_from_process() {
@@ -42,6 +45,20 @@ pub(crate) fn detected_shell() -> Option<String> {
             .and_then(|stem| stem.to_str())
             .map(str::to_ascii_lowercase)
     })
+}
+
+fn already_installed() -> bool {
+    let Some(home) = env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+    else {
+        return false;
+    };
+    let state = env::var_os("XDG_STATE_HOME")
+        .map_or_else(|| home.join(".local/state"), PathBuf::from)
+        .join("omp");
+    let shell = detected_shell().unwrap_or_else(|| "bash".to_owned());
+    fs::metadata(state.join(format!("{shell}-installed"))).is_ok()
 }
 
 fn install_from_process() -> Result<()> {

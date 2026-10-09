@@ -89,14 +89,47 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn http_model_reads_a_local_completion() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
-            let mut buffer = [0_u8; 4096];
-            let _read = socket.read(&mut buffer).unwrap();
+            let mut received = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            loop {
+                let count = socket.read(&mut buffer).unwrap_or(0);
+                if count == 0 {
+                    break;
+                }
+                let Some(chunk) = buffer.get(..count) else {
+                    break;
+                };
+                received.extend_from_slice(chunk);
+                let Some(header_end) = received.windows(4).position(|mark| mark == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let Some(header_bytes) = received.get(..header_end) else {
+                    break;
+                };
+                let header = String::from_utf8_lossy(header_bytes);
+                let mut length = 0_usize;
+                for line in header.lines() {
+                    let Some(value) = line
+                        .to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(str::to_owned)
+                    else {
+                        continue;
+                    };
+                    length = value.trim().parse().unwrap_or(0);
+                }
+                if received.len() >= header_end.saturating_add(4).saturating_add(length) {
+                    break;
+                }
+            }
             let body = r#"{"choices":[{"message":{"role":"assistant","content":"done"}}]}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",

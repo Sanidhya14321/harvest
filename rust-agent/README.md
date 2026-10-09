@@ -1,8 +1,8 @@
 # omp
 
-`omp` is the Rust coding agent for Harvest. It talks to an OpenAI-compatible chat
-completions endpoint, then reads, writes, edits, searches, and runs commands in a
-workspace.
+`omp` is the Rust coding agent for Harvest. It talks to an
+OpenAI-compatible chat completions endpoint, then reads, writes, edits,
+searches, and runs commands in a workspace.
 
 ## Build
 

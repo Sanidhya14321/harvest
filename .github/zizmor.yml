@@ -6,6 +6,8 @@ rules:
       - hygiene.yml
       - nightly.yml
       - release.yml
+      - rust-ci.yml
+      - rust-release.yml
       - security.yml
   adhoc-packages:
     ignore:
@@ -20,9 +22,11 @@ rules:
       - pages.yml
       - pr.yml
       - release.yml
+      - rust-release.yml
       - security.yml
       - stale.yml
       - wiki.yml
   use-trusted-publishing:
     ignore:
       - release.yml
+      - rust-release.yml

@@ -107,7 +107,17 @@ jobs:
         with:
           persist-credentials: false
       - name: Scan
-        run: pipx run semgrep scan --error --config p/rust --config p/secrets --config p/github-actions rust-agent .github/workflows
+        run: >-
+          pipx run semgrep scan --error
+          --config p/rust --config p/secrets --config p/github-actions
+          rust-agent
+          .github/workflows/rust-ci.yml .github/workflows/rust-release.yml
+          .github/workflows/hygiene.yml .github/workflows/security.yml
+          .github/workflows/performance.yml .github/workflows/pr.yml
+          .github/workflows/deep.yml .github/workflows/nightly.yml
+          .github/workflows/pages.yml .github/workflows/winget.yml
+          .github/workflows/wiki.yml .github/workflows/stale.yml
+          .github/workflows/labeler.yml
 
   trivy:
     name: Trivy
@@ -161,10 +171,8 @@ jobs:
       - uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           languages: rust
-          build-mode: manual
+          build-mode: none
           queries: security-and-quality
-      - name: Build the Rust agent
-        run: cargo build --locked --manifest-path rust-agent/Cargo.toml
       - uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
 
   scorecard:

@@ -110,7 +110,7 @@ fn grep(root: &Path, args: &GrepArgs) -> Result<String> {
 }
 
 fn collect(root: &Path, path: &Path, pattern: &Regex, hits: &mut Vec<String>) -> Result<()> {
-    if hits.len() >= MATCH_LIMIT {
+    if hits.len() >= MATCH_LIMIT || is_symlink(path) {
         return Ok(());
     }
     if path.is_dir() {
@@ -119,7 +119,7 @@ fn collect(root: &Path, path: &Path, pattern: &Regex, hits: &mut Vec<String>) ->
         for entry in entries {
             let entry = entry.with_context(|| format!("failed to list {}", path.display()))?;
             let name = entry.file_name();
-            if name == ".git" || name == ".omp" {
+            if name == ".git" || name == ".omp" || is_symlink(&entry.path()) {
                 continue;
             }
             collect(root, &entry.path(), pattern, hits)?;
@@ -179,6 +179,10 @@ fn command(root: &Path, command_text: &str) -> Command {
     };
     let _directory: &mut Command = command.current_dir(root);
     command
+}
+
+fn is_symlink(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
 }
 
 fn bounded(text: &str) -> String {
@@ -253,6 +257,24 @@ mod tests {
         assert!(escaped.to_string().contains("escapes"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn grep_skips_symlinked_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "outside-secret").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
+        std::fs::write(root.path().join("local.txt"), "outside-secret").unwrap();
+        let hits = invoke(
+            root.path(),
+            &call("grep", r#"{"pattern":"outside-secret"}"#),
+        )
+        .unwrap();
+        assert!(hits.contains("local.txt"), "{hits}");
+        assert!(!hits.contains("secret.txt"), "{hits}");
+    }
+
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn bash_runs_in_the_workspace() {
         let root = tempfile::tempdir().unwrap();

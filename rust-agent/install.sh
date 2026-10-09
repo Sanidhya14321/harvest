@@ -223,7 +223,7 @@ download() {
     destination=$2
     case "${DOWNLOADER}" in
         curl)
-            curl --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 30 -fsSL "${url}" -o "${destination}" ||
+            curl --proto '=https' --tlsv1.2 --connect-timeout 10 --speed-limit 1000 --speed-time 30 -fsSL "${url}" -o "${destination}" ||
                 fail "failed to download ${url}"
             ;;
         wget)

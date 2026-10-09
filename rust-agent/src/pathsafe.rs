@@ -38,24 +38,27 @@ fn confirm_existing(path: &Path, root: &Path) -> Result<()> {
     let canonical_root = root
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", root.display()))?;
-    let candidate = if path.exists() {
-        path.canonicalize()
-            .with_context(|| format!("failed to resolve {}", path.display()))?
-    } else if let Some(parent) = path.parent().filter(|parent| parent.exists()) {
-        let canonical_parent = parent
-            .canonicalize()
-            .with_context(|| format!("failed to resolve {}", parent.display()))?;
-        if !canonical_parent.starts_with(&canonical_root) {
-            bail!("path escapes the workspace");
-        }
-        return Ok(());
-    } else {
+    let Some(ancestor) = existing_ancestor(path) else {
         return Ok(());
     };
-    if !candidate.starts_with(&canonical_root) {
+    let canonical = ancestor
+        .canonicalize()
+        .with_context(|| format!("failed to resolve {}", ancestor.display()))?;
+    if !canonical.starts_with(&canonical_root) {
         bail!("path escapes the workspace");
     }
     Ok(())
+}
+
+fn existing_ancestor(path: &Path) -> Option<&Path> {
+    let mut cursor = Some(path);
+    while let Some(current) = cursor {
+        if current.exists() {
+            return Some(current);
+        }
+        cursor = current.parent();
+    }
+    None
 }
 
 #[cfg(test)]
@@ -102,5 +105,15 @@ mod tests {
         fs::write(outside.path().join("secret.txt"), "nope").unwrap();
         let error = workspace_file(root.path(), "escape/secret.txt").unwrap_err();
         assert!(error.to_string().contains("escapes"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_path_through_a_symlink_is_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
+        let error = workspace_file(root.path(), "escape/new/dir/file.txt").unwrap_err();
+        assert!(error.to_string().contains("escapes"), "{error}");
     }
 }

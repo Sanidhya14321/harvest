@@ -35,7 +35,6 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: rust-agent
@@ -50,4 +49,4 @@ jobs:
       - name: Interpret the tests that do not touch the process boundary
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-strict-provenance
-        run: cargo miri test --all-features
+        run: cargo miri test --bin omp

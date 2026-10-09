@@ -85,6 +85,14 @@ while [ "$#" -gt 0 ]; do
             timeout=1
             shift 2
             ;;
+        --speed-limit)
+            [ "$2" = 1000 ] || exit 2
+            shift 2
+            ;;
+        --speed-time)
+            [ "$2" = 30 ] || exit 2
+            shift 2
+            ;;
         -w | --write-out)
             [ "$2" = '%{url_effective}' ] || exit 2
             effective=1

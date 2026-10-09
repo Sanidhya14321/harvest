@@ -202,9 +202,8 @@ jobs:
       - name: Lint
         run: |
           set -euo pipefail
-          pipx install ruff==0.16.10
-          "$HOME/.local/bin/ruff" check scripts
-          "$HOME/.local/bin/ruff" format --check scripts
+          pipx run --spec ruff==0.16.10 ruff check scripts
+          pipx run --spec ruff==0.16.10 ruff format --check scripts
 
   actions:
     name: Workflows
