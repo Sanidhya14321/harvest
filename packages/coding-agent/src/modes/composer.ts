@@ -549,6 +549,28 @@ export class Composer implements TerminalFrameProvider {
 		return rows;
 	}
 
+	/** Give responsive inline panels their real allocation before clipping their controls. */
+	#renderAllocatedRoot(component: Component, width: number, height: number): readonly string[] {
+		if (height <= 0) return [];
+		component.setMaxHeight?.(height);
+		if (!(component instanceof Container)) return component.render(width).slice(0, height);
+		const records = component.children.map(child => ({
+			child,
+			rows: this.#renderAllocatedRoot(child, width, height),
+		}));
+		if (records.reduce((total, record) => total + record.rows.length, 0) <= height)
+			return records.flatMap(record => [...record.rows]);
+		let remaining = height;
+		const retained = new Map<Component, readonly string[]>();
+		for (const record of records.toReversed()) {
+			const rows =
+				record.rows.length <= remaining ? record.rows : this.#renderAllocatedRoot(record.child, width, remaining);
+			retained.set(record.child, rows);
+			remaining -= rows.length;
+		}
+		return records.flatMap(record => [...(retained.get(record.child) ?? [])]);
+	}
+
 	/** Collapse optional chrome before the current draft/cursor can leave the viewport. */
 	#renderFixedRoots(roots: readonly Component[], width: number, height: number): string[] {
 		if (height <= 0) return [];
@@ -577,7 +599,11 @@ export class Composer implements TerminalFrameProvider {
 						? editorRows
 						: root === this.#attachmentContainer
 							? attachmentRows
-							: root.render(width),
+							: this.#renderAllocatedRoot(
+									root,
+									width,
+									root === this.#pinnedErrorContainer ? errorBudget : height,
+								),
 		}));
 		if (records.reduce((total, record) => total + record.rows.length, 0) <= height)
 			return records.flatMap(record => [...record.rows]);
@@ -586,9 +612,12 @@ export class Composer implements TerminalFrameProvider {
 		const take = (component: Component | undefined, budget: number, cursor = false): void => {
 			const record = records.find(record => record.root === component);
 			if (!record || remaining <= 0) return;
+			const allocation = Math.min(remaining, budget);
 			const selected = cursor
-				? this.#rowsAroundCursor(coreEditorRows, Math.min(remaining, budget))
-				: record.rows.slice(0, Math.min(remaining, budget));
+				? this.#rowsAroundCursor(coreEditorRows, allocation)
+				: record.rows.length <= allocation
+					? record.rows
+					: this.#renderAllocatedRoot(record.root, width, allocation);
 			retained.set(record.root, selected);
 			remaining -= selected.length;
 		};

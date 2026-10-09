@@ -13,23 +13,32 @@
  * model's context window). A stable conversation must not re-query on every
  * redraw — that per-event recompute is what previously froze large sessions.
  */
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { resetSettingsForTest, Settings, settings } from "@harvest/pi-coding-agent/config/settings";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import { Settings, settings } from "@harvest/pi-coding-agent/config/settings";
 import type { ContextUsage } from "@harvest/pi-coding-agent/extensibility/extensions/types";
 import { StatusLineComponent } from "@harvest/pi-coding-agent/modes/components/status-line";
-import { initTheme, setSymbolPreset, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import * as themeColor from "@harvest/pi-coding-agent/modes/theme/color";
+import { initTheme, setSymbolPreset, setThemeInstance, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import { getSessionAccentAnsi } from "@harvest/pi-coding-agent/utils/session-color";
 import { adjustHsv } from "@harvest/pi-utils";
+import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "./helpers/settings-test-state";
 
-beforeAll(async () => {
-	resetSettingsForTest();
+let previousTheme = theme;
+let settingsState: SettingsTestState | undefined;
+beforeEach(async () => {
+	previousTheme = theme;
+	settingsState = beginSettingsTest();
+	vi.spyOn(themeColor, "detectColorMode").mockReturnValue("truecolor");
 	await Settings.init({ inMemory: true });
-	await initTheme();
+	setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor" }));
 });
 
-afterAll(() => {
-	resetSettingsForTest();
+afterEach(() => {
+	restoreSettingsTestState(settingsState);
+	settingsState = undefined;
+	setThemeInstance(previousTheme);
 });
 
 interface Fake {
@@ -496,7 +505,10 @@ describe("StatusLineComponent context breakdown", () => {
 			expect(speculationIndex).toBeLessThan(compactionIndex);
 			expect(nerd).not.toContain("╎");
 			expect(nerd).not.toContain("┃");
-			const expectedDimmed = getSessionAccentAnsi(adjustHsv(theme.getColorHex("borderAccent"), { s: 0.7, v: 0.75 }));
+			const expectedDimmed = getSessionAccentAnsi(
+				adjustHsv(theme.getColorHex("borderAccent"), { s: 0.7, v: 0.75 }),
+				theme.getColorMode(),
+			);
 			expect(border).toContain(`${expectedDimmed}󰁨`);
 			expect(border).not.toContain(`${theme.getFgAnsi("warning")}󰁨`);
 			await setSymbolPreset("unicode");

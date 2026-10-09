@@ -313,7 +313,10 @@ export class OverlayPanel implements Component, OverlayFocusOwner {
 
 	render(width: number): readonly string[] {
 		const innerWidth = dialogContentWidth(width);
-		const onlyChild = this.children.length === 1 ? this.children[0] : undefined;
+		const contentChildren = this.children.filter(
+			child => !(child instanceof Spacer || child instanceof PanelDivider),
+		);
+		const onlyChild = contentChildren.length === 1 ? contentChildren[0] : undefined;
 		if (onlyChild instanceof SelectList) {
 			const height = this.getMaxHeight();
 			const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);

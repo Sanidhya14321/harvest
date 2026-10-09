@@ -5,15 +5,14 @@
  * checker/repair/agent rows from {@link CleanseBoardModel} animate in place while
  * permanent log lines accumulate above them.
  */
-import { Spacer, Text, type TUI } from "@harvest/pi-tui";
-import { CleanseBoardModel, type CleanseStatusBoard } from "../../cleanse/board";
+import { ScrollView, type TUI, wrapTextWithAnsi } from "@harvest/pi-tui";
+import { type CleanseBoardLogRenderer, CleanseBoardModel, type CleanseStatusBoard } from "../../cleanse/board";
 import type { CleanseCheckerDescriptor } from "../../cleanse/checkers";
 import type { CleanseAgentOutcome, CleanseAssignment, CleanseCheckResult, CleanseRunStatus } from "../../cleanse/types";
-import { SPINNER_FRAMES } from "../../cli/live-board";
 import type { AgentProgress } from "../../task/types";
 import { replaceTabs } from "../../tools/render-utils";
-import { theme } from "../theme/theme";
-import { OverlayPanel } from "./overlay-box";
+import { getSymbolTheme, theme } from "../theme/theme";
+import { dialogContentWidth, OverlayPanel, renderDialog } from "./overlay-box";
 
 const SPINNER_INTERVAL_MS = 80;
 const MAX_LOG_LINES = 14;
@@ -31,8 +30,30 @@ export class CleansePanelComponent extends OverlayPanel implements CleanseStatus
 	readonly interactive = true;
 
 	readonly #tui: TUI;
-	readonly #model = new CleanseBoardModel();
-	readonly #logLines: string[] = [];
+	readonly #model = new CleanseBoardModel({
+		fg: (color, text) => theme.fg(color, text),
+		bold: text => theme.bold(text),
+		get success() {
+			return theme.status.success;
+		},
+		get warning() {
+			return theme.status.warning;
+		},
+		get error() {
+			return theme.status.error;
+		},
+		get separator() {
+			return theme.sep.dot;
+		},
+		get filled() {
+			return theme.symbol("progress.filled");
+		},
+		get empty() {
+			return theme.symbol("progress.empty");
+		},
+	});
+	#scrollView = new ScrollView([], { height: 1, scrollbar: "never" });
+	readonly #logLines: Array<string | CleanseBoardLogRenderer> = [];
 	#outcome: CleansePanelOutcome | undefined;
 	#errorMessage: string | undefined;
 	#frame = 0;
@@ -43,7 +64,7 @@ export class CleansePanelComponent extends OverlayPanel implements CleanseStatus
 		super(options.request ? `/cleanse ${replaceTabs(options.request)}` : "/cleanse");
 		this.#tui = options.tui;
 		this.#timer = setInterval(() => {
-			this.#frame = (this.#frame + 1) % SPINNER_FRAMES.length;
+			this.#frame = (this.#frame + 1) % theme.getSpinnerFrames().length;
 			this.#rebuild();
 		}, SPINNER_INTERVAL_MS);
 		this.#timer.unref?.();
@@ -51,6 +72,10 @@ export class CleansePanelComponent extends OverlayPanel implements CleanseStatus
 	}
 
 	log(text: string): void {
+		this.#appendLog(text);
+	}
+
+	#appendLog(text: string | CleanseBoardLogRenderer): void {
 		this.#logLines.push(text);
 		if (this.#logLines.length > MAX_LOG_LINES) this.#logLines.splice(0, this.#logLines.length - MAX_LOG_LINES);
 		this.#rebuild();
@@ -58,7 +83,7 @@ export class CleansePanelComponent extends OverlayPanel implements CleanseStatus
 
 	/** Permanent line styled as a failure (the core's stderr-equivalent). */
 	logError(text: string): void {
-		this.log(theme.fg("error", text));
+		this.#appendLog(() => theme.fg("error", text));
 	}
 
 	phase(text: string | undefined): void {
@@ -72,7 +97,7 @@ export class CleansePanelComponent extends OverlayPanel implements CleanseStatus
 	}
 
 	checkerFinished(check: CleanseCheckResult, durationMs: number): void {
-		this.log(this.#model.checkerFinished(check, durationMs));
+		this.#appendLog(this.#model.finishChecker(check, durationMs));
 	}
 
 	repairFinished(): void {
@@ -90,7 +115,7 @@ export class CleansePanelComponent extends OverlayPanel implements CleanseStatus
 	}
 
 	agentFinished(outcome: CleanseAgentOutcome, assignment: CleanseAssignment): void {
-		this.log(this.#model.agentFinished(outcome, assignment));
+		this.#appendLog(this.#model.finishAgent(outcome, assignment));
 	}
 
 	/** Stop the live area; the panel stays mounted until the user dismisses it. */
@@ -126,41 +151,44 @@ export class CleansePanelComponent extends OverlayPanel implements CleanseStatus
 	}
 
 	#rebuild(): void {
-		this.clear();
-		this.addChild(new Spacer(1));
-		if (this.#logLines.length > 0) {
-			for (const line of this.#logLines) this.addChild(new Text(replaceTabs(line), 0, 0));
-			this.addChild(new Spacer(1));
-		}
-		if (!this.#liveClosed) {
-			const liveLines = this.#model.renderLive(SPINNER_FRAMES[this.#frame] ?? SPINNER_FRAMES[0]);
-			if (liveLines.length > 0) {
-				for (const line of liveLines) this.addChild(new Text(replaceTabs(line), 0, 0));
-				this.addChild(new Spacer(1));
-			}
-		}
-		if (this.#errorMessage) {
-			this.addChild(new Text(theme.fg("error", replaceTabs(this.#errorMessage)), 0, 0));
-			this.addChild(new Spacer(1));
-		}
-		this.addChild(new Text(this.#footerLine(), 0, 0));
-		this.#tui.requestRender();
+		this.#tui.requestComponentRender(this);
 	}
 
 	#footerLine(): string {
+		const dismiss = "Esc dismiss";
 		switch (this.#outcome) {
 			case undefined:
 				return theme.fg("muted", "Esc cancel /cleanse");
 			case "clean":
-				return theme.fg("success", `${theme.status.success} Clean · Esc dismiss`);
+				return theme.fg("success", `${dismiss}${theme.sep.dot}${theme.status.success} Clean`);
 			case "unresolved":
-				return theme.fg("warning", `${theme.status.warning} Diagnostics remain · Esc dismiss`);
+				return theme.fg("warning", `${dismiss}${theme.sep.dot}${theme.status.warning} Diagnostics remain`);
 			case "unsupported":
-				return theme.fg("warning", `${theme.status.warning} No runnable checker · Esc dismiss`);
+				return theme.fg("warning", `${dismiss}${theme.sep.dot}${theme.status.warning} No runnable checker`);
 			case "cancelled":
-				return theme.fg("warning", `${theme.status.warning} Cancelled · Esc dismiss`);
+				return theme.fg("warning", `${dismiss}${theme.sep.dot}${theme.status.warning} Cancelled`);
 			case "error":
-				return theme.fg("error", `${theme.status.error} Error · Esc dismiss`);
+				return theme.fg("error", `${dismiss}${theme.sep.dot}${theme.status.error} Error`);
 		}
+	}
+
+	override render(width: number): readonly string[] {
+		const height = this.getMaxHeight();
+		const footer = this.#footerLine();
+		if (height === 1) return renderDialog(this.title, [footer], width, height).lines;
+		const innerWidth = dialogContentWidth(width);
+		const frames = theme.getSpinnerFrames();
+		const live = this.#liveClosed ? [] : this.#model.renderLive(frames[this.#frame] ?? frames[0]);
+		const text = this.#errorMessage
+			? theme.fg("error", replaceTabs(this.#errorMessage))
+			: [...this.#logLines, ...live].map(line => replaceTabs(typeof line === "string" ? line : line())).join("\n");
+		const lines = wrapTextWithAnsi(text, innerWidth, { hard: true });
+		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
+		this.#scrollView.setHeight(Math.max(1, Math.min(height - chrome, lines.length)));
+		this.#scrollView.setLines(lines);
+		this.#scrollView.setSymbols(getSymbolTheme());
+		if (this.#errorMessage) this.#scrollView.scrollToTop();
+		else this.#scrollView.scrollToBottom();
+		return renderDialog(this.title, this.#scrollView.render(innerWidth), width, height, footer).lines;
 	}
 }

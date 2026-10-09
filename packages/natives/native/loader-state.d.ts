@@ -128,3 +128,5 @@ export function validateLoadedBindings(
 ): void;
 
 export function loadNative(): Record<string, unknown>;
+
+export function createFallbackBindings(): Record<string, unknown>;

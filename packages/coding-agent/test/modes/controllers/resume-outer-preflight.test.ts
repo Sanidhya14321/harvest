@@ -9,7 +9,7 @@ import { AgentSession } from "@harvest/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@harvest/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@harvest/pi-coding-agent/session/session-manager";
 import { createTools, type Tool } from "@harvest/pi-coding-agent/tools";
-import { TempDir } from "@harvest/pi-utils";
+import { getProjectDir, setProjectDir, TempDir } from "@harvest/pi-utils";
 
 beforeAll(async () => {
 	await initTheme();
@@ -22,9 +22,11 @@ afterEach(() => {
 async function createMode(opts: { flushFails?: boolean } = {}): Promise<{
 	mode: InteractiveMode;
 	session: AgentSession;
+	targetPath: string;
 	cleanup: () => Promise<void>;
 }> {
 	resetSettingsForTest();
+	const previousProjectDir = getProjectDir();
 	const tempDir = TempDir.createSync("@pi-resume-outer-");
 	await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	const settings = Settings.isolated({ "compaction.enabled": false });
@@ -50,6 +52,13 @@ async function createMode(opts: { flushFails?: boolean } = {}): Promise<{
 		rebuildSystemPrompt: async () => ({ systemPrompt: ["Test"] }),
 	});
 	const mode = new InteractiveMode(session, "test");
+	const targetPath = path.join(tempDir.path(), "target-session.jsonl");
+	const targetCwd = path.join(tempDir.path(), "target-project");
+	await Bun.write(path.join(targetCwd, "README.md"), "Target project\n");
+	await Bun.write(
+		targetPath,
+		`${JSON.stringify({ type: "session", version: 3, id: "target", cwd: targetCwd, timestamp: new Date().toISOString() })}\n`,
+	);
 	vi.spyOn(mode, "addMessageToChat").mockReturnValue([]);
 	vi.spyOn(mode, "ensureLoadingAnimation").mockImplementation(() => {});
 	mode.ui.requestRender = vi.fn();
@@ -62,8 +71,13 @@ async function createMode(opts: { flushFails?: boolean } = {}): Promise<{
 	return {
 		mode,
 		session,
+		targetPath,
 		cleanup: async () => {
+			mode.ui.stop();
+			await session.dispose();
+			authStorage.close();
 			resetSettingsForTest();
+			setProjectDir(previousProjectDir);
 			await tempDir.remove();
 		},
 	};
@@ -71,13 +85,13 @@ async function createMode(opts: { flushFails?: boolean } = {}): Promise<{
 
 describe("InteractiveMode.handleResumeSession outer preflight flush", () => {
 	it("aborts before disposing controllers or resetting observers when flush fails", async () => {
-		const { mode, cleanup } = await createMode({ flushFails: true });
+		const { mode, targetPath, cleanup } = await createMode({ flushFails: true });
 		try {
 			const resetSpy = vi.spyOn(mode, "resetObserverRegistry");
 			const switchSpy = vi.spyOn(mode.session, "switchSession").mockResolvedValue(true);
 			const showErrorSpy = vi.spyOn(mode, "showError");
 
-			await mode.handleResumeSession("/tmp/some-session.jsonl");
+			await mode.handleResumeSession(targetPath);
 
 			expect(mode.settings.flush).toHaveBeenCalled();
 			expect(showErrorSpy).toHaveBeenCalledWith(expect.stringContaining("disk full"));
@@ -88,18 +102,18 @@ describe("InteractiveMode.handleResumeSession outer preflight flush", () => {
 		}
 	});
 
-	it("disposes controllers and delegates to SelectorController with settingsFlushed on success", async () => {
-		const { mode, session, cleanup } = await createMode({ flushFails: false });
+	it("delegates resume after a successful flush and keeps the view when its session identity is unchanged", async () => {
+		const { mode, session, targetPath, cleanup } = await createMode({ flushFails: false });
 		try {
 			const resetSpy = vi.spyOn(mode, "resetObserverRegistry");
 			const switchSpy = vi.spyOn(session, "switchSession").mockResolvedValue(true);
 
-			await mode.handleResumeSession("/tmp/some-session.jsonl");
+			await mode.handleResumeSession(targetPath);
 
 			expect(mode.settings.flush).toHaveBeenCalled();
-			expect(resetSpy).toHaveBeenCalled();
+			expect(resetSpy).not.toHaveBeenCalled();
 			expect(switchSpy).toHaveBeenCalledWith(
-				"/tmp/some-session.jsonl",
+				targetPath,
 				expect.objectContaining({ onCwdChange: expect.any(Function) }),
 			);
 		} finally {

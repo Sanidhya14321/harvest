@@ -13,17 +13,29 @@ import { AssistantMessageComponent } from "@harvest/pi-coding-agent/modes/compon
 import { ReadToolGroupComponent } from "@harvest/pi-coding-agent/modes/components/read-tool-group";
 import { ToolExecutionComponent } from "@harvest/pi-coding-agent/modes/components/tool-execution";
 import { SelectorController } from "@harvest/pi-coding-agent/modes/controllers/selector-controller";
-import { getThemeByName, setThemeInstance } from "@harvest/pi-coding-agent/modes/theme/theme";
+import * as themeColor from "@harvest/pi-coding-agent/modes/theme/color";
+import { getThemeByName, setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { InteractiveModeContext } from "@harvest/pi-coding-agent/modes/types";
 import type { ResolvedRoleModel } from "@harvest/pi-coding-agent/session/agent-session";
+import { AgentStorage } from "@harvest/pi-coding-agent/session/agent-storage";
+import type { SessionManager } from "@harvest/pi-coding-agent/session/session-manager";
 import { AUTO_THINKING } from "@harvest/pi-coding-agent/thinking";
 import { setTerminalHyperlinks, TERMINAL } from "@harvest/pi-tui";
-import { removeSyncWithRetries, Snowflake } from "@harvest/pi-utils";
+import { CONFIG_DIR_NAME, removeWithRetries, setProjectDir, Snowflake } from "@harvest/pi-utils";
 import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "./helpers/settings-test-state";
 
 let settingsState: SettingsTestState | undefined;
+let previousTheme: Theme | undefined;
+
+/** Setting-only contexts still supply the controller's session authority. */
+function createController(ctx: InteractiveModeContext): SelectorController {
+	ctx.sessionManager = { getSessionFile: () => undefined } as unknown as SessionManager;
+	return new SelectorController(ctx);
+}
 
 beforeEach(async () => {
+	previousTheme = theme;
+	vi.spyOn(themeColor, "detectColorMode").mockReturnValue("truecolor");
 	settingsState = beginSettingsTest();
 	await Settings.init({ inMemory: true });
 });
@@ -31,13 +43,14 @@ beforeEach(async () => {
 afterEach(() => {
 	restoreSettingsTestState(settingsState);
 	settingsState = undefined;
+	if (previousTheme) setThemeInstance(previousTheme);
 });
 
 describe("selector setting side effects", () => {
 	it("refreshes the status line when git integration changes at runtime", () => {
 		const updateSettings = vi.fn();
 		const requestRender = vi.fn();
-		const controller = new SelectorController({
+		const controller = createController({
 			statusLine: { updateSettings },
 			ui: { requestRender },
 		} as unknown as InteractiveModeContext);
@@ -60,7 +73,7 @@ describe("selector setting side effects", () => {
 	it("invalidates the UI and requests a repaint when tui.tight changes", () => {
 		const invalidate = vi.fn();
 		const requestRender = vi.fn();
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: { invalidate, requestRender },
 		} as unknown as InteractiveModeContext);
 
@@ -74,7 +87,7 @@ describe("selector setting side effects", () => {
 		const statusInvalidate = vi.fn();
 		const invalidate = vi.fn();
 		const requestRender = vi.fn();
-		const controller = new SelectorController({
+		const controller = createController({
 			statusLine: { invalidate: statusInvalidate },
 			ui: { invalidate, requestRender },
 		} as unknown as InteractiveModeContext);
@@ -97,7 +110,7 @@ describe("selector setting side effects", () => {
 	});
 	it("applies memory backend changes to the live session", () => {
 		const applyMemoryBackend = vi.fn(async () => {});
-		const controller = new SelectorController({
+		const controller = createController({
 			session: { applyMemoryBackend },
 			showError: vi.fn(),
 		} as unknown as InteractiveModeContext);
@@ -110,7 +123,7 @@ describe("selector setting side effects", () => {
 		const setAdvisorEnabled = vi.fn();
 		const invalidate = vi.fn();
 		const requestRender = vi.fn();
-		const controller = new SelectorController({
+		const controller = createController({
 			session: { setAdvisorEnabled },
 			statusLine: { invalidate },
 			ui: { requestRender },
@@ -134,7 +147,7 @@ describe("selector setting side effects", () => {
 				tool.setShowImages = setShowImages;
 				const assistant = Object.create(AssistantMessageComponent.prototype) as AssistantMessageComponent;
 				assistant.setImagesVisible = setImagesVisible;
-				const controller = new SelectorController({
+				const controller = createController({
 					chatContainer: { children: [tool, assistant] },
 					ui: { clearInlineImages, requestRender },
 				} as unknown as InteractiveModeContext);
@@ -174,7 +187,7 @@ describe("selector setting side effects", () => {
 				chatContainer: { children: [tool, readGroup, assistant], setToolActivityVisible },
 				ui: { clearInlineImages, requestRender },
 			};
-			const controller = new SelectorController(ctx as unknown as InteractiveModeContext);
+			const controller = createController(ctx as unknown as InteractiveModeContext);
 
 			controller.handleSettingChange("display.hideToolActivity", hidden);
 
@@ -198,7 +211,7 @@ describe("selector setting side effects", () => {
 		it(`rebuilds the transcript when display.showTokenUsage=${enabled} changes in /settings`, () => {
 			const rebuildChatFromMessages = vi.fn();
 			const resetDisplay = vi.fn();
-			const controller = new SelectorController({
+			const controller = createController({
 				rebuildChatFromMessages,
 				ui: { resetDisplay },
 			} as unknown as InteractiveModeContext);
@@ -235,7 +248,7 @@ describe("selector setting side effects", () => {
 			}
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -328,7 +341,7 @@ describe("selector setting side effects", () => {
 			if (message.startsWith("TASK model:")) assignmentApplied.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -412,7 +425,7 @@ describe("selector setting side effects", () => {
 			if (message.startsWith("Project default model:")) assignmentApplied.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -500,7 +513,7 @@ describe("selector setting side effects", () => {
 			if (globalStatusCount === 2) capturedRuntimeAssignmentApplied.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -599,7 +612,7 @@ describe("selector setting side effects", () => {
 			if (message.startsWith("Global default model:")) assignmentApplied.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -673,8 +686,11 @@ describe("selector setting side effects", () => {
 		const globalSelector = `${globalModel.provider}/${globalModel.id}`;
 		const testDir = path.join(os.tmpdir(), `selector-runtime-identical-${Snowflake.next()}`);
 		const projectDir = path.join(testDir, "project");
-		fs.mkdirSync(path.join(projectDir, ".omp"), { recursive: true });
-		fs.writeFileSync(path.join(projectDir, ".omp", "config.yml"), `modelRoles:\n  default: ${projectSelector}\n`);
+		fs.mkdirSync(path.join(projectDir, CONFIG_DIR_NAME), { recursive: true });
+		fs.writeFileSync(
+			path.join(projectDir, CONFIG_DIR_NAME, "config.yml"),
+			`modelRoles:\n  default: ${projectSelector}\n`,
+		);
 
 		try {
 			const settings = await Settings.loadIsolated({
@@ -701,7 +717,7 @@ describe("selector setting side effects", () => {
 				if (message.startsWith("Global default model:")) assignmentApplied.resolve();
 			});
 			let captured: unknown;
-			const controller = new SelectorController({
+			const controller = createController({
 				ui: {
 					requestRender: vi.fn(),
 					setFocus: vi.fn(),
@@ -763,7 +779,8 @@ describe("selector setting side effects", () => {
 				hub.dispose();
 			}
 		} finally {
-			if (fs.existsSync(testDir)) removeSyncWithRetries(testDir);
+			if (settingsState) setProjectDir(settingsState.projectDir);
+			if (fs.existsSync(testDir)) await removeWithRetries(testDir);
 		}
 	});
 
@@ -809,7 +826,7 @@ describe("selector setting side effects", () => {
 				if (message.startsWith("Global default model:")) globalAssignmentApplied.resolve();
 			});
 			let captured: unknown;
-			const controller = new SelectorController({
+			const controller = createController({
 				ui: {
 					requestRender: vi.fn(),
 					setFocus: vi.fn(),
@@ -869,7 +886,7 @@ describe("selector setting side effects", () => {
 				expect(settings.getGlobalModelRole("default")).toBeUndefined();
 				expect(settings.getModelRole("default")).toBe(overlaySelector);
 				expect(settings.getModelRoleProvenance("default")).toBe("overlay");
-				expect(await Bun.file(path.join(projectDir, ".omp", "config.yml")).text()).toContain(
+				expect(await Bun.file(path.join(projectDir, CONFIG_DIR_NAME, "config.yml")).text()).toContain(
 					`default: ${projectSelector}`,
 				);
 				expect(setModel).not.toHaveBeenCalled();
@@ -883,6 +900,7 @@ describe("selector setting side effects", () => {
 				hub.handleInput("\x1b[B"); // Project scope → global scope.
 				hub.handleInput("\n"); // Save the hidden global fallback.
 				await globalAssignmentApplied.promise;
+				await settings.flush();
 
 				expect(settings.getGlobalModelRole("default")).toBe(projectSelector);
 				expect(settings.getModelRole("default")).toBe(overlaySelector);
@@ -892,7 +910,9 @@ describe("selector setting side effects", () => {
 				hub.dispose();
 			}
 		} finally {
-			if (fs.existsSync(testDir)) removeSyncWithRetries(testDir);
+			AgentStorage.close();
+			if (settingsState) setProjectDir(settingsState.projectDir);
+			if (fs.existsSync(testDir)) await removeWithRetries(testDir);
 		}
 	});
 
@@ -913,7 +933,7 @@ describe("selector setting side effects", () => {
 			if (message.startsWith("Default model:")) assignmentApplied.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -989,7 +1009,7 @@ describe("selector setting side effects", () => {
 		const showStatus = vi.fn();
 		const showError = vi.fn();
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -1084,7 +1104,7 @@ describe("selector setting side effects", () => {
 		const showError = vi.fn();
 		let picker: { handleInput(data: string): void } | undefined;
 		const settings = Settings.isolated({ cycleOrder: ["smol", "slow"] });
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -1155,7 +1175,7 @@ describe("selector setting side effects", () => {
 			if (message.includes("role cleared")) roleCleared.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -1240,7 +1260,7 @@ describe("selector setting side effects", () => {
 			return { switched: true };
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -1327,7 +1347,7 @@ describe("selector setting side effects", () => {
 			if (message.includes("role cleared")) roleCleared.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -1412,7 +1432,7 @@ describe("selector setting side effects", () => {
 			if (message.includes("role cleared")) roleCleared.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -1515,7 +1535,7 @@ describe("selector setting side effects", () => {
 				if (message.includes("role cleared")) roleCleared.resolve();
 			});
 			let captured: unknown;
-			const controller = new SelectorController({
+			const controller = createController({
 				ui: {
 					requestRender: vi.fn(),
 					setFocus: vi.fn(),
@@ -1575,7 +1595,8 @@ describe("selector setting side effects", () => {
 				hub.dispose();
 			}
 		} finally {
-			if (fs.existsSync(testDir)) removeSyncWithRetries(testDir);
+			if (settingsState) setProjectDir(settingsState.projectDir);
+			if (fs.existsSync(testDir)) await removeWithRetries(testDir);
 		}
 	});
 
@@ -1622,7 +1643,7 @@ describe("selector setting side effects", () => {
 				if (message.includes("role cleared")) roleCleared.resolve();
 			});
 			let captured: unknown;
-			const controller = new SelectorController({
+			const controller = createController({
 				ui: {
 					requestRender: vi.fn(),
 					setFocus: vi.fn(),
@@ -1682,7 +1703,8 @@ describe("selector setting side effects", () => {
 				hub.dispose();
 			}
 		} finally {
-			if (fs.existsSync(testDir)) removeSyncWithRetries(testDir);
+			if (settingsState) setProjectDir(settingsState.projectDir);
+			if (fs.existsSync(testDir)) await removeWithRetries(testDir);
 		}
 	});
 
@@ -1712,7 +1734,7 @@ describe("selector setting side effects", () => {
 			if (message.includes("role cleared")) roleCleared.resolve();
 		});
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),
@@ -1793,7 +1815,7 @@ describe("selector setting side effects", () => {
 		// scopedModels contains ONLY projectModel; the global model is NOT in scopedModels.
 		const scopedModels = [{ model: projectModel }];
 		let captured: unknown;
-		const controller = new SelectorController({
+		const controller = createController({
 			ui: {
 				requestRender: vi.fn(),
 				setFocus: vi.fn(),

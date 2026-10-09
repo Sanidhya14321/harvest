@@ -1,0 +1,64 @@
+bun test v1.4.2 (744846f84)
+
+packages\tui\test\wrap-ansi.test.ts:
+58 | 
+59 | 			const wrapped = wrapTextWithAnsi(text, 15);
+60 | 
+61 | 			// Each line should have background color
+62 | 			for (const line of wrapped) {
+63 | 				expect(line.includes(bgBlue)).toBe(true);
+                                       ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\tui\test\wrap-ansi.test.ts:63:35)
+(fail) wrapTextWithAnsi > background color preservation > should preserve background color across wrapped lines without full reset [0.57ms]
+79 | 			const wrapped = wrapTextWithAnsi(text, 20);
+80 | 
+81 | 			// All lines should have background color 41 (either as \x1b[41m or combined like \x1b[4;41m)
+82 | 			for (const line of wrapped) {
+83 | 				const hasBgColor = line.includes("[41m") || line.includes(";41m") || line.includes("[41;");
+84 | 				expect(hasBgColor).toBe(true);
+                            ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\tui\test\wrap-ansi.test.ts:84:24)
+(fail) wrapTextWithAnsi > background color preservation > should reset underline but preserve background when wrapping underlined text inside background [0.52ms]
+112 | 			expect(wrapped.length).toBeGreaterThan(1);
+113 | 
+114 | 			for (let i = 0; i < wrapped.length - 1; i++) {
+115 | 				const line = wrapped[i];
+116 | 				if (line.includes(strikeOn) || line.includes(";9") || line.includes("[9;")) {
+117 | 					expect(line.endsWith(strikeOff)).toBe(true);
+                                            ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\tui\test\wrap-ansi.test.ts:117:39)
+(fail) wrapTextWithAnsi > strikethrough styling > disables strikethrough at wrapped line ends while preserving fg/bg colors [0.38ms]
+149 | 
+150 | 			const wrapped = wrapTextWithAnsi(text, 10);
+151 | 
+152 | 			// Each continuation line should start with red code
+153 | 			for (let i = 1; i < wrapped.length; i++) {
+154 | 				expect(wrapped[i].startsWith(red)).toBe(true);
+                                             ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\tui\test\wrap-ansi.test.ts:154:40)
+(fail) wrapTextWithAnsi > basic wrapping > should preserve color codes across wraps [0.33ms]
+
+ 33 pass
+ 4 fail
+ 93 expect() calls
+Ran 37 tests across 4 files. [293.00ms]

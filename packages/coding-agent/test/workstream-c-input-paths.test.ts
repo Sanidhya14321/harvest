@@ -414,8 +414,7 @@ describe("T16 external editor through openExternalEditor", () => {
 		delete Bun.env.EDITOR;
 		const { ctx, editor, spies } = createCtx();
 		const spawn = spyOn(Bun, "spawn").mockImplementation(((...args: unknown[]) => {
-			void Bun.write(resolveTmpFile(args[0]), "edited in external editor");
-			return { exited: Promise.resolve(0) };
+			return { exited: Bun.write(resolveTmpFile(args[0]), "edited in external editor").then(() => 0) };
 		}) as never);
 		try {
 			editor.setText("original draft");

@@ -1,22 +1,18 @@
-import { type Component, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
+import { type Component, replaceTabs } from "@harvest/pi-tui";
 import { formatBytes } from "@harvest/pi-utils";
 import { getTinyTitleModelSpec, type TinyTitleLocalModelKey } from "../../tiny/models";
 import type { TinyTitleProgressEvent } from "../../tiny/title-protocol";
 import { theme } from "../theme/theme";
+import { dialogContentWidth, renderDialog } from "./overlay-box";
 
 const DEFAULT_BAR_WIDTH = 24;
 
-function padLine(line: string, width: number): string {
-	const visible = visibleWidth(line);
-	return visible >= width ? truncateToWidth(line, width) : `${line}${" ".repeat(width - visible)}`;
-}
-
 function progressBar(progress: number | undefined, width: number): string {
-	const barWidth = Math.max(8, Math.min(DEFAULT_BAR_WIDTH, width));
-	if (progress === undefined) return theme.fg("muted", "░".repeat(barWidth));
+	const barWidth = Math.max(0, Math.min(DEFAULT_BAR_WIDTH, width));
+	if (progress === undefined) return theme.fg("muted", theme.progress.empty.repeat(barWidth));
 	const ratio = Math.max(0, Math.min(1, progress / 100));
 	const filled = Math.round(ratio * barWidth);
-	return `${theme.fg("accent", "█".repeat(filled))}${theme.fg("muted", "░".repeat(barWidth - filled))}`;
+	return `${theme.fg("accent", theme.progress.filled.repeat(filled))}${theme.fg("muted", theme.progress.empty.repeat(barWidth - filled))}`;
 }
 
 function currentFile(event: TinyTitleProgressEvent | undefined): string | undefined {
@@ -54,6 +50,7 @@ function byteLabel(event: TinyTitleProgressEvent | undefined): string | undefine
 export class TinyTitleDownloadProgressComponent implements Component {
 	#modelKey: TinyTitleLocalModelKey;
 	#event: TinyTitleProgressEvent | undefined;
+	#maxHeight = 4;
 
 	constructor(modelKey: TinyTitleLocalModelKey) {
 		this.#modelKey = modelKey;
@@ -71,20 +68,31 @@ export class TinyTitleDownloadProgressComponent implements Component {
 		// No cached state.
 	}
 
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
+
 	render(width: number): readonly string[] {
 		width = Math.max(1, width);
 		const spec = getTinyTitleModelSpec(this.#modelKey);
-		const border = theme.fg("border", theme.boxRound.horizontal.repeat(width));
 		const status = statusLabel(this.#event);
 		const file = currentFile(this.#event);
 		const pct =
-			this.#event?.progress === undefined ? "" : `${Math.floor(this.#event.progress).toString().padStart(3, " ")}%`;
+			this.#event?.progress === undefined ? "" : `${Math.floor(Math.max(0, Math.min(100, this.#event.progress)))}%`;
 		const bytes = byteLabel(this.#event);
-		const title = `${theme.fg("accent", "Tiny model")} ${theme.fg("muted", status)} ${spec.label}`;
-		const details = [progressBar(this.#event?.progress, Math.max(8, width - 36)), pct, bytes, file]
+		const title = `Tiny model${theme.sep.dot}${spec.label}`;
+		const statusLine = [theme.fg(this.#event?.status === "error" ? "error" : "accent", status), pct, bytes]
 			.filter((part): part is string => Boolean(part))
-			.join(" ");
-
-		return [border, padLine(` ${title}`, width), padLine(` ${details}`, width), border];
+			.join(theme.sep.dot);
+		return renderDialog(
+			title,
+			[
+				statusLine,
+				progressBar(this.#event?.progress, dialogContentWidth(width)),
+				...(file ? [replaceTabs(file)] : []),
+			],
+			width,
+			Math.min(4, this.#maxHeight),
+		).lines;
 	}
 }

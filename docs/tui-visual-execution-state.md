@@ -1,5 +1,29 @@
 # TUI visual implementation checkpoint
 
+## Current state — 2026-10-09
+
+The current uncommitted follow-up is based on externally updated HEAD `bfd36a7`. The earlier runtime/session repairs were preserved. The user released all shared UI reservations after the external agent stopped on rate limits. Root now owns the remaining implementation; the assignments below are historical, not active reservations.
+
+The coding-agent, TUI and natives package gates passed. The final changed-contract packet passed **476 tests in 22 files**. The final integrated UI run recorded **61 passing and 8 failing chunks** across 344 files in 124.4 seconds. Four central wrap style/color continuation checks also remain failing; clipping/extraction/OSC-66 checks pass. Focused totals do not certify the whole application. Exact commands, counts and limitations are maintained in [the October 9 evidence](tui-visual-implementation-evidence-2026-10-09/README.md).
+
+The October 9 packet provides actual Composer budgets for inline panels; updates Cleanse live/completed/error rows, advisor configuration, debug choices, tiny-model progress, compression text fallbacks, setup artwork and extension navigation; shortens the setup intro; preserves canonical/legacy project model-role write targets; and repairs current session/settings/MCP/input fixtures. Central JavaScript clipping now preserves complete hyperlink/graphics commands and avoids repeated Unicode suffix segmentation.
+
+The complete OpenCode-style plan remains in progress. No new screenshot batch, commit, push, reset, stash, clean or release was performed.
+
+### Remaining execution order
+
+1. Restore operational native support or honest central fallback capability/error behavior. The current fallback returns empty Git status/diffs and stub AST results. `bun run build:native` failed before compilation because Visual Studio `vswhere.exe` is missing on this host. Do not conceal unavailable backends with a cosmetic success state.
+2. Repair remaining central text wrap/style and tool/search/edit-preview contracts. The clipping/extraction/OSC-66 follow-up passes. Reconcile platform and plugin fixtures only where the fixture causes the failure. Preserve every real behavioral assertion and recorded failure.
+3. Investigate the earlier worker smoke watchdog/EOF cleanup overrun and verify stage-labeled readiness/teardown for source, npm/tarball and compiled installs. Import-only success is insufficient.
+4. Resolve [the secondary provider findings](provider-integration-review-2026-10-08.md). Live account login/inference remain unverified; provider work stays secondary to the TUI.
+5. Finish unverified rows in [the coverage ledger](tui-visual-coverage.md), using actual component input and VirtualTerminal cells with minimal screenshots. Run integrated and packaged checks before any public-release recommendation.
+
+Preserve host-owned per-frame allocation and pointer geometry; semantic surfaces and ASCII/no-color policy; cursor/image/link protocols; completion-tail/live-rebuild chronology; session authority and drafts; full attachment/revision payloads; cancellation and central utilities. This UI work adds no fine-tuning capability.
+
+### Historical checkpoint — 2026-10-08
+
+The rest of this file records the original implementation context and worker assignments. Its formatting/type blockers and reservations were superseded by the current state above. Its starting-byte snapshot remains comparison evidence, never a restore/reset instruction. Historical screenshots do not certify later source changes.
+
 Started 2026-10-08 (Asia/Calcutta) at HEAD 5c63880 with existing uncommitted runtime repairs. The user authorized implementing opencode-tui-visual-consistency-plan.md. No commit/reset/stash/clean is authorized or used.
 
 The user confirmed the external repair agent stopped midway because of rate limits and released the shared UI files to this implementation. Preserve its existing changes and validate integrated behavior; no reset or replacement of runtime repairs is authorized.

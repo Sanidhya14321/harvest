@@ -20,6 +20,7 @@ import type { Model, UsageReport } from "@harvest/pi-ai";
 import { getSupportedEfforts } from "@harvest/pi-catalog/model-thinking";
 import {
 	type Component,
+	Ellipsis,
 	Input,
 	matchesKey,
 	type MouseRoutable,
@@ -42,12 +43,12 @@ import type { Settings } from "../../config/settings";
 import type { PerAdvisorStat } from "../../session/agent-session";
 import type { OAuthAccountIdentity } from "../../session/auth-storage";
 import { formatCompactQuota } from "../controllers/command-controller";
-import { getSelectListTheme, theme } from "../theme/theme";
+import { getSelectListTheme, getThemeEpoch, theme } from "../theme/theme";
 import { matchesSelectDown, matchesSelectUp } from "../utils/keybinding-matchers";
 import { editorKey } from "./keybinding-hints";
 import { HookEditorComponent } from "./hook-editor";
 import { buildBrowserItems, ModelBrowser, sortModelItems } from "./model-browser";
-import { canSplitPane, renderDialog, splitBodyWidth, splitRow, surfaceRow } from "./overlay-box";
+import { canSplitPane, dialogContentWidth, renderDialog, splitBodyWidth, splitRow, surfaceRow } from "./overlay-box";
 
 /** Host callbacks: all disk + live-runtime effects flow through these. */
 export interface AdvisorConfigCallbacks {
@@ -81,7 +82,11 @@ const PREVIEW_WIDTH = 60;
 function previewLine(text: string | undefined): string {
 	if (!text?.trim()) return "(none)";
 	const first = text.trim().split("\n", 1)[0] ?? "";
-	return first.length > PREVIEW_WIDTH ? `${first.slice(0, PREVIEW_WIDTH - 1)}…` : first;
+	return truncateToWidth(
+		first,
+		PREVIEW_WIDTH,
+		theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+	);
 }
 
 /** Omitted means default read/grep/glob; an explicit empty set means no tools. */
@@ -108,7 +113,7 @@ function formatAdvisorTools(tools: readonly string[] | undefined, emptyLabel: st
 /** Soft-wrap plain text to `width`, returning at least one (possibly empty) line. */
 function wrap(text: string, width: number): string[] {
 	if (!text) return [""];
-	return Bun.wrapAnsi(text, Math.max(1, width), { trim: false }).split("\n");
+	return Bun.wrapAnsi(text, Math.max(1, width), { trim: false, hard: true }).split("\n");
 }
 
 type Screen = "list" | "detail" | "name" | "model" | "tools" | "thinking" | "instructions";
@@ -145,6 +150,8 @@ export class AdvisorConfigOverlayComponent implements Component {
 	#maxHeight: number | undefined;
 	#splitLayout = true;
 	#previewOnly = false;
+	#themeEpoch = getThemeEpoch();
+	#detailIndex = 0;
 
 	constructor(
 		tui: TUI,
@@ -179,13 +186,21 @@ export class AdvisorConfigOverlayComponent implements Component {
 	// ───────────────────────────── render ─────────────────────────────
 
 	render(width: number): readonly string[] {
-		const height = Math.max(1, this.#maxHeight ?? this.#tui.terminal.rows ?? process.stdout.rows ?? 40);
+		if (this.#themeEpoch !== getThemeEpoch()) {
+			this.#themeEpoch = getThemeEpoch();
+			const previousIndex = this.#active instanceof SelectList ? this.#active.debugState().selectedIndex : 0;
+			const selectedIndex = typeof previousIndex === "number" ? previousIndex : 0;
+			if (this.#screen === "list") this.#showList();
+			else if (this.#screen === "detail") this.#showDetail(this.#detailIndex);
+			if (this.#active instanceof SelectList) this.#active.setSelectedIndex(selectedIndex);
+		}
+		const height = Math.max(1, this.#maxHeight ?? this.#tui.terminal?.rows ?? process.stdout.rows ?? 40);
 		const chrome = Number(height >= 3) + Number(height >= 2) + Number(height >= 6);
 		const bodyRows = Math.max(1, height - chrome);
 		const sidebarWidth = Math.max(22, Math.min(42, Math.floor(width * 0.34)));
 		this.#splitLayout = this.#screen === "list" && canSplitPane(width, sidebarWidth);
 		this.#dividerCol = this.#splitLayout ? sidebarWidth + 3 : Number.POSITIVE_INFINITY;
-		const bodyWidth = this.#splitLayout ? splitBodyWidth(width, sidebarWidth) : Math.max(1, width - 4);
+		const bodyWidth = this.#splitLayout ? splitBodyWidth(width, sidebarWidth) : dialogContentWidth(width);
 		if (this.#active instanceof SelectList) this.#active.setMaxVisible(Math.max(1, bodyRows - 1));
 		if (this.#active instanceof ModelBrowser) {
 			this.#active.setMaxVisible(bodyRows);
@@ -209,8 +224,14 @@ export class AdvisorConfigOverlayComponent implements Component {
 					splitRow(active[index] ?? "", preview[index] ?? "", width, sidebarWidth),
 				)
 			: (this.#previewOnly && this.#screen === "list" ? preview : active).slice(0, bodyRows);
-		const title = `Advisor configuration · ${this.#scope}${this.#dirty ? " · unsaved" : ""}`;
-		const footer = `${editorKey("tui.select.cancel") || "Esc"} back · ${this.#screen === "list" && !this.#splitLayout ? `F2 ${this.#previewOnly ? "list" : "preview"} · ` : ""}${this.#footerHint}`;
+		const title = `Advisor configuration${theme.sep.dot}${this.#scope}${this.#dirty ? `${theme.sep.dot}unsaved` : ""}`;
+		const footer = [
+			`${editorKey("tui.select.cancel") || "Esc"} back`,
+			...(this.#screen === "list" && !this.#splitLayout ? [`F2 ${this.#previewOnly ? "list" : "preview"}`] : []),
+			this.#footerHint,
+		]
+			.filter(Boolean)
+			.join(theme.sep.dot);
 		const layout = renderDialog(title, body, width, height, footer);
 		if (this.#splitLayout)
 			for (let index = 0; index < layout.bodyRows; index++)
@@ -283,7 +304,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 		if (lines.length > rows) {
 			const marker =
 				start + rows < lines.length
-					? theme.fg("dim", `  ↓ ${lines.length - rows - start} more`)
+					? theme.fg("dim", `  ${lines.length - rows - start} more`)
 					: theme.fg("dim", "  (end)");
 			window[rows - 1] = marker;
 		}
@@ -323,7 +344,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 		const lines = [
 			theme.bold(advisor.name || "(unnamed)"),
 			"",
-			`${theme.fg("dim", "Enabled:")} ${advisor.enabled === false ? "○ off" : "● on"}`,
+			`${theme.fg("dim", "Enabled:")} ${advisor.enabled === false ? `${theme.status.disabled} off` : `${theme.status.enabled} on`}`,
 			`${theme.fg("dim", "Model:")} ${model}`,
 			`${theme.fg("dim", "Tools:")} ${tools}`,
 			"",
@@ -396,19 +417,19 @@ export class AdvisorConfigOverlayComponent implements Component {
 	#advisorSummary(advisor: AdvisorConfig): string {
 		const model = advisor.model?.trim() || this.#defaultModelLabel || "advisor role default";
 		const tools = formatAdvisorTools(advisor.tools, "no tools");
-		return `${model} · ${tools}`;
+		return `${model}${theme.sep.dot}${tools}`;
 	}
 
 	#showList(): void {
 		this.#ensureRosterVisible();
 		const items: SelectItem[] = this.#doc.advisors.map((advisor, index) => ({
 			value: `advisor:${index}`,
-			label: `${advisor.enabled === false ? "○" : "●"} ${advisor.name || "(unnamed)"}`,
+			label: `${advisor.enabled === false ? theme.status.disabled : theme.status.enabled} ${advisor.name || "(unnamed)"}`,
 			description: this.#advisorSummary(advisor),
 		}));
 		items.push({ value: "add", label: "+ Add advisor" });
 		items.push({ value: "shared", label: "Shared instructions", description: previewLine(this.#doc.instructions) });
-		items.push({ value: "scope", label: `Scope: ${this.#scope}`, description: `→ ${this.#otherScope()}` });
+		items.push({ value: "scope", label: `Scope: ${this.#scope}`, description: `Switch to ${this.#otherScope()}` });
 		items.push({ value: "save", label: "Save & apply" });
 		items.push({ value: "close", label: "Close" });
 
@@ -423,7 +444,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 				this.#cb.notify(`Advisor config: ${err instanceof Error ? err.message : String(err)}`);
 			});
 		list.onCancel = () => this.#cb.close();
-		this.#setScreen("list", list, "↑↓ move · Enter / click select · scroll preview on the right · Esc close");
+		this.#setScreen("list", list, "Up/Down move / Enter select / scroll preview / Esc close");
 	}
 
 	async #onListSelect(value: string): Promise<void> {
@@ -439,7 +460,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 		}
 		if (value === "scope") {
 			if (this.#dirty) {
-				this.#cb.notify('Unsaved changes — "Save & apply" or Close before switching scope.');
+				this.#cb.notify('Unsaved changes: "Save & apply" or Close before switching scope.');
 				return;
 			}
 			const next = this.#otherScope();
@@ -464,6 +485,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 	}
 
 	#showDetail(index: number): void {
+		this.#detailIndex = index;
 		const advisor = this.#doc.advisors[index];
 		if (!advisor) {
 			this.#showList();
@@ -476,7 +498,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 			{
 				value: "toggleEnabled",
 				label: "Enabled",
-				description: advisor.enabled === false ? "○ off" : "● on",
+				description: advisor.enabled === false ? `${theme.status.disabled} off` : `${theme.status.enabled} on`,
 			},
 			{ value: "model", label: "Model", description: modelDescription },
 		];
@@ -492,7 +514,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 		const list = new SelectList(items, Math.max(1, items.length), getSelectListTheme());
 		list.onSelect = item => this.#onDetailSelect(index, item.value);
 		list.onCancel = () => this.#showList();
-		this.#setScreen("detail", list, `Editing "${advisor.name}" · Enter / click edit field · Esc back`);
+		this.#setScreen("detail", list, `Editing "${advisor.name}" / Enter edit field / Esc back`);
 	}
 
 	#onDetailSelect(index: number, field: string): void {
@@ -547,7 +569,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 			this.#showDetail(index);
 		};
 		input.onEscape = () => this.#showDetail(index);
-		this.#setScreen("name", input, "Type a name · Enter save · Esc cancel");
+		this.#setScreen("name", input, "Type a name / Enter save / Esc cancel");
 	}
 
 	#showModelPicker(index: number): void {
@@ -581,7 +603,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 			}
 		};
 		picker.onCancel = () => this.#showDetail(index);
-		this.#setScreen("model", picker, "Type to search · Enter / click twice picks · Esc back");
+		this.#setScreen("model", picker, "Type to search / Enter or click twice picks / Esc back");
 	}
 
 	#showThinkingPicker(index: number, selector: string, efforts: readonly string[]): void {
@@ -597,7 +619,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 			this.#showDetail(index);
 		};
 		list.onCancel = () => this.#showModelPicker(index);
-		this.#setScreen("thinking", list, `Thinking effort for ${selector} · Enter / click pick · Esc back`);
+		this.#setScreen("thinking", list, `Thinking effort for ${selector} / Enter pick / Esc back`);
 	}
 
 	#showToolsEditor(index: number, selected: Set<string>, cursor: number): void {
@@ -629,18 +651,14 @@ export class AdvisorConfigOverlayComponent implements Component {
 			this.#dirty = true;
 			this.#showDetail(index);
 		};
-		this.#setScreen(
-			"tools",
-			list,
-			"Enter / click toggle · select Done or Esc to apply (empty = no tools; read/grep/glob = default)",
-		);
+		this.#setScreen("tools", list, "Enter toggle / Done or Esc applies (empty = no tools; read/grep/glob = default)");
 	}
 
 	/** `index === -1` edits the shared top-level instructions; otherwise advisor[index]. */
 	#showInstructionsEditor(index: number): void {
 		const shared = index < 0;
 		const current = shared ? this.#doc.instructions : this.#doc.advisors[index].instructions;
-		const title = shared ? "Shared advisor instructions" : `Instructions — ${this.#doc.advisors[index].name}`;
+		const title = shared ? "Shared advisor instructions" : `Instructions: ${this.#doc.advisors[index].name}`;
 		const editor = new HookEditorComponent(
 			this.#tui,
 			title,

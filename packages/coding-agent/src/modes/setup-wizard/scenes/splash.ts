@@ -1,8 +1,8 @@
-import { padding, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
+import { Ellipsis, padding, truncateToWidth, visibleWidth } from "@harvest/pi-tui";
 import { gradientEscape, gradientLogo, PI_LOGO, type ShineConfig } from "../../components/welcome";
 import { theme } from "../../theme/theme";
 
-export const SETUP_SPLASH_MS = 2600;
+export const SETUP_SPLASH_MS = 600;
 export const SETUP_TICK_MS = 33;
 
 /** Brand mark at 2x: every glyph doubled horizontally, every row doubled vertically. */
@@ -32,13 +32,18 @@ const WATER_RAMP = [
 ];
 
 function clampLine(line: string, width: number): string {
-	const truncated = truncateToWidth(line, width);
+	const truncated = truncateToWidth(
+		line,
+		width,
+		theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode,
+	);
 	return truncated + padding(Math.max(0, width - visibleWidth(truncated)));
 }
 
 function centerLine(line: string, width: number): string {
 	const lineWidth = visibleWidth(line);
-	if (lineWidth >= width) return truncateToWidth(line, width);
+	if (lineWidth >= width)
+		return truncateToWidth(line, width, theme.getSymbolPreset() === "ascii" ? Ellipsis.Ascii : Ellipsis.Unicode);
 	const left = Math.floor((width - lineWidth) / 2);
 	return padding(left) + line + padding(width - left - lineWidth);
 }
@@ -46,8 +51,8 @@ function centerLine(line: string, width: number): string {
 function starAt(x: number, y: number, frame: number): string {
 	const hash = (x * 73856093) ^ (y * 19349663) ^ (frame * 83492791);
 	const bucket = Math.abs(hash) % 97;
-	if (bucket === 0) return theme.fg("accent", "✦");
-	if (bucket === 1) return theme.fg("muted", "·");
+	if (bucket === 0) return theme.fg("accent", theme.getSymbolPreset() === "ascii" ? "*" : "✦");
+	if (bucket === 1) return theme.fg("muted", theme.getSymbolPreset() === "ascii" ? "." : "·");
 	return " ";
 }
 
@@ -130,7 +135,13 @@ export function renderSetupSplash(width: number, height: number, elapsedMs: numb
 	const phase = progress * 1.8;
 	const shine: ShineConfig = { pos: (progress * 2.5) % 1, strength: Math.max(0, 1 - progress * 0.35) };
 
-	if (w < MIN_SCENE_WIDTH || h < MIN_SCENE_HEIGHT) return renderCompactSplash(w, h, phase, shine);
+	if (
+		theme.getSymbolPreset() === "ascii" ||
+		theme.getColorMode() === "none" ||
+		w < MIN_SCENE_WIDTH ||
+		h < MIN_SCENE_HEIGHT
+	)
+		return renderCompactSplash(w, h, phase, shine);
 
 	const frame = Math.floor(elapsedMs / SETUP_TICK_MS);
 	const cx = Math.floor(w / 2);

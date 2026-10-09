@@ -71,7 +71,13 @@ export interface ExtensionDashboardOptions {
 }
 
 function extFooter(): string {
-	return ` ↑/↓: navigate · Space: toggle · ←/→: provider · PgUp/PgDn: inspector · ${expandKeyHint()}: expand · Esc: close`;
+	return [
+		"Up/Down navigate",
+		"Space toggle",
+		"Left/Right provider",
+		"PgUp/PgDn inspector",
+		`${expandKeyHint()} expand`,
+	].join(theme.sep.dot);
 }
 
 /**
@@ -219,9 +225,13 @@ export class ExtensionDashboard implements Component {
 		const bodyLines = this.#body.render(innerWidth);
 
 		const provider = this.#state.tabs[this.#state.activeTabIndex]?.label ?? "All";
-		const footer = `${editorKey("app.interrupt") || "Esc"} close · ${this.#narrow ? `F2 ${this.#showInspector ? "list" : "details"} · Tab provider · ` : ""}${extFooter()}`;
+		const footer = [
+			`${editorKey("app.interrupt") || "Esc"} close`,
+			...(this.#narrow ? [`F2 ${this.#showInspector ? "list" : "details"}`, "Tab provider"] : []),
+			extFooter(),
+		].join(theme.sep.dot);
 		const layout = renderDialog(
-			`Extension Control Center${this.#narrow ? ` · ${provider}` : ""}`,
+			`Extension Control Center${this.#narrow ? `${theme.sep.dot}${provider}` : ""}`,
 			[...tabLines, ...bodyLines],
 			width,
 			height,

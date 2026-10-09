@@ -61,6 +61,7 @@ function createHarness(
 			putBlob: vi.fn(async () => ({ displayPath: "file:///replacement.png" })),
 		},
 		focusedAgentId: undefined,
+		isHomeDetached: () => false,
 		collabGuest: undefined,
 		ui: { requestRender: vi.fn() },
 		compactionQueuedMessages: [],

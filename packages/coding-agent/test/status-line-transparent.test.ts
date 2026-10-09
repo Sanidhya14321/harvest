@@ -1,20 +1,22 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { resetSettingsForTest, Settings } from "@harvest/pi-coding-agent/config/settings";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Settings } from "@harvest/pi-coding-agent/config/settings";
 import { StatusLineComponent } from "@harvest/pi-coding-agent/modes/components/status-line";
-import { initTheme, theme } from "@harvest/pi-coding-agent/modes/theme/theme";
-import { getProjectDir, setProjectDir } from "@harvest/pi-utils";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "./helpers/settings-test-state";
 
-const originalProjectDir = getProjectDir();
-
-beforeAll(async () => {
-	resetSettingsForTest();
+let settingsState: SettingsTestState | undefined;
+let previousTheme: Theme | undefined;
+beforeEach(async () => {
+	previousTheme = theme;
+	settingsState = beginSettingsTest();
 	await Settings.init({ inMemory: true });
-	await initTheme();
+	setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor" }));
 });
 
-afterAll(() => {
-	resetSettingsForTest();
-	setProjectDir(originalProjectDir);
+afterEach(() => {
+	restoreSettingsTestState(settingsState);
+	if (previousTheme) setThemeInstance(previousTheme);
 });
 
 function makeSession() {

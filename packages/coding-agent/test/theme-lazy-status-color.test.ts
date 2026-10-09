@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import * as themeColor from "@harvest/pi-coding-agent/modes/theme/color";
 import * as themeModule from "@harvest/pi-coding-agent/modes/theme/theme";
 import type { InteractiveModeContext } from "@harvest/pi-coding-agent/modes/types";
 import { UiHelpers } from "@harvest/pi-coding-agent/modes/utils/ui-helpers";
@@ -25,18 +26,20 @@ function isSingleComponent(component: Component | readonly Component[]): compone
 }
 
 describe("lazy status color re-resolves on theme switch", () => {
+	let previousTheme: themeModule.Theme | undefined;
 	beforeEach(async () => {
+		previousTheme = themeModule.theme;
+		vi.restoreAllMocks();
+		vi.spyOn(themeColor, "detectColorMode").mockReturnValue("truecolor");
 		themeModule.stopThemeWatcher();
 		const dark = await themeModule.getThemeByName("dark");
 		if (!dark) throw new Error("Failed to load dark theme for tests");
 		themeModule.setThemeInstance(dark);
-		vi.restoreAllMocks();
 	});
 
-	afterEach(async () => {
+	afterEach(() => {
 		themeModule.stopThemeWatcher();
-		const dark = await themeModule.getThemeByName("dark");
-		if (dark) themeModule.setThemeInstance(dark);
+		if (previousTheme) themeModule.setThemeInstance(previousTheme);
 		vi.restoreAllMocks();
 	});
 
@@ -122,6 +125,6 @@ describe("lazy status color re-resolves on theme switch", () => {
 			.split("\n")
 			.map(line => line.trim())
 			.filter(line => line === "Update Available" || line.startsWith("New version "));
-		expect(semanticLines).toEqual(["Update Available", "New version 1.2.3 is available. Run: omp update"]);
+		expect(semanticLines).toEqual(["Update Available", "New version 1.2.3 is available. Run: harvest update"]);
 	});
 });

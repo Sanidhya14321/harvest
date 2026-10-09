@@ -6,7 +6,7 @@ Settings are stored as plain YAML mappings. Every key, its type, default, and en
 
 - For model/provider credentials, `.env` files, and the env-var table that resolves API keys, see [Providers](./providers.md).
 - For custom model definitions in `models.yml`, see [Models](./models.md).
-- For instruction files discovered into the agent context (`AGENTS.md`, `.omp/`, etc.), see [Context files](./context-files.md).
+- For instruction files discovered into the agent context (`AGENTS.md`, `.harvest/`, etc.), see [Context files](./context-files.md).
 - For the full catalog of environment variables, see [Environment variables](./environment-variables.md).
 - For prompt words that activate specialized per-turn behavior, see [Magic keywords](./magic-keywords.md).
 
@@ -16,14 +16,16 @@ Settings are stored as plain YAML mappings. Every key, its type, default, and en
 | ----------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Global            | `~/.harvest/agent/config.yml` (or existing `config.yaml`) | The main persistent settings file. `config.yml` is the canonical write target; an existing `config.yaml` is loaded and updated in place. | `/settings`, `harvest config set`, and `harvest config reset` write here.                                                                                                                |
 | Global legacy     | `~/.harvest/agent/settings.json`                          | Migrated into `config.yml` once, only when neither main YAML filename exists.                                                            | Not written after migration; the original is renamed to `settings.json.bak`.                                                                                                     |
-| Project           | `<cwd>/.omp/config.yml` (plus `.omp/settings.json`)   | Loaded when the process working directory has a non-empty `.omp/`.                                                                       | Settings commands do not write arbitrary project keys. With `modelRoleStorage: project`, model-selector role assignments update only `modelRoles` here; edit other keys by hand. |
-| Project legacy    | `<cwd>/.omp/settings.json`                            | Still read; project `config.yml` is merged on top of it.                                                                                 | Not written by settings commands.                                                                                                                                                |
+| Project           | `<cwd>/.harvest/config.yml` (plus `.harvest/settings.json`)   | Loaded when the process working directory has a non-empty `.harvest/`.                                                                       | Settings commands do not write arbitrary project keys. With `modelRoleStorage: project`, model-selector role assignments update only `modelRoles` here; edit other keys by hand. |
+| Project JSON      | `<cwd>/.harvest/settings.json`                            | Still read; project `config.yml` is merged on top of it.                                                                                 | Not written by settings commands.                                                                                                                                                |
 | CLI overlay       | Any file passed with `--config <file>`                | Loaded after global and project settings, for that one process. Repeatable.                                                              | Never persisted.                                                                                                                                                                 |
 | Runtime overrides | In-memory only                                        | Set by dedicated CLI flags (`--model`, `--approval-mode`, …) and feature env vars.                                                       | Never persisted.                                                                                                                                                                 |
 
 `PI_CODING_AGENT_DIR` relocates the `~/.harvest/agent` base directory. When it is set, the global `config.yml`, the auth store (`agent.db`), and everything else under the agent directory move with it. Use `harvest config path` to print the active agent directory.
 
-Native project settings are intentionally scoped to the process working directory's `.omp/` folder — settings discovery does **not** walk ancestor directories looking for the nearest `.omp/`. Other discovery providers (Claude, Codex, Gemini, Cursor, OpenCode) can also contribute project-level settings from their own files; those are read-only from `harvest` settings commands and can be turned off by provider id (see [Provider and source disabling](#provider-and-source-disabling)).
+Native project settings are intentionally scoped to the process working directory's `.harvest/` folder — settings discovery does **not** walk ancestor directories looking for the nearest `.harvest/`. Other discovery providers (Claude, Codex, Gemini, Cursor, OpenCode) can also contribute project-level settings from their own files; those are read-only from `harvest` settings commands and can be turned off by provider id (see [Provider and source disabling](#provider-and-source-disabling)).
+
+Existing `<cwd>/.omp/config.yml` remains a compatibility target for model-role assignments when `.harvest/config.yml` is absent. Harvest reads native YAML in canonical-first order and writes back to the selected file; an empty canonical mapping also takes precedence over the legacy file. Creating a new project model configuration uses `.harvest/config.yml`. The compatibility path does not migrate or delete the legacy file.
 
 ## Config file formats
 
@@ -86,7 +88,7 @@ Keys must match a real schema path exactly. There is no shorthand — set `theme
 
 ### Where writes go
 
-`harvest config set`, `harvest config reset`, `/settings`, and ordinary runtime settings changes write the global main YAML file under the active agent directory. They do not write arbitrary keys to `<cwd>/.omp/config.yml`. The one supported project write path is a model-selector role assignment when `modelRoleStorage` is `project`; it updates only that role under `<cwd>/.omp/config.yml`, and missing project roles continue to fall back to global roles. To create any other project-local override, edit the project file directly (see [Project-local config](#project-local-config)). Saves are debounced and re-read the file under a lock, so external edits made while a session is open are preserved.
+`harvest config set`, `harvest config reset`, `/settings`, and ordinary runtime settings changes write the global main YAML file under the active agent directory. They do not write arbitrary keys to `<cwd>/.harvest/config.yml`. The one supported project write path is a model-selector role assignment when `modelRoleStorage` is `project`; it updates only that role under `<cwd>/.harvest/config.yml`, and missing project roles continue to fall back to global roles. To create any other project-local override, edit the project file directly (see [Project-local config](#project-local-config)). Saves are debounced and re-read the file under a lock, so external edits made while a session is open are preserved.
 
 ## Precedence
 
@@ -100,7 +102,7 @@ From highest to lowest:
 
 1. **Runtime overrides** — dedicated CLI flags and feature env vars applied in memory for the current process: `--model`, `--smol`, `--slow`, `--plan`, `--approval-mode`, `--auto-approve`/`--yolo`, `--hide-thinking`, `--advisor`, `--no-pty`, `--api-key`, and protocol-mode defaults. Never persisted.
 2. **CLI config overlays** — each `--config <file>`; later overlay files override earlier ones.
-3. **Project settings** — `<cwd>/.omp/settings.json` then `<cwd>/.omp/config.yml` (and contributions from other discovery providers at project level).
+3. **Project settings** — `<cwd>/.harvest/settings.json` then `<cwd>/.harvest/config.yml` (and contributions from other discovery providers at project level).
 4. **Global settings** — `~/.harvest/agent/config.yml`.
 5. **Built-in defaults** — from the settings schema.
 
@@ -210,7 +212,7 @@ disabledProviders:
   - openai
   - google
 
-# <repo>/.omp/config.yml
+# <repo>/.harvest/config.yml
 tools:
   approval:
     bash: allow
@@ -234,10 +236,10 @@ Array replacement is the most common surprise: the project's `disabledProviders`
 
 ## Project-local config
 
-Create `<repo>/.omp/config.yml` when a repository needs its own settings:
+Create `<repo>/.harvest/config.yml` when a repository needs its own settings:
 
 ```yaml
-# <repo>/.omp/config.yml
+# <repo>/.harvest/config.yml
 modelRoles:
   default: anthropic/claude-sonnet-4-5
   smol: openai/gpt-4.1-mini
@@ -326,7 +328,7 @@ disabledProviders:
   - anthropic
   - openai
 
-# <repo>/.omp/config.yml — inside this repo ONLY groq is disabled
+# <repo>/.harvest/config.yml — inside this repo ONLY groq is disabled
 disabledProviders:
   - groq
 ```
@@ -366,7 +368,7 @@ enabledModels:
 | Key                    | Type    | Default                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | ------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `modelRoles`           | record  | `{}`                        | Map of role name -> model id. Built-in roles: `default`, `smol`, `slow`, `vision`, `plan`, `commit`, `tiny`, `task`, `advisor`. The `tiny` role overrides the online model for lightweight background tasks (titles, memory, auto-thinking, unexpected-stop), else `@smol`. Per-role env/flags exist only for `--model`/`--smol`/`--slow`/`--plan`; configure the advisor with `modelRoles.advisor`. |
-| `modelRoleStorage`     | enum    | `global`                    | `global` saves model-selector role assignments in the active global/profile config; `project` saves only those role assignments in `<cwd>/.omp/config.yml`. Missing project roles fall back to global roles.                                                                                                                                                                                                     |
+| `modelRoleStorage`     | enum    | `global`                    | `global` saves model-selector role assignments in the active global/profile config; `project` saves only those role assignments in `<cwd>/.harvest/config.yml`. Missing project roles fall back to global roles.                                                                                                                                                                                                     |
 | `modelTags`            | record  | `{}`                        | Custom role/tag metadata; can introduce additional roles.                                                                                                                                                                                                                                                                                                                                                        |
 | `modelProviderOrder`   | array   | `[]`                        | Preferred provider order when a model id is ambiguous.                                                                                                                                                                                                                                                                                                                                                           |
 | `cycleOrder`           | array   | `["smol","default","slow"]` | Roles cycled by the model switcher.                                                                                                                                                                                                                                                                                                                                                                              |
@@ -832,8 +834,8 @@ Applied whenever raw settings are loaded (global, project, overlays, and runtime
 
 ### A project setting is not taking effect
 
-- Start `harvest` from the directory that contains `.omp/config.yml`. Settings discovery only checks the current working directory's `.omp/`, not ancestor directories.
-- Ensure `.omp/` is non-empty; empty config directories are ignored.
+- Start `harvest` from the directory that contains `.harvest/config.yml`. Settings discovery only checks the current working directory's `.harvest/`, not ancestor directories.
+- Ensure `.harvest/` is non-empty; empty config directories are ignored.
 - Confirm the file is valid YAML and its top level is a mapping.
 - Run `harvest config get <key>` from that directory to see the effective value.
 - Remember that `--config` overlays and runtime flags override project config.
@@ -851,7 +853,7 @@ Arrays replace; they do not append. If a project sets `disabledProviders`, `enab
 
 ### `harvest config set` changed the wrong file
 
-`harvest config set` and `harvest config reset` always write the global `config.yml` under the active agent directory. Run `harvest config path` to print it. For project-local settings, edit `<repo>/.omp/config.yml` directly.
+`harvest config set` and `harvest config reset` always write the global `config.yml` under the active agent directory. Run `harvest config path` to print it. For project-local settings, edit `<repo>/.harvest/config.yml` directly.
 
 ### `harvest config reset` did not remove my key
 

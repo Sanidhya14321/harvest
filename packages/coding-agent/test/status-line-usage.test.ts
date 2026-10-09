@@ -1,19 +1,25 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
-import { resetSettingsForTest, Settings } from "@harvest/pi-coding-agent/config/settings";
+import { Settings } from "@harvest/pi-coding-agent/config/settings";
 import { StatusLineComponent } from "@harvest/pi-coding-agent/modes/components/status-line";
 import { renderSegment } from "@harvest/pi-coding-agent/modes/components/status-line/segments";
 import type { SegmentContext } from "@harvest/pi-coding-agent/modes/components/status-line/types";
-import { initTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { createTheme, getBuiltinThemes } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, theme, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "./helpers/settings-test-state";
 
-beforeAll(async () => {
-	resetSettingsForTest();
+let settingsState: SettingsTestState | undefined;
+let previousTheme: Theme | undefined;
+beforeEach(async () => {
+	previousTheme = theme;
+	settingsState = beginSettingsTest();
 	await Settings.init({ inMemory: true });
-	await initTheme();
+	setThemeInstance(createTheme(getBuiltinThemes().dark!, { mode: "truecolor" }));
 });
 
-afterAll(() => {
-	resetSettingsForTest();
+afterEach(() => {
+	restoreSettingsTestState(settingsState);
+	if (previousTheme) setThemeInstance(previousTheme);
 });
 
 function makeComponent(

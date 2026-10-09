@@ -1,5 +1,7 @@
 # TUI verification evidence — 2026-10-08
 
+Historical checkpoint: the package gates and ownership state below describe October 8. The coding-agent, TUI and natives gates subsequently passed, and further UI/fallback work and integrated checks are recorded in [the October 9 checkpoint](../tui-visual-implementation-evidence-2026-10-09/README.md). Existing captures still predate those changes.
+
 These artifacts are intermediate evidence, not final-screen or release certification. The maintained harness is `packages/coding-agent/bench/tui-visual-capture.ts`; it mounts eight real InteractiveMode routes with isolated settings, authentication storage and sessions. Its provider/backend data is deterministic fixture data.
 
 ## Existing captures

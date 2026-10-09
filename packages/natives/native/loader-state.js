@@ -893,13 +893,22 @@ export function loadNative() {
 	// If native addon is unavailable (e.g. host without precompiled Rust binaries),
 	// provide fallback bindings to prevent CLI boot crash.
 	// Text/width helpers use Bun's built-in ANSI-aware APIs as a JS substitute.
+	return createFallbackBindings();
+}
 
+/** Create the JavaScript bindings without probing or loading a native addon. */
+export function createFallbackBindings() {
 	// Strip ANSI escape codes for width measurement
-	const ANSI_ESCAPE_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))/g;
+	const ANSI_ESCAPE_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[_PX^][\s\S]*?(?:\x07|\x1b\\)|[@-Z\\-_])/g;
 	function stripAnsi(str) {
 		return str.replace(ANSI_ESCAPE_RE, "");
 	}
-	function visibleLen(str) {
+	function visibleLen(str, tabWidth = 3) {
+		if (str.includes("\x1b]66;") || str.includes("\t") || /\x1b[_PX^]/.test(str)) {
+			let width = 0;
+			for (const token of tokenizeLine(str, tabWidth)) width += token.width;
+			return width;
+		}
 		// Bun.stringWidth strips ANSI escapes natively and handles wide chars
 		return typeof Bun !== "undefined" && typeof Bun.stringWidth === "function"
 			? Bun.stringWidth(str, { countAnsiEscapeCodes: false })
@@ -944,7 +953,7 @@ export function loadNative() {
 	}
 
 	// JS fallback helpers for ANSI / Unicode terminal text operations
-	function parseOsc66Info(seq) {
+	function parseOsc66Info(seq, tabWidth) {
 		const m = /^\x1b\]66;([^;]*);([\s\S]*?)(?:\x07|\x1b\\)$/.exec(seq);
 		if (!m) return null;
 		let scale = 1;
@@ -956,58 +965,67 @@ export function loadNative() {
 			if (part[0] === "s" && val >= 1 && val <= 7) scale = val;
 			else if (part[0] === "w" && val > 0) explicitWidth = val;
 		}
-		const baseW = explicitWidth ?? visibleLen(m[2]);
+		const baseW = explicitWidth ?? visibleLen(m[2], tabWidth);
 		return { meta: m[1], payload: m[2], scale, width: scale * baseW };
 	}
 
-	function tokenizeLine(text, tabWidth = 3) {
+	const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+	function* tokenizeLine(text, tabWidth = 3) {
 		const str = String(text ?? "");
-		const tokens = [];
-		let i = 0;
-		while (i < str.length) {
+		let skipUntil = 0;
+		for (const { index: i, segment } of graphemeSegmenter.segment(str)) {
+			if (i < skipUntil) continue;
 			if (str.charCodeAt(i) === 0x1b) {
 				const sub = str.slice(i);
 				const osc66Match = /^\x1b\]66;[\s\S]*?(?:\x07|\x1b\\)/.exec(sub);
 				if (osc66Match) {
 					const raw = osc66Match[0];
-					const info = parseOsc66Info(raw);
-					tokens.push({ type: "osc66", raw, info, width: info ? info.width : 0 });
-					i += raw.length;
+					const info = parseOsc66Info(raw, tabWidth);
+					yield { type: "osc66", raw, info, width: info ? info.width : 0 };
+					skipUntil = i + raw.length;
 					continue;
 				}
-				const ansiMatch = /^\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|_[\s\S]*?(?:\x07|\x1b\\))/.exec(sub);
+				// Match complete protocol sequences before two-byte ESC commands.
+				// Otherwise ESC ] / ESC _ consume only the opening bytes.
+				const ansiMatch = /^\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[_PX^][\s\S]*?(?:\x07|\x1b\\)|[@-Z\\-_])/.exec(sub);
 				if (ansiMatch) {
 					const raw = ansiMatch[0];
 					const isApc = raw.startsWith("\x1b_");
-					tokens.push({ type: "ansi", raw, width: 0, isApc, isSgr: raw.startsWith("\x1b[") && raw.endsWith("m") });
-					i += raw.length;
+					const hyperlink = /^\x1b\]8;[^;]*;([\s\S]*?)(?:\x07|\x1b\\)$/.exec(raw);
+					yield {
+						type: "ansi",
+						raw,
+						width: 0,
+						isApc,
+						isSgr: raw.startsWith("\x1b[") && raw.endsWith("m"),
+						hyperlinkUri: hyperlink?.[1],
+					};
+					skipUntil = i + raw.length;
 					continue;
 				}
 			}
-			const char = str[i];
-			if (char === "\t") {
-				tokens.push({ type: "char", raw: "\t", width: tabWidth });
-				i++;
+			if (segment === "\t") {
+				yield { type: "char", raw: "\t", width: tabWidth };
 				continue;
 			}
-			const seg = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(str.slice(i))][0];
-			const raw = seg ? seg.segment : char;
-			const w = visibleLen(raw);
-			tokens.push({ type: "char", raw, width: w });
-			i += raw.length;
+			yield { type: "char", raw: segment, width: visibleLen(segment) };
 		}
-		return tokens;
 	}
 
 	// JS fallback for truncateToWidth: returns string
 	function jsTruncateToWidth(text, width, ellipsisKind, pad, tabWidth = 3) {
 		const str = String(text ?? "");
 		const maxW = Math.max(0, width | 0);
-		const ell = ellipsisKind === 2 || ellipsisKind === "" || ellipsisKind === "omit" ? "" : (ellipsisKind === 1 || ellipsisKind === "ascii" ? "..." : "…");
+		if (maxW === 0) return "";
+		const ellipsis = ellipsisKind === 2 || ellipsisKind === "" || ellipsisKind === "omit"
+			? ""
+			: (ellipsisKind === 1 || ellipsisKind === "ascii" ? "..." : "…");
+		const ell = ellipsis.slice(0, maxW);
 		const ellW = visibleLen(ell);
-		if (visibleLen(str) <= maxW) {
-			if (pad && visibleLen(str) < maxW) {
-				return str + " ".repeat(maxW - visibleLen(str));
+		const textWidth = visibleLen(str, tabWidth);
+		if (textWidth <= maxW) {
+			if (pad && textWidth < maxW) {
+				return str + " ".repeat(maxW - textWidth);
 			}
 			return str;
 		}
@@ -1017,11 +1035,13 @@ export function loadNative() {
 		let currentW = 0;
 		let out = "";
 		let sawSgr = false;
+		let hyperlinkOpen = false;
 
 		for (const tok of tokens) {
 			if (tok.type === "ansi") {
 				out += tok.raw;
 				if (tok.isSgr) sawSgr = true;
+				if (tok.hyperlinkUri !== undefined) hyperlinkOpen = tok.hyperlinkUri !== "";
 				continue;
 			}
 			if (tok.type === "osc66") {
@@ -1029,6 +1049,9 @@ export function loadNative() {
 					out += tok.raw;
 					currentW += tok.width;
 				} else {
+					const partial = jsSliceWithWidth(tok.info?.payload ?? "", 0, targetW - currentW, true, tabWidth);
+					out += partial.text;
+					currentW += partial.width;
 					break;
 				}
 				continue;
@@ -1040,6 +1063,7 @@ export function loadNative() {
 			currentW += tok.width;
 		}
 
+		if (hyperlinkOpen) out += "\x1b]8;;\x1b\\";
 		if (sawSgr) {
 			out += "\x1b[0m";
 		}
@@ -1088,11 +1112,10 @@ export function loadNative() {
 					const overlapEnd = Math.min(nextCol, endCol) - col;
 					const pStart = strict ? Math.ceil(overlapStart / scale) : Math.floor(overlapStart / scale);
 					const pEnd = strict ? Math.floor(overlapEnd / scale) : Math.ceil(overlapEnd / scale);
-					const slicedPayload = payload.slice(pStart, Math.max(pStart, pEnd));
-					const slicedW = visibleLen(slicedPayload);
-					out += pendingAnsi + slicedPayload;
+					const sliced = jsSliceWithWidth(payload, pStart, Math.max(0, pEnd - pStart), strict, tabWidth);
+					out += pendingAnsi + sliced.text;
 					pendingAnsi = "";
-					outW += slicedW;
+					outW += sliced.width;
 				}
 				col = nextCol;
 				continue;
@@ -1117,80 +1140,9 @@ export function loadNative() {
 	// JS fallback for extractSegments: returns { before, beforeWidth, after, afterWidth }
 	function jsExtractSegments(line, beforeEnd, afterStart, afterLen, strictAfter, tabWidth = 3) {
 		const str = String(line ?? "");
-		const bEnd = Math.max(0, beforeEnd | 0);
-		const aStart = Math.max(0, afterStart | 0);
-		const aLen = Math.max(0, afterLen | 0);
-		const aEnd = aStart + aLen;
-
-		const tokens = tokenizeLine(str, tabWidth);
-		let col = 0;
-		let before = "";
-		let beforeW = 0;
-		let after = "";
-		let afterW = 0;
-		let pendingBeforeAnsi = "";
-
-		for (const tok of tokens) {
-			if (tok.type === "ansi") {
-				if (col < bEnd) {
-					pendingBeforeAnsi += tok.raw;
-				} else if (col >= aStart && col < aEnd) {
-					after += tok.raw;
-				}
-				continue;
-			}
-
-			const nextCol = col + tok.width;
-
-			if (tok.type === "osc66") {
-				if (col < bEnd) {
-					if (nextCol <= bEnd) {
-						before += pendingBeforeAnsi + tok.raw;
-						pendingBeforeAnsi = "";
-						beforeW += tok.width;
-					} else {
-						const scale = tok.info ? tok.info.scale : 1;
-						const payload = tok.info ? tok.info.payload : "";
-						const overlapLen = bEnd - col;
-						const pLen = Math.floor(overlapLen / scale);
-						const sub = payload.slice(0, pLen);
-						before += pendingBeforeAnsi + sub;
-						pendingBeforeAnsi = "";
-						beforeW += visibleLen(sub);
-					}
-				}
-				if (col >= aStart && col < aEnd) {
-					if (nextCol <= aEnd) {
-						after += tok.raw;
-						afterW += tok.width;
-					} else {
-						const scale = tok.info ? tok.info.scale : 1;
-						const payload = tok.info ? tok.info.payload : "";
-						const pLen = Math.floor((aEnd - col) / scale);
-						const sub = payload.slice(0, pLen);
-						after += sub;
-						afterW += visibleLen(sub);
-					}
-				}
-				col = nextCol;
-				continue;
-			}
-
-			if (col < bEnd) {
-				before += pendingBeforeAnsi + tok.raw;
-				pendingBeforeAnsi = "";
-				beforeW += tok.width;
-			}
-			if (col >= aStart && col < aEnd) {
-				if (!strictAfter || nextCol <= aEnd) {
-					after += tok.raw;
-					afterW += tok.width;
-				}
-			}
-			col = nextCol;
-		}
-
-		return { before, beforeWidth: beforeW, after, afterWidth: afterW };
+		const before = jsSliceWithWidth(str, 0, beforeEnd, false, tabWidth);
+		const after = jsSliceWithWidth(str, afterStart, afterLen, strictAfter, tabWidth);
+		return { before: before.text, beforeWidth: before.width, after: after.text, afterWidth: after.width };
 	}
 
 	// Edit mode descriptions (inlined from crates/pi-edit/prompts/)
@@ -2368,7 +2320,7 @@ export function loadNative() {
 		sliceWithWidth: jsSliceWithWidth,
 		extractSegments: jsExtractSegments,
 		setHangulCompatJamoWidthOverride: () => {},
-		visibleWidth: (text, _tabWidth) => visibleLen(String(text ?? "")),
+		visibleWidth: (text, tabWidth) => visibleLen(String(text ?? ""), tabWidth),
 		// Edit tool description and grammar — returns strings, NOT arrays
 		editDescription: (mode) => EDIT_DESCRIPTIONS[mode] ?? EDIT_DESCRIPTIONS.replace,
 		editGrammar: (_mode) => null,

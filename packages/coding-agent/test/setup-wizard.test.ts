@@ -383,6 +383,40 @@ describe("setup wizard short terminals", () => {
 		return vi.spyOn(performance, "now").mockImplementation(() => realNow() + 1_000);
 	}
 
+	it("automatically exposes interactive setup controls within the first 1.1 seconds", async () => {
+		await initTheme(false, "ascii", false, "harvest", "harvest-light");
+		let elapsed = 0;
+		let inputCount = 0;
+		const nowSpy = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+		const scene: SetupScene = {
+			id: "ready",
+			title: "Provider controls",
+			minVersion: 1,
+			mount: () => ({
+				title: "Provider controls",
+				render: () => ["Provider controls ready"],
+				handleInput: () => {
+					inputCount++;
+				},
+				invalidate: () => {},
+			}),
+		};
+		const component = new SetupWizardComponent(shortTerminalCtx(24), [scene]);
+		void component.run();
+		try {
+			elapsed = 650;
+			await Bun.sleep(70);
+			elapsed = 1100;
+			await Bun.sleep(70);
+			expect(Bun.stripANSI(component.render(80).join("\n"))).toContain("Provider controls ready");
+			component.handleInput("x");
+			expect(inputCount).toBe(1);
+		} finally {
+			component.dispose();
+			nowSpy.mockRestore();
+		}
+	});
+
 	it("opens provider controls immediately and keeps the selection visible in the allocated short frame", async () => {
 		await initTheme(false, "unicode", false, "harvest", "harvest-light");
 		const component = new SetupWizardComponent(shortTerminalCtx(24), [providersSetupScene]);

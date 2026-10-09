@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import type { RenderResultOptions } from "@harvest/pi-agent-core";
 import type { SettingPath, SettingValue } from "@harvest/pi-coding-agent/config/settings";
-import { resetSettingsForTest, Settings } from "@harvest/pi-coding-agent/config/settings";
-import { getThemeByName, setThemeInstance } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { Settings } from "@harvest/pi-coding-agent/config/settings";
+import * as themeColor from "@harvest/pi-coding-agent/modes/theme/color";
+import { getThemeByName, setThemeInstance, theme as activeTheme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { taskToolRenderer } from "@harvest/pi-coding-agent/task/renderer";
 import type { AgentProgress, SingleResult, TaskToolDetails } from "@harvest/pi-coding-agent/task/types";
+import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "../helpers/settings-test-state";
 
 function runningProgress(overrides: Partial<AgentProgress> = {}): AgentProgress {
 	return {
@@ -57,16 +59,22 @@ function findRow(component: { render: (w: number) => readonly string[] }, needle
 	return row!;
 }
 
-describe("task progress rendering", () => {
-	beforeEach(async () => {
-		resetSettingsForTest();
-		await Settings.init({ inMemory: true });
-	});
+let previousTheme = activeTheme;
+let settingsState: SettingsTestState | undefined;
+beforeEach(async () => {
+	previousTheme = activeTheme;
+	settingsState = beginSettingsTest();
+	vi.spyOn(themeColor, "detectColorMode").mockReturnValue("truecolor");
+	await Settings.init({ inMemory: true });
+});
 
-	afterEach(() => {
-		vi.restoreAllMocks();
-		resetSettingsForTest();
-	});
+afterEach(() => {
+	restoreSettingsTestState(settingsState);
+	settingsState = undefined;
+	setThemeInstance(previousTheme);
+});
+
+describe("task progress rendering", () => {
 	it("renders running task rows static with the agent dot", async () => {
 		const theme = (await getThemeByName("dark"))!;
 		expect(theme).toBeDefined();
@@ -445,16 +453,6 @@ describe("task progress rendering", () => {
 });
 
 describe("task result detail-less state", () => {
-	beforeEach(async () => {
-		resetSettingsForTest();
-		await Settings.init({ inMemory: true });
-	});
-
-	afterEach(() => {
-		vi.restoreAllMocks();
-		resetSettingsForTest();
-	});
-
 	it("renders a validation failure with the error glyph, not a success bullet", async () => {
 		const theme = (await getThemeByName("dark"))!;
 		// The task-brief section renders markdown, which reads the active theme.

@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -13,8 +13,27 @@ beforeAll(async () => {
 	await initTheme();
 });
 
-afterEach(() => {
+let fixtureDir: string;
+function fixturePath(name: string): string {
+	return path.join(fixtureDir, name);
+}
+
+beforeEach(async () => {
+	fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "harvest-resume-fixture-"));
+	for (const name of [
+		"some-session.jsonl",
+		"memory-session.jsonl",
+		"source-session.jsonl",
+		"target-session.jsonl",
+		"canceled-picker-resume.jsonl",
+		"rejected-resume.jsonl",
+	])
+		await Bun.write(fixturePath(name), `${JSON.stringify({ type: "session", id: name, cwd: fixtureDir })}\n`);
+});
+
+afterEach(async () => {
 	vi.restoreAllMocks();
+	await fs.rm(fixtureDir, { recursive: true, force: true });
 });
 
 type ResumeSwitchOptions = {
@@ -22,7 +41,7 @@ type ResumeSwitchOptions = {
 };
 
 function createResumeContext(opts: { flushFails?: boolean; sourceCwd?: string; previousSessionFile?: string } = {}) {
-	const sourceCwd = opts.sourceCwd ?? "/tmp/source-project";
+	const sourceCwd = opts.sourceCwd ?? fixtureDir;
 	const state = { cwd: sourceCwd };
 	const switchSession = vi.fn(async (_sessionPath: string, _options?: ResumeSwitchOptions) => true);
 	const applyCwdChange = vi.fn(async () => true);
@@ -40,8 +59,10 @@ function createResumeContext(opts: { flushFails?: boolean; sourceCwd?: string; p
 		session: { switchSession },
 		sessionManager: {
 			getCwd: () => state.cwd,
-			getSessionDir: () => "/tmp",
+			getSessionDir: () => undefined,
 			getSessionFile: () => opts.previousSessionFile,
+			getSessionId: () => "source",
+			getSessionName: () => "Source",
 			moveTo,
 		},
 		settings: { flush },
@@ -84,7 +105,7 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 		const { ctx, switchSession, applyCwdChange } = createResumeContext({ flushFails: true });
 		const controller = new SelectorController(ctx);
 
-		const result = await controller.handleResumeSession("/tmp/some-session.jsonl");
+		const result = await controller.handleResumeSession(fixturePath("some-session.jsonl"));
 
 		expect(result).toBe(false);
 		expect(ctx.showError).toHaveBeenCalledWith(expect.stringContaining("disk full"));
@@ -105,13 +126,13 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 			});
 			const controller = new SelectorController(ctx);
 
-			const result = await controller.handleResumeSession("/tmp/some-session.jsonl");
+			const result = await controller.handleResumeSession(fixturePath("some-session.jsonl"));
 
 			expect(result).toBe(true);
 			expect(ctx.settings.flush).toHaveBeenCalled();
 			expect(ctx.clearTransientSessionUi).toHaveBeenCalled();
 			expect(switchSession).toHaveBeenCalledWith(
-				"/tmp/some-session.jsonl",
+				fixturePath("some-session.jsonl"),
 				expect.objectContaining({ onCwdChange: expect.any(Function) }),
 			);
 			expect(applyCwdChange).toHaveBeenCalledWith(targetCwd);
@@ -138,7 +159,7 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 			});
 			const controller = new SelectorController(ctx);
 
-			const result = await controller.handleResumeSession("/tmp/memory-session.jsonl");
+			const result = await controller.handleResumeSession(fixturePath("memory-session.jsonl"));
 
 			expect(result).toBe(false);
 			expect(state.cwd).toBe(sourceCwd);
@@ -157,11 +178,11 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 		try {
 			const { ctx, switchSession, applyCwdChange, moveTo, state } = createResumeContext({
 				sourceCwd,
-				previousSessionFile: "/tmp/source-session.jsonl",
+				previousSessionFile: fixturePath("source-session.jsonl"),
 			});
 			applyCwdChange.mockResolvedValue(false);
-			switchSession.mockImplementation(async (sessionPath, options) => {
-				if (sessionPath === "/tmp/source-session.jsonl") return false;
+			switchSession.mockImplementation(async (targetPath, options) => {
+				if (targetPath === fixturePath("source-session.jsonl")) return false;
 				state.cwd = targetCwd;
 				const applied = options?.onCwdChange ? await options.onCwdChange(targetCwd, sourceCwd) : true;
 				if (!applied) state.cwd = sourceCwd;
@@ -169,7 +190,7 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 			});
 			const controller = new SelectorController(ctx);
 
-			const result = await controller.handleResumeSession("/tmp/target-session.jsonl");
+			const result = await controller.handleResumeSession(fixturePath("target-session.jsonl"));
 
 			expect(result).toBe(false);
 			expect(switchSession).toHaveBeenCalledTimes(1);
@@ -192,7 +213,9 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 			});
 			const controller = new SelectorController(ctx);
 
-			const result = await controller.handleResumeSession("/tmp/some-session.jsonl", { settingsFlushed: true });
+			const result = await controller.handleResumeSession(fixturePath("some-session.jsonl"), {
+				settingsFlushed: true,
+			});
 
 			expect(result).toBe(true);
 			expect(ctx.settings.flush).not.toHaveBeenCalled();
@@ -205,7 +228,7 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 
 	it("keeps the selector open and unlocked for retry when the settings flush fails", async () => {
 		const session: SessionInfo = {
-			path: "/tmp/canceled-picker-resume.jsonl",
+			path: fixturePath("canceled-picker-resume.jsonl"),
 			id: "canceled-picker-resume",
 			cwd: "/tmp",
 			title: "Canceled picker resume",
@@ -261,7 +284,7 @@ describe("SelectorController.handleResumeSession preflight flush", () => {
 
 	it("closes the selector and restores editor focus when switching rejects after preflight", async () => {
 		const session: SessionInfo = {
-			path: "/tmp/rejected-resume.jsonl",
+			path: fixturePath("rejected-resume.jsonl"),
 			id: "rejected-resume",
 			cwd: "/tmp",
 			title: "Rejected resume",

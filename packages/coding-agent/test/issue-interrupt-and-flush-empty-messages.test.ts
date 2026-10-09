@@ -53,6 +53,7 @@ function createContext(options?: {
 		locallySubmittedUserSignatures: new Set<string>(),
 		isBashMode: false,
 		isPythonMode: false,
+		isHomeDetached: () => false,
 		loopModeEnabled: false,
 		updatePendingMessagesDisplay,
 		showError,

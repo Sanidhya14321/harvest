@@ -1,0 +1,740 @@
+Running 69 test command(s), up to 8 in parallel (OMP_TEST_CONCURRENCY=<n>|all to change); 8 cores, --parallel=1 per chunk.
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 3/69; 5 files) [6.9s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 4/69; 5 files) [7.4s]
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 2/69; 5 files) [8.7s] — test\apply-patch-preview-renderer.test.ts > apply_patch streaming preview renderer > renders each file from structured per-file diff previews (+1 more)
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 2/69; 5 files) (exit 1)
+$ bun test --only-failures test/apply-patch-preview-renderer.test.ts test/cache-invalidation-marker.test.ts test/chat-transcript-late-result.test.ts test/cli-command-metadata.test.ts test/cli/standalone-pickers.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\apply-patch-preview-renderer.test.ts > apply_patch streaming preview renderer > renders each file from structured per-file diff previews
+31 | 			{ path: "src/a.ts", diff: "@@ -1,1 +1,1 @@\n-1|old a\n+1|new a", firstChangedLine: 1 },
+32 | 			{ path: "src/b.ts", diff: "@@ -2,1 +2,1 @@\n-2|old b\n+2|new b", firstChangedLine: 2 },
+33 | 		]);
+34 | 
+35 | 		expect(rendered).toContain("src/a.ts");
+36 | 		expect(rendered).toContain("new a");
+                        ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "new a"
+Received: "╭─── Edit: ≡ … ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│── src/a.ts ──                                                                                                                                                │\n│                                                                                                                                                              │\n│@@ -1,1 +1,1 @@                                                                                                                                               │\n│  -1│                                                                                                                                                         │\n│   +│                                                                                                                                                         │\n│(preview)                                                                                                                                                     │\n│                                                                                                                                                              │\n│── src/b.ts ──                                                                                                                                                │\n│                                                                                                                                                              │\n│@@ -2,1 +2,1 @@                                                                                                                                               │\n│  -2│                                                                                                                                                         │\n│   +│                                                                                                                                                         │\n│⣾ (preview)                                                                                                                                                   │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\apply-patch-preview-renderer.test.ts:36:20)
+
+  ✗ test\apply-patch-preview-renderer.test.ts > apply_patch streaming preview renderer > renders a structured per-file preview error beside successful siblings
+43 | 			{ path: "src/good.ts", diff: "@@ -1,1 +1,1 @@\n-1|old\n+1|new", firstChangedLine: 1 },
+44 | 			{ path: "src/missing.ts", error: "File not found: src/missing.ts" },
+45 | 		]);
+46 | 
+47 | 		expect(rendered).toContain("src/good.ts");
+48 | 		expect(rendered).toContain("new");
+                        ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "new"
+Received: "╭─── Edit: ≡ … ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│── src/good.ts ──                                                                                                                                             │\n│                                                                                                                                                              │\n│@@ -1,1 +1,1 @@                                                                                                                                               │\n│  -1│                                                                                                                                                         │\n│   +│                                                                                                                                                         │\n│(preview)                                                                                                                                                     │\n│                                                                                                                                                              │\n│── src/missing.ts ──                                                                                                                                          │\n│File not found: src/missing.ts                                                                                                                                │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\apply-patch-preview-renderer.test.ts:48:20)
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 6/69; 5 files) [8.8s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 7/69; 5 files) [10.0s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 5/69; 5 files) [12.0s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 1/69; 5 files) [17.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 9/69; 5 files) [12.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 10/69; 5 files) [16.5s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 12/69; 5 files) [17.2s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 14/69; 5 files) [15.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 13/69; 5 files) [17.4s]
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 8/69; 5 files) [27.9s] — test\git-tui-sidebar.test.ts > git tui sidebar staging > staging a file keeps selection on the next row instead of jumping to the top (+9 more)
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 8/69; 5 files) (exit 1)
+$ bun test --only-failures test/git-tui-sidebar.test.ts test/goals/goal-mode-integration.test.ts test/goals/guided-goal.test.ts test/hook-input-timeout.test.ts test/input-controller-escape.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > staging a file keeps selection on the next row instead of jumping to the top
+92 | 	test("staging a file keeps selection on the next row instead of jumping to the top", async () => {
+93 | 		await withDirtyRepo(async ({ sidebar, model, actions }) => {
+94 | 			// Tree order: [Stage All] → dir a/ → a/one.txt → a/two.txt → dir b/ → b/three.txt.
+95 | 			sidebar.handleInput("j");
+96 | 			sidebar.handleInput("j");
+97 | 			expect(sidebar.selectedFile?.path).toBe("a/one.txt");
+                                           ^
+error: expect(received).toBe(expected)
+
+Expected: "a/one.txt"
+Received: undefined
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:97:39)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:93:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > space on a directory stages every file underneath it
+118 | 	test("space on a directory stages every file underneath it", async () => {
+119 | 		await withDirtyRepo(async harness => {
+120 | 			const { sidebar, model, actions } = harness;
+121 | 			sidebar.handleInput("j"); // dir a/
+122 | 			sidebar.handleInput(" ");
+123 | 			expect(actions.at(-1)).toEqual({
+                                ^
+error: expect(received).toEqual(expected)
+
+- {
+-   "selection": {
+-     "files": [
+-       ObjectContaining {
+-         "path": "a/one.txt",
+-       },
+-       ObjectContaining {
+-         "path": "a/two.txt",
+-       },
+-     ],
+-     "label": "a/",
+-   },
+-   "type": "stage",
+- }
++ undefined
+
+- Expected  - 14
++ Received  + 1
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:123:27)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:119:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > u on a staged directory unstages it; s on it is a no-op
+78 | 
+79 | 	/** Apply the last raised stage/unstage action the way GitTuiComponent#runAction does. */
+80 | 	async applyLastAction(): Promise<void> {
+81 | 		const action = this.actions.at(-1);
+82 | 		if (!action || (action.type !== "stage" && action.type !== "unstage"))
+83 | 			throw new Error("no stage/unstage action was raised");
+                  ^
+error: no stage/unstage action was raised
+      at applyLastAction (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:83:14)
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:144:18)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:140:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > staging a directory with mixed tracked and untracked files stages both
+172 | 	test("staging a directory with mixed tracked and untracked files stages both", async () => {
+173 | 		await withMixedRepo(async harness => {
+174 | 			const { sidebar, model, actions } = harness;
+175 | 			// Targets: [Stage All] → dir a/ → a/tracked.txt → a/new.txt.
+176 | 			sidebar.handleInput("j");
+177 | 			expect(sidebar.selected?.kind).toBe("dir");
+                                        ^
+error: expect(received).toBe(expected)
+
+Expected: "dir"
+Received: undefined
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:177:35)
+      at withMixedRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:47:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:173:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > clicking the section header label folds it instead of staging everything
+202 | 	test("clicking the section header label folds it instead of staging everything", async () => {
+203 | 		await withDirtyRepo(async ({ sidebar, actions }) => {
+204 | 			const lines = sidebar.render(40, 30);
+205 | 			const strip = (line: string): string => line.replace(/\x1b\[[0-9;]*m/g, "");
+206 | 			const headerRow = lines.findIndex(line => strip(line).includes("Unstaged Files"));
+207 | 			expect(headerRow).toBeGreaterThanOrEqual(0);
+                           ^
+error: expect(received).toBeGreaterThanOrEqual(expected)
+
+Expected: >= 0
+Received: -1
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:207:22)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:203:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > only the header pill stages everything; selection stays on the header
+232 | 		await withDirtyRepo(async ({ sidebar, actions }) => {
+233 | 			const lines = sidebar.render(40, 30);
+234 | 			const strip = (line: string): string => line.replace(/\x1b\[[0-9;]*m/g, "");
+235 | 			const headerRow = lines.findIndex(line => strip(line).includes("Unstaged Files"));
+236 | 			const pillCol = strip(lines[headerRow] ?? "").indexOf("Stage All");
+237 | 			expect(pillCol).toBeGreaterThan(0);
+                         ^
+error: expect(received).toBeGreaterThan(expected)
+
+Expected: > 0
+Received: -1
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:237:20)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:232:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > wheel scroll away from the selection survives idle re-renders
+245 | 	test("wheel scroll away from the selection survives idle re-renders", async () => {
+246 | 		await withDirtyRepo(async ({ sidebar }) => {
+247 | 			const strip = (line: string): string => line.replace(/\x1b\[[0-9;]*m/g, "");
+248 | 			// Select the last file so the follow-selection clamp scrolls the list down.
+249 | 			for (let i = 0; i < 5; i++) sidebar.handleInput("j");
+250 | 			expect(sidebar.selectedFile?.path).toBe("b/three.txt");
+                                            ^
+error: expect(received).toBe(expected)
+
+Expected: "b/three.txt"
+Received: undefined
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:250:39)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:246:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > empty commit action generates before a populated action commits
+266 | 	});
+267 | 
+268 | 	test("empty commit action generates before a populated action commits", async () => {
+269 | 		await withDirtyRepo(async ({ sidebar, actions }) => {
+270 | 			sidebar.handleInput("G");
+271 | 			expect(sidebar.selected?.kind).toBe("commit-button");
+                                        ^
+error: expect(received).toBe(expected)
+
+Expected: "commit-button"
+Received: undefined
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:271:35)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:269:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > wand pill opens the AI textbox; enter raises stage-ai with the typed prompt
+299 | 			const lines = sidebar.render(44, 30);
+300 | 			const headerRow = lines.findIndex(line => strip(line).includes("Unstaged Files"));
+301 | 			const header = strip(lines[headerRow] ?? "");
+302 | 			// Non-nerd preset renders the wand pill as ✦ next to Stage All.
+303 | 			const wandCol = header.indexOf("✦");
+304 | 			expect(wandCol).toBeGreaterThan(header.indexOf("Stage All"));
+                         ^
+error: expect(received).toBeGreaterThan(expected)
+
+Expected: > -1
+Received: -1
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:304:20)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:296:9)
+
+  ✗ test\git-tui-sidebar.test.ts > git tui sidebar staging > escape closes the AI textbox without raising an action and clears the draft
+324 | 			const lines = sidebar.render(44, 30);
+325 | 			const headerRow = lines.findIndex(line => strip(line).includes("Unstaged Files"));
+326 | 			sidebar.handleClick(headerRow, strip(lines[headerRow] ?? "").indexOf("✦"));
+327 | 			for (const ch of "abc") sidebar.handleInput(ch);
+328 | 
+329 | 			expect(sidebar.handleEscape()).toBe(true);
+                                        ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:329:35)
+      at withDirtyRepo (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:29:9)
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\git-tui-sidebar.test.ts:321:9)
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 18/69; 5 files) [8.5s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 17/69; 5 files) [11.1s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 21/69; 5 files) [8.0s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 11/69; 5 files) [27.9s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 22/69; 5 files) [3.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 19/69; 5 files) [11.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 20/69; 5 files) [11.8s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 15/69; 5 files) [23.2s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 25/69; 5 files) [5.3s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 16/69; 5 files) [22.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 27/69; 5 files) [3.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 24/69; 5 files) [8.1s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 28/69; 5 files) [5.9s]
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 23/69; 5 files) [10.4s] — test\modes\components\custom-editor.test.ts > CustomEditor bracketed path paste > strips `file://` URLs to the local filesystem path before loading the image (+2 more)
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 23/69; 5 files) (exit 1)
+$ bun test --only-failures test/modes/components/composer-shape-preview.test.ts test/modes/components/copy-selector.test.ts test/modes/components/custom-editor-draft.test.ts test/modes/components/custom-editor-plugin-ctor.test.ts test/modes/components/custom-editor.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\modes\components\custom-editor.test.ts > CustomEditor bracketed path paste > strips `file://` URLs to the local filesystem path before loading the image
+234 | 	it("strips `file://` URLs to the local filesystem path before loading the image", () => {
+235 | 		// macOS / Ghostty / iTerm2 sometimes forward the pasteboard's
+236 | 		// `public.file-url` representation when the user does Finder→Copy
+237 | 		// then Cmd+V. Without decoding, `loadImageInput` would try to read a
+238 | 		// literal `file:///…` path and fail.
+239 | 		expect(extractBracketedImagePastePaths(bracketedPaste("file:///Users/me/Pictures/photo.png"))).toEqual([
+                                                                                                       ^
+error: expect(received).toEqual(expected)
+
+  [
+-   "/Users/me/Pictures/photo.png",
++   "file:///Users/me/Pictures/photo.png",
+  ]
+
+- Expected  - 1
++ Received  + 1
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\modes\components\custom-editor.test.ts:239:98)
+
+  ✗ test\modes\components\custom-editor.test.ts > CustomEditor bracketed path paste > percent-decodes spaces inside `file://` URLs
+240 | 			"/Users/me/Pictures/photo.png",
+241 | 		]);
+242 | 	});
+243 | 
+244 | 	it("percent-decodes spaces inside `file://` URLs", () => {
+245 | 		expect(extractBracketedImagePastePaths(bracketedPaste("file:///Users/me/My%20Pictures/photo.png"))).toEqual([
+                                                                                                            ^
+error: expect(received).toEqual(expected)
+
+  [
+-   "/Users/me/My Pictures/photo.png",
++   "file:///Users/me/My%20Pictures/photo.png",
+  ]
+
+- Expected  - 1
++ Received  + 1
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\modes\components\custom-editor.test.ts:245:103)
+
+  ✗ test\modes\components\custom-editor.test.ts > extractImagePathFromText (issue #3506) > decodes a `file://` URL to its filesystem path
+354 | 		expect(extractImagePathFromText("")).toBeUndefined();
+355 | 		expect(extractImagePathFromText("   ")).toBeUndefined();
+356 | 	});
+357 | 
+358 | 	it("decodes a `file://` URL to its filesystem path", () => {
+359 | 		expect(extractImagePathFromText("file:///Users/me/Pictures/photo.png")).toBe("/Users/me/Pictures/photo.png");
+                                                                                ^
+error: expect(received).toBe(expected)
+
+Expected: "/Users/me/Pictures/photo.png"
+Received: "file:///Users/me/Pictures/photo.png"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\modes\components\custom-editor.test.ts:359:75)
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 29/69; 5 files) [4.6s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 26/69; 5 files) [7.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 32/69; 5 files) [6.3s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 33/69; 5 files) [6.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 30/69; 5 files) [9.2s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 34/69; 5 files) [6.9s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 31/69; 5 files) [10.1s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 35/69; 5 files) [10.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 37/69; 5 files) [12.3s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 36/69; 5 files) [12.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 43/69; 5 files) [2.2s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 41/69; 5 files) [7.6s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 42/69; 5 files) [7.8s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 38/69; 5 files) [11.8s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 46/69; 5 files) [2.9s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 44/69; 5 files) [4.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 40/69; 5 files) [12.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 45/69; 5 files) [5.9s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 39/69; 5 files) [15.5s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 48/69; 5 files) [9.6s]
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 47/69; 5 files) [11.7s] — test\pi-scope-aliases.test.ts > pi-* scope aliases > remaps every aliased pi-* scope and known upstream subpath to the bundled in-process copy
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 47/69; 5 files) (exit 1)
+$ bun test --only-failures test/modes/workspace-sidebar-state.test.ts test/modes/workspace-surface-contracts.test.ts test/palette-production-dispatch.test.ts test/pi-scope-aliases.test.ts test/plan-mode/reentry-prompt.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\pi-scope-aliases.test.ts > pi-* scope aliases > remaps every aliased pi-* scope and known upstream subpath to the bundled in-process copy
+126 | 		projectDir.removeSync();
+127 | 	});
+128 | 
+129 | 	it("remaps every aliased pi-* scope and known upstream subpath to the bundled in-process copy", async () => {
+130 | 		const result = await loadExtensions([extensionPath], projectDir.path());
+131 | 		expect(result.errors).toEqual([]);
+                              ^
+error: expect(received).toEqual(expected)
+
+- []
++ [
++   {
++     "error": "Failed to load extension: Cannot find package '@harvest/pi-utils' imported from C:\Users\sanid\AppData\Local\Temp\pi-scope-aliases-zG1vvm\alias-probe-plugin\dist\extension.ts",
++     "path": "C:\Users\sanid\AppData\Local\Temp\pi-scope-aliases-zG1vvm\alias-probe-plugin\dist\extension.ts",
++   },
++ ]
+
+- Expected  - 1
++ Received  + 6
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\pi-scope-aliases.test.ts:131:25)
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 52/69; 5 files) [12.1s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 51/69; 5 files) [13.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 53/69; 5 files) [12.6s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 49/69; 5 files) [16.5s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 54/69; 5 files) [12.0s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 58/69; 5 files) [5.9s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 57/69; 5 files) [7.3s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 55/69; 5 files) [13.7s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 59/69; 5 files) [7.5s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 60/69; 5 files) [14.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 61/69; 5 files) [13.9s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 62/69; 5 files) [11.6s]
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 65/69; 5 files) [10.9s] — test\tools\path-renderer-invalid-args.test.ts > tool path renderers with invalid provider arguments > edit renderer does not throw for array path (+2 more)
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 65/69; 5 files) (exit 1)
+$ bun test --only-failures test/tools/path-renderer-invalid-args.test.ts test/tools/render-utils.test.ts test/tools/think-renderer.test.ts test/tools/todo.test.ts test/tools/tool-output-hyperlinks.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\tools\path-renderer-invalid-args.test.ts > tool path renderers with invalid provider arguments > edit renderer does not throw for array path
+118 | 					{ path: invalid.path, oldText: "before", newText: "after" },
+119 | 				);
+120 | 			}).not.toThrow();
+121 | 			const rendered = renderPlain(resultComponent!);
+122 | 			expect(rendered).toContain("Edit");
+123 | 			expect(rendered).toContain("after");
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "after"
+Received: "╭─── ✎ Edit: ≡ … ⟦+1/-1⟧ ──────────────────────────────────────────────────────────────────────────────────────────────╮\n│-                                                                                                                     │\n│+                                                                                                                     │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\path-renderer-invalid-args.test.ts:123:21)
+
+  ✗ test\tools\path-renderer-invalid-args.test.ts > tool path renderers with invalid provider arguments > edit renderer does not throw for object path
+118 | 					{ path: invalid.path, oldText: "before", newText: "after" },
+119 | 				);
+120 | 			}).not.toThrow();
+121 | 			const rendered = renderPlain(resultComponent!);
+122 | 			expect(rendered).toContain("Edit");
+123 | 			expect(rendered).toContain("after");
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "after"
+Received: "╭─── ✎ Edit: ≡ … ⟦+1/-1⟧ ──────────────────────────────────────────────────────────────────────────────────────────────╮\n│-                                                                                                                     │\n│+                                                                                                                     │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\path-renderer-invalid-args.test.ts:123:21)
+
+  ✗ test\tools\think-renderer.test.ts > thinkToolRenderer > returns undefined for renderResult
+29 | 	it("has inline set to true", () => {
+30 | 		expect(thinkToolRenderer.inline).toBe(true);
+31 | 	});
+32 | 
+33 | 	it("returns undefined for renderResult", () => {
+34 | 		expect(thinkToolRenderer.renderResult()).toBeUndefined();
+                                                ^
+error: expect(received).toBeUndefined()
+
+Received: Text {
+  setIgnoreTight: [Function: setIgnoreTight],
+  debugState: [Function: debugState],
+  getText: [Function: getText],
+  setText: [Function: setText],
+  setCustomBgFn: [Function: setCustomBgFn],
+  setStyleFn: [Function: setStyleFn],
+  invalidate: [Function: invalidate],
+  render: [Function: render],
+}
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\think-renderer.test.ts:34:44)
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 56/69; 5 files) [24.7s]
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 63/69; 5 files) [13.6s] — test\tools\apply-patch-renderer.test.ts > apply_patch rendering > renders apply_patch results through edit UI instead of generic fallback (+4 more)
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 63/69; 5 files) (exit 1)
+$ bun test --only-failures test/theme-lazy-status-color.test.ts test/theme-nerd-symbols.test.ts test/theme-spinner-frames.test.ts test/tools/apply-patch-renderer.test.ts test/tools/glob-renderer.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\tools\apply-patch-renderer.test.ts > apply_patch rendering > renders apply_patch results through edit UI instead of generic fallback
+55 | 			false,
+56 | 		);
+57 | 
+58 | 		const rendered = Bun.stripANSI(component.render(140).join("\n"));
+59 | 		expect(rendered).toContain("src/demo.ts");
+60 | 		expect(rendered).toContain("+new");
+                        ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "+new"
+Received: "                                                                                                                                            \n╭─── ✎ Edit: TS src/demo.ts ⟦+1/-1⟧ ───────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│@@                                                                                                                                        │\n│-                                                                                                                                         │\n│+                                                                                                                                         │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯\n                                                                                                                                            "
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\apply-patch-renderer.test.ts:60:20)
+
+  ✗ test\tools\apply-patch-renderer.test.ts > apply_patch rendering > derives call path, operation, and file-count hints from apply_patch input
+75 | 		].join("\n");
+76 | 
+77 | 		const component = toolRenderers.apply_patch.renderCall({ input }, { expanded: false, isPartial: true }, uiTheme);
+78 | 		const rendered = Bun.stripANSI(component.render(160).join("\n"));
+79 | 
+80 | 		expect(rendered).toContain("src/first.ts");
+                        ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "src/first.ts"
+Received: "╭─── Edit: ≡ … ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│undefined is not an object (evaluating 'path of inspection.paths')                                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\apply-patch-renderer.test.ts:80:20)
+
+  ✗ test\tools\apply-patch-renderer.test.ts > apply_patch rendering > does not show missing end-marker errors while apply_patch input is streaming
+87 | 		const input = ["*** Begin Patch", "*** Update File: src/streaming.ts", "@@", "-before", "+after"].join("\n");
+88 | 
+89 | 		const component = toolRenderers.apply_patch.renderCall({ input }, { expanded: false, isPartial: true }, uiTheme);
+90 | 		const rendered = Bun.stripANSI(component.render(160).join("\n"));
+91 | 
+92 | 		expect(rendered).toContain("src/streaming.ts");
+                        ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "src/streaming.ts"
+Received: "╭─── Edit: ≡ … ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│undefined is not an object (evaluating 'path of inspection.paths')                                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\apply-patch-renderer.test.ts:92:20)
+
+  ✗ test\tools\apply-patch-renderer.test.ts > apply_patch rendering > shows apply_patch preview diffs after args complete
+141 | 				],
+142 | 			});
+143 | 			component.setArgsComplete();
+144 | 			const after = Bun.stripANSI(component.render(160).join("\n"));
+145 | 			expect(after).toContain("(preview)");
+146 | 			expect(after).toContain("const value = 2;");
+                       ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "const value = 2;"
+Received: "                                                                                                                                                                \n╭─── Edit: ≡ … ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│   1│const value = 1;                                                                                                                                         │\n│   -│                                                                                                                                                         │\n│   +│                                                                                                                                                         │\n│(preview)                                                                                                                                                     │\n│undefined is not an object (evaluating 'path of inspection.paths')                                                                                            │\n╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯\n                                                                                                                                                                "
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\apply-patch-renderer.test.ts:146:18)
+
+  ✗ test\tools\glob-renderer.test.ts > globToolRenderer > indents inline glob output and avoids accent-colored success headers
+20 | 			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { paths: "src/**/*.ts" })
+21 | 			.render(240);
+22 | 		const plainLines = sanitizeText(renderedLines.join("\n")).split("\n");
+23 | 
+24 | 		expect(plainLines.every(line => line.startsWith(" "))).toBe(true);
+25 | 		expect(renderedLines[0]).not.toContain(uiTheme.fg("accent", uiTheme.symbol("icon.search")));
+                                    ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "⌕"
+Received: " ⌕ Glob: src/**/*.ts 2 files "
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\glob-renderer.test.ts:25:32)
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 66/69; 5 files) [9.2s] — test\tui\hyperlink.test.ts > resource links in chat markdown > leaves missing, escaping, remote, and non-link destinations unexpanded
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 66/69; 5 files) (exit 1)
+$ bun test --only-failures test/tools/vibe-render.test.ts test/transcript-visual-consistency.test.ts test/truncate-to-width.test.ts test/tui/hyperlink.test.ts test/tui/status-line-newline-guard.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\tui\hyperlink.test.ts > resource links in chat markdown > leaves missing, escaping, remote, and non-link destinations unexpanded
+461 | 	});
+462 | 
+463 | 	it("leaves missing, escaping, remote, and non-link destinations unexpanded", async () => {
+464 | 		await Bun.write(path.join(tempDir, "local", "report.json"), "{}");
+465 | 		await Bun.write(path.join(tempDir, "outside.json"), "{}");
+466 | 		await fs.symlink(path.join(tempDir, "outside.json"), path.join(tempDir, "local", "escape.json"));
+                 ^
+EPERM: operation not permitted, symlink 'C:\Users\sanid\AppData\Local\Temp\omp-markdown-links-yWBQVr\outside.json' -> 'C:\Users\sanid\AppData\Local\Temp\omp-markdown-links-yWBQVr\local\escape.json'
+    path: "C:\\Users\\sanid\\AppData\\Local\\Temp\\omp-markdown-links-yWBQVr\\outside.json",
+    dest: "C:\\Users\\sanid\\AppData\\Local\\Temp\\omp-markdown-links-yWBQVr\\local\\escape.json",
+ syscall: "symlink",
+   errno: -4048,
+    code: "EPERM"
+
+      at async <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tui\hyperlink.test.ts:466:12)
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 64/69; 5 files) [17.4s] — test\tools\grep-path-lists.test.ts > tool path arrays > search accepts a semicolon-delimited path list (+13 more)
+
+✗ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 64/69; 5 files) (exit 1)
+$ bun test --only-failures test/tools/glob-validate-paths.test.ts test/tools/grep-path-lists.test.ts test/tools/grep-renderer.test.ts test/tools/hub-list.test.ts test/tools/launch-renderer.test.ts --parallel=1 --timeout=30000
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > search accepts a semicolon-delimited path list
+153 | 			path: "apps/; packages/; phases/",
+154 | 		});
+155 | 		const text = getText(result);
+156 | 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+157 | 
+158 | 		expect(text).toMatch(/^# apps\/\n## grep\.txt#[0-9A-F]{4}/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## grep\.txt#[0-9A-F]{4}/m
+Received: "# apps/\n## grep.txt\n*1|shared-needle apps\n\n# packages/\n## grep.txt\n*1|shared-needle packages\n\n# phases/\n## grep.txt\n*1|shared-needle phases"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:158:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > search accepts JSON-array string paths in direct execute
+174 | 			path: JSON.stringify(["apps/", "packages/", "phases/"]),
+175 | 		});
+176 | 		const text = getText(result);
+177 | 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+178 | 
+179 | 		expect(text).toMatch(/^# apps\/\n## grep\.txt#[0-9A-F]{4}/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## grep\.txt#[0-9A-F]{4}/m
+Received: "# apps/\n## grep.txt\n*1|shared-needle apps\n\n# packages/\n## grep.txt\n*1|shared-needle packages\n\n# phases/\n## grep.txt\n*1|shared-needle phases"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:179:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > search expands delimited path entries
+199 | 				path: entry,
+200 | 			});
+201 | 			const text = getText(result);
+202 | 			const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+203 | 
+204 | 			expect(text).toMatch(/^# apps\/\n## grep\.txt#[0-9A-F]{4}/m);
+                      ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## grep\.txt#[0-9A-F]{4}/m
+Received: "# apps/grep.txt/\n## grep.txt\n*1|shared-needle apps\n\n# packages/grep.txt/\n## grep.txt\n*1|shared-needle packages"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:204:17)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > search keeps comma-delimited surviving entries when peers are missing
+220 | 			path: "missing.txt, packages/grep.txt",
+221 | 		});
+222 | 		const text = getText(result);
+223 | 		const details = result.details as { fileCount?: number; missingPaths?: string[] } | undefined;
+224 | 
+225 | 		expect(text).toMatch(/^\[packages\/grep\.txt#[0-9A-F]{4}\]/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^\[packages\/grep\.txt#[0-9A-F]{4}\]/m
+Received: "*1|shared-needle packages\n\nSkipped missing paths: missing.txt"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:225:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > records hashline snapshots for matched files
+239 | 			pattern: "shared-needle",
+240 | 			path: "apps/",
+241 | 		});
+242 | 		const text = getText(result);
+243 | 		const tag = /^# apps\/\n## grep\.txt#([0-9A-F]{4})/m.exec(text)?.[1];
+244 | 		if (!tag) throw new Error("Missing search snapshot tag");
+                            ^
+error: Missing search snapshot tag
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:244:23)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > search formats absolute in-cwd paths relative to cwd
+486 | 			path: absoluteAppsPath,
+487 | 		});
+488 | 		const text = getText(result);
+489 | 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+490 | 
+491 | 		expect(text).toMatch(/^# apps\/\n## grep\.txt#[0-9A-F]{4}/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## grep\.txt#[0-9A-F]{4}/m
+Received: "# apps/\n## grep.txt\n*1|shared-needle apps"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:491:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > ast_grep accepts quoted path and glob filters
+591 | 			path: '"packages/**/*.ts"',
+592 | 		});
+593 | 		const text = getText(result);
+594 | 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+595 | 
+596 | 		expect(text).toContain("ast.ts");
+                     ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "ast.ts"
+Received: "No matches found"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:596:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > ast_grep accepts a semicolon-delimited path list
+610 | 			path: "apps/**/*.ts; packages/**/*.ts; phases/**/*.ts",
+611 | 		});
+612 | 		const text = getText(result);
+613 | 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+614 | 
+615 | 		expect(text).toMatch(/^# apps\/\n## ast\.ts#[0-9A-F]{4}/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## ast\.ts#[0-9A-F]{4}/m
+Received: "No matches found"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:615:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > ast_grep expands delimited path entries
+636 | 				path: entry,
+637 | 			});
+638 | 			const text = getText(result);
+639 | 			const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+640 | 
+641 | 			expect(text).toMatch(/^# apps\/\n## ast\.ts#[0-9A-F]{4}/m);
+                      ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## ast\.ts#[0-9A-F]{4}/m
+Received: "No matches found"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:641:17)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > ast_edit applies across an explicit path array
+667 | 			paths: ["apps/**/*.ts", "packages/**/*.ts", "phases/**/*.ts"],
+668 | 		});
+669 | 		const text = getText(preview);
+670 | 		const details = preview.details as { totalReplacements?: number; scopePath?: string } | undefined;
+671 | 
+672 | 		expect(text).toMatch(/^# apps\/\n## ast\.ts#[0-9A-F]{4} \(\d+ replacement/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## ast\.ts#[0-9A-F]{4} \(\d+ replacement/m
+Received: "No replacements made"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:672:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > grep accepts a bare semicolon-delimited directory list
+840 | 			path: "apps; packages; phases",
+841 | 		});
+842 | 		const text = getText(result);
+843 | 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+844 | 
+845 | 		expect(text).toMatch(/^# apps\/\n## grep\.txt#[0-9A-F]{4}/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# apps\/\n## grep\.txt#[0-9A-F]{4}/m
+Received: "# apps/\n## grep.txt\n*1|shared-needle apps\n\n# packages/\n## grep.txt\n*1|shared-needle packages\n\n# phases/\n## grep.txt\n*1|shared-needle phases"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:845:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > grep keeps explicit files exact
+868 | 			path: "alpha.txt; beta.txt",
+869 | 		});
+870 | 		const text = getText(result);
+871 | 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
+872 | 
+873 | 		expect(text).toMatch(/^# alpha\.txt#[0-9A-F]{4}/m);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^# alpha\.txt#[0-9A-F]{4}/m
+Received: "# alpha.txt/\n## alpha.txt\n*1|exact-needle alpha\n\n# beta.txt/\n## beta.txt\n*1|exact-needle beta"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:873:16)
+
+  ✗ test\tools\grep-path-lists.test.ts > tool path arrays > grep explains match and context gutters with new format
+921 | 			pattern: "needle",
+922 | 			path: "context.txt",
+923 | 		});
+924 | 		const text = getText(result);
+925 | 
+926 | 		expect(text).toMatch(/ 1:#if FLAG/);
+                     ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: / 1:#if FLAG/
+Received: "*2|needle"
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-path-lists.test.ts:926:16)
+
+  ✗ test\tools\grep-renderer.test.ts > grepToolRenderer > indents inline grep output and avoids accent-colored success headers
+41 | 			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { pattern: "needle" })
+42 | 			.render(240);
+43 | 		const plainLines = sanitizeText(renderedLines.join("\n")).split("\n");
+44 | 
+45 | 		expect(plainLines.every(line => line.startsWith(" "))).toBe(true);
+46 | 		expect(renderedLines[0]).not.toContain(uiTheme.fg("accent", uiTheme.symbol("icon.search")));
+                                    ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "⌕"
+Received: " ⌕ Grep: needle 1 match · 1 file "
+
+      at <anonymous> (C:\Users\sanid\Desktop\harvest-2.0\harvest\packages\coding-agent\test\tools\grep-renderer.test.ts:46:32)
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 68/69; 5 files) [15.0s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 67/69; 5 files) [21.6s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 50/69; 5 files) [57.4s]
+✓ packages/coding-agent (UI/TUI bucket; 344 files; parallel=1 chunk 69/69; 4 files) [29.2s]
+
+ 61 chunks passed
+ 8 failed
+Ran 69 test command(s) in 124.4s.

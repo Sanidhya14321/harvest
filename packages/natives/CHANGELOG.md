@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed stalls when clipping long Unicode output without native bindings, and preserved hyperlinks, graphics, cursor markers and scaled-text fallbacks.
+
 ## [18.1.9] - 2026-09-04
 
 ### Added

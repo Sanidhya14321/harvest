@@ -21,6 +21,45 @@ const BAR_WIDTH = 16;
 const ACTIVITY_WIDTH = 96;
 const ERROR_WIDTH = 300;
 
+export type CleanseBoardColor = "success" | "warning" | "error" | "accent" | "dim";
+export type CleanseBoardLogRenderer = () => string;
+
+/** Presentation supplied by the terminal host; CLI callers retain their existing output. */
+export interface CleanseBoardPresentation {
+	fg(color: CleanseBoardColor, text: string): string;
+	bold(text: string): string;
+	readonly success: string;
+	readonly warning: string;
+	readonly error: string;
+	readonly separator: string;
+	readonly filled: string;
+	readonly empty: string;
+}
+
+const CLI_PRESENTATION: CleanseBoardPresentation = {
+	fg: (color, text) => {
+		switch (color) {
+			case "success":
+				return chalk.green(text);
+			case "warning":
+				return chalk.yellow(text);
+			case "error":
+				return chalk.red(text);
+			case "accent":
+				return chalk.cyan(text);
+			case "dim":
+				return chalk.dim(text);
+		}
+	},
+	bold: text => chalk.bold(text),
+	success: "✓",
+	warning: "●",
+	error: "✗",
+	separator: " · ",
+	filled: "█",
+	empty: "░",
+};
+
 /** Rendering surface for one `omp cleanse` run. */
 export interface CleanseStatusBoard {
 	readonly interactive: boolean;
@@ -58,6 +97,7 @@ interface RunningAgent {
  * permanent line the surface should log above the live area.
  */
 export class CleanseBoardModel {
+	constructor(private readonly presentation: CleanseBoardPresentation = CLI_PRESENTATION) {}
 	#phaseText: string | undefined;
 	readonly #checkers = new Map<string, RunningChecker>();
 	readonly #agents = new Map<string, RunningAgent>();
@@ -77,11 +117,22 @@ export class CleanseBoardModel {
 
 	/** Drop the checker's live row and build its permanent verdict line. */
 	checkerFinished(check: CleanseCheckResult, durationMs: number): string {
+		return this.finishChecker(check, durationMs)();
+	}
+
+	/** Capture a verdict once while permitting the host's presentation to change. */
+	finishChecker(check: CleanseCheckResult, durationMs: number): CleanseBoardLogRenderer {
 		this.#checkers.delete(check.id);
 		const count = check.diagnostics.length;
-		const verdict = count === 0 ? chalk.green("clean") : chalk.yellow(`${count} issue${count === 1 ? "" : "s"}`);
-		const glyph = count === 0 ? chalk.green("✓") : chalk.yellow("●");
-		return `${glyph} ${check.label} ${verdict} ${chalk.dim(`· ${formatDuration(durationMs)}`)}`;
+		const label = check.label;
+		const color = count === 0 ? "success" : "warning";
+		const verdictText = count === 0 ? "clean" : `${count} issue${count === 1 ? "" : "s"}`;
+		const duration = formatDuration(durationMs);
+		return () => {
+			const verdict = this.presentation.fg(color, verdictText);
+			const glyph = this.presentation.fg(color, count === 0 ? this.presentation.success : this.presentation.warning);
+			return `${glyph} ${label} ${verdict}${this.presentation.fg("dim", `${this.presentation.separator}${duration}`)}`;
+		};
 	}
 
 	repairFinished(): void {
@@ -104,19 +155,26 @@ export class CleanseBoardModel {
 
 	/** Drop the agent's live row, advance the repair bar, and build its permanent outcome line. */
 	agentFinished(outcome: CleanseAgentOutcome, assignment: CleanseAssignment): string {
+		return this.finishAgent(outcome, assignment)();
+	}
+
+	/** Capture settled metadata without retaining diagnostic or progress payloads. */
+	finishAgent(outcome: CleanseAgentOutcome, assignment: CleanseAssignment): CleanseBoardLogRenderer {
 		const agent = this.#agents.get(outcome.name);
 		this.#agents.delete(outcome.name);
 		this.#repairDone = Math.min(this.#repairDone + 1, this.#repairTotal);
-		return renderOutcomeLine(outcome, assignment, agent, this.#totals.get(outcome.name));
+		return outcomeLineRenderer(outcome, assignment, agent, this.#totals.get(outcome.name), this.presentation);
 	}
 
 	/** Render the transient live rows for the current spinner frame. */
 	renderLive(spinner: string): string[] {
 		const lines: string[] = [];
-		if (this.#phaseText) lines.push(`${chalk.yellow(spinner)} ${this.#phaseText}`);
+		if (this.#phaseText) lines.push(`${this.presentation.fg("warning", spinner)} ${this.#phaseText}`);
 		for (const checker of this.#checkers.values()) {
 			const elapsed = formatDuration(Date.now() - checker.startedAt);
-			lines.push(`${chalk.yellow(spinner)} ${checker.label} ${chalk.dim(`· ${elapsed}`)}`);
+			lines.push(
+				`${this.presentation.fg("warning", spinner)} ${checker.label}${this.presentation.fg("dim", `${this.presentation.separator}${elapsed}`)}`,
+			);
 		}
 		if (this.#repairTotal > 0) {
 			lines.push(
@@ -127,12 +185,13 @@ export class CleanseBoardModel {
 					this.#agents.size,
 					this.#totals,
 					this.#repairStartedAt,
+					this.presentation,
 				),
 			);
 			const rows = [...this.#agents.entries()].sort(
 				(left, right) => left[1].assignment.index - right[1].assignment.index,
 			);
-			for (const [name, agent] of rows) lines.push(renderAgentRow(spinner, name, agent));
+			for (const [name, agent] of rows) lines.push(renderAgentRow(spinner, name, agent, this.presentation));
 		}
 		return lines;
 	}
@@ -204,9 +263,12 @@ function renderWaveHeader(
 	running: number,
 	totals: ReadonlyMap<string, { tokens: number; cost: number }>,
 	startedAt: number,
+	presentation: CleanseBoardPresentation,
 ): string {
 	const filled = Math.round(Math.min(done / total, 1) * BAR_WIDTH);
-	const bar = chalk.cyan("█".repeat(filled)) + chalk.dim("░".repeat(BAR_WIDTH - filled));
+	const bar =
+		presentation.fg("accent", presentation.filled.repeat(filled)) +
+		presentation.fg("dim", presentation.empty.repeat(BAR_WIDTH - filled));
 	let tokens = 0;
 	let cost = 0;
 	for (const entry of totals.values()) {
@@ -218,53 +280,68 @@ function renderWaveHeader(
 	if (tokens > 0) parts.push(`${formatNumber(tokens)} tok`);
 	if (cost > 0) parts.push(formatCost(cost));
 	parts.push(formatDuration(Date.now() - startedAt));
-	return `${chalk.cyan(spinner)} Repairing [${bar}] ${parts.join(chalk.dim(" · "))}`;
+	return `${presentation.fg("accent", spinner)} Repairing [${bar}] ${parts.join(presentation.fg("dim", presentation.separator))}`;
 }
 
-function renderAgentRow(spinner: string, agentName: string, agent: RunningAgent): string {
+function renderAgentRow(
+	spinner: string,
+	agentName: string,
+	agent: RunningAgent,
+	presentation: CleanseBoardPresentation,
+): string {
 	const label = agentName.replace(/^Cleanse/, "");
 	const meta: string[] = [];
 	const toolCount = agent.progress?.toolCount ?? 0;
 	if (toolCount > 0) meta.push(`${toolCount} tool${toolCount === 1 ? "" : "s"}`);
 	meta.push(formatDuration(Date.now() - agent.startedAt));
 	return (
-		`${chalk.yellow(spinner)} ${chalk.bold(label)} ${compactFiles(agent.assignment)} ` +
-		`${chalk.dim("·")} ${agentActivity(agent.progress)} ${chalk.dim(`· ${meta.join(" · ")}`)}`
+		`${presentation.fg("warning", spinner)} ${presentation.bold(label)} ${compactFiles(agent.assignment)}` +
+		`${presentation.fg("dim", presentation.separator)}${agentActivity(agent.progress, presentation)}${presentation.fg("dim", `${presentation.separator}${meta.join(presentation.separator)}`)}`
 	);
 }
 
-function renderOutcomeLine(
+function outcomeLineRenderer(
 	outcome: CleanseAgentOutcome,
 	assignment: CleanseAssignment,
 	agent: RunningAgent | undefined,
 	total: { tokens: number; cost: number } | undefined,
-): string {
+	presentation: CleanseBoardPresentation,
+): CleanseBoardLogRenderer {
 	const files = compactFiles(assignment);
+	const name = outcome.name;
 	if (!outcome.success) {
-		return `${chalk.red("✗")} ${outcome.name} ${files} ${chalk.red(oneLine(outcome.error ?? "subagent failed", ERROR_WIDTH))}`;
+		const message = oneLine(outcome.error ?? "subagent failed", ERROR_WIDTH);
+		return () =>
+			`${presentation.fg("error", presentation.error)} ${name} ${files} ${presentation.fg("error", message)}`;
 	}
 	const meta: string[] = [];
 	const toolCount = agent?.progress?.toolCount ?? 0;
 	if (toolCount > 0) meta.push(`${toolCount} tool${toolCount === 1 ? "" : "s"}`);
 	if (total && total.tokens > 0) meta.push(`${formatNumber(total.tokens)} tok`);
 	if (agent) meta.push(formatDuration(Date.now() - agent.startedAt));
-	const suffix = meta.length > 0 ? ` ${chalk.dim(`· ${meta.join(" · ")}`)}` : "";
-	return `${chalk.green("✓")} ${outcome.name} ${files}${suffix}`;
+	return () => {
+		const suffix =
+			meta.length > 0 ? presentation.fg("dim", `${presentation.separator}${meta.join(presentation.separator)}`) : "";
+		return `${presentation.fg("success", presentation.success)} ${name} ${files}${suffix}`;
+	};
 }
 
 /** Latest human-readable activity for a repair agent row. */
-function agentActivity(progress: AgentProgress | undefined): string {
-	if (!progress) return chalk.dim("starting");
+function agentActivity(progress: AgentProgress | undefined, presentation: CleanseBoardPresentation): string {
+	if (!progress) return presentation.fg("dim", "starting");
 	if (progress.retryState) {
-		return chalk.yellow(`rate-limited · retry ${progress.retryState.attempt}/${progress.retryState.maxAttempts}`);
+		return presentation.fg(
+			"warning",
+			`rate-limited${presentation.separator}retry ${progress.retryState.attempt}/${progress.retryState.maxAttempts}`,
+		);
 	}
 	const intent = oneLine(progress.lastIntent ?? "", ACTIVITY_WIDTH);
 	if (progress.currentTool) {
 		const args = oneLine(progress.currentToolArgs ?? "", ACTIVITY_WIDTH);
-		const tool = chalk.dim(args ? `${progress.currentTool} ${args}` : progress.currentTool);
+		const tool = presentation.fg("dim", args ? `${progress.currentTool} ${args}` : progress.currentTool);
 		return intent ? `${intent} ${tool}` : tool;
 	}
-	return intent || chalk.dim("thinking");
+	return intent || presentation.fg("dim", "thinking");
 }
 
 function compactFiles(assignment: CleanseAssignment): string {

@@ -29,7 +29,7 @@ import type { ModelRegistry } from "../../src/config/model-registry";
 import type { Settings } from "../../src/config/settings";
 import { type AdvisorConfigDeps, AdvisorConfigOverlayComponent } from "../../src/modes/components/advisor-config";
 import { createAdvisorMessageCard } from "../../src/modes/components/advisor-message";
-import { getThemeByName, setThemeInstance } from "../../src/modes/theme/theme";
+import { getThemeByName, setThemeInstance, theme } from "../../src/modes/theme/theme";
 import { SecretObfuscator } from "../../src/secrets/obfuscator";
 import { formatSessionHistoryMarkdown } from "../../src/session/session-history-format";
 import { YieldQueue } from "../../src/session/yield-queue";
@@ -6222,7 +6222,7 @@ describe("advisor", () => {
 			expect(text).toContain("default");
 			expect(text).toContain("anthropic/claude-opus");
 		});
-		it("shows disabled advisors with a dim circle marker and toggles them in the detail editor", async () => {
+		it("distinguishes enabled and disabled advisors using the active theme markers", async () => {
 			const uiTheme = await getThemeByName("dark");
 			if (!uiTheme) throw new Error("theme unavailable");
 			setThemeInstance(uiTheme);
@@ -6233,11 +6233,10 @@ describe("advisor", () => {
 				],
 			});
 			const text = strip(overlay.render(200));
-			// The list shows ● for enabled and ○ for disabled.
-			expect(text).toContain("● Active");
-			expect(text).toContain("○ Disabled");
+			expect(text).toContain(`${theme.status.enabled} Active`);
+			expect(text).toContain(`${theme.status.disabled} Disabled`);
 			// The preview of the highlighted (first) advisor shows its enabled status.
-			expect(text).toContain("● on");
+			expect(text).toContain(`${theme.status.enabled} on`);
 		});
 	});
 });

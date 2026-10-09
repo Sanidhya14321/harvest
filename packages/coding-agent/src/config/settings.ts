@@ -19,6 +19,7 @@ import * as path from "node:path";
 import { configureCredentialRedaction } from "@harvest/pi-ai/providers/transform-messages";
 import { configureProviderMaxInFlightRequests } from "@harvest/pi-ai/stream";
 import {
+	CONFIG_DIR_NAME,
 	getAgentDbPath,
 	getAgentDir,
 	getLastChangelogVersionPath,
@@ -132,6 +133,7 @@ type MainYamlReadResult = {
 type ProjectSettingsReadResult = {
 	settings: RawSettings;
 	fileSettings: RawSettings;
+	configPath: string;
 	shellPathSource: string | undefined;
 };
 
@@ -481,7 +483,9 @@ export class Settings {
 	#global: RawSettings = {};
 	/** Project settings from .claude/settings.yml etc */
 	#project: RawSettings = {};
-	/** Last successfully loaded native .omp/config.yml contents. */
+	/** Native YAML target selected for this project, with legacy fallback. */
+	#projectConfigPath: string | undefined;
+	/** Last successfully loaded native project config.yml contents. */
 	#projectFileSettings: RawSettings = {};
 	/** Logical config paths whose malformed targets were moved aside. */
 	#quarantinedYamlTargets = new Map<string, string>();
@@ -866,6 +870,7 @@ export class Settings {
 			this.#global = globalResult.value.settings ?? {};
 			this.#project = projectResult.value.settings;
 			this.#projectFileSettings = projectResult.value.fileSettings;
+			this.#projectConfigPath = projectResult.value.configPath;
 			this.#projectShellPathSource = projectResult.value.shellPathSource;
 			this.#configOverlay = overlayResult.value.settings;
 			this.#overlayShellPathSource = overlayResult.value.shellPathSource;
@@ -952,7 +957,7 @@ export class Settings {
 	}
 
 	/**
-	 * Raw project settings layer (`.claude/settings.yml`, `.omp/config.yml`,
+	 * Raw project settings layer (`.claude/settings.yml`, `.harvest/config.yml`,
 	 * etc.), deep-cloned. Companion to {@link getGlobalSettings} for the legacy
 	 * pi `SettingsManager` shim's `getProjectSettings()`.
 	 */
@@ -985,7 +990,7 @@ export class Settings {
 	/**
 	 * Provenance of the effective `extensions` array for extension-root
 	 * sub-discovery. `"project"` only when a project settings provider owns it
-	 * (any of `.omp/config.yml`, `.omp/settings.json`, `.claude/settings.json`,
+	 * (any of `.harvest/config.yml`, `.harvest/settings.json`, `.claude/settings.json`,
 	 * … — all merged into the project layer) and no higher user-level layer (a
 	 * `--config` overlay or a runtime override) replaces it; otherwise `"user"`.
 	 * Callers pass this into {@link EffectiveExtensionRoots.configuredLevel} so
@@ -1824,11 +1829,19 @@ export class Settings {
 			// Capability discovery is best-effort; the native project config below
 			// remains authoritative for its model-role layer and must not be hidden.
 		}
-		const projectConfigPath = path.join(this.#cwd, ".omp", "config.yml");
-		const nativeProject = quarantineInvalid
-			? await this.#loadYaml(projectConfigPath)
-			: (this.#unwrapYamlLoadResult(projectConfigPath, await this.#loadYamlIfPresent(projectConfigPath, false)) ??
-				{});
+		let projectConfigPath = path.join(this.#cwd, CONFIG_DIR_NAME, "config.yml");
+		let nativeProject: RawSettings = {};
+		for (const directory of [CONFIG_DIR_NAME, ".omp"]) {
+			const candidatePath = path.join(this.#cwd, directory, "config.yml");
+			const loaded = quarantineInvalid
+				? await this.#loadYamlIfPresentForStartup(candidatePath)
+				: this.#unwrapYamlLoadResult(candidatePath, await this.#loadYamlIfPresent(candidatePath, false));
+			if (loaded !== null) {
+				projectConfigPath = candidatePath;
+				nativeProject = loaded;
+				break;
+			}
+		}
 		const nativeModelRoles = getByPath(nativeProject, ["modelRoles"]);
 		if (nativeModelRoles !== undefined) {
 			merged = this.#deepMerge(merged, { modelRoles: nativeModelRoles });
@@ -1836,6 +1849,7 @@ export class Settings {
 		return {
 			settings: this.#migrateRawSettings(merged, quarantineInvalid),
 			fileSettings: structuredClone(nativeProject),
+			configPath: projectConfigPath,
 			shellPathSource,
 		};
 	}
@@ -1843,6 +1857,7 @@ export class Settings {
 	async #loadProjectSettings(): Promise<RawSettings> {
 		const result = await this.#readProjectSettings(true);
 		this.#projectFileSettings = result.fileSettings;
+		this.#projectConfigPath = result.configPath;
 		this.#projectShellPathSource = result.shellPathSource;
 		return result.settings;
 	}
@@ -2904,7 +2919,7 @@ export class Settings {
 	async #saveProjectNow(): Promise<void> {
 		if (this.#savesCancelled || !this.#persist || this.#modifiedProjectModelRoles.size === 0) return;
 
-		const projectConfigPath = path.join(this.#cwd, ".omp", "config.yml");
+		const projectConfigPath = this.#projectConfigPath ?? path.join(this.#cwd, CONFIG_DIR_NAME, "config.yml");
 		const modifiedModelRoles = [...this.#modifiedProjectModelRoles];
 		this.#modifiedProjectModelRoles.clear();
 

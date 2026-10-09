@@ -6,6 +6,7 @@ describe("SelectorController prompt-affecting settings", () => {
 	it("refreshes the active prompt when xdev docs mode changes", async () => {
 		const refreshBaseSystemPrompt = vi.fn(async () => {});
 		const ctx = {
+			sessionManager: { getSessionFile: () => undefined },
 			session: { refreshBaseSystemPrompt },
 			showError: vi.fn(),
 		} as unknown as InteractiveModeContext;

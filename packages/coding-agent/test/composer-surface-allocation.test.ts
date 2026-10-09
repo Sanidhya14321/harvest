@@ -4,6 +4,7 @@ import { COMPOSER_SHAPE_VALUES } from "../src/config/settings-schema";
 import { AttachmentChipsBand } from "../src/modes/components/attachment-chips";
 import { renderComposerShapePreview } from "../src/modes/components/composer-shape-preview";
 import { ErrorBannerComponent } from "../src/modes/components/error-banner";
+import { CleansePanelComponent } from "../src/modes/components/cleanse-panel";
 import { TranscriptContainer } from "../src/modes/components/transcript-container";
 import { WelcomeComponent, gradientLogo, renderWelcomeTip } from "../src/modes/components/welcome";
 import { Composer } from "../src/modes/composer";
@@ -52,6 +53,39 @@ function mount(fullscreen: boolean): { composer: Composer; error: ErrorBannerCom
 }
 
 describe("composer surface allocation", () => {
+	it.each([false, true])("allocates inline cleanse controls before clipping with fullscreen=%s", fullscreen => {
+		const composer = new Composer({
+			terminal: new VirtualTerminal(80, 24),
+			preferences: { quiet: true, fullscreen, composerShape: "band", sidebar: "hide" },
+		});
+		composers.push(composer);
+		const transcript = new TranscriptContainer();
+		transcript.addChild(new Text("Conversation", 0, 0));
+		const panelRoot = new Container();
+		const panel = new CleansePanelComponent({ tui: composer.ui });
+		panelRoot.addChild(panel);
+		const editorRoot = new Container();
+		editorRoot.addChild(composer.editor);
+		composer.setRuntimeChildren([transcript, panelRoot, editorRoot]);
+		composer.start({ playWelcomeIntro: false });
+		composer.editor.insertText("Editable draft");
+		try {
+			for (let index = 0; index < 14; index++) panel.log(`Checker output ${index}`);
+			const small = composer.renderFrame({ columns: 24, rows: 4 }).viewport;
+			expect(Bun.stripANSI(small.join("\n"))).toContain("Esc cancel");
+			expect(small.some(row => row.includes(CURSOR_MARKER))).toBe(true);
+			expect(small.length).toBeLessThanOrEqual(4);
+			panel.markError("Checker\tfailed");
+			expect(Bun.stripANSI(composer.renderFrame({ columns: 24, rows: 4 }).viewport.join("\n"))).toContain(
+				"Esc dismiss",
+			);
+			const expanded = Bun.stripANSI(composer.renderFrame({ columns: 80, rows: 24 }).viewport.join("\n"));
+			expect(expanded.replace(/\s+/g, " ")).toContain("Checker failed");
+			expect(composer.editor.getExpandedText()).toBe("Editable draft");
+		} finally {
+			panel.dispose();
+		}
+	});
 	it.each([false, true])("keeps the cursor and staged draft through tiny resize with fullscreen=%s", fullscreen => {
 		const { composer, error } = mount(fullscreen);
 		const draft = composer.editor.getExpandedText();

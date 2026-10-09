@@ -12,7 +12,15 @@
  * Sixel, Kitty `a=p`) do not survive. Everything else falls back to the stats
  * line plus a dim notice.
  */
-import { type Component, type ImageBudget, renderImage, TERMINAL } from "@harvest/pi-tui";
+import {
+	type Component,
+	Ellipsis,
+	type ImageBudget,
+	renderImage,
+	TERMINAL,
+	truncateToWidth,
+	wrapTextWithAnsi,
+} from "@harvest/pi-tui";
 import {
 	DIM_OFF,
 	DIM_ON,
@@ -63,6 +71,8 @@ export class SnapcompactShapePreview implements Component {
 	#requestRender: () => void;
 	#variant: ShapeVariantName | "auto" = "auto";
 	#entries = new Map<ShapeVariantName, PreviewEntry>();
+	#maxHeight = MAX_IMAGE_ROWS + 4;
+	#disposed = false;
 
 	constructor(currentValue: string, options: SnapcompactShapePreviewOptions = {}) {
 		this.#model = options.model;
@@ -76,40 +86,59 @@ export class SnapcompactShapePreview implements Component {
 		this.#variant = isShapeVariantName(value) ? value : "auto";
 	}
 
+	setMaxHeight(height: number): void {
+		this.#maxHeight = Math.max(1, Math.floor(height));
+	}
+
+	dispose(): void {
+		this.#disposed = true;
+		this.#entries.clear();
+	}
+
 	render(width: number): readonly string[] {
+		width = Math.max(1, Math.floor(width));
+		const inset = width >= 8 ? "  " : "";
+		const contentWidth = width - inset.length;
+		const ascii = theme.getSymbolPreset() === "ascii";
+		const ellipsis = ascii ? Ellipsis.Ascii : Ellipsis.Unicode;
+		const fit = (text: string): string => `${inset}${truncateToWidth(text, contentWidth, ellipsis)}`;
 		const shape = resolveShape(this.#model, this.#variant);
 		const name = resolvedVariantName(shape);
 		const geo = geometry(shape);
-		const label = this.#variant === "auto" ? `auto → ${name}` : name;
+		const label = this.#variant === "auto" ? `auto ${ascii ? "->" : "→"} ${name}` : name;
 		const chars = geo.capacity >= 1000 ? `${(geo.capacity / 1000).toFixed(1)}k` : String(geo.capacity);
 		const tokens =
 			shape.frameTokenEstimate >= 1000
 				? `${(shape.frameTokenEstimate / 1000).toFixed(1)}k`
 				: String(shape.frameTokenEstimate);
-		const stats = `full frame ${geo.cols}×${geo.rows} cells ≈ ${chars} chars ≈ ${tokens} tokens`;
-		const lines: string[] = [theme.fg("muted", `  Sample (zoomed) · ${label} · ${stats}`), ""];
+		const stats = `full frame ${geo.cols}${ascii ? "x" : "×"}${geo.rows} cells ${ascii ? "~" : "≈"} ${chars} chars ${ascii ? "~" : "≈"} ${tokens} tokens`;
+		const lines: string[] = [theme.fg("muted", fit(`Sample (zoomed)${theme.sep.dot}${label}`))];
+		if (this.#maxHeight === 1) return lines;
+		const statsRows = wrapTextWithAnsi(stats, contentWidth, { hard: true }).slice(0, this.#maxHeight - 2);
+		lines.push(...statsRows.map(line => theme.fg("muted", `${inset}${line}`)));
+		const notice = (text: string): readonly string[] => [...lines, theme.fg("dim", fit(text))];
 
 		if (!this.#budget || !TERMINAL.imageProtocol) {
-			lines.push(theme.fg("dim", "  (graphic sample needs a Kitty-graphics terminal)"));
-			return lines;
+			return notice("Graphic sample needs a Kitty-graphics terminal");
 		}
+		const imageRows = Math.min(MAX_IMAGE_ROWS, this.#maxHeight - lines.length);
+		if (this.#disposed || contentWidth < 8 || imageRows < 2)
+			return notice("Enlarge the terminal for the graphic sample");
 
 		const entry = this.#ensureEntry(name, shape);
 		if (entry.state === "rendering") {
-			lines.push(theme.fg("dim", "  rendering sample…"));
-			return lines;
+			return notice(`Rendering sample${theme.symbol("sep.ellipsis")}`);
 		}
 		if (entry.state === "failed") {
-			lines.push(theme.fg("dim", "  (sample render failed)"));
-			return lines;
+			return notice("Sample render failed");
 		}
 
 		const result = renderImage(
 			entry.data,
 			{ widthPx: entry.edgePx, heightPx: entry.edgePx },
 			{
-				maxWidthCells: Math.max(8, Math.min(MAX_IMAGE_COLS, width - 4)),
-				maxHeightCells: MAX_IMAGE_ROWS,
+				maxWidthCells: Math.min(MAX_IMAGE_COLS, contentWidth),
+				maxHeightCells: imageRows,
 				imageId: entry.imageId,
 				includeTransmit: !entry.transmitted,
 			},
@@ -117,15 +146,14 @@ export class SnapcompactShapePreview implements Component {
 		// Only the unicode-placeholder path returns text-cell `lines`; cursor-moving
 		// placements would corrupt the bordered settings frame, so skip them.
 		if (!result?.lines) {
-			lines.push(theme.fg("dim", "  (graphic sample needs Kitty unicode-placeholder graphics)"));
-			return lines;
+			return notice("Graphic sample needs Kitty unicode-placeholder graphics");
 		}
 		if (result.transmit) {
 			this.#budget.enqueueTransmit(entry.imageId, result.transmit);
 			entry.transmitted = true;
 		}
 		for (const line of result.lines) {
-			lines.push(`  ${line}`);
+			lines.push(`${inset}${line}`);
 		}
 		return lines;
 	}
@@ -155,6 +183,7 @@ export class SnapcompactShapePreview implements Component {
 				.resize(edgePx, edgePx, { filter: "nearest" })
 				.png()
 				.bytes();
+			if (this.#disposed) return;
 			this.#entries.set(name, {
 				state: "ready",
 				data: zoomed.toBase64(),
@@ -165,6 +194,7 @@ export class SnapcompactShapePreview implements Component {
 				transmitted: false,
 			});
 		} catch {
+			if (this.#disposed) return;
 			this.#entries.set(name, { state: "failed" });
 		}
 		this.#requestRender();
