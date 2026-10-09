@@ -196,11 +196,11 @@ jobs:
           OMP_SKIP_INTEGRATIONS=1 "${binary}" man > "target/${TARGET}/release/omp.1"
           cargo install cargo-deb --version 3.7.0 --locked
           cargo deb --no-build --no-strip --target "${TARGET}" --output "omp_${VERSION}_${DEB_ARCH}.deb"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: ${{ matrix.artifact }}
           path: rust-agent/${{ matrix.artifact }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: runner.os == 'Linux'
         with:
           name: omp-deb-${{ matrix.deb_arch }}
@@ -263,7 +263,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           path: dist
           merge-multiple: true
@@ -291,7 +291,7 @@ jobs:
             --output-dir "${manifests}"
           (cd "${manifests}" && zip -9 "${GITHUB_WORKSPACE}/dist/omp-winget-manifests.zip" ./*.yaml)
           (cd dist && sha256sum omp-* >SHA256SUMS)
-      - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
         with:
           token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ needs.version.outputs.tag }}
