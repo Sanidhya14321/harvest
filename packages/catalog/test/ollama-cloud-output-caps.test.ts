@@ -45,7 +45,7 @@ test("ollama-cloud discovery does not inherit unsafe cross-provider maxTokens", 
 	const models = await options.fetchDynamicModels?.();
 	const model = models?.find(candidate => candidate.id === "kimi-k2.5");
 
-	expect(model?.contextWindow).toBe(128000);
+	expect(model?.contextWindow).toBe(262144);
 	expect(model?.maxTokens).toBe(8192);
 });
 
