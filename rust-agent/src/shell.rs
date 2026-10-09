@@ -237,7 +237,7 @@ mod tests {
         };
         let error = install("bash", &layout, "complete omp\n").unwrap_err();
         assert!(error.to_string().contains("refusing"), "{error}");
-drop(fs::metadata(root.path().join("state/bash-installed")).unwrap_err());
+        drop(fs::metadata(root.path().join("state/bash-installed")).unwrap_err());
     }
 
     #[test]
