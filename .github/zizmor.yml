@@ -5,6 +5,7 @@ rules:
       - deep.yml
       - hygiene.yml
       - nightly.yml
+      - performance.yml
       - release.yml
       - rust-ci.yml
       - rust-release.yml
