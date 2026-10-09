@@ -29,12 +29,12 @@ pub(crate) fn auto_install() {
 pub(crate) fn install(shell: &str, layout: &Layout, script: &str) -> Result<PathBuf> {
     let script_path = script_path(shell, layout)?;
     write_file(&script_path, script.as_bytes())?;
+    place_shortcut(&layout.executable)?;
+    write_file(&layout.state.join("shortcut-installed"), b"installed\n")?;
     write_file(
         &layout.state.join(format!("{shell}-installed")),
         b"installed\n",
     )?;
-    place_shortcut(&layout.executable)?;
-    write_file(&layout.state.join("shortcut-installed"), b"installed\n")?;
     Ok(script_path)
 }
 
@@ -215,6 +215,29 @@ mod tests {
                     .contains("omp")
             );
         }
+    }
+
+    #[test]
+    fn shell_marker_stays_absent_when_the_shortcut_cannot_be_replaced() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("bin/omp");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::write(&executable, "bin").unwrap();
+        let blocked = if cfg!(windows) {
+            root.path().join("bin/harvest.cmd")
+        } else {
+            root.path().join("bin/harvest")
+        };
+        fs::write(&blocked, "other").unwrap();
+        let layout = Layout {
+            home: root.path().join("home"),
+            data: root.path().join("data"),
+            state: root.path().join("state"),
+            executable,
+        };
+        let error = install("bash", &layout, "complete omp\n").unwrap_err();
+        assert!(error.to_string().contains("refusing"), "{error}");
+drop(fs::metadata(root.path().join("state/bash-installed")).unwrap_err());
     }
 
     #[test]

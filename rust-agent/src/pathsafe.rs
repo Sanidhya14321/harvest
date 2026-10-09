@@ -38,27 +38,26 @@ fn confirm_existing(path: &Path, root: &Path) -> Result<()> {
     let canonical_root = root
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", root.display()))?;
-    let Some(ancestor) = existing_ancestor(path) else {
-        return Ok(());
-    };
-    let canonical = ancestor
-        .canonicalize()
-        .with_context(|| format!("failed to resolve {}", ancestor.display()))?;
-    if !canonical.starts_with(&canonical_root) {
+    let Ok(relative) = path.strip_prefix(root) else {
         bail!("path escapes the workspace");
+    };
+    let mut cursor = root.to_path_buf();
+    for component in relative.components() {
+        cursor.push(component);
+        let Ok(metadata) = cursor.symlink_metadata() else {
+            break;
+        };
+        if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        let canonical = cursor
+            .canonicalize()
+            .with_context(|| format!("path escapes the workspace through {}", cursor.display()))?;
+        if !canonical.starts_with(&canonical_root) {
+            bail!("path escapes the workspace");
+        }
     }
     Ok(())
-}
-
-fn existing_ancestor(path: &Path) -> Option<&Path> {
-    let mut cursor = Some(path);
-    while let Some(current) = cursor {
-        if current.exists() {
-            return Some(current);
-        }
-        cursor = current.parent();
-    }
-    None
 }
 
 #[cfg(test)]
@@ -115,6 +114,15 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
         let error = workspace_file(root.path(), "escape/new/dir/file.txt").unwrap_err();
+        assert!(error.to_string().contains("escapes"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink("/tmp/omp-missing-outside", root.path().join("escape")).unwrap();
+        let error = workspace_file(root.path(), "escape").unwrap_err();
         assert!(error.to_string().contains("escapes"), "{error}");
     }
 }
