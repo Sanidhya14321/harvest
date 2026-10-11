@@ -9,6 +9,8 @@ indent_style = space
 indent_size = 4
 
 [*.rs]
+# rustfmt owns Rust indentation, including aligned continuations and raw strings.
+indent_style = unset
 indent_size = unset
 
 [*.{yml,yaml,json,toml,md}]

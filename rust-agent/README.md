@@ -15,11 +15,16 @@ The `core` profile provides bounded workspace inspection and approved file
 writes. `full` additionally reuses Harvest's existing Rust shell engine with a
 bounded output channel and timeout. Both produce `harvest` and `omp` binaries.
 The host must approve each mutation or shell call; unattended runs deny them.
+The experimental `omp run` and `omp tools` commands use the same library as
+`harvest`.
 
 ```sh
-cargo run --locked -p harvest-omp --bin harvest -- run --prompt "Summarize README.md" --workspace .
-cargo run --locked -p harvest-omp --bin harvest -- brain --scope project organize --dry-run --json
-cargo run --locked -p harvest-omp --bin harvest -- /orgnize-skills --scope project --dry-run --json
+cargo run --locked -p harvest-omp --bin harvest -- \
+  run --prompt "Summarize README.md" --workspace .
+cargo run --locked -p harvest-omp --bin harvest -- \
+  brain --scope project organize --dry-run --json
+cargo run --locked -p harvest-omp --bin harvest -- \
+  /orgnize-skills --scope project --dry-run --json
 ```
 
 Provider configuration currently uses flags, then `OMP_MODEL`, `OMP_BASE_URL`,

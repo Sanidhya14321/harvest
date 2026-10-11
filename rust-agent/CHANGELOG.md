@@ -1,8 +1,13 @@
 # Changelog
 
+<!-- markdownlint-disable MD013 -->
+<!-- One-line changelog entries follow repository policy. -->
+
 ## [Unreleased]
 
 ### Added
+
+- Inspect legacy and current session logs without rewriting their source.
 
 - Added native project/user brain retrieval, evidence-based lesson admission, recoverable organization, restoration and explicit purge.
 - Added a shared Rust library and both `harvest` and `omp` command aliases.
