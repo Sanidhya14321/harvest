@@ -39,6 +39,11 @@ jobs:
         run: |
           python3 scripts/check_secrets.py --selftest
           python3 scripts/check_secrets.py
+      - name: Rust credential scanner (migration verification)
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          git ls-files -z -- rust-agent crates/harvest-runtime crates/harvest-brain xtask | cargo xtask secrets --files-stdin
       - name: No stray debug markers
         working-directory: ${{ github.workspace }}
         run: |

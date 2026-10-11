@@ -25,6 +25,7 @@ fn execute() -> Result<()> {
 	let selection: Vec<String> = arguments.collect();
 	match task.as_str() {
 		"package" => packaging::execute(selection),
+		"secrets" => xtask::secrets::execute(selection),
 		"test" => {
 			let mut nextest = vec!["nextest".into(), "run".into(), "--locked".into()];
 			nextest.extend(selection.iter().cloned());
@@ -64,7 +65,8 @@ fn execute() -> Result<()> {
 			println!(
 				"cargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo package \
 				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
-				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> --help"
+				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
+				 --help\ncargo xtask secrets --help"
 			);
 			Ok(())
 		},

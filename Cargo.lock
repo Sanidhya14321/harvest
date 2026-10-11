@@ -10659,8 +10659,10 @@ dependencies = [
  "anyhow",
  "clap",
  "harvest-runtime",
+ "regex",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

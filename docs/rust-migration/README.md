@@ -34,6 +34,10 @@ because a Rust command or tool has the same name.
   The blanket comment ban and arbitrary source-length gate have been removed.
   CI preserves the coverage floor, release tests, cross-target checks, strict
   Rustdoc, feature powerset, packaging and installer verification.
+- Rust credential scanning preserves the prototype detection rules, redacts
+  matched values and caps manifests, source sizes and findings. Read failures,
+  escaping paths and oversized input fail the check. Both scanners run during
+  migration; the existing Python scanner has not been removed.
 - Both Rust binary aliases share a library. The prototype uses bounded I/O,
   jailed session writes, embedded Markdown prompts, ephemeral retrieval from
   project/user brains and host-owned approvals. Shell execution in `full`
