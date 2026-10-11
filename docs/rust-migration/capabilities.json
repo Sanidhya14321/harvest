@@ -1,936 +1,1801 @@
 {
-  "version": 1,
+  "version": 2,
   "baseline": "Merged PR #4 plus supported legacy application contracts. Partial primitive implementations do not establish parity.",
   "capabilities": [
     {
       "id": "command:launch",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:acp",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:auth-broker",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:auth-gateway",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:agents",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:bench",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:browser-relay",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:cleanse",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:commit",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:completions",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:__complete",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:compress",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:config",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:dry-balance",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:gc",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:grep",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:gallery",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:git",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:grievances",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:images",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:if-bench",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:install",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:join",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:models",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:plugin",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:ps",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:say",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:share",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:setup",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:shell",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:read",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:render",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:ssh",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:stats",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:update",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:usage",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:tiny-models",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:token",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:ttsr",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:worktree",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "command:search",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:read",
-      "status": "partial",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/tools/read.ts"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "tool:security_scan",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:bash",
-      "status": "partial",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/tools/bash.ts"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "tool:edit",
-      "status": "partial",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/core/tools/edit.ts"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "tool:ast_grep",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:ast_edit",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:ask",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:debug",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:eval",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:github",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:glob",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:grep",
-      "status": "partial",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/tools/grep.ts"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "tool:lsp",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:checkpoint",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:rewind",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:task",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:hub",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:todo",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:web_search",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:write",
-      "status": "partial",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/tools.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/tools/write.ts"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "tool:memory_edit",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:retain",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:recall",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:reflect",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:learn",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:manage_skill",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:search_code",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:sessions",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "tool:presets",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "hidden-tool:think",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "hidden-tool:yield",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "hidden-tool:goal",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:security",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:settings",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:setup",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:plan",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:plan-review",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:vibe",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:goal",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:guided-goal",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:loop",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:queue",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:model",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:switch",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:fast",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:skillful",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:extended-context",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:computer",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:prewalk",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:advisor",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:export",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:trace",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:dump",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:share",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:collab",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:join",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:leave",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:browser",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:copy",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:open",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:todo",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:session",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:jobs",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:usage",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:stats",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:changelog",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:hotkeys",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:tools",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:context",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:extensions",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:agents",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:skills",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:git",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:hub",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:branch",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:fork",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:tree",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:login",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:logout",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:mcp",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:ssh",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:new",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:fresh",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:clear",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:drop",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:compact",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:shake",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:handoff",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:resume",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:tab",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:diagnostics",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:pin",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:btw",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:tan",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:omfg",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:cleanse",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:retry",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:debug",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:memory",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:rename",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:move",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:wt",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:add-dir",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:remove-dir",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:dirs",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:exit",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:restart",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:marketplace",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:plugins",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:reload-plugins",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:force",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:live",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:pause",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:quit",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:commands",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "slash:sidebar",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:streaming-providers",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/provider.rs",
+          "rust-agent/src/streaming.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/streaming.rs",
+          "rust-agent/tests/cli.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/ai/src/"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "surface:oauth-credentials",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:kdl-catalog",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:settings-profiles",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:session-v3",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/durable_session.rs",
+          "rust-agent/src/session_format.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/agent_session.rs",
+          "rust-agent/tests/session_format.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/session/"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "surface:session-v1-v2-import",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:prototype-session-import",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:rpc-v1-v2",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:acp-v1",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:terminal-inline-transcript",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:terminal-input-resize-restoration",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:rust-sdk",
-      "status": "partial",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/agent_session.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/agent_session.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/sdk.ts"
+        ],
+        "removable": false
+      }
     },
     {
       "id": "surface:extension-process-abi-v1",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:dynamic-tools",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:delegation-goals-advisor",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:mcp",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:lsp-dap",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:browser-wasm",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:eval-ssh",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:memory-backends",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:stats",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:benchmarks",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:collaboration",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:media-local-inference",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:python-automation",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:codegen",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:release-installers",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:installed-parity-without-legacy-runtimes",
-      "status": "not_ported",
-      "contracts": []
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      }
     },
     {
       "id": "surface:automatic-session-learning",
-      "status": "partial",
-      "contracts": []
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "crates/harvest-brain/src/"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-brain/tests/"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/session/session-memory.ts"
+        ],
+        "removable": false
+      }
     }
   ]
 }

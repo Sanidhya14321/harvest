@@ -42,18 +42,19 @@ fn execute() -> Result<()> {
 		"capabilities" => {
 			let manifest: serde_json::Value =
 				serde_json::from_str(include_str!("../../docs/rust-migration/capabilities.json"))?;
-			let rows = manifest["capabilities"]
-				.as_array()
-				.context("invalid capability manifest")?;
-			let complete = rows
-				.iter()
-				.filter(|row| row["status"] == "verified")
-				.count();
-			println!("{complete}/{} legacy capabilities verified for Rust parity", rows.len());
+			let progress = xtask::capabilities::inspect(&manifest)?;
+			println!(
+				"{}/{} capabilities have Rust implementations (partial or complete)",
+				progress.implemented, progress.total
+			);
+			println!(
+				"{}/{} legacy capabilities verified for Rust parity",
+				progress.verified, progress.total
+			);
 			if selection
 				.iter()
 				.any(|argument| argument == "--require-complete")
-				&& complete != rows.len()
+				&& progress.verified != progress.total
 			{
 				bail!(
 					"distribution cutover blocked: legacy capabilities still lack verified Rust parity"
