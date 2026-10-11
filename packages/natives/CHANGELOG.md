@@ -9,6 +9,7 @@
 ### Fixed
 
 - Fixed concurrent shell cancellation waits and preserved the first cancellation reason.
+- Fixed local native builds using the development profile.
 
 - Fixed stalls when clipping long Unicode output without native bindings, and preserved hyperlinks, graphics, cursor markers and scaled-text fallbacks.
 
