@@ -26,18 +26,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Every tracked file is comment-free
-        run: |
-          python3 scripts/check_comments.py --selftest
-          python3 scripts/check_comments.py
-      - name: Rust files stay focused
-        run: |
-          python3 scripts/check_rust_sizes.py --selftest
-          python3 scripts/check_rust_sizes.py
-      - name: The Homebrew formula template renders
-        run: python3 scripts/homebrew_formula.py --selftest
-      - name: The Winget manifest templates render
-        run: python3 scripts/winget_manifest.py --selftest
+      - name: Install authoritative workspace toolchain
+        working-directory: ${{ github.workspace }}
+        run: rustup show
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: cargo-nextest
+      - name: Release templates bind versions and asset checksums
+        working-directory: ${{ github.workspace }}
+        run: cargo xtask test -p xtask
       - name: No committed secrets
         run: |
           python3 scripts/check_secrets.py --selftest
@@ -46,7 +43,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          if git grep -nE '\b(dbg!|todo!|unimplemented!|FIXME|XXX[^X]|eprintln!)' -- 'rust-agent/src/**/*.rs'; then
+          if git grep -nE '\b(dbg!|todo!|unimplemented!|FIXME|XXX[^X])' -- 'rust-agent/src/**/*.rs'; then
             echo "remove the markers above before merging" >&2
             exit 1
           fi

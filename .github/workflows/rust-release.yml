@@ -1,19 +1,6 @@
 name: Release
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - rust-agent/src/**
-      - rust-agent/Cargo.toml
-      - rust-agent/Cargo.lock
-      - rust-agent/README.md
-      - rust-agent/Formula/omp.rb
-      - rust-agent/packaging/winget/**
-      - rust-agent/scripts/homebrew_formula.py
-      - rust-agent/scripts/update_homebrew_tap.sh
-      - rust-agent/scripts/winget_manifest.py
-      - .github/workflows/rust-release.yml
   workflow_dispatch:
 
 permissions:
@@ -28,7 +15,21 @@ defaults:
     working-directory: rust-agent
 
 jobs:
+  parity:
+    name: Require complete Rust capability parity before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install authoritative workspace toolchain
+        working-directory: ${{ github.workspace }}
+        run: rustup show
+      - name: Distribution cutover gate
+        working-directory: ${{ github.workspace }}
+        run: cargo xtask capabilities --require-complete
   version:
+    needs: parity
     name: Bump version and tag
     if: "github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
@@ -283,13 +284,14 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          manifests="${RUNNER_TEMP}/winget-manifests"
-          python3 rust-agent/scripts/winget_manifest.py \
+          manifests="dist/winget-manifests"
+          cargo xtask package winget \
             --version "${VERSION}" \
             --release-date "$(date -u +%F)" \
             --checksums dist/SHA256SUMS \
             --output-dir "${manifests}"
           (cd "${manifests}" && zip -9 "${GITHUB_WORKSPACE}/dist/omp-winget-manifests.zip" ./*.yaml)
+          rm -r "${manifests}"
           (cd dist && sha256sum omp-* >SHA256SUMS)
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
         with:
@@ -302,7 +304,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          python3 rust-agent/scripts/homebrew_formula.py \
+          cargo xtask package homebrew \
             --version "${VERSION}" --checksums dist/SHA256SUMS --output omp.rb
       - name: Mirror the formula to the tap repository
         env:

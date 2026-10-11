@@ -30,8 +30,10 @@ because a Rust command or tool has the same name.
 - Rust `xtask package` generates Homebrew and WinGet release metadata with
   validated versions, calendar dates and asset checksums. It replaces the two
   standalone Python generators. Secret scanning remains in the existing
-  repository-wide Gitleaks security job; duplicate prototype scanners, a blanket
-  comment ban and arbitrary source-length gate have been removed.
+  repository-wide Gitleaks security job and the prototype credential scanner.
+  The blanket comment ban and arbitrary source-length gate have been removed.
+  CI preserves the coverage floor, release tests, cross-target checks, strict
+  Rustdoc, feature powerset, packaging and installer verification.
 - Both Rust binary aliases share a library. The prototype uses bounded I/O,
   jailed session writes, embedded Markdown prompts, ephemeral retrieval from
   project/user brains and host-owned approvals. Shell execution in `full`
@@ -87,5 +89,5 @@ cutover. CI retains cross-platform checks; local measurements alone cannot prove
 macOS/Windows parity.
 
 The proposed binary/RSS/paint/retrieval performance targets are not yet certified.
-No legacy application entrypoints were removed, and no release or commit was
-created.
+No legacy application entrypoints were removed. Distribution remains blocked
+until capability parity is verified; no release has been published.
