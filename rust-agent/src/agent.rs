@@ -3,9 +3,9 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 use crate::{
-	chat::{self, ChatMessage, ToolCall},
+	chat::{self, ChatMessage},
 	provider::Model,
-	session, tools,
+	tools,
 };
 
 const SYSTEM: &str = include_str!("prompts/system.md");
@@ -19,8 +19,7 @@ pub fn run(workspace: &Path, prompt: &str, max_steps: u32, model: &dyn Model) ->
 	})
 }
 
-/// Host configuration for a bounded prototype run; compatible session-v3
-/// orchestration is still pending.
+/// Host configuration shared by new and resumed Rust sessions.
 pub struct RunOptions {
 	pub max_steps:      u32,
 	pub user_agent_dir: Option<std::path::PathBuf>,
@@ -45,12 +44,14 @@ pub fn run_with_options(
 	let root = workspace
 		.canonicalize()
 		.with_context(|| format!("failed to resolve {}", workspace.display()))?;
-	let system_message = chat::system(SYSTEM);
-	let user_message = chat::user(prompt);
-	session::append(&root, &system_message)?;
-	session::append(&root, &user_message)?;
-	let mut messages = vec![system_message, user_message];
-	let brain = harvest_brain::BrainStore::project(&root)?;
+	let mut session =
+		crate::agent_session::AgentSession::open(&root, Path::new(".omp/session.jsonl"), None)?;
+	session.submit(prompt, model, approval, options, &mut |_| Ok(()))
+}
+
+pub(crate) fn context(workspace: &Path, prompt: &str, options: &RunOptions) -> Result<String> {
+	let root = workspace;
+	let brain = harvest_brain::BrainStore::project(root)?;
 	if brain.has_pending_recovery()? {
 		brain.recover()?;
 	}
@@ -74,44 +75,11 @@ pub fn run_with_options(
 		tags: options.tags.clone(),
 		..Default::default()
 	});
-	if !context.is_empty() {
-		messages.insert(1, chat::system(&context));
-	}
-
-	for _step in 1..=max_steps {
-		options.cancellation.heartbeat()?;
-		let response = model.complete(&messages, &chat::specs())?;
-		options.cancellation.heartbeat()?;
-		session::append(&root, &response)?;
-		let calls = response.tool_calls.clone().unwrap_or_default();
-		let answer = response.content.clone().unwrap_or_default();
-		messages.push(response);
-		if calls.is_empty() {
-			return Ok(answer);
-		}
-		record_tools(&root, &calls, &mut messages, approval, &options.cancellation)?;
-	}
-	bail!("stopped after {max_steps} steps")
+	Ok(context)
 }
 
-fn record_tools(
-	root: &Path,
-	calls: &[ToolCall],
-	messages: &mut Vec<ChatMessage>,
-	approval: &dyn tools::Approval,
-	cancellation: &harvest_runtime::cancel::CancelToken,
-) -> Result<()> {
-	for call in calls {
-		cancellation.heartbeat()?;
-		let output = match tools::invoke_with_cancellation(root, call, approval, cancellation) {
-			Ok(text) => text,
-			Err(error) => format!("error: {error:#}"),
-		};
-		let message = chat::tool_result(&call.id, output);
-		session::append(root, &message)?;
-		messages.push(message);
-	}
-	Ok(())
+pub(crate) fn system_message() -> ChatMessage {
+	chat::system(SYSTEM)
 }
 
 #[cfg(test)]

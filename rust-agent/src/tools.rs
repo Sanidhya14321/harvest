@@ -71,6 +71,7 @@ pub fn invoke_with_cancellation(
 	if matches!(name, "write" | "edit" | "bash") && !policy.approve(call)? {
 		bail!("tool {name} requires human approval");
 	}
+	cancellation.heartbeat()?;
 	invoke_authorized(root, call, cancellation)
 }
 

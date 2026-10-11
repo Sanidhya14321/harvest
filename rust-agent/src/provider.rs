@@ -9,7 +9,32 @@ use crate::{
 };
 
 pub trait Model {
+	// Implementations can return an ID borrowed from their configuration.
+	#[allow(
+		clippy::unnecessary_literal_bound,
+		reason = "provider IDs can borrow runtime configuration"
+	)]
+	fn model_id(&self) -> &str {
+		"unknown"
+	}
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage>;
+
+	/// Deltas are provisional; only the returned message can be committed.
+	fn stream(
+		&self,
+		messages: &[ChatMessage],
+		tools: &[ToolSpec],
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_text: &mut dyn FnMut(&str) -> Result<()>,
+	) -> Result<ChatMessage> {
+		cancellation.heartbeat()?;
+		let message = self.complete(messages, tools)?;
+		cancellation.heartbeat()?;
+		if let Some(text) = &message.content {
+			on_text(text)?;
+		}
+		Ok(message)
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +53,7 @@ struct CompletionRequest<'a> {
 	model:    &'a str,
 	messages: &'a [ChatMessage],
 	tools:    &'a [ToolSpec],
+	stream:   bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,9 +67,14 @@ struct Choice {
 }
 
 impl Model for HttpModel {
+	fn model_id(&self) -> &str {
+		&self.settings.model
+	}
+
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage> {
 		let url = endpoint(&self.settings.base_url);
-		let request = CompletionRequest { model: &self.settings.model, messages, tools };
+		let request =
+			CompletionRequest { model: &self.settings.model, messages, tools, stream: false };
 		let agent = ureq::AgentBuilder::new()
 			.timeout(Duration::from_secs(60))
 			.build();
@@ -63,6 +94,53 @@ impl Model for HttpModel {
 			bail!("model response did not include a choice");
 		};
 		Ok(choice.message)
+	}
+
+	fn stream(
+		&self,
+		messages: &[ChatMessage],
+		tools: &[ToolSpec],
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_text: &mut dyn FnMut(&str) -> Result<()>,
+	) -> Result<ChatMessage> {
+		cancellation.heartbeat()?;
+		let url = endpoint(&self.settings.base_url);
+		let agent = ureq::AgentBuilder::new()
+			.timeout(Duration::from_secs(60))
+			.build();
+		let mut call = agent.post(&url).set("Accept", "text/event-stream");
+		if !self.settings.api_key.is_empty() {
+			call = call.set("Authorization", &format!("Bearer {}", self.settings.api_key));
+		}
+		let response = call
+			.send_json(CompletionRequest {
+				model: &self.settings.model,
+				messages,
+				tools,
+				stream: true,
+			})
+			.with_context(|| format!("model request to {url} failed"))?;
+		if response
+			.header("Content-Type")
+			.is_some_and(|value| value.starts_with("text/event-stream"))
+		{
+			crate::streaming::decode(response.into_reader(), cancellation, on_text)
+		} else {
+			let bytes =
+				harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
+			let response: CompletionResponse = serde_json::from_slice(&bytes)?;
+			let message = response
+				.choices
+				.into_iter()
+				.next()
+				.context("model response did not include a choice")?
+				.message;
+			cancellation.heartbeat()?;
+			if let Some(text) = &message.content {
+				on_text(text)?;
+			}
+			Ok(message)
+		}
 	}
 }
 

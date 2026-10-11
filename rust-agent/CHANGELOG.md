@@ -7,6 +7,8 @@
 
 ### Added
 
+- Resume text and function-tool session-v3 branches with durable writes and ordered streaming JSON events.
+
 - Inspect legacy and current session logs without rewriting their source.
 
 - Added native project/user brain retrieval, evidence-based lesson admission, recoverable organization, restoration and explicit purge.
@@ -19,5 +21,7 @@
 - Require host approval for mutations and shell execution, with bounded file, session, HTTP and shell output.
 
 ### Fixed
+
+- Cancellation handles only abort their own run, and changed session files are rejected before appending.
 
 - Help and version no longer install shell integration.

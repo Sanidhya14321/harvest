@@ -32,8 +32,9 @@ Provider configuration currently uses flags, then `OMP_MODEL`, `OMP_BASE_URL`,
 Help and version never install shell integration. Explicit setup is
 `harvest completions bash --install`.
 
-The prototype's headerless `.omp/session.jsonl` format remains separate from
-legacy session v3. It has not been silently substituted for that format.
+New runs create session-v3 logs at `.omp/session.jsonl`; subsequent runs resume
+that log. Existing headerless prototype logs are rejected and preserved. V1/v2
+logs need an explicit import to a separate v3 file before writing.
 
 Inspect an existing session without changing it:
 
@@ -43,4 +44,27 @@ harvest session --workspace /path/to/session-directory --leaf entry-id session.j
 
 The bounded codec preserves raw v3 bytes and opaque provider payloads. V1/v2
 records migrate in memory; inspection does not persist the migration. Session
-resume and compatible runtime persistence are still being ported.
+text/function replay and durable appends are available in the experimental CLI:
+
+```sh
+harvest run --workspace /path/to/workspace --session sessions/current.jsonl \
+  --prompt "Continue the previous task" --events
+harvest run --workspace /path/to/workspace --session sessions/current.jsonl \
+  --leaf entry-id --prompt "Continue this branch"
+```
+
+`--events` emits JSON lines with session ID, run generation and monotonic sequence.
+Text deltas are provisional; committed events follow synced writes. The synchronous
+SDK exposes `AgentSession::open`, `begin`, `execute` and `submit`, with cancellation
+handles tied to each run. A writer lock protects cooperating Rust processes;
+compare-and-append also detects changes by outside writers holding the file lock.
+
+Replay currently supports text and ordinary function calls/results. Opaque,
+signed, multimodal, compaction and custom-message replay fail explicitly. Damaged
+logs and unresolved tool calls need explicit recovery before resuming. Existing
+bytes and other branches remain intact. Provider usage accounting is pending;
+new assistant records mark `usageUnavailable` alongside zero-valued usage fields.
+The synchronous HTTP transport checks cancellation between reads and has a
+60-second request timeout; cancellation cannot yet interrupt a stalled read.
+Compatible OAuth, catalog/settings policy and the remaining lifecycle APIs are
+still being ported.

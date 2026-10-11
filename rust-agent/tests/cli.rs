@@ -222,3 +222,94 @@ fn user_retrieval_honors_the_existing_application_agent_directory_override() {
 		.success()
 		.stdout(contains("Explain verification outcomes concisely"));
 }
+
+#[test]
+fn executable_streams_events_and_resumes_its_v3_session() {
+	let root = or_abort(tempfile::tempdir());
+	let listener = or_abort(TcpListener::bind("127.0.0.1:0"));
+	let address = or_abort(listener.local_addr());
+	let server = thread::spawn(move || {
+		for expected in ["first question", "second question"] {
+			let (mut socket, _) = or_abort(listener.accept());
+			or_abort(socket.set_read_timeout(Some(std::time::Duration::from_secs(10))));
+			let mut received = Vec::new();
+			let mut buffer = [0_u8; 1024];
+			while !request_complete(&received) {
+				let count = or_abort(socket.read(&mut buffer));
+				assert!(count > 0);
+				received.extend_from_slice(&buffer[..count]);
+				assert!(received.len() < 32 * 1024);
+			}
+			let offset = received
+				.windows(4)
+				.position(|mark| mark == b"\r\n\r\n")
+				.unwrap()
+				+ 4;
+			let request: serde_json::Value = or_abort(serde_json::from_slice(&received[offset..]));
+			assert_eq!(request["stream"], true);
+			assert!(
+				request["messages"]
+					.as_array()
+					.unwrap()
+					.iter()
+					.any(|message| message["content"] == expected)
+			);
+			if expected == "second question" {
+				assert!(
+					request["messages"]
+						.as_array()
+						.unwrap()
+						.iter()
+						.any(|message| message["content"] == "remembered")
+				);
+			}
+			let chunk = serde_json::json!({"choices":[{"index":0,"delta":{"content":"remembered"},"finish_reason":"stop"}]});
+			let body = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+			let header = format!(
+				"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \
+				 {}\r\nConnection: close\r\n\r\n",
+				body.len()
+			);
+			or_abort(socket.write_all(header.as_bytes()));
+			// Arbitrary network fragmentation must not alter SSE semantics.
+			for fragment in body.as_bytes().chunks(7) {
+				or_abort(socket.write_all(fragment));
+			}
+		}
+	});
+	for prompt in ["first question", "second question"] {
+		let result = omp()
+			.args([
+				"run",
+				"--workspace",
+				root.path().to_str().unwrap(),
+				"--session",
+				"current.jsonl",
+				"--prompt",
+				prompt,
+				"--base-url",
+				&format!("http://{address}/v1"),
+				"--events",
+			])
+			.assert()
+			.success();
+		let events: Vec<serde_json::Value> = result
+			.get_output()
+			.stdout
+			.split(|byte| *byte == b'\n')
+			.filter(|line| !line.is_empty())
+			.map(|line| or_abort(serde_json::from_slice(line)))
+			.collect();
+		assert!(
+			events
+				.iter()
+				.any(|event| event["event"]["type"] == "text_delta"
+					&& event["event"]["text"] == "remembered")
+		);
+		assert_eq!(events.last().unwrap()["event"]["type"], "completed");
+	}
+	or_abort(server.join().map_err(|_| "server thread panicked"));
+	let bytes = or_abort(fs::read(root.path().join("current.jsonl")));
+	let document = or_abort(harvest_omp::session_format::SessionDocument::decode(&bytes));
+	assert_eq!(document.entries().len(), 4);
+}

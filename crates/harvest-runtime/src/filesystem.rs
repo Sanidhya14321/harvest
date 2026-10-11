@@ -4,7 +4,7 @@
 use std::os::unix::fs::MetadataExt;
 use std::{
 	fs::File,
-	io::Write,
+	io::{Read, Write},
 	path::{Component, Path, PathBuf},
 	sync::atomic::{AtomicU64, Ordering},
 };
@@ -196,6 +196,17 @@ impl JailedFs {
 	}
 
 	pub fn append(&self, path: &Path, bytes: &[u8], limit: usize) -> Result<()> {
+		self.append_checked(path, bytes, limit, None)
+	}
+
+	/// Compare and append under the same file lock, detecting outside writers.
+	pub fn append_checked(
+		&self,
+		path: &Path,
+		bytes: &[u8],
+		limit: usize,
+		expected_hash: Option<&str>,
+	) -> Result<()> {
 		let (directory, name) = self.parent(path, true)?;
 		if directory
 			.symlink_metadata(&name)
@@ -204,7 +215,7 @@ impl JailedFs {
 			bail!("refusing to append through a symlink");
 		}
 		let mut options = OpenOptions::new();
-		options.create(true).append(true);
+		options.create(true).read(true).append(true);
 		let mut file = directory.open_with(&name, &options)?.into_std();
 		file.lock()?;
 		let metadata = file.metadata()?;
@@ -220,6 +231,25 @@ impl JailedFs {
 			}
 		}
 		let length = metadata.len();
+		if let Some(expected) = expected_hash {
+			let mut digest = ContentDigest::default();
+			let mut buffer = [0_u8; 8 * 1024];
+			let mut total = 0_usize;
+			loop {
+				let count = file.read(&mut buffer)?;
+				if count == 0 {
+					break;
+				}
+				total = total.checked_add(count).context("file size overflow")?;
+				if total > limit {
+					bail!("file exceeds size limit");
+				}
+				digest.update(&buffer[..count]);
+			}
+			if digest.hash() != expected {
+				bail!("file changed since it was loaded");
+			}
+		}
 		if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
 			file.set_len(length)?;
 			return Err(error.into());
@@ -319,4 +349,17 @@ impl JailedFs {
 /// Stable content fingerprints; never use process-dependent runtime hashes.
 pub fn content_hash(bytes: &[u8]) -> String {
 	format!("{:x}", Sha256::digest(bytes))
+}
+
+/// Incremental fingerprints avoid retaining a second copy of session history.
+#[derive(Default)]
+pub struct ContentDigest(Sha256);
+impl ContentDigest {
+	pub fn update(&mut self, bytes: &[u8]) {
+		self.0.update(bytes);
+	}
+
+	pub fn hash(&self) -> String {
+		format!("{:x}", self.0.clone().finalize())
+	}
 }

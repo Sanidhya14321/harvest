@@ -57,6 +57,12 @@ struct SessionArgs {
 
 #[derive(Debug, clap::Args)]
 struct RunArgs {
+	#[arg(long, default_value = ".omp/session.jsonl")]
+	session:   PathBuf,
+	#[arg(long)]
+	leaf:      Option<String>,
+	#[arg(long, help = "Emit ordered JSON events, including provisional streamed text")]
+	events:    bool,
 	#[arg(short, long)]
 	prompt:    String,
 	#[arg(short, long, default_value = ".")]
@@ -161,8 +167,10 @@ fn run(args: RunArgs) -> Result<u8> {
 	let model_ref: &dyn Model = &model;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
-	let answer = agent::run_with_options(
-		&workspace,
+	let mut session =
+		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
+	let mut output = io::stdout().lock();
+	let answer = session.submit(
 		&args.prompt,
 		model_ref,
 		&crate::tools::TerminalApproval,
@@ -172,8 +180,18 @@ fn run(args: RunArgs) -> Result<u8> {
 			tags: args.tag.into_iter().collect(),
 			cancellation: Default::default(),
 		},
+		&mut |event| {
+			if args.events {
+				serde_json::to_writer(&mut output, &event)?;
+				writeln!(output)?;
+				output.flush()?;
+			}
+			Ok(())
+		},
 	)?;
-	writeln!(io::stdout(), "{answer}")?;
+	if !args.events {
+		writeln!(output, "{answer}")?;
+	}
 	Ok(0)
 }
 
