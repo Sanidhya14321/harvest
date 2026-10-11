@@ -7,6 +7,7 @@ mod cli;
 pub mod config;
 pub mod provider;
 pub mod session;
+pub mod session_format;
 mod shell;
 pub mod tools;
 

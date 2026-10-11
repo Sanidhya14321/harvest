@@ -29,6 +29,8 @@ enum Commands {
 	Run(RunArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Inspect compatible session JSONL without changing its source")]
+	Session(SessionArgs),
 	#[command(about = "Print or install shell completions")]
 	Completions(CompletionArgs),
 	#[command(about = "Print the manual page")]
@@ -42,6 +44,15 @@ enum Commands {
 		alias = "/orgnize-skills"
 	)]
 	Organize(crate::brain_cli::OrganizationArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct SessionArgs {
+	#[arg(short, long, default_value = ".")]
+	workspace: PathBuf,
+	#[arg(long)]
+	leaf:      Option<String>,
+	file:      PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
@@ -88,11 +99,42 @@ fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
 		Commands::Run(args) => run(args),
 		Commands::Tools => tools(),
+		Commands::Session(args) => inspect_session(args),
 		Commands::Completions(args) => completions(args),
 		Commands::Man => manual(),
 		Commands::Brain(args) => crate::brain_cli::execute(args),
 		Commands::Organize(args) => crate::brain_cli::organize_command(args),
 	}
+}
+
+fn inspect_session(args: SessionArgs) -> Result<u8> {
+	let fs = harvest_runtime::JailedFs::open(&args.workspace)?;
+	let bytes = fs.read(&args.file, crate::session_format::SESSION_LIMIT)?;
+	let document = crate::session_format::SessionDocument::decode(&bytes)?;
+	let branch_entries = args
+		.leaf
+		.as_deref()
+		.map(|leaf| document.branch(leaf).map(|branch| branch.len()))
+		.transpose()?;
+	#[derive(serde::Serialize)]
+	#[serde(rename_all = "camelCase")]
+	struct SessionInspection<'a> {
+		header:             &'a crate::session_format::SessionObject,
+		entries:            usize,
+		branch_entries:     Option<usize>,
+		malformed_records:  usize,
+		migration_required: bool,
+	}
+	let report = SessionInspection {
+		header: document.header(),
+		entries: document.entries().len(),
+		branch_entries,
+		malformed_records: document.malformed_records(),
+		migration_required: document.migrated(),
+	};
+	serde_json::to_writer(io::stdout().lock(), &report)?;
+	writeln!(io::stdout().lock())?;
+	Ok(0)
 }
 
 fn run(args: RunArgs) -> Result<u8> {

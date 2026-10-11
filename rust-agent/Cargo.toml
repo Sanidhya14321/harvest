@@ -49,7 +49,7 @@ clap_complete = "4.5.65"
 clap_mangen = "0.2.31"
 regex.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 toml.workspace = true
 ureq = { version = "2.12.1", default-features = false, features = [
   "json",

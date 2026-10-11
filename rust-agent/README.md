@@ -29,3 +29,13 @@ Help and version never install shell integration. Explicit setup is
 
 The prototype's headerless `.omp/session.jsonl` format remains separate from
 legacy session v3. It has not been silently substituted for that format.
+
+Inspect an existing session without changing it:
+
+```sh
+harvest session --workspace /path/to/session-directory --leaf entry-id session.jsonl
+```
+
+The bounded codec preserves raw v3 bytes and opaque provider payloads. V1/v2
+records migrate in memory; inspection does not persist the migration. Session
+resume and compatible runtime persistence are still being ported.

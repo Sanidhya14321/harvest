@@ -42,6 +42,11 @@ because a Rust command or tool has the same name.
   jailed session writes, embedded Markdown prompts, ephemeral retrieval from
   project/user brains and host-owned approvals. Shell execution in `full`
   reuses `pi-shell` with a bounded channel, capped capture and a timeout.
+- A bounded session codec reads title slots and v3 trees, preserves original
+  bytes and raw unknown/provider values, and migrates v1/v2 entries in memory.
+  `harvest session --workspace <root> --leaf <id> <file>` reports a selected
+  branch without rewriting its source. Legacy resume/persistence, streaming
+  large-log loading and explicit headerless-log import remain pending.
 - Help/version have no setup side effects. Experimental release automation now
   requires capability parity and is explicitly dispatched instead of publishing
   an incomplete application on each source push.
