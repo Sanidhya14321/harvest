@@ -117,6 +117,69 @@ describe("Markdown brains", () => {
 		);
 	});
 
+	it("Rust retrieval filters scope before ranking and throughout graph expansion", async () => {
+		for (let index = 0; index < 8; index++) {
+			await Bun.write(path.join(root, "project", `crowd-${index}.md`), "## Deploy\nDeploy deploy deploy.");
+		}
+		await Bun.write(
+			path.join(root, "user", "lesson.md"),
+			"---\nid: user-lesson\nrelates_to: [project:private]\n---\n## Deploy\nDeploy after confirming the release.",
+		);
+		await Bun.write(path.join(root, "project", "private.md"), "---\nid: private\n---\nPrivate project instruction.");
+		const brain = new MarkdownBrain([
+			{ scope: "project", directory: path.join(root, "project") },
+			{ scope: "user", directory: path.join(root, "user") },
+		]);
+		const pages = await brain.retrieve("deploy", { scopes: ["user"] });
+		expect(pages.map(page => page.documentId)).toEqual(["user:user-lesson"]);
+		expect(pages[0].content).toContain("confirming the release");
+		expect(await brain.retrieve("deploy", { scopes: [] })).toEqual([]);
+	});
+
+	it("preserves filename graph links and stable section identities across queries", async () => {
+		await Bun.write(
+			path.join(root, "deploy.md"),
+			"---\nrelates_to: notes.md\n---\n## Deploy\nDeploy releases.\n## Review\nReview releases.",
+		);
+		await Bun.write(path.join(root, "notes.md"), "## Checklist\nConfirm rollback instructions.");
+		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);
+		const deploy = await brain.retrieve("deploy");
+		expect(deploy.map(page => page.documentId)).toContain("project:notes.md");
+		const review = await brain.retrieve("review");
+		const reviewPage = review.find(page => page.heading === "Review");
+		const mixed = await brain.retrieve("deploy review");
+		expect(mixed.find(page => page.heading === "Review")?.id).toBe(reviewPage?.id);
+		expect(reviewPage?.tokens).toContain("review");
+	});
+
+	it("retired generated lessons become ineligible without waiting for the authored-page cache", async () => {
+		const id = `learned-${"a".repeat(64)}`;
+		const content = `---\nid: ${id}\nownership: generated\n---\n## Deploy\nDeploy after verifying the release.\n`;
+		await Bun.write(path.join(root, ".harvest", "brain", "lesson.md"), content);
+		const receipt = {
+			id,
+			fingerprint: "a".repeat(64),
+			path: ".harvest/brain/lesson.md",
+			file_hash: new Bun.CryptoHasher("sha256").update(content).digest("hex"),
+			created_at: 1,
+			status: "active",
+		};
+		const state = {
+			version: 1,
+			ledger: { version: 1, events: {} },
+			records: { [id]: receipt },
+			archives: {},
+			leases: [],
+		};
+		const statePath = path.join(root, ".harvest", "brain-state", "state.json");
+		await Bun.write(statePath, JSON.stringify(state));
+		const brain = createMarkdownBrain(root, path.join(root, "absent-user"));
+		expect((await brain.retrieve("deploy"))[0].documentId).toBe(`project:${id}`);
+		receipt.status = "archived";
+		await Bun.write(statePath, JSON.stringify(state));
+		expect(await brain.retrieve("deploy")).toEqual([]);
+	});
+
 	it("bounds injected context and preserves user images and tool protocol without modifying the transcript", async () => {
 		await Bun.write(path.join(root, "database.md"), `## Database\n${"database transactions ".repeat(1000)}`);
 		const brain = new MarkdownBrain([{ scope: "project", directory: root }]);

@@ -233,6 +233,12 @@ export declare class MacAppearanceObserver {
   stop(): void
 }
 
+export declare class NativeMarkdownBrain {
+  constructor(rootsJson: string)
+  refresh(): Promise<undefined>
+  retrieve(query: string, optionsJson: string): Promise<string>
+}
+
 /** A transactional, process-owned native OAuth callback receiver. */
 export declare class NativeOAuthCallback {
   /** Create a receiver without touching the filesystem or OS registration. */

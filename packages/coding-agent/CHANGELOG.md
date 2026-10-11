@@ -7,10 +7,12 @@
 - Cleanse keeps cancel and dismiss controls visible in small terminals, and completed checker and worker messages follow theme changes.
 - Advisor configuration, debug choices, tiny-model downloads and compression previews respect compact layouts and ASCII or no-color settings.
 - Project model assignments save to `.harvest/config.yml` for new projects while preserving existing legacy `.omp/config.yml` files.
+- Markdown brain scope filters apply before ranking and throughout graph traversal, preventing excluded knowledge from leaking or hiding eligible results.
 
 ### Changed
 
 - Setup reaches its first controls sooner with a shorter introductory animation.
+- Markdown brain indexing and retrieval run in Rust through the native bindings.
 
 ## [0.1.0] - 2026-10-08
 

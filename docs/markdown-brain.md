@@ -2,6 +2,8 @@
 
 Harvest's main SDK agent loop retrieves relevant Markdown knowledge and skills before each model request. Files are durable source material; the section-page index, inverted term index, and graph are disposable session caches. No embedding service or additional model download is required.
 
+Discovery, Markdown parsing, ranking and graph traversal now run in the Rust `harvest-brain` library through the native bindings. The TypeScript `MarkdownBrain` class preserves the existing SDK interface and outbound-message transform. Native work runs on the blocking pool rather than the terminal event loop.
+
 ## Storage and format
 
 | Scope | Directories |
@@ -38,20 +40,20 @@ Report the command run, its result, and any unverified scenario.
 
 An `id` is scoped as `project:<id>` or `user:<id>`. Without an explicit ID, the path relative to its indexed directory is used. Use unique explicit IDs within a scope when linking between files. Bare link targets resolve within the source scope; cross-scope links require a prefix. Relationships use YAML string values or lists: `depends_on`, `relates_to`, `supersedes`, `contradicts`. Only the first two expand retrieval. Conflict and supersession edges record relationships without automatically deciding which claim is true. Mark obsolete documents `superseded: true` to exclude their pages.
 
-Markdown headings produce section pages using the existing section splitter; headings inside fenced code stay in their code block. YAML frontmatter is parsed by the central parser and is excluded from page content. Skill files use the same section indexing, retaining their source paths. `skills.enabled: false` excludes skill directories, including when changed during a session. Reading a skill excerpt does not automatically activate the skill or authorize its actions.
+Markdown headings produce section pages using the Rust section splitter; headings inside fenced code stay in their code block. Validated YAML frontmatter is excluded from page content. Skill files use the same section indexing, retaining their source paths. `skills.enabled: false` excludes skill directories, including when changed during a session. Reading a skill excerpt does not automatically activate the skill or authorize its actions.
 
 ## Retrieval (lexical/graph; Laya removed)
 
 1. Find the latest user message without replacing image or tool protocol blocks.
-2. Refresh file metadata at most once every two seconds. Re-read/re-tokenize only changed files; deleted and superseded files leave the index. Concurrent refreshes share one operation.
-3. Use inverted term postings to select matching pages, then the existing BM25 scorer to rank up to four pages.
-4. Expand one outgoing `depends_on`/`relates_to` hop, up to eight total pages. Cycles cannot recurse.
+2. Refresh the bounded index at most once every two seconds, or on explicit `refresh()`. Deleted and superseded files leave the index. A native mutex serializes refreshes and retrieval.
+3. Filter scope, active status and applicability conditions before computing BM25 statistics or ranking up to four initial matches.
+4. Expand one outgoing `depends_on`/`relates_to` hop, enforcing the same scope and applicability filters at every neighbor, up to eight total pages. Cycles cannot recurse.
 5. Deterministic lexical/graph order is authoritative. The former Laya `brain_retrieval` rerank step is removed; the `brain.rerank` flag is deprecated and ignored. Cancellation returns no retrieved pages.
 6. Add a cited, bounded reference block to the latest user message in outbound context only. The persisted transcript stays unchanged; normal provider secret obfuscation still applies.
 
 The rendered block is capped at 8,000 characters, including guidance and citations. Indexing is bounded to 512 files, 256 KiB per file, 8 MiB aggregate file sizes, 128 sections per document, and 4,096 searchable pages. Read failures are logged and skipped. Directory/file symlinks are skipped and resolved paths must remain within their project or agent-directory jail. These limits make retrieval bounded, but they are not latency benchmarks.
 
-SDK consumers can construct `MarkdownBrain` with explicit `BrainRoot` entries, call `refresh()` after writing files, and call `retrieve()` or `transform()`. `BrainRetrievalOptions` supports cancellation, scoring sanitization, and a smaller context character budget. The default index is in memory and rebuilds on session startup; it is not a persisted external PageIndex service.
+SDK consumers can construct `MarkdownBrain` with explicit `BrainRoot` entries, call `refresh()` after writing files, and call `retrieve()` or `transform()`. `BrainRetrievalOptions` supports scope and applicability tags, cancellation, and a smaller context character budget. Removed reranking and scoring-sanitization options remain inert compatibility fields. The index is in memory and rebuilds on session startup. If a durable brain transaction needs recovery, retrieval fails closed; recover it with the experimental Rust brain CLI before reading it again.
 
 ## Agent-loop review
 

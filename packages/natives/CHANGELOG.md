@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added native project and user Markdown brain indexing and retrieval.
+
 ### Fixed
+
+- Fixed concurrent shell cancellation waits and preserved the first cancellation reason.
 
 - Fixed stalls when clipping long Unicode output without native bindings, and preserved hyperlinks, graphics, cursor markers and scaled-text fallbacks.
 

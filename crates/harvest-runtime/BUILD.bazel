@@ -1,0 +1,27 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+exports_files(["Cargo.toml"])
+
+rust_library(
+    name = "harvest-runtime",
+    srcs = glob(["src/**/*.rs"]),
+    aliases = aliases(),
+    crate_name = "harvest_runtime",
+    edition = "2024",
+    version = "0.1.0",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    deps = all_crate_deps(normal = True),
+)
+
+[
+    rust_test(
+        name = suite + "_test",
+        srcs = ["tests/" + suite + ".rs"],
+        edition = "2024",
+        proc_macro_deps = all_crate_deps(proc_macro_dev = True),
+        deps = all_crate_deps(normal = True, normal_dev = True) + [":harvest-runtime"],
+    )
+    for suite in ["cancellation", "filesystem"]
+]

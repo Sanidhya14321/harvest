@@ -26,6 +26,7 @@ pub mod appearance;
 pub mod ast;
 pub mod audio;
 pub mod block;
+pub mod brain;
 pub mod clipboard;
 pub mod crash_handler;
 pub mod desktop;

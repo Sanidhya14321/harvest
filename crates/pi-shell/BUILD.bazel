@@ -29,6 +29,7 @@ rust_library(
     version = "17.1.5",
     deps = all_crate_deps(normal = True) + [
         ":build_script",
+        "//crates/harvest-runtime",
         "//crates/pi-builtins",
         "//crates/vendor/brush-core",
     ],

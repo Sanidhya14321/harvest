@@ -1,0 +1,19 @@
+[package]
+name = "harvest-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared authorized filesystem and cancellation primitives for Harvest"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+cap-std = "4.0.3"
+sha2 = "0.10.9"
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,28 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+exports_files(["Cargo.toml"])
+
+rust_library(
+    name = "harvest-brain",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = glob(["src/prompts/*.md"]),
+    aliases = aliases(),
+    crate_name = "harvest_brain",
+    edition = "2024",
+    version = "0.1.0",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    deps = all_crate_deps(normal = True) + ["//crates/harvest-runtime"],
+)
+
+rust_test(
+    name = "contracts_test",
+    srcs = ["tests/contracts.rs"],
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro_dev = True),
+    deps = all_crate_deps(normal = True, normal_dev = True) + [
+        ":harvest-brain",
+        "//crates/harvest-runtime",
+    ],
+)

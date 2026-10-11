@@ -22,6 +22,7 @@ default = []
 wayland-pipewire = ["dep:pipewire"]
 
 [dependencies]
+harvest-brain = { path = "../harvest-brain" }
 anyhow.workspace = true
 async-trait.workspace = true
 arboard.workspace = true

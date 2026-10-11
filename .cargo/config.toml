@@ -1,4 +1,7 @@
 # Cargo environment for the workspace.
+[alias]
+xtask = "run --quiet -p xtask --"
+
 #
 # audiopus_sys 0.2.2 builds its vendored Opus via the `cmake` crate, and the
 # bundled opus CMakeLists still declares `cmake_minimum_required(VERSION 3.1)`.

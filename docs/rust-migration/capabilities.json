@@ -1,0 +1,936 @@
+{
+  "version": 1,
+  "baseline": "Merged PR #4 plus supported legacy application contracts. Partial primitive implementations do not establish parity.",
+  "capabilities": [
+    {
+      "id": "command:launch",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:acp",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:auth-broker",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:auth-gateway",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:agents",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:bench",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:browser-relay",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:cleanse",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:commit",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:completions",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:__complete",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:compress",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:config",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:dry-balance",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:gc",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:grep",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:gallery",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:git",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:grievances",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:images",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:if-bench",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:install",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:join",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:models",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:plugin",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:ps",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:say",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:share",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:setup",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:shell",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:read",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:render",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:ssh",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:stats",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:update",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:usage",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:tiny-models",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:token",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:ttsr",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:worktree",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "command:search",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:read",
+      "status": "partial",
+      "contracts": []
+    },
+    {
+      "id": "tool:security_scan",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:bash",
+      "status": "partial",
+      "contracts": []
+    },
+    {
+      "id": "tool:edit",
+      "status": "partial",
+      "contracts": []
+    },
+    {
+      "id": "tool:ast_grep",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:ast_edit",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:ask",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:debug",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:eval",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:github",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:glob",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:grep",
+      "status": "partial",
+      "contracts": []
+    },
+    {
+      "id": "tool:lsp",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:checkpoint",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:rewind",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:task",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:hub",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:todo",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:web_search",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:write",
+      "status": "partial",
+      "contracts": []
+    },
+    {
+      "id": "tool:memory_edit",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:retain",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:recall",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:reflect",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:learn",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:manage_skill",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:search_code",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:sessions",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "tool:presets",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "hidden-tool:think",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "hidden-tool:yield",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "hidden-tool:goal",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:security",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:settings",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:setup",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:plan",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:plan-review",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:vibe",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:goal",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:guided-goal",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:loop",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:queue",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:model",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:switch",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:fast",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:skillful",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:extended-context",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:computer",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:prewalk",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:advisor",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:export",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:trace",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:dump",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:share",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:collab",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:join",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:leave",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:browser",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:copy",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:open",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:todo",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:session",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:jobs",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:usage",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:stats",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:changelog",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:hotkeys",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:tools",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:context",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:extensions",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:agents",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:skills",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:git",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:hub",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:branch",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:fork",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:tree",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:login",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:logout",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:mcp",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:ssh",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:new",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:fresh",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:clear",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:drop",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:compact",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:shake",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:handoff",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:resume",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:tab",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:diagnostics",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:pin",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:btw",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:tan",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:omfg",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:cleanse",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:retry",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:debug",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:memory",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:rename",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:move",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:wt",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:add-dir",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:remove-dir",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:dirs",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:exit",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:restart",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:marketplace",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:plugins",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:reload-plugins",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:force",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:live",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:pause",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:quit",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:commands",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "slash:sidebar",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:streaming-providers",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:oauth-credentials",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:kdl-catalog",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:settings-profiles",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:session-v3",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:session-v1-v2-import",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:prototype-session-import",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:rpc-v1-v2",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:acp-v1",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:terminal-inline-transcript",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:terminal-input-resize-restoration",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:rust-sdk",
+      "status": "partial",
+      "contracts": []
+    },
+    {
+      "id": "surface:extension-process-abi-v1",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:dynamic-tools",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:delegation-goals-advisor",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:mcp",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:lsp-dap",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:browser-wasm",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:eval-ssh",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:memory-backends",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:stats",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:benchmarks",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:collaboration",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:media-local-inference",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:python-automation",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:codegen",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:release-installers",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:installed-parity-without-legacy-runtimes",
+      "status": "not_ported",
+      "contracts": []
+    },
+    {
+      "id": "surface:automatic-session-learning",
+      "status": "partial",
+      "contracts": []
+    }
+  ]
+}

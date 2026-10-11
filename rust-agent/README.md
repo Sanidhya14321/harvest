@@ -1,31 +1,31 @@
-# omp
+# Rust Harvest runtime
 
-`omp` is the Rust coding agent for Harvest. It talks to an
-OpenAI-compatible chat completions endpoint, then reads, writes, edits,
-searches, and runs commands in a workspace.
-
-## Build
+This experimental application belongs to the root Cargo workspace. It is not yet
+a feature-compatible replacement for the installed TypeScript application. The
+migration inventory and remaining gates are in `docs/rust-migration/README.md`.
 
 ```sh
-cargo build --locked --manifest-path rust-agent/Cargo.toml
-cargo test --locked --manifest-path rust-agent/Cargo.toml
+cargo build --locked -p harvest-omp --bin harvest
+cargo run --locked -p harvest-omp --bin harvest -- --help
+cargo xtask test -p harvest-runtime -p harvest-brain -p harvest-omp
+cargo xtask test -p harvest-omp --features full
 ```
 
-## Run
+The `core` profile provides bounded workspace inspection and approved file
+writes. `full` additionally reuses Harvest's existing Rust shell engine with a
+bounded output channel and timeout. Both produce `harvest` and `omp` binaries.
+The host must approve each mutation or shell call; unattended runs deny them.
 
 ```sh
-export OMP_API_KEY=sk-example
-omp run --prompt "Summarize README.md" --workspace .
-omp tools
-omp --version
+cargo run --locked -p harvest-omp --bin harvest -- run --prompt "Summarize README.md" --workspace .
+cargo run --locked -p harvest-omp --bin harvest -- brain --scope project organize --dry-run --json
+cargo run --locked -p harvest-omp --bin harvest -- /orgnize-skills --scope project --dry-run --json
 ```
 
-Configuration is read from flags, then `OMP_MODEL`, `OMP_BASE_URL`,
-`OMP_API_KEY` or `OPENAI_API_KEY`, then `.omp/config.toml` in the workspace.
+Provider configuration currently uses flags, then `OMP_MODEL`, `OMP_BASE_URL`,
+`OMP_API_KEY`/`OPENAI_API_KEY`, then the prototype's `.omp/config.toml`.
+Help and version never install shell integration. Explicit setup is
+`harvest completions bash --install`.
 
-## Checks
-
-GitHub Actions for this crate follow the Quinjet set: format, clippy, tests on
-four operating systems, rustdoc, MSRV 1.88, feature powerset, cross checks,
-coverage, packaging, installers, Homebrew formula rendering, security audits,
-and a tagged release build.
+The prototype's headerless `.omp/session.jsonl` format remains separate from
+legacy session v3. It has not been silently substituted for that format.

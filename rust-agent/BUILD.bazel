@@ -1,0 +1,5 @@
+package(default_visibility = ["//visibility:public"])
+
+# Workspace splicing needs this manifest. The experimental application is
+# validated and built through Cargo until distribution parity is complete.
+exports_files(["Cargo.toml"])
