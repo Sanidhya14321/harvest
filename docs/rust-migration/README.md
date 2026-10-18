@@ -111,3 +111,42 @@ macOS/Windows parity.
 The proposed binary/RSS/paint/retrieval performance targets are not yet certified.
 No legacy application entrypoints were removed. Distribution remains blocked
 until capability parity is verified; no release has been published.
+
+## Source migration ledger
+
+`source-baseline.json` freezes the tracked TS/TSX/MTS/CTS, JavaScript,
+Python and Julia paths at its recorded commit, including declarations, fixtures,
+examples and generated sources. `source-ledger.json` retains one entry per path.
+The initial inventory contains 5,220 paths. All require individual contract review;
+this enumeration does not establish that step 1 of the migration is complete.
+
+Run `cargo xtask migration` to validate coverage and deletion evidence, or
+`cargo xtask migration --require-complete` to enforce the source cutover gate.
+Rust CI runs the coverage gate independently of capability parity. The command
+uses the Git index, so stage intended deletions before checking removal evidence.
+New tracked source files require ledger entries. Baseline paths must never be
+removed just because their source was deleted; retain their completed records.
+Changes to the baseline itself require review against the recorded Git commit.
+
+For each path, review its behavior, consumers, persisted formats, dependencies,
+Rust destination and verification requirements. Use explicit `none` where a
+review finds no persisted format or dependency; null means unreviewed. Record
+replacement, intentional retirement, fixture materialization or browser glue as
+separate dispositions. Retirement needs a rationale; all other reviewed entries
+need a destination. Record concrete contract suites and installed-workflow evidence
+in verification requirements before changing their independent status fields.
+Evidence strings are reviewed assertions, not an automatic certification of tests.
+
+Implementation, behavioral verification, installed verification and legacy removal
+are independent. Deletion requires completed implementation (or retirement work),
+both verification stages and reviewed contract analysis. Fixture sources must move
+to data assets and be materialized by Rust tests. Only documented browser bootstrap
+JavaScript may remain as browser glue; application logic and TypeScript cannot use
+that exception. Capability parity, installed workflows, platform validation and
+release consolidation remain separate mandatory gates.
+
+Initial ledger validation: pinned `nightly-2026-08-08` formatting, strict
+Clippy and `cargo xtask test -p xtask` passed (11 tests plus the doctest pass).
+`cargo xtask migration` reports 0/5,220 completed entries, and the completion
+gate rejects that unfinished inventory as intended. CI includes xtask tests in
+its cross-platform core/full matrix; those remote runs remain pending.
