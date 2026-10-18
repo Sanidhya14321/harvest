@@ -141,9 +141,12 @@ impl AgentSession {
 		&mut self,
 		message: &chat::ChatMessage,
 		model: &dyn Model,
+		usage: Option<&crate::usage::UsageReport>,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
 	) -> Result<()> {
-		let entry_id = self.log.commit(message, model.model_id())?;
+		let entry_id = self
+			.log
+			.commit_with_usage(message, model.model_id(), usage)?;
 		self.emit(EventKind::Committed { entry_id, role: message.role.clone() }, sink)
 	}
 
@@ -164,7 +167,7 @@ impl AgentSession {
 		// Resolve reference context before modifying the session.
 		let context = agent::context(&self.root, prompt, options)?;
 		self.emit(EventKind::Started, sink)?;
-		self.commit(&chat::user(prompt), model, sink)?;
+		self.commit(&chat::user(prompt), model, None, sink)?;
 		let mut messages = vec![agent::system_message()];
 		if !context.is_empty() {
 			messages.push(chat::system(&context));
@@ -172,17 +175,20 @@ impl AgentSession {
 		messages.extend_from_slice(self.log.messages());
 		for _ in 0..options.max_steps {
 			cancellation.heartbeat()?;
-			let response = model.stream(&messages, &chat::specs(), cancellation, &mut |text| {
-				cancellation.heartbeat()?;
-				self.emit(EventKind::TextDelta { text: text.into() }, sink)
-			})?;
+			let response =
+				model.stream_response(&messages, &chat::specs(), cancellation, &mut |text| {
+					cancellation.heartbeat()?;
+					self.emit(EventKind::TextDelta { text: text.into() }, sink)
+				})?;
 			cancellation.heartbeat()?;
+			let usage = response.usage;
+			let response = response.message;
 			if response.role != "assistant" {
 				bail!("provider returned a non-assistant message");
 			}
 			let calls = response.tool_calls.clone().unwrap_or_default();
 			let answer = response.content.clone().unwrap_or_default();
-			self.commit(&response, model, sink)?;
+			self.commit(&response, model, usage.as_ref(), sink)?;
 			messages.push(response);
 			if calls.is_empty() {
 				return Ok(answer);
@@ -195,7 +201,7 @@ impl AgentSession {
 						Err(error) => format!("error: {error:#}"),
 					};
 				let result = chat::tool_result(&call.id, output);
-				self.commit(&result, model, sink)?;
+				self.commit(&result, model, None, sink)?;
 				messages.push(result);
 			}
 		}

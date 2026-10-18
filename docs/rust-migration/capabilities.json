@@ -1489,14 +1489,16 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/provider.rs",
-          "rust-agent/src/streaming.rs"
+          "rust-agent/src/streaming.rs",
+          "rust-agent/src/usage.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
           "rust-agent/src/streaming.rs",
-          "rust-agent/tests/cli.rs"
+          "rust-agent/tests/cli.rs",
+          "rust-agent/tests/provider_usage.rs"
         ]
       },
       "installation": "experimental-rust-cli",

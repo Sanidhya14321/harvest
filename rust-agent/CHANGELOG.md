@@ -7,6 +7,8 @@
 
 ### Added
 
+- Preserve provider usage metadata and persist normalized token/cache counts; use `--request-usage` to request streamed accounting explicitly.
+
 - Rename intact v3 sessions through native title slots while preserving all other session bytes.
 
 - Recover interrupted v3 session tails to new files while preserving original data and reporting excluded bytes.
@@ -31,6 +33,8 @@
 - Require host approval for mutations and shell execution, with bounded file, session, HTTP and shell output.
 
 ### Fixed
+
+- Reject explicitly unsuccessful JSON completions before committing assistant messages or executing their tools.
 
 - Cancellation handles only abort their own run, and changed session files are rejected before appending.
 

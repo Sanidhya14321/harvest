@@ -108,3 +108,19 @@ The synchronous HTTP transport checks cancellation between reads and has a
 60-second request timeout; cancellation cannot yet interrupt a stalled read.
 Compatible OAuth, catalog/settings policy and the remaining lifecycle APIs are
 still being ported.
+
+### Provider accounting
+
+The native OpenAI-compatible transport preserves raw `providerUsage` metadata
+and records token/cache counters for complete integer usage reports. Partial,
+invalid or overflowing reports remain lossless and set `usageUnavailable`.
+Reasoning tokens remain output metadata rather than being counted twice.
+Pricing is not ported: `costUnavailable` stays true, and compatibility cost
+fields remain zero. Do not treat them as a billed-cost estimate.
+
+`harvest run --request-usage ...` explicitly sends
+`stream_options: { "include_usage": true }`. The default omits that field until
+host compatibility policy is catalog-resolved. Usage returned by the host is
+captured with either setting, including JSON fallback responses. Only completed
+responses enter the durable log. Replay sends chat content and tool protocol
+blocks; accounting metadata stays in storage.

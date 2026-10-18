@@ -7,6 +7,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Native OpenAI-compatible streaming and JSON responses preserve raw usage
+  metadata, normalize complete integer token/cache reports and persist them
+  before committed events. Unknown numeric metadata remains lossless and stays
+  out of replayed model requests. `--request-usage` explicitly enables the wire
+  request option; the default preserves compatibility with unsupported hosts.
+  Seven accounting cases captured from the legacy helper match both installed
+  aliases without runtimes on PATH. Partial/invalid reports retain raw bytes and
+  remain unavailable; catalog pricing and other provider families remain pending.
+  Explicitly unsuccessful JSON responses cannot commit assistant output.
+
 - `cargo xtask dev <check|fmt|lint|fix|test>` replaces the Bun Rust-task launcher.
   Root aliases, the pooled test runner and CI invoke it. It preserves the
   vendored-fork exclusion, local change skips, CI forcing and Rustup Cargo

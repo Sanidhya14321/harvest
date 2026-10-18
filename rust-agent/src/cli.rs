@@ -72,28 +72,30 @@ struct SessionArgs {
 
 #[derive(Debug, clap::Args)]
 struct RunArgs {
+	#[arg(long, help = "Explicitly request OpenAI-style streamed usage; requires host support")]
+	request_usage: bool,
 	#[arg(long, default_value = ".omp/session.jsonl")]
-	session:   PathBuf,
+	session:       PathBuf,
 	#[arg(long)]
-	leaf:      Option<String>,
+	leaf:          Option<String>,
 	#[arg(long, help = "Emit ordered JSON events, including provisional streamed text")]
-	events:    bool,
+	events:        bool,
 	#[arg(short, long)]
-	prompt:    String,
+	prompt:        String,
 	#[arg(short, long, default_value = ".")]
-	workspace: PathBuf,
+	workspace:     PathBuf,
 	#[arg(long)]
-	agent_dir: Option<PathBuf>,
+	agent_dir:     Option<PathBuf>,
 	#[arg(long)]
-	tag:       Vec<String>,
+	tag:           Vec<String>,
 	#[arg(long)]
-	model:     Option<String>,
+	model:         Option<String>,
 	#[arg(long)]
-	base_url:  Option<String>,
+	base_url:      Option<String>,
 	#[arg(long)]
-	api_key:   Option<String>,
+	api_key:       Option<String>,
 	#[arg(long)]
-	max_steps: Option<u32>,
+	max_steps:     Option<u32>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -212,7 +214,7 @@ fn run(args: RunArgs) -> Result<u8> {
 		&environment,
 	)?;
 	let max_steps = settings.max_steps;
-	let model = HttpModel::new(settings);
+	let model = HttpModel::new(settings).request_usage(args.request_usage);
 	let model_ref: &dyn Model = &model;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());

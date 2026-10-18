@@ -6,7 +6,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
 	chat::{ChatMessage, ToolSpec},
 	config::Settings,
+	usage::UsageReport,
 };
+
+#[derive(Debug)]
+pub struct ModelResponse {
+	pub message: ChatMessage,
+	pub usage:   Option<UsageReport>,
+}
 
 pub trait Model {
 	// Implementations can return an ID borrowed from their configuration.
@@ -18,6 +25,14 @@ pub trait Model {
 		"unknown"
 	}
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage>;
+
+	fn complete_response(
+		&self,
+		messages: &[ChatMessage],
+		tools: &[ToolSpec],
+	) -> Result<ModelResponse> {
+		Ok(ModelResponse { message: self.complete(messages, tools)?, usage: None })
+	}
 
 	/// Deltas are provisional; only the returned message can be committed.
 	fn stream(
@@ -35,35 +50,66 @@ pub trait Model {
 		}
 		Ok(message)
 	}
+	/// Compatibility seam for SDK models that only produce messages or deltas.
+	fn stream_response(
+		&self,
+		messages: &[ChatMessage],
+		tools: &[ToolSpec],
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_text: &mut dyn FnMut(&str) -> Result<()>,
+	) -> Result<ModelResponse> {
+		Ok(ModelResponse {
+			message: self.stream(messages, tools, cancellation, on_text)?,
+			usage:   None,
+		})
+	}
 }
 
 #[derive(Debug, Clone)]
 pub struct HttpModel {
-	settings: Settings,
+	settings:      Settings,
+	request_usage: bool,
 }
 
 impl HttpModel {
 	pub const fn new(settings: Settings) -> Self {
-		Self { settings }
+		Self { settings, request_usage: false }
+	}
+
+	/// Explicit opt-in until compatible-host request policy is catalog-resolved.
+	#[must_use]
+	pub const fn request_usage(mut self, enabled: bool) -> Self {
+		self.request_usage = enabled;
+		self
 	}
 }
 
 #[derive(Debug, Serialize)]
 struct CompletionRequest<'a> {
-	model:    &'a str,
-	messages: &'a [ChatMessage],
-	tools:    &'a [ToolSpec],
-	stream:   bool,
+	model:          &'a str,
+	messages:       &'a [ChatMessage],
+	tools:          &'a [ToolSpec],
+	stream:         bool,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	stream_options: Option<StreamOptions>,
+}
+
+#[derive(Debug, Serialize)]
+struct StreamOptions {
+	include_usage: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct CompletionResponse {
 	choices: Vec<Choice>,
+	usage:   Option<Box<serde_json::value::RawValue>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Choice {
-	message: ChatMessage,
+	message:       ChatMessage,
+	finish_reason: Option<String>,
+	index:         Option<u64>,
 }
 
 impl Model for HttpModel {
@@ -72,9 +118,22 @@ impl Model for HttpModel {
 	}
 
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage> {
+		Ok(self.complete_response(messages, tools)?.message)
+	}
+
+	fn complete_response(
+		&self,
+		messages: &[ChatMessage],
+		tools: &[ToolSpec],
+	) -> Result<ModelResponse> {
 		let url = endpoint(&self.settings.base_url);
-		let request =
-			CompletionRequest { model: &self.settings.model, messages, tools, stream: false };
+		let request = CompletionRequest {
+			model: &self.settings.model,
+			messages,
+			tools,
+			stream: false,
+			stream_options: None,
+		};
 		let agent = ureq::AgentBuilder::new()
 			.timeout(Duration::from_secs(60))
 			.build();
@@ -90,10 +149,7 @@ impl Model for HttpModel {
 			harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
 		let parsed: CompletionResponse =
 			serde_json::from_slice(&bytes).context("model response was not valid JSON")?;
-		let Some(choice) = parsed.choices.into_iter().next() else {
-			bail!("model response did not include a choice");
-		};
-		Ok(choice.message)
+		parsed.into_response()
 	}
 
 	fn stream(
@@ -103,6 +159,18 @@ impl Model for HttpModel {
 		cancellation: &harvest_runtime::cancel::CancelToken,
 		on_text: &mut dyn FnMut(&str) -> Result<()>,
 	) -> Result<ChatMessage> {
+		Ok(self
+			.stream_response(messages, tools, cancellation, on_text)?
+			.message)
+	}
+
+	fn stream_response(
+		&self,
+		messages: &[ChatMessage],
+		tools: &[ToolSpec],
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_text: &mut dyn FnMut(&str) -> Result<()>,
+	) -> Result<ModelResponse> {
 		cancellation.heartbeat()?;
 		let url = endpoint(&self.settings.base_url);
 		let agent = ureq::AgentBuilder::new()
@@ -118,29 +186,48 @@ impl Model for HttpModel {
 				messages,
 				tools,
 				stream: true,
+				stream_options: self
+					.request_usage
+					.then_some(StreamOptions { include_usage: true }),
 			})
 			.with_context(|| format!("model request to {url} failed"))?;
-		if response
-			.header("Content-Type")
-			.is_some_and(|value| value.starts_with("text/event-stream"))
-		{
-			crate::streaming::decode(response.into_reader(), cancellation, on_text)
+		if response.header("Content-Type").is_some_and(|value| {
+			value
+				.split(';')
+				.next()
+				.is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
+		}) {
+			crate::streaming::decode_response(response.into_reader(), cancellation, on_text)
 		} else {
 			let bytes =
 				harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
 			let response: CompletionResponse = serde_json::from_slice(&bytes)?;
-			let message = response
-				.choices
-				.into_iter()
-				.next()
-				.context("model response did not include a choice")?
-				.message;
+			let response = response.into_response()?;
 			cancellation.heartbeat()?;
-			if let Some(text) = &message.content {
+			if let Some(text) = &response.message.content {
 				on_text(text)?;
 			}
-			Ok(message)
+			Ok(response)
 		}
+	}
+}
+
+impl CompletionResponse {
+	fn into_response(self) -> Result<ModelResponse> {
+		let choice = self
+			.choices
+			.into_iter()
+			.next()
+			.context("model response did not include a choice")?;
+		if choice.index.is_some_and(|index| index != 0) || choice.message.role != "assistant" {
+			bail!("invalid model response choice or role");
+		}
+		if let Some(reason) = &choice.finish_reason
+			&& !matches!(reason.as_str(), "stop" | "tool_calls")
+		{
+			bail!("model stopped unsuccessfully: {reason}");
+		}
+		Ok(ModelResponse { message: choice.message, usage: self.usage.map(UsageReport::from_raw) })
 	}
 }
 
@@ -204,7 +291,7 @@ mod tests {
 					break;
 				}
 			}
-			let body = r#"{"choices":[{"message":{"role":"assistant","content":"done"}}]}"#;
+			let body = r#"{"choices":[{"message":{"role":"assistant","content":"done"}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}"#;
 			let response = format!(
 				"HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
 				body.len()
@@ -217,8 +304,10 @@ mod tests {
 			api_key:   String::new(),
 			max_steps: 1,
 		});
-		let message = model.complete(&[user("hi")], &[]).unwrap();
-		assert_eq!(message.content.as_deref(), Some("done"));
+		let response = model.complete_response(&[user("hi")], &[]).unwrap();
+		assert_eq!(response.message.content.as_deref(), Some("done"));
+		let usage = response.usage.unwrap().tokens.unwrap();
+		assert_eq!((usage.input, usage.cache_read, usage.total_tokens), (7, 3, 12));
 		server.join().unwrap();
 	}
 }

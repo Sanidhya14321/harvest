@@ -76,12 +76,12 @@ impl DurableSession {
 						.get(),
 				)?;
 				match kind.as_str() {
-					"message" => messages.push(replay(&serde_json::from_str::<Value>(
+					"message" => messages.push(replay(
 						entry
 							.get("message")
 							.context("missing session message")?
-							.get(),
-					)?)?),
+							.as_ref(),
+					)?),
 					"model_change"
 					| "thinking_level_change"
 					| "service_tier_change"
@@ -115,9 +115,31 @@ impl DurableSession {
 
 	/// In-memory state advances only after the append has been synced to disk.
 	pub fn commit(&mut self, message: &ChatMessage, model: &str) -> Result<String> {
+		self.commit_with_usage(message, model, None)
+	}
+
+	pub fn commit_with_usage(
+		&mut self,
+		message: &ChatMessage,
+		model: &str,
+		usage: Option<&crate::usage::UsageReport>,
+	) -> Result<String> {
 		validate_pairs(self.messages.iter().chain(std::iter::once(message)), false)?;
 		let timestamp = chrono::Utc::now();
 		let mut stored = stored_message(message, model, timestamp.timestamp_millis())?;
+		if let Some(usage) = usage {
+			if message.role != "assistant" {
+				bail!("only assistant messages can contain provider usage");
+			}
+			stored["usageUnavailable"] = json!(usage.tokens.is_none());
+			stored["costUnavailable"] = json!(true);
+			if let Some(tokens) = &usage.tokens {
+				let mut normalized = serde_json::to_value(tokens)?;
+				normalized["cost"] =
+					json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0});
+				stored["usage"] = normalized;
+			}
+		}
 		if message.role == "tool" {
 			let name = self
 				.messages
@@ -133,7 +155,15 @@ impl DurableSession {
 		}
 		let id = content_hash(format!("{}:{}:{}", self.id, self.length, stored).as_bytes());
 		let row = json!({"type":"message", "id":id, "parentId":self.leaf, "timestamp":timestamp.to_rfc3339(), "message":stored});
-		let mut bytes = serde_json::to_vec(&row)?;
+		// Keep unknown usage fields lossless, including integers beyond f64/u64.
+		let mut raw_row: crate::session_format::SessionObject = serde_json::from_value(row)?;
+		if let Some(usage) = usage {
+			let mut raw_message: crate::session_format::SessionObject =
+				serde_json::from_str(raw_row["message"].get())?;
+			raw_message.insert("providerUsage".into(), usage.raw.clone());
+			raw_row.insert("message".into(), serde_json::value::to_raw_value(&raw_message)?);
+		}
+		let mut bytes = serde_json::to_vec(&raw_row)?;
 		if bytes.len() > harvest_runtime::MAX_EVENT_BYTES {
 			bail!("session event exceeds frame limit");
 		}
@@ -149,10 +179,20 @@ impl DurableSession {
 	}
 }
 
-fn replay(message: &Value) -> Result<ChatMessage> {
-	if message.get("providerPayload").is_some() {
+fn replay(raw: &serde_json::value::RawValue) -> Result<ChatMessage> {
+	let raw: crate::session_format::SessionObject = serde_json::from_str(raw.get())?;
+	if raw.contains_key("providerPayload") {
 		bail!("opaque provider replay is not implemented");
 	}
+	// Usage and unknown metadata never enter the model request or a floating-
+	// point Value conversion. Only replay-relevant fields need decoding.
+	let mut fields = serde_json::Map::new();
+	for key in ["role", "content", "toolCallId"] {
+		if let Some(value) = raw.get(key) {
+			fields.insert(key.into(), serde_json::from_str(value.get())?);
+		}
+	}
+	let message = Value::Object(fields);
 	let role = message["role"].as_str().context("invalid message role")?;
 	if !matches!(role, "user" | "developer" | "assistant" | "toolResult") {
 		bail!("unsupported replay role {role}");
@@ -240,8 +280,10 @@ fn stored_message(message: &ChatMessage, model: &str, timestamp: i64) -> Result<
 			} else {
 				"stop"
 			});
-			// Usage is not collected by the prototype transport; record that explicitly.
+			// Reports are attached by the transport-aware commit path.
+			// Absence must remain distinguishable from a valid zero-token report.
 			stored["usageUnavailable"] = json!(true);
+			stored["costUnavailable"] = json!(true);
 			stored["usage"] = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}});
 		},
 		"tool" => {

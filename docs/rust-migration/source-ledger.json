@@ -2914,7 +2914,7 @@
     {
       "path": "packages/ai/src/providers/openai-completions.ts",
       "disposition": "review-required",
-      "implementation": "absent",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
@@ -2922,8 +2922,8 @@
       "consumers": null,
       "persisted_formats": null,
       "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "rust_destination": "rust-agent/src/provider.rs; rust-agent/src/streaming.rs; rust-agent/src/usage.rs; rust-agent/src/durable_session.rs",
+      "verification_requirements": "Reviewed usage-accounting slice: legacy helper oracle captured at ac8a116 covers seven distinct cache alias/zero override/miss/total boundaries. Native HTTP fixtures cover SSE trailing usage, JSON fallback, raw unknown numeric metadata, lossless durable storage and replay without metadata leakage; unsuccessful/truncated responses never commit assistant usage. Installed harvest/omp ran all seven oracle cases with no Bun/Node on PATH. Full module contract audit, pricing/KDL policy, schemas, retry/auth/OAuth/specialized transports and credentialed provider checks remain pending; source retained.",
       "retirement_reason": null
     },
     {
@@ -3034,7 +3034,7 @@
     {
       "path": "packages/ai/src/providers/openai-shared.ts",
       "disposition": "review-required",
-      "implementation": "absent",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
@@ -3042,8 +3042,8 @@
       "consumers": null,
       "persisted_formats": null,
       "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "rust_destination": "rust-agent/src/provider.rs; rust-agent/src/streaming.rs; rust-agent/src/usage.rs; rust-agent/src/durable_session.rs",
+      "verification_requirements": "Reviewed usage-accounting slice: legacy helper oracle captured at ac8a116 covers seven distinct cache alias/zero override/miss/total boundaries. Native HTTP fixtures cover SSE trailing usage, JSON fallback, raw unknown numeric metadata, lossless durable storage and replay without metadata leakage; unsuccessful/truncated responses never commit assistant usage. Installed harvest/omp ran all seven oracle cases with no Bun/Node on PATH. Full module contract audit, pricing/KDL policy, schemas, retry/auth/OAuth/specialized transports and credentialed provider checks remain pending; source retained.",
       "retirement_reason": null
     },
     {

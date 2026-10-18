@@ -1,0 +1,124 @@
+[
+  {
+    "name": "reported-total-is-not-additive-accounting",
+    "raw": {
+      "prompt_tokens": 100,
+      "completion_tokens": 20,
+      "total_tokens": 999
+    },
+    "expected": {
+      "input": 100,
+      "output": 20,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 120
+    }
+  },
+  {
+    "name": "first-positive-cache-alias-wins",
+    "raw": {
+      "prompt_tokens": 100,
+      "completion_tokens": 20,
+      "cached_tokens": 0,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_tokens_details": {
+        "cached_tokens": 40
+      },
+      "cachedContentTokenCount": 50
+    },
+    "expected": {
+      "input": 60,
+      "output": 20,
+      "cacheRead": 40,
+      "cacheWrite": 0,
+      "totalTokens": 120
+    }
+  },
+  {
+    "name": "legacy-content-cache-counter",
+    "raw": {
+      "prompt_tokens": 100,
+      "completion_tokens": 20,
+      "cachedContentTokenCount": 50
+    },
+    "expected": {
+      "input": 50,
+      "output": 20,
+      "cacheRead": 50,
+      "cacheWrite": 0,
+      "totalTokens": 120
+    }
+  },
+  {
+    "name": "unpaired-miss-counter-is-cache-write",
+    "raw": {
+      "prompt_tokens": 100,
+      "completion_tokens": 20,
+      "prompt_cache_miss_tokens": 70
+    },
+    "expected": {
+      "input": 30,
+      "output": 20,
+      "cacheRead": 0,
+      "cacheWrite": 70,
+      "totalTokens": 120
+    }
+  },
+  {
+    "name": "explicit-zero-write-disables-miss-fallback",
+    "raw": {
+      "prompt_tokens": 100,
+      "completion_tokens": 20,
+      "prompt_cache_hit_tokens": 30,
+      "prompt_cache_miss_tokens": 70,
+      "prompt_tokens_details": {
+        "cache_write_tokens": 0
+      }
+    },
+    "expected": {
+      "input": 70,
+      "output": 20,
+      "cacheRead": 30,
+      "cacheWrite": 0,
+      "totalTokens": 120
+    }
+  },
+  {
+    "name": "explicit-write-wins-over-paired-miss",
+    "raw": {
+      "prompt_tokens": 100,
+      "completion_tokens": 20,
+      "prompt_cache_hit_tokens": 30,
+      "prompt_cache_miss_tokens": 70,
+      "prompt_tokens_details": {
+        "cache_write_tokens": 10
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 7
+      }
+    },
+    "expected": {
+      "input": 60,
+      "output": 20,
+      "cacheRead": 30,
+      "cacheWrite": 10,
+      "totalTokens": 120,
+      "reasoningTokens": 7
+    }
+  },
+  {
+    "name": "cache-components-over-prompt-clamp-input",
+    "raw": {
+      "prompt_tokens": 5,
+      "completion_tokens": 2,
+      "cached_tokens": 10
+    },
+    "expected": {
+      "input": 0,
+      "output": 2,
+      "cacheRead": 10,
+      "cacheWrite": 0,
+      "totalTokens": 12
+    }
+  }
+]
