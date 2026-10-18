@@ -116,10 +116,9 @@ function Install-Omp {
 
     $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
     switch ($architecture) {
-        "X64" { $asset = "omp-windows-x86_64.exe" }
+        "X64" { $asset = "omp-windows-x64.exe" }
         "Arm64" {
-            $asset = "omp-windows-x86_64.exe"
-            Write-Warning "a native Windows ARM64 build is not available; installing the x64 build"
+            $asset = "omp-windows-arm64.exe"
         }
         default { throw "Omp does not publish a Windows release for architecture '$architecture'" }
     }
@@ -152,14 +151,15 @@ function Install-Omp {
 
     $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("omp-install-" + [Guid]::NewGuid().ToString("N"))
     $downloadPath = Join-Path $tempDir $asset
-    $checksumsPath = Join-Path $tempDir "SHA256SUMS"
+    $checksumsPath = Join-Path $tempDir "SHA256SUMS.txt"
     $stagedBinary = $null
+    $stagedAlias = $null
 
     New-Item -ItemType Directory -Path $tempDir | Out-Null
     try {
         Write-Info "detected Windows $architecture"
         Write-Info "downloading Omp $versionLabel"
-        Invoke-Download -Uri "$releaseUrl/SHA256SUMS" -OutFile $checksumsPath
+        Invoke-Download -Uri "$releaseUrl/SHA256SUMS.txt" -OutFile $checksumsPath
 
         $escapedAsset = [Regex]::Escape($asset)
         $expectedChecksum = $null
@@ -189,8 +189,24 @@ function Install-Omp {
 
         New-Item -ItemType Directory -Force -Path $RequestedBinDir | Out-Null
         $destination = Join-Path $RequestedBinDir "omp.exe"
+        $aliasPath = Join-Path $RequestedBinDir "harvest.exe"
+        if (Test-Path -LiteralPath $destination -PathType Container) {
+            throw "installation target is a directory: $destination"
+        }
+        if (Test-Path -LiteralPath $aliasPath) {
+            if (-not (Test-Path -LiteralPath $aliasPath -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $destination -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $aliasPath -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash) {
+                throw "refusing to replace an unrelated harvest alias at $aliasPath"
+            }
+        }
         $stagedBinary = Join-Path $RequestedBinDir (".omp-install-" + [Guid]::NewGuid().ToString("N") + ".exe")
         Copy-Item -LiteralPath $downloadPath -Destination $stagedBinary
+        $stagedAlias = Join-Path $RequestedBinDir (".harvest-install-" + [Guid]::NewGuid().ToString("N") + ".exe")
+        Copy-Item -LiteralPath $stagedBinary -Destination $stagedAlias
+        Move-Item -LiteralPath $stagedAlias -Destination $aliasPath -Force
+        $stagedAlias = $null
         Move-Item -LiteralPath $stagedBinary -Destination $destination -Force
         $stagedBinary = $null
 
@@ -245,6 +261,9 @@ function Install-Omp {
         }
     }
     finally {
+        if ($null -ne $stagedAlias) {
+            Remove-Item -LiteralPath $stagedAlias -Force -ErrorAction SilentlyContinue
+        }
         if ($null -ne $stagedBinary) {
             Remove-Item -LiteralPath $stagedBinary -Force -ErrorAction SilentlyContinue
         }

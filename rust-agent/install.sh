@@ -150,23 +150,29 @@ case "${OS}" in
             info "Rosetta detected; selecting the native Apple Silicon build"
         fi
         case "${ARCH}" in
-            x86_64 | amd64) ASSET=omp-macos-x86_64 ;;
-            arm64 | aarch64) ASSET=omp-macos-aarch64 ;;
+            x86_64 | amd64) ASSET=omp-darwin-x64 ;;
+            arm64 | aarch64) ASSET=omp-darwin-arm64 ;;
             *) fail "Omp does not publish a macOS release for architecture '${ARCH}'" ;;
         esac
         BINARY_NAME=omp
         ;;
     Linux)
         case "${ARCH}" in
-            x86_64 | amd64) ASSET=omp-linux-x86_64 ;;
-            arm64 | aarch64) ASSET=omp-linux-aarch64 ;;
+            x86_64 | amd64) ASSET=omp-linux-x64 ;;
+            arm64 | aarch64) ASSET=omp-linux-arm64 ;;
             *) fail "Omp does not publish a Linux release for architecture '${ARCH}'" ;;
         esac
+        if has ldd && ldd --version 2>&1 | grep -qi musl; then
+            ASSET=omp-linux-musl-${ASSET#omp-linux-}
+        elif [ -f /etc/alpine-release ]; then
+            ASSET=omp-linux-musl-${ASSET#omp-linux-}
+        fi
         BINARY_NAME=omp
         ;;
     MINGW* | MSYS* | CYGWIN*)
         case "${ARCH}" in
-            x86_64 | amd64) ASSET=omp-windows-x86_64.exe ;;
+            x86_64 | amd64) ASSET=omp-windows-x64.exe ;;
+            arm64 | aarch64) ASSET=omp-windows-arm64.exe ;;
             *) fail "Omp does not publish a Windows release for architecture '${ARCH}'" ;;
         esac
         BINARY_NAME=omp.exe
@@ -204,7 +210,11 @@ make_temp_dir() {
 
 TEMP_DIR=
 STAGED_BINARY=
+STAGED_ALIAS=
 cleanup() {
+    if [ -n "${STAGED_ALIAS}" ]; then
+        rm -f "${STAGED_ALIAS}" || true
+    fi
     if [ -n "${STAGED_BINARY}" ]; then
         rm -f "${STAGED_BINARY}" || true
     fi
@@ -216,7 +226,7 @@ trap cleanup EXIT HUP INT TERM
 make_temp_dir
 
 DOWNLOAD_PATH=${TEMP_DIR}/${ASSET}
-CHECKSUMS_PATH=${TEMP_DIR}/SHA256SUMS
+CHECKSUMS_PATH=${TEMP_DIR}/SHA256SUMS.txt
 
 download() {
     url=$1
@@ -258,7 +268,7 @@ fi
 
 info "detected ${OS} ${ARCH}"
 info "downloading Omp ${VERSION_LABEL}"
-download "${RELEASE_URL}/SHA256SUMS" "${CHECKSUMS_PATH}"
+download "${RELEASE_URL}/SHA256SUMS.txt" "${CHECKSUMS_PATH}"
 
 EXPECTED_CHECKSUM=$(awk -v asset="${ASSET}" '
     {
@@ -297,9 +307,20 @@ info "verified SHA-256 checksum"
 
 mkdir -p "${BIN_DIR}" || fail "could not create ${BIN_DIR}"
 DESTINATION=${BIN_DIR}/${BINARY_NAME}
+[ ! -d "${DESTINATION}" ] || fail "installation target is a directory: ${DESTINATION}"
+ALIAS_PATH=${BIN_DIR}/harvest${BINARY_NAME#omp}
+if [ -e "${ALIAS_PATH}" ] || [ -L "${ALIAS_PATH}" ]; then
+    [ -f "${ALIAS_PATH}" ] && [ -f "${DESTINATION}" ] && cmp -s "${ALIAS_PATH}" "${DESTINATION}" ||
+        fail "refusing to replace an unrelated harvest alias at ${ALIAS_PATH}"
+fi
 STAGED_BINARY=$(mktemp "${BIN_DIR}/.omp-install.XXXXXX") || fail "could not write to ${BIN_DIR}"
 cp "${DOWNLOAD_PATH}" "${STAGED_BINARY}" || fail "could not write to ${BIN_DIR}"
 chmod 755 "${STAGED_BINARY}" || fail "could not make the Omp binary executable"
+STAGED_ALIAS=$(mktemp "${BIN_DIR}/.harvest-install.XXXXXX") || fail "could not stage the harvest alias"
+rm -f "${STAGED_ALIAS}" || fail "could not prepare the harvest alias"
+ln "${STAGED_BINARY}" "${STAGED_ALIAS}" || fail "could not stage the harvest alias"
+mv -f "${STAGED_ALIAS}" "${ALIAS_PATH}" || fail "could not install harvest to ${ALIAS_PATH}"
+STAGED_ALIAS=
 mv -f "${STAGED_BINARY}" "${DESTINATION}" || fail "could not install Omp to ${DESTINATION}"
 STAGED_BINARY=
 

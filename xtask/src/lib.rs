@@ -1,4 +1,5 @@
 //! Rust-owned development and distribution helpers.
+pub mod artifacts;
 pub mod capabilities;
 pub mod checksums;
 pub mod development;

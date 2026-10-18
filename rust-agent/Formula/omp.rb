@@ -6,12 +6,12 @@ class Omp < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-macos-aarch64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/@ASSET_MACOS_AARCH64@",
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_MACOS_AARCH64@"
     end
     on_intel do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-macos-x86_64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/@ASSET_MACOS_X86_64@",
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_MACOS_X86_64@"
     end
@@ -19,12 +19,12 @@ class Omp < Formula
 
   on_linux do
     on_arm do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-linux-aarch64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/@ASSET_LINUX_AARCH64@",
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_LINUX_AARCH64@"
     end
     on_intel do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-linux-x86_64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/@ASSET_LINUX_X86_64@",
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_LINUX_X86_64@"
     end

@@ -35,7 +35,7 @@ jobs:
           - { runner: ubuntu-24.04, target: linux-musl-x64, native: linux-musl-x64-baseline }
           - { runner: ubuntu-24.04-arm, target: linux-musl-arm64, native: linux-musl-arm64 }
           - { runner: macos-15-intel, target: darwin-x64, native: darwin-x64-baseline }
-          - { runner: macos-15-arm64, target: darwin-arm64, native: host }
+          - { runner: macos-15, target: darwin-arm64, native: host }
           - { runner: ubuntu-24.04, target: win32-x64, native: win32-x64-baseline }
           - { runner: windows-11-arm, target: win32-arm64, native: host }
     runs-on: ${{ matrix.runner }}

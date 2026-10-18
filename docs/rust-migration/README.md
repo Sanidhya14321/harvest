@@ -7,6 +7,21 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Native distribution uses one eight-target registry for release/CI matrices,
+  package names, Homebrew bindings and both WinGet architectures. ZIPs include
+  both real aliases, deterministic metadata and legal notices; validation checks
+  all targets, alias bytes/modes, headers and legal files. WinGet generation and
+  submitted-archive verification run through Rust and reject unknown manifest
+  fields or changed downloads before extraction. Canonical bootstrap consumers
+  use `SHA256SUMS.txt`. Local fixtures passed 176 combined Rust tests, 90 core
+  app tests and shell installer routing/upgrade/refusal checks. A full release
+  build completed, and real cargo-binstall 1.26.0 installed both aliases from a
+  loopback archive; execution and completion setup worked without Bun/Node.
+  PowerShell files passed the real parser and the non-Windows refusal contract;
+  native Windows/macOS runs, GNU portability-floor builds and Cargo publication
+  dependency closure remain part of distribution parity. See
+  [distribution contracts](distribution.md).
+
 - Native settings/override/environment diagnostics omit API keys and endpoint
   URLs. Invalid TOML errors retain only the config filename and byte offset,
   dropping parser source-line/error chains; malformed environment step counts

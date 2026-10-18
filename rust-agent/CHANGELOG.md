@@ -28,6 +28,8 @@
 
 ### Changed
 
+- Native packaging and installers share eight platform/ABI asset names, ship both aliases in ZIP archives, and use SHA256SUMS.txt.
+
 - Curated release notes now include native changelogs and run through Rust tooling, retaining entries from unpublished tags.
 
 - Repository credential checks now run through Rust tooling without the redundant Python scanner.
@@ -39,6 +41,8 @@
 - Require host approval for mutations and shell execution, with bounded file, session, HTTP and shell output.
 
 ### Fixed
+
+- Install both command aliases independently of shell completions, accept existing matching aliases, and preserve unrelated commands during upgrades.
 
 - Configuration errors and SDK debug output keep API keys and credential-bearing endpoint URLs out of diagnostics.
 

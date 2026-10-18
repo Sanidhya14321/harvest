@@ -86,10 +86,25 @@
     {
       "id": "command:completions",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/cli.rs",
+          "rust-agent/src/shell.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/cli.rs",
+          "rust-agent/src/shell.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/commands/"
+        ],
+        "removable": false
       }
     },
     {
@@ -1787,10 +1802,31 @@
     {
       "id": "surface:release-installers",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "xtask/src/artifacts.rs",
+          "xtask/src/packaging.rs",
+          "rust-agent/install.sh",
+          "rust-agent/install.ps1",
+          ".github/workflows/rust-release.yml"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "xtask/tests/artifacts_cli.rs",
+          "rust-agent/tests/install.sh",
+          "rust-agent/tests/install.ps1"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "scripts/install.sh",
+          "scripts/install.ps1",
+          ".github/workflows/release.yml"
+        ],
+        "removable": false
       }
     },
     {

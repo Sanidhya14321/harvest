@@ -14,7 +14,15 @@ Installers:
         PortableCommandAlias: omp
       - RelativeFilePath: harvest.exe
         PortableCommandAlias: harvest
-    InstallerUrl: https://github.com/Sanidhya14321/harvest/releases/download/v@VERSION@/omp-windows-x86_64.zip
-    InstallerSha256: "@SHA256_WINDOWS_X86_64@"
+    InstallerUrl: https://github.com/Sanidhya14321/harvest/releases/download/v@VERSION@/@ASSET_WINDOWS_X64@
+    InstallerSha256: "@SHA256_WINDOWS_X64@"
+  - Architecture: arm64
+    NestedInstallerFiles:
+      - RelativeFilePath: omp.exe
+        PortableCommandAlias: omp
+      - RelativeFilePath: harvest.exe
+        PortableCommandAlias: harvest
+    InstallerUrl: https://github.com/Sanidhya14321/harvest/releases/download/v@VERSION@/@ASSET_WINDOWS_ARM64@
+    InstallerSha256: "@SHA256_WINDOWS_ARM64@"
 ManifestType: installer
 ManifestVersion: 1.12.0

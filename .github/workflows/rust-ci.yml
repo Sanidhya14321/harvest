@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -122,20 +122,25 @@ jobs:
       - run: cargo hack check -p harvest-omp --feature-powerset --locked
 
 
+  shipping-targets:
+    name: Resolve shipping artifact matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - id: matrix
+        run: echo "value=$(cargo xtask package matrix)" >>"${GITHUB_OUTPUT}"
+
   cross:
+    needs: shipping-targets
     name: Cross build ${{ matrix.target }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+      matrix: ${{ fromJson(needs.shipping-targets.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -145,7 +150,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install musl linker
-        if: runner.os == 'Linux'
+        if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
