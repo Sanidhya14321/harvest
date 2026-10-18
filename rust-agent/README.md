@@ -124,3 +124,9 @@ host compatibility policy is catalog-resolved. Usage returned by the host is
 captured with either setting, including JSON fallback responses. Only completed
 responses enter the durable log. Replay sends chat content and tool protocol
 blocks; accounting metadata stays in storage.
+
+Native provider failures expose typed HTTP status or transport categories.
+Error chains and `HttpModel` debug output omit endpoint URLs, credentials,
+upstream status text and response bodies. Raw HTTP failures are not attached as
+error sources. Provider authentication/retry policies still require their
+separate compatibility ports.

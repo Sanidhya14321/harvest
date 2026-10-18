@@ -1,14 +1,11 @@
 //! End-to-end transport, durable accounting and safe replay contracts.
 use std::{
-	io::{BufRead, BufReader, Read, Write},
-	net::TcpListener,
 	path::Path,
 	process::{Command, Output},
-	thread,
-	time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
+mod common;
 use harvest_omp::session_format::{SessionDocument, SessionObject};
 use serde_json::{Value, json};
 
@@ -18,75 +15,20 @@ fn run(
 	content_type: &'static str,
 	request_usage: bool,
 ) -> Result<(Output, Value)> {
-	let listener = TcpListener::bind("127.0.0.1:0")?;
-	listener.set_nonblocking(true)?;
-	let address = listener.local_addr()?;
-	let server = thread::spawn(move || -> Result<Value> {
-		let deadline = Instant::now() + Duration::from_secs(10);
-		let mut socket = loop {
-			match listener.accept() {
-				Ok((socket, _)) => break socket,
-				Err(error)
-					if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline =>
-				{
-					thread::sleep(Duration::from_millis(5));
-				},
-				Err(error) => return Err(error.into()),
-			}
-		};
-		socket.set_read_timeout(Some(Duration::from_secs(5)))?;
-		let mut reader = BufReader::new(&mut socket);
-		let mut headers = Vec::new();
-		let mut length = None;
-		loop {
-			let mut line = Vec::new();
-			let read = (&mut reader)
-				.take(16 * 1024 + 1)
-				.read_until(b'\n', &mut line)?;
-			headers.extend_from_slice(&line);
-			if headers.len() > 16 * 1024 || read == 0 {
-				bail!("invalid fixture HTTP headers");
-			}
-			if line == b"\r\n" {
-				break;
-			}
-			let text = std::str::from_utf8(&line)?;
-			if let Some((name, value)) = text.split_once(':')
-				&& name.eq_ignore_ascii_case("content-length")
-			{
-				length = Some(value.trim().parse::<usize>()?);
-			}
-		}
-		let length = length.context("missing request length")?;
-		if length > 1024 * 1024 {
-			bail!("fixture request exceeds limit");
-		}
-		let mut request = vec![0; length];
-		reader.read_exact(&mut request)?;
-		drop(reader);
-		write!(
-			socket,
-			"HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: \
-			 close\r\n\r\n{body}",
-			body.len()
-		)?;
-		Ok(serde_json::from_slice(&request)?)
-	});
+	let server = common::HttpFixture::spawn(200, "OK", content_type, body)?;
 	let mut command = Command::new(env!("CARGO_BIN_EXE_harvest"));
 	command
 		.args(["run", "--workspace"])
 		.arg(root)
 		.args(["--prompt", "Compute the answer", "--model", "fixture", "--base-url"])
-		.arg(format!("http://{address}/v1"))
+		.arg(server.base_url())
 		.args(["--api-key", "", "--max-steps", "1"])
 		.env_remove("OMP_MAX_STEPS");
 	if request_usage {
 		command.arg("--request-usage");
 	}
 	let output = command.output()?;
-	let request = server
-		.join()
-		.map_err(|_| anyhow::anyhow!("fixture server panicked"))??;
+	let request = server.finish()?;
 	Ok((output, request))
 }
 

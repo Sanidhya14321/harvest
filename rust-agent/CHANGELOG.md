@@ -34,6 +34,8 @@
 
 ### Fixed
 
+- Native provider failures and model diagnostics keep credentials, endpoint URLs and untrusted server text out of errors.
+
 - Reject explicitly unsuccessful JSON completions before committing assistant messages or executing their tools.
 
 - Cancellation handles only abort their own run, and changed session files are rejected before appending.

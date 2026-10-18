@@ -1498,7 +1498,8 @@
         "contract_suites": [
           "rust-agent/src/streaming.rs",
           "rust-agent/tests/cli.rs",
-          "rust-agent/tests/provider_usage.rs"
+          "rust-agent/tests/provider_usage.rs",
+          "rust-agent/tests/provider_diagnostics.rs"
         ]
       },
       "installation": "experimental-rust-cli",

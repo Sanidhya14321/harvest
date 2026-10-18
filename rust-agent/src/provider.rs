@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -65,11 +65,37 @@ pub trait Model {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HttpModel {
 	settings:      Settings,
 	request_usage: bool,
 }
+
+impl fmt::Debug for HttpModel {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		formatter
+			.debug_struct("HttpModel")
+			.field("model", &self.settings.model)
+			.field("request_usage", &self.request_usage)
+			.finish_non_exhaustive()
+	}
+}
+
+/// Stable error categories; URLs, headers and server reason text are excluded.
+#[derive(Debug)]
+pub enum ProviderRequestError {
+	Status(u16),
+	Transport(ureq::ErrorKind),
+}
+impl fmt::Display for ProviderRequestError {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Status(code) => write!(formatter, "model request failed with HTTP {code}"),
+			Self::Transport(kind) => write!(formatter, "model transport failed ({kind:?})"),
+		}
+	}
+}
+impl std::error::Error for ProviderRequestError {}
 
 impl HttpModel {
 	pub const fn new(settings: Settings) -> Self {
@@ -81,6 +107,26 @@ impl HttpModel {
 	pub const fn request_usage(mut self, enabled: bool) -> Self {
 		self.request_usage = enabled;
 		self
+	}
+
+	fn request(&self, request: CompletionRequest<'_>, streaming: bool) -> Result<ureq::Response> {
+		let agent = ureq::AgentBuilder::new()
+			.timeout(Duration::from_secs(60))
+			.build();
+		let mut call = agent.post(&endpoint(&self.settings.base_url));
+		if streaming {
+			call = call.set("Accept", "text/event-stream");
+		}
+		if !self.settings.api_key.is_empty() {
+			call = call.set("Authorization", &format!("Bearer {}", self.settings.api_key));
+		}
+		call.send_json(request).map_err(|error| {
+			match error {
+				ureq::Error::Status(code, _) => ProviderRequestError::Status(code),
+				ureq::Error::Transport(transport) => ProviderRequestError::Transport(transport.kind()),
+			}
+			.into()
+		})
 	}
 }
 
@@ -126,7 +172,6 @@ impl Model for HttpModel {
 		messages: &[ChatMessage],
 		tools: &[ToolSpec],
 	) -> Result<ModelResponse> {
-		let url = endpoint(&self.settings.base_url);
 		let request = CompletionRequest {
 			model: &self.settings.model,
 			messages,
@@ -134,17 +179,7 @@ impl Model for HttpModel {
 			stream: false,
 			stream_options: None,
 		};
-		let agent = ureq::AgentBuilder::new()
-			.timeout(Duration::from_secs(60))
-			.build();
-		let mut call = agent.post(&url);
-		if !self.settings.api_key.is_empty() {
-			let header = format!("Bearer {}", self.settings.api_key);
-			call = call.set("Authorization", &header);
-		}
-		let response = call
-			.send_json(request)
-			.with_context(|| format!("model request to {url} failed"))?;
+		let response = self.request(request, false)?;
 		let bytes =
 			harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
 		let parsed: CompletionResponse =
@@ -172,16 +207,8 @@ impl Model for HttpModel {
 		on_text: &mut dyn FnMut(&str) -> Result<()>,
 	) -> Result<ModelResponse> {
 		cancellation.heartbeat()?;
-		let url = endpoint(&self.settings.base_url);
-		let agent = ureq::AgentBuilder::new()
-			.timeout(Duration::from_secs(60))
-			.build();
-		let mut call = agent.post(&url).set("Accept", "text/event-stream");
-		if !self.settings.api_key.is_empty() {
-			call = call.set("Authorization", &format!("Bearer {}", self.settings.api_key));
-		}
-		let response = call
-			.send_json(CompletionRequest {
+		let response = self.request(
+			CompletionRequest {
 				model: &self.settings.model,
 				messages,
 				tools,
@@ -189,8 +216,9 @@ impl Model for HttpModel {
 				stream_options: self
 					.request_usage
 					.then_some(StreamOptions { include_usage: true }),
-			})
-			.with_context(|| format!("model request to {url} failed"))?;
+			},
+			true,
+		)?;
 		if response.header("Content-Type").is_some_and(|value| {
 			value
 				.split(';')
@@ -225,7 +253,7 @@ impl CompletionResponse {
 		if let Some(reason) = &choice.finish_reason
 			&& !matches!(reason.as_str(), "stop" | "tool_calls")
 		{
-			bail!("model stopped unsuccessfully: {reason}");
+			bail!("model stopped with an unsuccessful finish reason");
 		}
 		Ok(ModelResponse { message: choice.message, usage: self.usage.map(UsageReport::from_raw) })
 	}

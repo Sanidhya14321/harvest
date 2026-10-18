@@ -132,7 +132,7 @@ pub fn decode_response(
 			merge_tools(delta, &mut calls)?;
 			if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
 				if !matches!(reason, "stop" | "tool_calls") {
-					bail!("stream stopped unsuccessfully: {reason}");
+					bail!("stream stopped with an unsuccessful finish reason");
 				}
 				finished = true;
 			}

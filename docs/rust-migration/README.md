@@ -7,6 +7,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Shared native HTTP request construction returns typed status/transport errors
+  without attaching raw URL/status/body diagnostics; `HttpModel` debug output
+  omits configured credentials. Real loopback 401/429 failures, invalid schemes
+  and rejected JSON/SSE finish reasons exercise both SDK request paths. This
+  does not implement credential storage, OAuth refresh or provider retry policy.
+  The 72-test app suite, strict Clippy and installed HTTP-failure checks through
+  both aliases passed; installed failures preserve the user turn and commit no
+  assistant output. The unchanged legacy usage-attribution suite passed 22 tests.
+
 - Native OpenAI-compatible streaming and JSON responses preserve raw usage
   metadata, normalize complete integer token/cache reports and persist them
   before committed events. Unknown numeric metadata remains lossless and stays
