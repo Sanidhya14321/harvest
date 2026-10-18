@@ -7,6 +7,18 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask version` reads the root inherited version; `--set VERSION
+  --expect CURRENT` changes it atomically under a writer lock while preserving
+  TOML comments and unrelated fields. Rust release jobs use root manifest,
+  lockfile and target paths, explicit application package selectors, and the
+  nextest/doctest gate. Release remains blocked while the legacy release workflow
+  owns tags or source/capability parity is incomplete. The crate publication
+  dependency graph, installer naming, complete platform matrix and actual remote
+  release validation remain pending. Local validation covers 21 xtask contracts,
+  strict Clippy, and a two-member fixture whose inherited versions were checked
+  through Cargo metadata after running the updater without runtimes on PATH.
+  Workflow YAML parses locally; hosted release jobs have not been executed.
+
 - One Cargo workspace, lockfile, toolchain and build profile configuration for
   the existing native engines and the experimental application.
 - `cargo xtask check`, `cargo xtask test` (nextest followed by doctests), and a

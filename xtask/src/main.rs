@@ -24,6 +24,7 @@ fn execute() -> Result<()> {
 	let task = arguments.next().unwrap_or_else(|| "help".to_owned());
 	let selection: Vec<String> = arguments.collect();
 	match task.as_str() {
+		"version" => xtask::version::execute(selection),
 		"package" => packaging::execute(selection),
 		"migration" => xtask::migration::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
@@ -66,10 +67,11 @@ fn execute() -> Result<()> {
 		},
 		"help" | "--help" | "-h" => {
 			println!(
-				"cargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and \
-				 target selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
-				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
-				 --help\ncargo xtask secrets --help\ncargo xtask migration [--require-complete]"
+				"cargo xtask version [--set VERSION --expect CURRENT]\ncargo xtask check [Cargo \
+				 package selectors]\ncargo xtask test [Cargo package and target selectors]\ncargo \
+				 xtask capabilities [--require-complete]\nTests require cargo-nextest and include \
+				 doctests.\ncargo xtask package <homebrew|winget> --help\ncargo xtask secrets \
+				 --help\ncargo xtask migration [--require-complete]"
 			);
 			Ok(())
 		},

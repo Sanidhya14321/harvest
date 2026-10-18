@@ -10662,9 +10662,11 @@ dependencies = [
  "clap",
  "harvest-runtime",
  "regex",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",
+ "toml_edit",
 ]
 
 [[package]]

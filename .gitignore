@@ -99,3 +99,4 @@ packages/coding-agent/bench/boot-baseline.json
 
 /.agents/
 /brag-output
+/.cargo/harvest-version.lock
