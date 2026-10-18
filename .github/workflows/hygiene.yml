@@ -35,11 +35,7 @@ jobs:
       - name: Release templates bind versions and asset checksums
         working-directory: ${{ github.workspace }}
         run: cargo xtask test -p xtask
-      - name: No committed secrets
-        run: |
-          python3 scripts/check_secrets.py --selftest
-          python3 scripts/check_secrets.py
-      - name: Rust credential scanner (migration verification)
+      - name: No committed secrets (Rust)
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
@@ -194,19 +190,6 @@ jobs:
           $findings = Invoke-ScriptAnalyzer -Path rust-agent -Recurse -Settings ./rust-agent/PSScriptAnalyzerSettings.psd1
           if ($findings) { $findings | Format-Table -AutoSize; exit 1 }
 
-  python:
-    name: Python scripts
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Lint
-        run: |
-          set -euo pipefail
-          pipx run --spec ruff==0.16.10 ruff check scripts
-          pipx run --spec ruff==0.16.10 ruff format --check scripts
-
   actions:
     name: Workflows
     runs-on: ubuntu-latest
@@ -285,7 +268,6 @@ jobs:
       - markdown
       - shell
       - powershell
-      - python
       - actions
       - links
       - wiki

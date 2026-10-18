@@ -36,8 +36,10 @@ because a Rust command or tool has the same name.
   Rustdoc, feature powerset, packaging and installer verification.
 - Rust credential scanning preserves the prototype detection rules, redacts
   matched values and caps manifests, source sizes and findings. Read failures,
-  escaping paths and oversized input fail the check. Both scanners run during
-  migration; the existing Python scanner has not been removed.
+  escaping paths and oversized input fail the check. The redundant Python scanner
+  and its dedicated lint configuration/job have been removed after Rust contract
+  and installed-binary verification. Hygiene now uses the Rust scanner alone;
+  repository-wide Gitleaks remains unchanged.
 - Both Rust binary aliases share a library. The prototype uses bounded I/O,
   jailed session writes, embedded Markdown prompts, ephemeral retrieval from
   project/user brains and host-owned approvals. Shell execution in `full`
@@ -125,8 +127,9 @@ until capability parity is verified; no release has been published.
 `source-baseline.json` freezes the tracked TS/TSX/MTS/CTS, JavaScript,
 Python and Julia paths at its recorded commit, including declarations, fixtures,
 examples and generated sources. `source-ledger.json` retains one entry per path.
-The initial inventory contains 5,220 paths. All require individual contract review;
-this enumeration does not establish that step 1 of the migration is complete.
+The initial inventory contains 5,220 paths. Reviewed entries retain their evidence
+while other paths require individual contract review; this enumeration does not
+establish that step 1 of the migration is complete.
 
 Run `cargo xtask migration` to validate coverage and deletion evidence, or
 `cargo xtask migration --require-complete` to enforce the source cutover gate.

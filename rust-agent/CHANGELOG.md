@@ -16,6 +16,8 @@
 
 ### Changed
 
+- Repository credential checks now run through Rust tooling without the redundant Python scanner.
+
 - Native edits preserve BOMs, line endings and notebook metadata through the shared Rust edit engine.
 
 - Joined the main Rust workspace and added lightweight core and optional full shell builds.
