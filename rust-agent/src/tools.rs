@@ -5,13 +5,11 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use harvest_runtime::{JailedFs, MAX_FILE_BYTES, truncate_bytes};
-use regex::Regex;
 use serde::Deserialize;
 
 use crate::chat::ToolCall;
 
 const OUTPUT_LIMIT: usize = 20_000;
-const MATCH_LIMIT: usize = 50;
 
 /// The host owns approval; a model or retrieved skill cannot grant it.
 pub trait Approval {
@@ -91,7 +89,7 @@ fn invoke_authorized(
 		"read" => read_file(root, &parse::<ReadArgs>(arguments)?)?,
 		"write" => write_file(root, &parse::<WriteArgs>(arguments)?)?,
 		"edit" => crate::edit::replace(root, &parse::<EditArgs>(arguments)?, cancellation)?,
-		"grep" => grep(root, &parse::<GrepArgs>(arguments)?)?,
+		"grep" => crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, cancellation)?,
 		"bash" => bash(root, &parse::<BashArgs>(arguments)?, cancellation)?,
 		_ => bail!("unknown tool {name}"),
 	};
@@ -114,12 +112,6 @@ pub(crate) struct EditArgs {
 	pub path: String,
 	pub old:  String,
 	pub new:  String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GrepArgs {
-	pattern: String,
-	path:    Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,67 +139,6 @@ fn write_file(root: &Path, args: &WriteArgs) -> Result<String> {
 	}
 	JailedFs::open(root)?.atomic_write(Path::new(&args.path), args.contents.as_bytes())?;
 	Ok(format!("wrote {}", args.path))
-}
-
-fn grep(root: &Path, args: &GrepArgs) -> Result<String> {
-	let pattern = Regex::new(&args.pattern).context("invalid regular expression")?;
-	let fs = JailedFs::open(root)?;
-	let start = fs.relative(Path::new(args.path.as_deref().unwrap_or(".")))?;
-	let mut hits = Vec::new();
-	let mut visited = 0;
-	collect(&fs, &start, &pattern, &mut hits, &mut visited, 0)?;
-	if hits.is_empty() {
-		return Ok(String::new());
-	}
-	Ok(hits.join("\n"))
-}
-
-fn collect(
-	fs: &JailedFs,
-	path: &Path,
-	pattern: &Regex,
-	hits: &mut Vec<String>,
-	visited: &mut usize,
-	depth: usize,
-) -> Result<()> {
-	if hits.len() >= MATCH_LIMIT || *visited >= 10_000 || depth > 32 {
-		return Ok(());
-	}
-	*visited += 1;
-	if let Ok(entries) = fs.entries(path, 4096) {
-		for entry in entries {
-			if entry.is_symlink
-				|| matches!(
-					entry.name.as_str(),
-					".git" | ".omp" | ".harvest" | "node_modules" | "target"
-				) {
-				continue;
-			}
-			collect(fs, &path.join(entry.name), pattern, hits, visited, depth + 1)?;
-			if hits.len() >= MATCH_LIMIT {
-				break;
-			}
-		}
-		return Ok(());
-	}
-	let Ok(bytes) = fs.read(path, MAX_FILE_BYTES) else {
-		return Ok(());
-	};
-	if bytes.contains(&0) {
-		return Ok(());
-	}
-	let Ok(text) = String::from_utf8(bytes) else {
-		return Ok(());
-	};
-	for (index, line) in text.lines().enumerate() {
-		if pattern.is_match(line) {
-			hits.push(format!("{}:{}:{}", path.display(), index + 1, truncate_bytes(line, 2000)));
-			if hits.len() >= MATCH_LIMIT {
-				break;
-			}
-		}
-	}
-	Ok(())
 }
 
 #[cfg(not(feature = "full"))]

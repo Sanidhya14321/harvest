@@ -517,13 +517,17 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/search.rs",
+          "crates/pi-walker",
+          "crates/harvest-runtime/src/filesystem.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/search.rs",
+          "rust-agent/tests/native_search.rs"
         ]
       },
       "installation": "experimental-rust-cli",

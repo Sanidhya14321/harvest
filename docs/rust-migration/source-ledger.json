@@ -32269,7 +32269,7 @@
     {
       "path": "packages/coding-agent/src/tools/grep.ts",
       "disposition": "review-required",
-      "implementation": "absent",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
@@ -32277,8 +32277,8 @@
       "consumers": null,
       "persisted_formats": null,
       "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "rust_destination": "rust-agent/src/search.rs; rust-agent/src/chat.rs; crates/pi-walker; crates/harvest-runtime/src/filesystem.rs",
+      "verification_requirements": "Native slice uses shared walker, ignore files/negations, explicit false case/ignore options, direct file scope, cancellation heartbeats, bounded jailed regular reads, binary/UTF-8/size filters and match/entry/depth notices. Seven host integration contracts plus mid-scan cancellation cover this subset. Combined Rust app/runtime/brain/xtask suite passed 149 tests and core app suite 79. Installed loopback model verified boolean wire schema, default vs expanded search and persisted tool results with PATH=/nonexistent. Native addon rebuilt; 22 legacy brain/edit tests passed. Full module audit, PCRE/advanced matching, archive/SSH/internal URLs, selectors, pagination, output metadata and UI rendering still pending; TS source retained.",
       "retirement_reason": null
     },
     {

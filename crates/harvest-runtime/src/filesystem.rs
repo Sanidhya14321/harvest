@@ -4,7 +4,7 @@
 use std::os::unix::fs::MetadataExt;
 use std::{
 	fs::File,
-	io::{Read, Write},
+	io::{self, Read, Write},
 	path::{Component, Path, PathBuf},
 	sync::atomic::{AtomicU64, Ordering},
 };
@@ -14,7 +14,7 @@ use anyhow::{Context, Result, bail};
 use cap_std::fs::OpenOptionsExt;
 use cap_std::{
 	ambient_authority,
-	fs::{Dir, OpenOptions},
+	fs::{Dir, File as CapabilityFile, OpenOptions},
 };
 use sha2::{Digest, Sha256};
 
@@ -128,15 +128,37 @@ impl JailedFs {
 		Ok((directory, PathBuf::from(name)))
 	}
 
+	/// Query through the directory capability, including existing symlink
+	/// parents.
+	pub fn file_type(&self, path: &Path) -> Result<cap_std::fs::FileType> {
+		let relative = self.relative(path)?;
+		let metadata = if relative.as_os_str().is_empty() {
+			self.directory.dir_metadata()?
+		} else {
+			self.directory.metadata(relative)?
+		};
+		Ok(metadata.file_type())
+	}
+
+	fn open_regular(&self, relative: &Path) -> io::Result<CapabilityFile> {
+		let mut options = OpenOptions::new();
+		options.read(true);
+		// A FIFO can block during open, before metadata can reject it. This flag
+		// is ignored for regular files and also closes the type-swap race.
+		#[cfg(unix)]
+		options.custom_flags(libc::O_NONBLOCK);
+		let file = self.directory.open_with(relative, &options)?;
+		if !file.metadata()?.is_file() {
+			return Err(io::Error::new(io::ErrorKind::InvalidInput, "expected a regular file"));
+		}
+		Ok(file)
+	}
+
 	pub fn read(&self, path: &Path, limit: usize) -> Result<Vec<u8>> {
 		let relative = self.relative(path)?;
 		let file = self
-			.directory
-			.open(&relative)
+			.open_regular(&relative)
 			.with_context(|| format!("failed to read {}", relative.display()))?;
-		if !file.metadata()?.is_file() {
-			bail!("expected a regular file");
-		}
 		read_bounded(file, limit)
 	}
 
@@ -145,11 +167,8 @@ impl JailedFs {
 	/// asset.
 	pub fn hash_file(&self, path: &Path, limit: u64) -> Result<String> {
 		let relative = self.relative(path)?;
-		let mut file = self.directory.open(&relative)?;
+		let mut file = self.open_regular(&relative)?;
 		let metadata = file.metadata()?;
-		if !metadata.is_file() {
-			bail!("expected a regular file");
-		}
 		if metadata.len() > limit {
 			bail!("file exceeds hash byte limit");
 		}
@@ -174,13 +193,8 @@ impl JailedFs {
 
 	pub fn read_optional(&self, path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
 		let relative = self.relative(path)?;
-		match self.directory.open(&relative) {
-			Ok(file) => {
-				if !file.metadata()?.is_file() {
-					bail!("expected a regular file");
-				}
-				Ok(Some(read_bounded(file, limit)?))
-			},
+		match self.open_regular(&relative) {
+			Ok(file) => Ok(Some(read_bounded(file, limit)?)),
 			Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
 			Err(error) => Err(error.into()),
 		}

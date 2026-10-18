@@ -152,3 +152,46 @@ fn concurrent_atomic_creators_publish_one_winner_without_overwriting_it() {
 	);
 	assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 }
+
+#[cfg(unix)]
+#[test]
+fn file_reads_optional_reads_and_hashes_reject_fifos_without_waiting_for_a_writer() {
+	use std::{
+		ffi::CString,
+		os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
+		sync::mpsc,
+		thread,
+		time::Duration,
+	};
+	let root = tempfile::tempdir().unwrap();
+	let path = root.path().join("pipe");
+	let encoded = CString::new(path.as_os_str().as_bytes()).unwrap();
+	// SAFETY: encoded owns a NUL-terminated path for the duration of mkfifo.
+	assert_eq!(unsafe { libc::mkfifo(encoded.as_ptr(), 0o600) }, 0);
+	for operation in 0..3 {
+		let jail = JailedFs::open(root.path()).unwrap();
+		let (sender, receiver) = mpsc::channel();
+		let worker = thread::spawn(move || {
+			let rejected = match operation {
+				0 => jail.read(Path::new("pipe"), 10).is_err(),
+				1 => jail.read_optional(Path::new("pipe"), 10).is_err(),
+				_ => jail.hash_file(Path::new("pipe"), 10).is_err(),
+			};
+			sender.send(rejected).unwrap();
+		});
+		let result = receiver.recv_timeout(Duration::from_secs(2));
+		// Unblock a regressed blocking open before failing, so the test itself
+		// cannot leave a stuck worker behind.
+		let release = result.is_err().then(|| {
+			fs::OpenOptions::new()
+				.read(true)
+				.write(true)
+				.custom_flags(libc::O_NONBLOCK)
+				.open(&path)
+				.unwrap()
+		});
+		worker.join().unwrap();
+		drop(release);
+		assert_eq!(result, Ok(true));
+	}
+}

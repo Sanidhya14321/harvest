@@ -7,6 +7,8 @@
 
 ### Added
 
+- Native grep honors shared ignore rules, supports explicit case/ignore overrides, and reports search limits.
+
 - Preserve provider usage metadata and persist normalized token/cache counts; use `--request-usage` to request streamed accounting explicitly.
 
 - Rename intact v3 sessions through native title slots while preserving all other session bytes.
@@ -33,6 +35,8 @@
 - Require host approval for mutations and shell execution, with bounded file, session, HTTP and shell output.
 
 ### Fixed
+
+- Authorized Unix reads and hashing reject named pipes without waiting for a writer.
 
 - Native provider failures and model diagnostics keep credentials, endpoint URLs and untrusted server text out of errors.
 

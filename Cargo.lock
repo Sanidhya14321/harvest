@@ -3731,6 +3731,7 @@ dependencies = [
  "harvest-runtime",
  "pi-edit",
  "pi-shell",
+ "pi-walker",
  "predicates",
  "regex",
  "serde",
@@ -3747,6 +3748,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cap-std",
+ "libc",
  "sha2 0.10.9",
  "tempfile",
  "tokio",

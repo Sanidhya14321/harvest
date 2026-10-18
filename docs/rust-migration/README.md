@@ -7,6 +7,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Native grep delegates traversal and ignore matching to `pi-walker`; file bytes
+  still pass through the workspace capability. Explicit `case`/`gitignore`
+  options, cancellation, file/encoding limits, and search-limit notices have
+  host contracts and an installed model/tool/result workflow. Shared Unix read,
+  optional-read and hashing operations reject FIFOs before they can block.
+  Tool prompts are static Markdown assets. The combined Rust suite passed 149
+  tests, core app 79, and rebuilt-addon legacy brain/edit suites 22. Grep's
+  remote/archive/selector, advanced matching, pagination and renderer contracts
+  remain pending; no legacy grep source or parity status was removed.
+
 - Shared native HTTP request construction returns typed status/transport errors
   without attaching raw URL/status/body diagnostics; `HttpModel` debug output
   omits configured credentials. Real loopback 401/429 failures, invalid schemes

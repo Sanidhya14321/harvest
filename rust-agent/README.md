@@ -130,3 +130,17 @@ Error chains and `HttpModel` debug output omit endpoint URLs, credentials,
 upstream status text and response bodies. Raw HTTP failures are not attached as
 error sources. Provider authentication/retry policies still require their
 separate compatibility ports.
+
+### Native file search
+
+The native `grep` tool uses `pi-walker` for traversal and shared ignore rules.
+Matching is case-sensitive and respects ignore files by default. Tool arguments
+`case: false` and `gitignore: false` override those choices; an explicit file
+operand is searched directly. File reads remain workspace-jailed and bounded.
+Binary, invalid UTF-8 and oversized files are skipped. Search stops at match,
+entry and depth bounds and emits `[search limit reached]` when those limits
+are reached. Transient application/build directories remain excluded.
+
+This is a partial grep port: archive/SSH/internal URL inputs, selectors,
+PCRE-specific matching, pagination and the legacy renderer still need their
+own compatibility work. Tool descriptions live in static Markdown assets.
