@@ -64,6 +64,13 @@ because a Rust command or tool has the same name.
   requires capability parity and is explicitly dispatched instead of publishing
   an incomplete application on each source push.
 
+- Protocol generation now uses explicit message/enum roots in
+  `packages/catalog/scripts/protocol-roots.json`, replacing Cursor TS-import
+  scanning. Cursor/Devin output remains byte-identical when generated in an
+  isolated tree containing only the generator, parser, roots and `.proto` files.
+  Unknown roots fail before outputs are written. The compiler itself and its
+  generated TypeScript runtime still require Rust replacements.
+
 ## Remaining before cutover
 
 The manifest includes 41 legacy commands, 29 canonical tools, three hidden tools,
