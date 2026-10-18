@@ -213,13 +213,13 @@ function workspaceTestCommand(pkg: string, parallel: number, options: { extraArg
 
 // The Rust suite as one pooled command, so root `bun run test` reports TS and
 // Rust under the same progress stream / failure report. Delegates to
-// run-rs-task.ts, which self-skips when no Rust-affecting files changed locally
+// cargo xtask dev test, which self-skips when no Rust-affecting files changed locally
 // (printing a one-line notice) and resolves the cargo/nextest invocation.
 function rustTestCommand(): TestCommand {
 	return {
 		label: "rust (cargo nextest; skipped if no Rust changes)",
 		cwd: ".",
-		command: ["bun", "scripts/run-rs-task.ts", "test:rs"],
+		command: ["cargo", "xtask", "dev", "test"],
 	};
 }
 
@@ -364,7 +364,7 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 			];
 		// `local` is what root `bun run test` drives: the full TS suite plus the
 		// Rust task, so a single invocation reports TS and Rust together. The Rust
-		// command self-skips when no Rust-affecting files changed (see run-rs-task).
+		// command self-skips when no Rust-affecting files changed (see cargo xtask dev).
 		case "local":
 			return [...(await commandsForMode("local-ts")), rustTestCommand()];
 	}

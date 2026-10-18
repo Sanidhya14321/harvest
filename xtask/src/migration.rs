@@ -1,9 +1,5 @@
 //! Persistent source inventory: deletion is not evidence of a completed port.
-use std::{
-	collections::BTreeSet,
-	path::Path,
-	process::{Command, Stdio},
-};
+use std::{collections::BTreeSet, path::Path, process::Command};
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -173,26 +169,9 @@ fn git_paths(root: &Path, revision: Option<&str>) -> Result<Vec<String>> {
 	} else {
 		command.args(["ls-files", "-z"]);
 	}
-	let mut child = command
-		.current_dir(root)
-		.stdout(Stdio::piped())
-		.stderr(Stdio::null())
-		.spawn()?;
-	let output = harvest_runtime::read_bounded(
-		child.stdout.take().context("missing Git stdout")?,
-		8 * 1024 * 1024,
-	);
-	let bytes = match output {
-		Ok(bytes) => bytes,
-		Err(error) => {
-			let _ = child.kill();
-			let _ = child.wait();
-			return Err(error);
-		},
-	};
-	if !child.wait()?.success() {
-		bail!("could not enumerate Git sources");
-	}
+	command.current_dir(root);
+	let bytes = crate::process::capture(command, 8 * 1024 * 1024)
+		.context("could not enumerate Git sources")?;
 	Ok(String::from_utf8(bytes)?
 		.split('\0')
 		.filter(|path| !path.is_empty())

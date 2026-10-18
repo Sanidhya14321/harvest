@@ -24,6 +24,7 @@ fn execute() -> Result<()> {
 	let task = arguments.next().unwrap_or_else(|| "help".to_owned());
 	let selection: Vec<String> = arguments.collect();
 	match task.as_str() {
+		"dev" => xtask::development::execute(selection),
 		"checksums" => xtask::checksums::execute(selection),
 		"version" => xtask::version::execute(selection),
 		"package" => packaging::execute(selection),
@@ -68,10 +69,11 @@ fn execute() -> Result<()> {
 		},
 		"help" | "--help" | "-h" => {
 			println!(
-				"cargo xtask checksums OUTPUT ASSET...\ncargo xtask version [--set VERSION --expect \
-				 CURRENT]\ncargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo \
-				 package and target selectors]\ncargo xtask capabilities [--require-complete]\nTests \
-				 require cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
+				"cargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums OUTPUT \
+				 ASSET...\ncargo xtask version [--set VERSION --expect CURRENT]\ncargo xtask check \
+				 [Cargo package selectors]\ncargo xtask test [Cargo package and target \
+				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
+				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
 				 --help\ncargo xtask secrets --help\ncargo xtask migration [--require-complete]"
 			);
 			Ok(())
@@ -84,6 +86,10 @@ fn main() -> ExitCode {
 	match execute() {
 		Ok(()) => ExitCode::SUCCESS,
 		Err(error) => {
+			if let Some(arguments) = error.downcast_ref::<clap::Error>() {
+				let _ = arguments.print();
+				return ExitCode::from(u8::try_from(arguments.exit_code()).unwrap_or(1));
+			}
 			eprintln!("{error:#}");
 			ExitCode::FAILURE
 		},

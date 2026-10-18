@@ -7,6 +7,14 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask dev <check|fmt|lint|fix|test>` replaces the Bun Rust-task launcher.
+  Root aliases, the pooled test runner and CI invoke it. It preserves the
+  vendored-fork exclusion, local change skips, CI forcing and Rustup Cargo
+  selection; bounded Git failures run gates conservatively. New untracked
+  directories are inspected recursively. Real Cargo fixture contracts verify
+  repair/recheck and nextest/doctest failure ordering. Installed commands run
+  without Bun or Node; remote macOS/Windows execution remains pending.
+
 - Native `session --title TEXT FILE` updates or adds a fixed-width title slot
   under the Rust writer lease, preserving every remaining session byte,
   including unknown signed/provider records. Unicode truncation, clearing,
