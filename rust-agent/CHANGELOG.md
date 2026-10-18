@@ -7,6 +7,8 @@
 
 ### Added
 
+- Rename intact v3 sessions through native title slots while preserving all other session bytes.
+
 - Recover interrupted v3 session tails to new files while preserving original data and reporting excluded bytes.
 
 - Import legacy sessions to separate v3 files without overwriting existing data or discarding damaged records.

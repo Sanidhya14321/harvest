@@ -57,6 +57,7 @@ impl DurableSession {
 		if document.malformed_records() != 0 || !bytes.ends_with(b"\n") {
 			bail!("damaged or unterminated session requires explicit recovery before writing");
 		}
+		document.validate_tree()?;
 		let id: String = serde_json::from_str(document.header()["id"].get())?;
 		let leaf = leaf.map(str::to_owned).or_else(|| {
 			document

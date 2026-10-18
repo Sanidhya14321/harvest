@@ -7,6 +7,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Native `session --title TEXT FILE` updates or adds a fixed-width title slot
+  under the Rust writer lease, preserving every remaining session byte,
+  including unknown signed/provider records. Unicode truncation, clearing,
+  malformed/legacy/tree rejection, active-writer exclusion and symlink safety
+  are covered. Resume now validates all branches before opening a writer.
+  The combined app/runtime/xtask suite passed 99 tests; both installed aliases
+  ran without runtimes, and the legacy title reader accepted their output.
+  Cached prefix overlays and legacy writer coordination remain pending.
+
 - Both release checksum consumers and the package alias use `cargo xtask
   checksums OUTPUT ASSET...`. The TS generator and its tests are removed.
   The Rust command streams authorized regular files with bounded memory, emits

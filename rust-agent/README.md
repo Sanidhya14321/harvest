@@ -37,6 +37,18 @@ New runs create session-v3 logs at `.omp/session.jsonl`; subsequent runs resume
 that log. Existing headerless prototype logs are rejected and preserved. V1/v2
 logs need an explicit import to a separate v3 file before writing.
 
+Rename an intact v3 session without reserializing its header or message records:
+
+```sh
+harvest session --workspace /path/to/session-directory --title "Project review" session.jsonl
+```
+
+This writes a 256-byte UTF-8 title slot and marks its source as `user`.
+Long titles truncate at codepoint boundaries; an empty title clears the slot.
+Import or recover legacy/damaged sessions first. Title changes share the Rust
+writer lease with resume, import and recovery. Legacy writer lease coordination
+is still pending; do not run both applications against the same writable log.
+
 Inspect an existing session without changing it:
 
 ```sh

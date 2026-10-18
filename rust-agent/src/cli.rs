@@ -65,6 +65,8 @@ struct SessionArgs {
 		help = "Recover an interrupted final v3 record into a new file; preserve the original"
 	)]
 	recover_to: Option<PathBuf>,
+	#[arg(long, value_name = "TEXT", conflicts_with_all = ["import_v3", "recover_to"], help = "Update only the title slot of an intact v3 session")]
+	title:      Option<String>,
 	file:       PathBuf,
 }
 
@@ -128,18 +130,24 @@ fn dispatch(cli: Cli) -> Result<u8> {
 
 fn inspect_session(args: SessionArgs) -> Result<u8> {
 	let fs = harvest_runtime::JailedFs::open(&args.workspace)?;
-	let _source_ownership = if args.import_v3.is_some() || args.recover_to.is_some() {
-		Some(crate::durable_session::lock_session(&fs, &args.file)?)
-	} else {
-		None
-	};
+	let _source_ownership =
+		if args.import_v3.is_some() || args.recover_to.is_some() || args.title.is_some() {
+			Some(crate::durable_session::lock_session(&fs, &args.file)?)
+		} else {
+			None
+		};
 	let bytes = fs.read(&args.file, crate::session_format::SESSION_LIMIT)?;
-	let document = crate::session_format::SessionDocument::decode(&bytes)?;
+	let mut document = crate::session_format::SessionDocument::decode(&bytes)?;
 	let branch_entries = args
 		.leaf
 		.as_deref()
 		.map(|leaf| document.branch(leaf).map(|branch| branch.len()))
 		.transpose()?;
+	if let Some(title) = &args.title {
+		let bytes = document.retitled(title, Some("user"), &chrono::Utc::now().to_rfc3339())?;
+		fs.atomic_write(&args.file, &bytes)?;
+		document = crate::session_format::SessionDocument::decode(&bytes)?;
+	}
 	if let Some(destination) = &args.import_v3 {
 		document.import_to(&fs, destination)?;
 	}

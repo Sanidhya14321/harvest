@@ -207,7 +207,40 @@ impl SessionDocument {
 		&self.original
 	}
 
-	fn validate_tree(&self) -> Result<()> {
+	/// Replace only the physical title line, retaining header/provider bytes.
+	/// A caller must hold the session writer lease before reading this snapshot.
+	pub fn retitled(&self, title: &str, source: Option<&str>, updated_at: &str) -> Result<Vec<u8>> {
+		if self.migrated || self.malformed_records != 0 || !self.original.ends_with(b"\n") {
+			bail!("title changes require an intact v3 session; import or recover it first");
+		}
+		self.validate_tree()?;
+		let slot = title_slot(title, source, updated_at)?;
+		let first_end = self
+			.original
+			.iter()
+			.position(|byte| *byte == b'\n')
+			.context("missing session first line")?;
+		let has_slot = serde_json::from_slice::<SessionObject>(&self.original[..first_end])
+			.is_ok_and(|record| valid_title_slot(&record));
+		let body = if has_slot {
+			&self.original[first_end + 1..]
+		} else {
+			&self.original
+		};
+		let length = slot
+			.len()
+			.checked_add(body.len())
+			.context("session size overflow")?;
+		if length > SESSION_LIMIT {
+			bail!("session exceeds size limit after title update");
+		}
+		let mut bytes = Vec::with_capacity(length);
+		bytes.extend_from_slice(&slot);
+		bytes.extend_from_slice(body);
+		Ok(bytes)
+	}
+
+	pub(crate) fn validate_tree(&self) -> Result<()> {
 		let mut visited = BTreeSet::new();
 		for start in 0..self.entries.len() {
 			let mut chain = BTreeSet::new();
