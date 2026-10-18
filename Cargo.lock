@@ -3782,6 +3782,7 @@ dependencies = [
  "pi-walker",
  "predicates",
  "regex",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",

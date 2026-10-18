@@ -144,7 +144,23 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-      - name: Build
+      - uses: bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2
+        if: matrix.bazel_target != ''
+      - name: Build GNU application with the pinned portability toolchain
+        if: matrix.bazel_target != ''
+        shell: bash
+        env:
+          BAZEL_TARGET: ${{ matrix.bazel_target }}
+          TARGET: ${{ matrix.target }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          bazel build "//:${BAZEL_TARGET}" --jobs=2
+          mkdir -p "target/${TARGET}/release"
+          cp "bazel-bin/${BAZEL_TARGET}/omp" "target/${TARGET}/release/${BINARY}"
+          cargo xtask package verify-glibc --binary "target/${TARGET}/release/${BINARY}" --max-glibc 2.17
+      - name: Build on the native target
+        if: matrix.bazel_target == ''
         shell: bash
         env:
           TARGET: ${{ matrix.target }}

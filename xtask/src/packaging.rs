@@ -58,6 +58,13 @@ enum PackageCommand {
 		#[arg(long)]
 		directory: PathBuf,
 	},
+	/// Reject GNU executables requiring a newer libc than the shipping floor.
+	VerifyGlibc {
+		#[arg(long)]
+		binary:    PathBuf,
+		#[arg(long, default_value = "2.17")]
+		max_glibc: String,
+	},
 	Homebrew {
 		#[arg(long)]
 		version:   String,
@@ -104,6 +111,9 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 			crate::artifacts::archive(&fs, crate::artifacts::target(&target)?, &binary, &output_dir)?;
 		},
 		PackageCommand::VerifyAssets { directory } => crate::artifacts::verify(&fs, &directory)?,
+		PackageCommand::VerifyGlibc { binary, max_glibc } => {
+			println!("{}", crate::abi::verify_glibc(&fs, &binary, &max_glibc)?);
+		},
 		PackageCommand::Homebrew { version, checksums, output } => {
 			let checksums = read_checksums(&String::from_utf8(fs.read(&checksums, 1024 * 1024)?)?)?;
 			let formula = homebrew(&version, &checksums)?;

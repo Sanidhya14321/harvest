@@ -42,6 +42,8 @@
 
 ### Fixed
 
+- GNU release binaries enforce the GLIBC 2.17 compatibility floor and run provider/tool/session contracts on that runtime.
+
 - Install both command aliases independently of shell completions, accept existing matching aliases, and preserve unrelated commands during upgrades.
 
 - Configuration errors and SDK debug output keep API keys and credential-bearing endpoint URLs out of diagnostics.

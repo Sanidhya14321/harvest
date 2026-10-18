@@ -62,6 +62,44 @@ jobs:
       - run: cargo run --locked -p harvest-omp --bin harvest -- --help
       - run: cargo run --locked -p harvest-omp --bin omp -- brain --scope project organize --dry-run --json
 
+  hermetic-gnu:
+    name: Portable GNU artifact (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: cargo-nextest
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Build the shipping profile and enforce its ABI ceiling
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          bazel build "//:app-linux-${ARCH}" --jobs=2
+          mkdir -p portable
+          cp "bazel-bin/app-linux-${ARCH}/omp" portable/omp
+          cargo xtask package verify-glibc --binary portable/omp --max-glibc 2.17
+      - name: Provider, file tool, persistence and streamed resume through the actual artifact
+        env:
+          HARVEST_TEST_BINARY: ${{ github.workspace }}/portable/omp
+        run: cargo xtask test -p harvest-omp --test cli --all-features
+      - name: Execute the same artifact contracts on GNU libc 2.17
+        run: sh rust-agent/tests/portable-gnu.sh portable/omp
+
   installers:
     name: Installers (${{ matrix.os }})
     strategy:
@@ -257,7 +295,7 @@ jobs:
             exit 0
           fi
           if ! gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" \
-            --json assets --jq '.assets[].name' | grep -qx "omp-linux-x86_64"; then
+            --json assets --jq '.assets[].name' | grep -qx "omp-linux-x64"; then
             echo "present=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -276,9 +314,9 @@ jobs:
           tag="${TAG}"
           version=${tag#v}
           gh release download "${tag}" --repo "${GITHUB_REPOSITORY}" \
-            --pattern SHA256SUMS --dir homebrew-release
+            --pattern SHA256SUMS.txt --dir homebrew-release
           cargo xtask package homebrew --version "${version}" \
-            --checksums homebrew-release/SHA256SUMS \
+            --checksums homebrew-release/SHA256SUMS.txt \
             --output homebrew-release/omp.rb
       - name: Stage the formula in a test tap
         if: steps.release.outputs.present == 'true'
@@ -315,7 +353,7 @@ jobs:
   ci:
     name: Rust CI
     if: always()
-    needs: [checks, test, installers, docs, features, cross, coverage, package, homebrew, toolchain]
+    needs: [checks, test, hermetic-gnu, installers, docs, features, cross, coverage, package, homebrew, toolchain]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed

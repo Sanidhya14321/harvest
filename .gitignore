@@ -91,6 +91,7 @@ packages/coding-agent/bench/boot-baseline.json
 /bazel-testlogs
 /bazel-pi
 /bazel-oh-my-pi
+/bazel-harvest
 /.bazelrc.user
 
 .parity/

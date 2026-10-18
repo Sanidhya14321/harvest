@@ -1,5 +1,44 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
 package(default_visibility = ["//visibility:public"])
 
-# Workspace splicing needs this manifest. The experimental application is
-# validated and built through Cargo until distribution parity is complete.
+# Workspace splicing reads this manifest. The application also shares the
+# existing hermetic native toolchains, including the GNU portability floor.
 exports_files(["Cargo.toml"])
+
+cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+    data = ["Cargo.toml", "//:Cargo.toml"],
+    edition = "2024",
+    deps = all_crate_deps(build = True),
+)
+
+rust_library(
+    name = "harvest-omp",
+    srcs = glob(["src/**/*.rs"], exclude = ["src/main.rs", "src/bin/**"]),
+    compile_data = glob(["src/prompts/**/*.md"]),
+    aliases = aliases(),
+    crate_name = "harvest_omp",
+    crate_root = "src/lib.rs",
+    crate_features = ["default", "core", "full"],
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    deps = all_crate_deps(normal = True) + [
+        ":build_script",
+        "//crates/harvest-brain",
+        "//crates/harvest-runtime",
+        "//crates/pi-edit",
+        "//crates/pi-shell",
+        "//crates/pi-walker",
+    ],
+)
+
+rust_binary(
+    name = "omp",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    deps = [":harvest-omp", "@crates//:anyhow"],
+)

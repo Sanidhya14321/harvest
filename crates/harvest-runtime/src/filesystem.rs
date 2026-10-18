@@ -162,6 +162,18 @@ impl JailedFs {
 		read_bounded(file, limit)
 	}
 
+	/// Open an authorized, regular file as a pinned read-only descriptor for a
+	/// child process. Checks the initial size; callers must bound consumption
+	/// if another writer may grow the file after opening.
+	pub fn open_read(&self, path: &Path, initial_limit: u64) -> Result<File> {
+		let relative = self.relative(path)?;
+		let file = self.open_regular(&relative)?;
+		if file.metadata()?.len() > initial_limit {
+			bail!("file exceeds descriptor byte limit");
+		}
+		Ok(file.into_std())
+	}
+
 	/// Hash a regular file incrementally through the authorized directory
 	/// handle. The limit bounds disk work, rather than allocating the entire
 	/// asset.

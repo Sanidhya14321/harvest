@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "omp", version, about = "Rust coding agent for Harvest")]
+#[command(name = "omp", version = env!("HARVEST_VERSION"), about = "Rust coding agent for Harvest")]
 struct Cli {
 	#[command(subcommand)]
 	command: Commands,

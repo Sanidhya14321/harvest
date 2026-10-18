@@ -23,7 +23,15 @@ fn or_abort<T, E: std::fmt::Display>(result: Result<T, E>) -> T {
 }
 
 fn omp() -> Command {
-	let mut command = or_abort(Command::cargo_bin("omp"));
+	let mut command = match std::env::var_os("HARVEST_TEST_BINARY") {
+		Some(binary) => {
+			let mut command = Command::new(binary);
+			// Exercise the shipped artifact without any host JS runtime or helper.
+			command.env("PATH", "/nonexistent");
+			command
+		},
+		None => or_abort(Command::cargo_bin("omp")),
+	};
 	let _configured: &mut Command = command.env("OMP_SKIP_INTEGRATIONS", "1");
 	command
 }

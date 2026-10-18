@@ -2,7 +2,7 @@
 
 `cargo xtask package matrix` emits the GitHub Actions `include` object used by
 native release and cross-check jobs. `xtask/src/artifacts.rs` owns the target,
-runner, executable and asset identities. The matrix covers GNU and musl Linux
+runner, executable, GNU Bazel target and asset identities. The matrix covers GNU and musl Linux
 on x64/ARM64, macOS on Intel/Apple Silicon, and native Windows on x64/ARM64.
 The macOS ARM runner uses GitHub's documented `macos-15` label; runner labels
 were checked against the [official runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
@@ -43,6 +43,30 @@ manager symlinks. Per-target cargo-binstall ZIP overrides follow its
 
 ## Evidence and remaining cutover constraints
 
+GNU shipping binaries use `bazel build //:app-linux-x64` or
+`//:app-linux-arm64`. These application targets select the existing Zig-based
+GLIBC 2.17 platform and Cargo's shipping codegen profile (fat LTO, one codegen
+unit, stripped symbols). Addon builds retain their separate CI profile. Bazel
+and Cargo use the workspace's pinned nightly; CLI version metadata comes from
+the inherited workspace version in either build system.
+
+After staging the artifact inside the workspace, run:
+
+```sh
+cargo xtask package verify-glibc --binary portable/omp --max-glibc 2.17
+HARVEST_TEST_BINARY="$PWD/portable/omp" cargo xtask test -p harvest-omp --test cli --all-features
+sh rust-agent/tests/portable-gnu.sh portable/omp
+```
+
+The ABI checker passes an authorized read-only descriptor to Linux `readelf`,
+compares numeric symbol versions, and rejects unsupported or newer requirements.
+The release job enforces this ceiling before uploading either GNU artifact.
+CI also executes the provider, file-read, session, streamed-resume and brain
+contracts against the actual shipping binary, with no helpers on its PATH.
+The last command repeats those contracts in a digest-pinned CentOS 7 container
+with GLIBC 2.17, a read-only root, no capabilities, and only disposable test
+fixtures mounted. Host networking reaches the fixtures' loopback-only model.
+
 Local Linux verification used the default `full` release profile, including
 shell execution. The release build took 4m06s in this workspace and produced
 120,816,344-byte aliases. These are measurements of this build, not a comparison
@@ -59,9 +83,12 @@ accepted both scripts, and the actual PowerShell runtime rejected a non-Windows
 host before downloads or installation mutation. Native Windows execution is
 reserved for its Windows/ARM64 CI jobs; these local checks do not stand in for it.
 
-The local host-linked GNU build references GLIBC_2.39. The existing native build
-contract has a GLIBC_2.17 portability floor, so that host build is not portability
-proof. The hermetic GNU toolchain, full platform execution, registry publication
-dependency closure and final legacy release-owner removal must be resolved before
-cutover. The source and capability gates still block native publication until the
-full migration is verified; this asset contract does not bypass them.
+The host-linked GNU build references GLIBC_2.39 and is rejected by the new gate.
+The hermetic x64 shipping build produced a 120,963,496-byte executable with a
+maximum GLIBC requirement of 2.17. Six CLI contracts passed both on the local
+host and in the GLIBC 2.17 container; cargo-binstall also installed and executed
+both aliases from that hermetic build. These are Linux x64 execution results.
+Other platform execution, registry publication dependency closure and final
+legacy release-owner removal must still be resolved before cutover. The source
+and capability gates block native publication until the full migration is
+verified; this artifact verification does not bypass them.

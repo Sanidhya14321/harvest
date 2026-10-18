@@ -155,7 +155,7 @@ fn concurrent_atomic_creators_publish_one_winner_without_overwriting_it() {
 
 #[cfg(unix)]
 #[test]
-fn file_reads_optional_reads_and_hashes_reject_fifos_without_waiting_for_a_writer() {
+fn file_consumers_reject_fifos_without_waiting_for_a_writer() {
 	use std::{
 		ffi::CString,
 		os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
@@ -168,14 +168,15 @@ fn file_reads_optional_reads_and_hashes_reject_fifos_without_waiting_for_a_write
 	let encoded = CString::new(path.as_os_str().as_bytes()).unwrap();
 	// SAFETY: encoded owns a NUL-terminated path for the duration of mkfifo.
 	assert_eq!(unsafe { libc::mkfifo(encoded.as_ptr(), 0o600) }, 0);
-	for operation in 0..3 {
+	for operation in 0..4 {
 		let jail = JailedFs::open(root.path()).unwrap();
 		let (sender, receiver) = mpsc::channel();
 		let worker = thread::spawn(move || {
 			let rejected = match operation {
 				0 => jail.read(Path::new("pipe"), 10).is_err(),
 				1 => jail.read_optional(Path::new("pipe"), 10).is_err(),
-				_ => jail.hash_file(Path::new("pipe"), 10).is_err(),
+				2 => jail.hash_file(Path::new("pipe"), 10).is_err(),
+				_ => jail.open_read(Path::new("pipe"), 10).is_err(),
 			};
 			sender.send(rejected).unwrap();
 		});
@@ -194,4 +195,37 @@ fn file_reads_optional_reads_and_hashes_reject_fifos_without_waiting_for_a_write
 		drop(release);
 		assert_eq!(result, Ok(true));
 	}
+}
+
+#[test]
+fn child_descriptors_are_read_only_and_reject_oversized_or_directory_inputs() {
+	use std::io::{Read, Write};
+	let root = tempfile::tempdir().unwrap();
+	fs::write(root.path().join("input"), b"original").unwrap();
+	let jail = JailedFs::open(root.path()).unwrap();
+	assert!(jail.open_read(Path::new("input"), 7).is_err());
+	assert!(jail.open_read(Path::new("."), 100).is_err());
+	let mut input = jail.open_read(Path::new("input"), 8).unwrap();
+	assert!(input.write_all(b"changed").is_err());
+	let mut content = String::new();
+	input.read_to_string(&mut content).unwrap();
+	assert_eq!(content, "original");
+}
+
+#[cfg(unix)]
+#[test]
+fn authorized_child_descriptor_stays_pinned_after_a_path_is_replaced() {
+	use std::io::Read;
+	let root = tempfile::tempdir().unwrap();
+	let outside = tempfile::tempdir().unwrap();
+	fs::write(root.path().join("input"), b"authorized").unwrap();
+	fs::write(outside.path().join("secret"), b"outside").unwrap();
+	let jail = JailedFs::open(root.path()).unwrap();
+	let mut input = jail.open_read(Path::new("input"), 100).unwrap();
+	fs::rename(root.path().join("input"), root.path().join("moved")).unwrap();
+	std::os::unix::fs::symlink(outside.path().join("secret"), root.path().join("input")).unwrap();
+	assert!(jail.open_read(Path::new("input"), 100).is_err());
+	let mut content = String::new();
+	input.read_to_string(&mut content).unwrap();
+	assert_eq!(content, "authorized");
 }
