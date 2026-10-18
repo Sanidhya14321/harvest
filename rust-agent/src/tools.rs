@@ -326,13 +326,16 @@ mod tests {
 	}
 
 	#[test]
-	fn unapproved_mutation_cannot_create_a_file() {
+	fn unapproved_file_and_shell_mutations_cannot_create_a_file() {
 		let root = tempfile::tempdir().unwrap();
-		assert!(
-			super::invoke(root.path(), &call("write", r#"{"path":"blocked.txt","contents":"x"}"#))
-				.is_err()
-		);
-		assert!(!root.path().join("blocked.txt").exists());
+		for request in [
+			call("write", r#"{"path":"blocked.txt","contents":"x"}"#),
+			call("bash", r#"{"command":"echo blocked > blocked.txt"}"#),
+		] {
+			let error = super::invoke(root.path(), &request).unwrap_err();
+			assert!(error.to_string().contains("requires human approval"));
+			assert!(!root.path().join("blocked.txt").exists());
+		}
 	}
 
 	#[test]
@@ -380,16 +383,22 @@ mod tests {
 
 	#[cfg_attr(miri, ignore)]
 	#[test]
-	#[cfg(feature = "full")]
-	fn bash_runs_in_the_workspace() {
+	// Keep this active for default builds even if their full feature is lost.
+	#[cfg(any(feature = "full", feature = "default"))]
+	fn bash_evaluates_commands_in_default_and_full_builds() {
 		let root = tempfile::tempdir().unwrap();
-		let command = if cfg!(windows) {
-			r#"{"command":"echo workspace"}"#
-		} else {
-			r#"{"command":"printf workspace"}"#
-		};
-		let output = invoke(root.path(), &call("bash", command)).unwrap();
-		assert!(output.contains("workspace"));
+		let output = invoke(root.path(), &call("bash", r#"{"command":"echo $((6 * 7))"}"#)).unwrap();
+		assert!(output.lines().any(|line| line.trim() == "42"), "{output}");
+	}
+
+	#[cfg(not(feature = "full"))]
+	#[test]
+	fn lightweight_core_rejects_shell_execution_even_after_host_approval() {
+		let root = tempfile::tempdir().unwrap();
+		let error = invoke(root.path(), &call("bash", r#"{"command":"echo blocked > blocked.txt"}"#))
+			.unwrap_err();
+		assert!(error.to_string().contains("requires the full Rust profile"));
+		assert!(!root.path().join("blocked.txt").exists());
 	}
 
 	#[test]

@@ -11,9 +11,10 @@ cargo xtask test -p harvest-runtime -p harvest-brain -p harvest-omp
 cargo xtask test -p harvest-omp --features full
 ```
 
-The `core` profile provides bounded workspace inspection and approved file
-writes. `full` additionally reuses Harvest's existing Rust shell engine with a
-bounded output channel and timeout. Both produce `harvest` and `omp` binaries.
+Default builds enable `full`, including Harvest's Rust shell engine with a
+bounded output channel and timeout. For a lightweight build with bounded
+workspace inspection and approved file writes, use
+`--no-default-features --features core`. Both produce `harvest` and `omp` binaries.
 The host must approve each mutation or shell call; unattended runs deny them.
 The experimental `omp run` and `omp tools` commands use the same library as
 `harvest`.

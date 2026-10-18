@@ -33,9 +33,9 @@ name = "harvest"
 path = "src/bin/harvest.rs"
 
 [features]
-default = ["core"]
+default = ["full"]
 core = []
-full = ["dep:pi-shell", "dep:tokio", "dep:flume"]
+full = ["core", "dep:pi-shell", "dep:tokio", "dep:flume"]
 
 [dependencies]
 anyhow.workspace = true

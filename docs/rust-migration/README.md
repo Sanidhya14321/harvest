@@ -45,7 +45,13 @@ because a Rust command or tool has the same name.
 - Both Rust binary aliases share a library. The prototype uses bounded I/O,
   jailed session writes, embedded Markdown prompts, ephemeral retrieval from
   project/user brains and host-owned approvals. Shell execution in `full`
-  reuses `pi-shell` with a bounded channel, capped capture and a timeout.
+  reuses `pi-shell` with a bounded channel, capped capture and a timeout. Native
+  builds now enable `full` by default; `--no-default-features --features core`
+  keeps the explicit lightweight build. Default/core application suites passed
+  57/56 tests. A default-installed binary completed an approved shell round trip
+  through a PTY, evaluated arithmetic in the workspace and durably recorded the
+  tool result without runtimes on `PATH`. Other platform shipping checks remain
+  pending.
 - Native replacement edits now call `pi-edit` directly through capability-relative,
   bounded host reads and atomic writes. BOM/CRLF and notebook preservation,
   generated-file protection, ambiguous matches, cancellation and symlink escapes
