@@ -66,31 +66,10 @@ impl DurableSession {
 				.and_then(|entry| entry.get("id"))
 				.and_then(|raw| serde_json::from_str(raw.get()).ok())
 		});
-		let mut messages = Vec::new();
-		if let Some(leaf) = &leaf {
-			for entry in document.branch(leaf)? {
-				let kind: String = serde_json::from_str(
-					entry
-						.get("type")
-						.context("missing session entry type")?
-						.get(),
-				)?;
-				match kind.as_str() {
-					"message" => messages.push(replay(
-						entry
-							.get("message")
-							.context("missing session message")?
-							.as_ref(),
-					)?),
-					"model_change"
-					| "thinking_level_change"
-					| "service_tier_change"
-					| "model_usage"
-					| "title_change" => {},
-					_ => bail!("session entry {kind} needs a replay adapter before it can be resumed"),
-				}
-			}
-		}
+		let messages = match &leaf {
+			Some(leaf) => crate::session_context::rebuild(&document.branch(leaf)?)?,
+			None => Vec::new(),
+		};
 		validate_pairs(&messages, true)?;
 		let mut digest = ContentDigest::default();
 		digest.update(&bytes);
@@ -179,7 +158,7 @@ impl DurableSession {
 	}
 }
 
-fn replay(raw: &serde_json::value::RawValue) -> Result<ChatMessage> {
+pub(crate) fn replay(raw: &serde_json::value::RawValue) -> Result<ChatMessage> {
 	let raw: crate::session_format::SessionObject = serde_json::from_str(raw.get())?;
 	if raw.contains_key("providerPayload") {
 		bail!("opaque provider replay is not implemented");

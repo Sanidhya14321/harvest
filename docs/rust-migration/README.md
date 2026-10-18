@@ -7,6 +7,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Native session replay projects text compactions, handoffs, branch summaries
+  and durable context resets onto the selected branch without rewriting history.
+  Eight legacy-oracle cases match, including reset/compaction precedence and
+  sibling isolation. Missing/forward/sibling kept references, active opaque
+  compaction payloads and broken tool pairs fail before writing. All 16 installed
+  alias/case continuations passed without Bun/Node; app/runtime/brain/xtask passed
+  155 tests and the explicit core app passed 85. Custom messages, inferred
+  settings, general prompt formatting, provider replay, bitmap archives and
+  automatic compaction generation remain pending; session parity is unverified.
+
 - Native grep delegates traversal and ignore matching to `pi-walker`; file bytes
   still pass through the workspace capability. Explicit `case`/`gitignore`
   options, cancellation, file/encoding limits, and search-limit notices have

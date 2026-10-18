@@ -469,7 +469,7 @@
     {
       "path": "packages/agent/src/compaction/messages.ts",
       "disposition": "review-required",
-      "implementation": "absent",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
@@ -477,8 +477,8 @@
       "consumers": null,
       "persisted_formats": null,
       "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "rust_destination": "rust-agent/src/session_context.rs; rust-agent/src/durable_session.rs; rust-agent/src/prompts/",
+      "verification_requirements": "Native text projection has eight legacy-oracle branch/rewrite cases captured at c671863, complete tool-pair and invalid kept-reference rejection, opaque active compaction rejection, unchanged historical bytes, and a real CLI HTTP continuation contract. General prompt formatting, custom messages, inferred settings/modes, provider-native replay, bitmap archives and complete subsystem parity remain pending; legacy source is retained.",
       "retirement_reason": null
     },
     {
@@ -28894,7 +28894,7 @@
     {
       "path": "packages/coding-agent/src/session/session-context.ts",
       "disposition": "review-required",
-      "implementation": "absent",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
@@ -28902,8 +28902,8 @@
       "consumers": null,
       "persisted_formats": null,
       "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "rust_destination": "rust-agent/src/session_context.rs; rust-agent/src/durable_session.rs; rust-agent/src/prompts/",
+      "verification_requirements": "Native text projection has eight legacy-oracle branch/rewrite cases captured at c671863, complete tool-pair and invalid kept-reference rejection, opaque active compaction rejection, unchanged historical bytes, and a real CLI HTTP continuation contract. General prompt formatting, custom messages, inferred settings/modes, provider-native replay, bitmap archives and complete subsystem parity remain pending; legacy source is retained.",
       "retirement_reason": null
     },
     {

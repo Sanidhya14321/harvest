@@ -1547,14 +1547,16 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/durable_session.rs",
-          "rust-agent/src/session_format.rs"
+          "rust-agent/src/session_format.rs",
+          "rust-agent/src/session_context.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
           "rust-agent/tests/agent_session.rs",
-          "rust-agent/tests/session_format.rs"
+          "rust-agent/tests/session_format.rs",
+          "rust-agent/tests/session_context.rs"
         ]
       },
       "installation": "experimental-rust-cli",

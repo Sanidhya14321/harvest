@@ -99,11 +99,19 @@ SDK exposes `AgentSession::open`, `begin`, `execute` and `submit`, with cancella
 handles tied to each run. A writer lock protects cooperating Rust processes;
 compare-and-append also detects changes by outside writers holding the file lock.
 
-Replay currently supports text and ordinary function calls/results. Opaque,
-signed, multimodal, compaction and custom-message replay fail explicitly. Damaged
-logs and unresolved tool calls need explicit recovery before resuming. Existing
-bytes and other branches remain intact. Provider usage accounting is pending;
-new assistant records mark `usageUnavailable` alongside zero-valued usage fields.
+Replay supports text, ordinary function calls/results, text compaction,
+handoffs and branch-return summaries. The latest compaction supplies the summary
+and kept tail; a later durable `/clear` boundary starts context after that marker.
+`--leaf` selects the actual branch, and new messages append to that leaf while
+all original history remains unchanged. Missing, sibling or forward kept-tail
+references and incomplete tool pairs are rejected before writing.
+
+Active opaque provider/bitmap compactions, signed/multimodal messages and custom
+messages need replay adapters and fail explicitly. Damaged logs require explicit
+recovery. Summary templates use Handlebars without HTML escaping; native replay
+preserves summary whitespace rather than applying the legacy prompt formatter.
+Records without usable accounting mark `usageUnavailable` alongside zero-valued
+compatibility fields; complete provider accounting is described below.
 The synchronous HTTP transport checks cancellation between reads and has a
 60-second request timeout; cancellation cannot yet interrupt a stalled read.
 Compatible OAuth, catalog/settings policy and the remaining lifecycle APIs are

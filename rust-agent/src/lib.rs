@@ -10,6 +10,7 @@ pub mod durable_session;
 mod edit;
 pub mod provider;
 mod search;
+mod session_context;
 pub mod session_format;
 mod shell;
 mod streaming;

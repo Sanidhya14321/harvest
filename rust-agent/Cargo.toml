@@ -58,6 +58,7 @@ ureq = { version = "2.12.1", default-features = false, features = [
   "json",
   "tls",
 ] }
+handlebars = { version = "6.4.4", default-features = false }
 
 [dev-dependencies]
 assert_cmd = "2.1.1"

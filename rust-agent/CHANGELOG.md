@@ -7,6 +7,8 @@
 
 ### Added
 
+- Resume text-compacted sessions, handoffs and branch summaries while honoring durable context resets and preserving historical logs.
+
 - Native grep honors shared ignore rules, supports explicit case/ignore overrides, and reports search limits.
 
 - Preserve provider usage metadata and persist normalized token/cache counts; use `--request-usage` to request streamed accounting explicitly.
