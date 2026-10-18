@@ -32,7 +32,7 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-brush-core = "^0.5.0"
+brush-core.workspace = true
 brush-parser = "^0.4.0"
 cfg-if = "1.0.4"
 chrono = "0.4.44"
@@ -85,7 +85,7 @@ num-traits = "0.2"
 onig = { version = "6.4", default-features = false }
 os_display = "0.1.4"
 parse_datetime = "0.14"
-pi-walker = { path = "../pi-walker" }
+pi-walker = { path = "../pi-walker", version = "=0.1.0" }
 platform-info = "2.0.3"
 rand = { version = "0.10.0", features = ["std_rng"] }
 rayon = "1.10"

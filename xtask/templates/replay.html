@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Harvest session replay</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif;background:#15171b;color:#e8ebf1}
+body{margin:0}main{max-width:960px;margin:auto;padding:32px 20px}header{margin-bottom:36px}
+.eyebrow,.metadata,time{font-size:.82rem;color:#aab3c2}h1{font-size:1.8rem}h2{font-size:1.05rem}
+label{display:block;margin-top:20px}input{box-sizing:border-box;width:100%;padding:12px;font:inherit;background:#20242b;color:inherit;border:1px solid #637085;border-radius:8px}
+input:focus-visible,summary:focus-visible{outline:3px solid #8bbaff;outline-offset:3px}
+.entry{margin:18px 0;padding:20px;background:#20242b;border:1px solid #3b4350;border-radius:10px}
+.entry[hidden]{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.6 ui-monospace,monospace}
+summary{cursor:pointer}details{margin:12px 0}figure{margin:16px 0}img{max-width:100%;height:auto}.error{color:#ffacac}
+@media(prefers-color-scheme:light){:root{background:#f4f6f9;color:#152133}.entry,input{background:white;border-color:#c4ccd7}.eyebrow,.metadata,time{color:#53647b}.error{color:#a81828}}
+@media print{input,label{display:none}main{max-width:none;padding:0}.entry{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div id="harvest-replay"><p>Loading read-only session replay…</p></div>
+<noscript>This replay requires WebAssembly and JavaScript bindings.</noscript>
+<script type="application/json" id="harvest-replay-data"><!--HARVEST_DATA--></script>
+<script><!--HARVEST_BOOTSTRAP--></script>
+</body>
+</html>

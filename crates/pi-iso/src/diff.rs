@@ -534,9 +534,6 @@ mod tests {
 			!text.contains("S3CR3T-outside-bytes"),
 			"outside file bytes must never surface: {text}"
 		);
-		assert!(
-			text.contains("secret.txt"),
-			"link-target text is the representation: {text}"
-		);
+		assert!(text.contains("secret.txt"), "link-target text is the representation: {text}");
 	}
 }

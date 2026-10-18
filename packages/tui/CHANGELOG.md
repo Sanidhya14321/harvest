@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Selector search and Windows output chunking now use Rust even when the native addon is unavailable.
+- Selector ranking and terminal output transforms use shared Rust engines when native bindings are available.
+- Large terminal protocol replies use shared Rust scanning when native bindings are available.
+
+### Fixed
+
+- Left padding now respects Unicode marks that attach to a preceding space.
+
 ## [0.1.0] - 2026-10-08
 
 ### Changed

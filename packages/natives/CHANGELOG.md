@@ -4,9 +4,15 @@
 
 ### Added
 
+- Terminal text clipping, wrapping and overlays now use Rust/WASM when native bindings are unavailable.
+
+- Added native selector scoring, SGR coalescing and byte-bounded terminal output chunking.
+- Added bounded terminal protocol scanning and printable Kitty/xterm key decoding for Rust integrations.
 - Added native project and user Markdown brain indexing and retrieval.
 
 ### Fixed
+
+- Clipped hyperlinks close before subsequent terminal content, including with native bindings.
 
 - Fixed concurrent shell cancellation waits and preserved the first cancellation reason.
 - Fixed local native builds using the development profile.

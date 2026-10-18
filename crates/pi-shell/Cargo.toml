@@ -12,7 +12,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-harvest-runtime = { path = "../harvest-runtime" }
+harvest-runtime = { path = "../harvest-runtime", version = "=0.1.0" }
 anyhow.workspace = true
 bytes.workspace = true
 pi-builtins.workspace = true

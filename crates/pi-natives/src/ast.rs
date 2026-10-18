@@ -1005,7 +1005,9 @@ fn ast_edit_blocking(
 				if let Some((_, err)) = entries.first() {
 					return Err(Error::from_reason(format!("{pattern}: {err}")));
 				}
-				return Err(Error::from_reason(format!("{pattern}: pattern failed to compile in any language")));
+				return Err(Error::from_reason(format!(
+					"{pattern}: pattern failed to compile in any language"
+				)));
 			}
 			for (lang_key, err) in entries {
 				parse_errors.push(if languages.len() > 1 {

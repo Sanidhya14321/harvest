@@ -14,7 +14,6 @@ import { runChangelogFixer } from "./fix-changelogs";
 import { generateNixBunDeps, resolveNixBunDepsGenerator } from "./gen-nix-bun";
 
 const changelogGlob = new Glob("packages/*/CHANGELOG.md");
-const packageJsonGlob = new Glob("packages/*/package.json");
 const cargoTomlGlob = new Glob("crates/*/Cargo.toml");
 /**
  * Strict explicit-version guard: three numeric dot-segments with an optional
@@ -278,41 +277,13 @@ async function cmdRelease(versionOrBump: string): Promise<void> {
 	}
 	console.log(`  Version ${version} > ${latestTag}\n`);
 
-	// 2. Update package versions
-	console.log(`Updating package versions to ${version}…`);
-	const pkgJsonPaths = await Array.fromAsync(packageJsonGlob.scan("."));
-
-	// Filter out private packages
-	const publicPkgPaths: string[] = [];
-	for (const pkgPath of pkgJsonPaths) {
-		const pkgJson = await Bun.file(pkgPath).json();
-		if (pkgJson.private) {
-			console.log(`  Skipping ${pkgJson.name} (private)`);
-			continue;
-		}
-		publicPkgPaths.push(pkgPath);
-	}
-
-	await $`sd '"version": "[^"]+"' ${`"version": "${version}"`} ${publicPkgPaths}`;
-
-	// Verify
-	console.log("  Verifying versions:");
-	for (const pkgPath of publicPkgPaths) {
-		const pkgJson = await Bun.file(pkgPath).json();
-		console.log(`    ${pkgJson.name}: ${pkgJson.version}`);
-	}
-	console.log();
-
-	// Update @harvest/* catalog entries in root package.json
-	console.log("Updating root catalog versions...");
-	let rootPkgRaw = await Bun.file("package.json").text();
-	rootPkgRaw = rootPkgRaw.replace(/("@harvest\/[^"]+":\s*)"[^"]+"/g, `$1"${version}"`);
-	await Bun.write("package.json", rootPkgRaw);
-	console.log("  Updated root catalog @harvest/* entries");
+	// 2. Prepare public npm manifests and catalog with the Rust release tools.
+	console.log(`Updating public package versions to ${version}…`);
+	await $`cargo xtask npm-versions --release ${version}`;
 
 	// 3. Update Rust workspace version
 	console.log(`Updating Rust workspace version to ${version}…`);
-	await $`sd '^version = "[^"]+"' ${`version = "${version}"`} Cargo.toml`;
+	await $`cargo xtask version ${version}`;
 
 	// Verify
 	const cargoToml = await Bun.file("Cargo.toml").text();

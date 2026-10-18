@@ -22,7 +22,9 @@ default = []
 wayland-pipewire = ["dep:pipewire"]
 
 [dependencies]
-harvest-brain = { path = "../harvest-brain" }
+harvest-terminal = { path = "../harvest-terminal", version = "=0.1.0" }
+harvest-runtime = { path = "../harvest-runtime", version = "=0.1.0" }
+harvest-brain = { path = "../harvest-brain", version = "=0.1.0" }
 anyhow.workspace = true
 async-trait.workspace = true
 arboard.workspace = true

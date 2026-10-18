@@ -56,7 +56,7 @@ prepare_release() {
     asset=$1
     contents=$2
     printf '%s' "${contents}" >"${FIXTURES}/${asset}"
-    printf '%s  dist/%s\n' "$(sha256 "${FIXTURES}/${asset}")" "${asset}" >"${FIXTURES}/SHA256SUMS"
+    printf '%s  dist/%s\n' "$(sha256 "${FIXTURES}/${asset}")" "${asset}" >"${FIXTURES}/SHA256SUMS.txt"
 }
 
 cat >"${FAKE_BIN}/uname" <<'EOF'
@@ -151,30 +151,30 @@ run_installer() {
 printf 'test: installs a pinned Linux x86_64 release\n'
 case_dir=${TEST_ROOT}/linux-x86
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-x86_64 'linux x86 binary'
+prepare_release omp-linux-musl-x64 'linux x86 binary'
 run_installer "${case_dir}/home" Linux x86_64 --version 1.2.3 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
 assert_equals 'linux x86 binary' "$(cat "${bin_dir}/omp")"
 [ -x "${bin_dir}/omp" ] || fail "installed Unix binary is not executable"
-assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-x86_64' "${DOWNLOAD_LOG}"
+assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-musl-x64' "${DOWNLOAD_LOG}"
 assert_contains 'verified SHA-256 checksum' "${case_dir}.out"
 
 printf 'test: selects the latest macOS Apple Silicon release\n'
 case_dir=${TEST_ROOT}/macos-arm
 bin_dir=${case_dir}/bin
-prepare_release omp-macos-aarch64 'macOS ARM binary'
+prepare_release omp-darwin-arm64 'macOS ARM binary'
 before=$(wc -l <"${DOWNLOAD_LOG}" | tr -d ' ')
 run_installer "${case_dir}/home" Darwin arm64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
 assert_equals 'macOS ARM binary' "$(cat "${bin_dir}/omp")"
-assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-macos-aarch64' "${DOWNLOAD_LOG}"
+assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-darwin-arm64' "${DOWNLOAD_LOG}"
 assert_equals "$((before + 3))" "$(wc -l <"${DOWNLOAD_LOG}" | tr -d ' ')"
 
 printf 'test: selects the Linux ARM64 release\n'
 case_dir=${TEST_ROOT}/linux-arm
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-aarch64 'Linux ARM binary'
+prepare_release omp-linux-musl-arm64 'Linux ARM binary'
 run_installer "${case_dir}/home" Linux aarch64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
 assert_equals 'Linux ARM binary' "$(cat "${bin_dir}/omp")"
-assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-aarch64' "${DOWNLOAD_LOG}"
+assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-musl-arm64' "${DOWNLOAD_LOG}"
 
 printf 'test: rejects invalid release redirects before fetching assets\n'
 for latest_url in 'https://example.com/releases/tag/v1.2.3' 'https://github.com/Sanidhya14321/harvest/releases/tag/v1.2.3-beta.1'; do
@@ -192,14 +192,14 @@ case_dir=${TEST_ROOT}/invalid-checksum
 mkdir -p "${case_dir}/bin"
 printf 'existing binary' >"${case_dir}/bin/omp"
 for checksum_case in duplicate missing malformed; do
-    prepare_release omp-linux-x86_64 'new binary'
+    prepare_release omp-linux-musl-x64 'new binary'
     case "${checksum_case}" in
         duplicate)
-            cp "${FIXTURES}/SHA256SUMS" "${FIXTURES}/duplicate"
-            cat "${FIXTURES}/duplicate" >>"${FIXTURES}/SHA256SUMS"
+            cp "${FIXTURES}/SHA256SUMS.txt" "${FIXTURES}/duplicate"
+            cat "${FIXTURES}/duplicate" >>"${FIXTURES}/SHA256SUMS.txt"
             ;;
-        missing) printf '%064d  omp-linux-aarch64\n' 0 >"${FIXTURES}/SHA256SUMS" ;;
-        malformed) printf 'invalid  omp-linux-x86_64\n' >"${FIXTURES}/SHA256SUMS" ;;
+        missing) printf '%064d  omp-linux-musl-arm64\n' 0 >"${FIXTURES}/SHA256SUMS.txt" ;;
+        malformed) printf 'invalid  omp-linux-musl-x64\n' >"${FIXTURES}/SHA256SUMS.txt" ;;
         *) fail "unsupported checksum fixture" ;;
     esac
     before=$(wc -l <"${DOWNLOAD_LOG}" | tr -d ' ')
@@ -216,8 +216,8 @@ case_dir=${TEST_ROOT}/bad-checksum
 bin_dir=${case_dir}/bin
 mkdir -p "${bin_dir}"
 printf 'existing binary' >"${bin_dir}/omp"
-printf 'tampered binary' >"${FIXTURES}/omp-linux-x86_64"
-printf '%064d  omp-linux-x86_64\n' 0 >"${FIXTURES}/SHA256SUMS"
+printf 'tampered binary' >"${FIXTURES}/omp-linux-musl-x64"
+printf '%064d  omp-linux-musl-x64\n' 0 >"${FIXTURES}/SHA256SUMS.txt"
 if run_installer "${case_dir}/home" Linux x86_64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1; then
     fail "checksum mismatch unexpectedly succeeded"
 fi
@@ -228,7 +228,7 @@ printf 'test: installs completions for the configured shell\n'
 case_dir=${TEST_ROOT}/completions
 home_dir=${case_dir}/home
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-x86_64 '#!/bin/sh
+prepare_release omp-linux-musl-x64 '#!/bin/sh
 set -eu
 [ "$1" = completions ] && [ "$2" = bash ] && [ "$3" = --install ] && [ "$4" = --automatic ]
 target=${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/omp
@@ -242,7 +242,7 @@ printf 'test: installs harvest when SHELL is empty\n'
 case_dir=${TEST_ROOT}/empty-shell
 home_dir=${case_dir}/home
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-x86_64 '#!/bin/sh
+prepare_release omp-linux-musl-x64 '#!/bin/sh
 set -eu
 [ "$1" = completions ] && [ "$2" = bash ] && [ "$3" = --install ] && [ "$4" = --automatic ]
 target=${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/omp
@@ -257,7 +257,7 @@ assert_contains 'SHELL is not set; using bash completion paths' "${case_dir}.out
 printf 'test: updates a shell profile once for the default bin directory\n'
 case_dir=${TEST_ROOT}/path-update
 home_dir=${case_dir}/home
-prepare_release omp-linux-x86_64 '#!/bin/sh
+prepare_release omp-linux-musl-x64 '#!/bin/sh
 exit 0'
 mkdir -p "${home_dir}"
 for run in 1 2; do
@@ -301,7 +301,7 @@ if [ "${OMP_TEST_ROOT_DEFAULT:-0}" = 1 ]; then
     [ ! -e /usr/local/bin/harvest ] || fail "/usr/local/bin/harvest already exists"
     case_dir=${TEST_ROOT}/root-default
     home_dir=${case_dir}/home
-    prepare_release omp-linux-x86_64 '#!/bin/sh
+    prepare_release omp-linux-musl-x64 '#!/bin/sh
 set -eu
 case "$1" in
     completions)

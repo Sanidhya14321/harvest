@@ -1,17 +1,7 @@
-name: GitHub release
+name: Public release
 
-# Release flow for Sanidhya14321/harvest.
-#
-#   bun scripts/release.ts patch|minor|major|<version>
-#
-# bumps versions, commits `chore: bump version to X`, tags `vX`, and pushes
-# main + tag. This workflow then builds the 8 release binaries, validates the
-# packed npm bundle, and publishes the GitHub Release with SHA256SUMS.
-#
-# First release: make the repo public, then `bun scripts/release.ts patch`
-# from a clean `main` checkout. Installers (`scripts/install.sh|.ps1`) and
-# README URLs already point at Sanidhya14321/harvest.
-
+# Tags and manual requests share rust-release.yml. That workflow owns the
+# single publishing lock, readiness gates and immutable candidate artifacts.
 on:
   push:
     tags:
@@ -20,144 +10,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  binaries:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-24.04, target: linux-x64, native: linux-x64-baseline }
-          - { runner: ubuntu-24.04-arm, target: linux-arm64, native: host }
-          - { runner: ubuntu-24.04, target: linux-musl-x64, native: linux-musl-x64-baseline }
-          - { runner: ubuntu-24.04-arm, target: linux-musl-arm64, native: linux-musl-arm64 }
-          - { runner: macos-15-intel, target: darwin-x64, native: darwin-x64-baseline }
-          - { runner: macos-15-arm64, target: darwin-arm64, native: host }
-          - { runner: ubuntu-24.04, target: win32-x64, native: win32-x64-baseline }
-          - { runner: windows-11-arm, target: win32-arm64, native: host }
-    runs-on: ${{ matrix.runner }}
-    # Cold Bazel builds run ~40 minutes without a cache (see
-    # docs/natives-build-release-debugging.md); the compiled-binary step
-    # follows on top.
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.0'
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2026-08-08
-      - name: Set up Bazelisk
-        # Explicit //:natives-* targets always build through Bazel; only the
-        # `host` pseudo-target can fall back to the local Cargo/N-API build.
-        # The installed launcher reads the pinned version from .bazelversion.
-        if: matrix.native != 'host'
-        uses: bazelbuild/setup-bazelisk@v3
-      - name: Check tag matches package version
-        run: bun -e 'const pkg = await Bun.file("packages/coding-agent/package.json").json(); if (process.env.GITHUB_REF_NAME !== "v" + pkg.version) throw new Error("Release tag does not match coding-agent version");'
-      - run: bun install --frozen-lockfile
-      - name: Build native addon
-        run: bun scripts/bazel-natives.ts ${{ matrix.native }} --dest packages/natives/native
-      - name: Build release binary
-        run: bun scripts/ci-release-build-binaries.ts --targets ${{ matrix.target }}
-      - name: Check binary on its target host
-        shell: bash
-        run: |
-          binary="packages/coding-agent/binaries/omp-${{ matrix.target }}"
-          if [[ "${{ runner.os }}" == "Windows" ]]; then binary="${binary/win32/windows}.exe"; fi
-          "$binary" --version
-          "$binary" --smoke-test
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.target }}
-          path: packages/coding-agent/binaries/omp-*
-          if-no-files-found: error
-          retention-days: 1
-
-  npm-bundle:
-    # Source-vs-npm leg: prove the packed npm tarball — the artifact
-    # npm consumers install — carries the release version and a bootable
-    # bundled CLI identical to the source checkout the binaries are built
-    # from. The unpacked tree runs from inside the checkout so the bundle's
-    # external imports resolve via workspace node_modules: the @harvest scope
-    # is not published to the public registry, so a fresh-registry consumer
-    # install stays a manual release gate, not an automated one.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.0'
-      - name: Check tag matches package version
-        run: bun -e 'const pkg = await Bun.file("packages/coding-agent/package.json").json(); if (process.env.GITHUB_REF_NAME !== "v" + pkg.version) throw new Error("Release tag does not match coding-agent version");'
-      - run: bun install --frozen-lockfile
-      - name: Pack npm tarball and smoke-test the bundled CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          trap 'rm -rf npm-consumer-check packages/coding-agent/*.tgz' EXIT
-          pushd packages/coding-agent >/dev/null
-          bun pm pack
-          popd >/dev/null
-          shopt -s nullglob
-          tarballs=( packages/coding-agent/*.tgz )
-          shopt -u nullglob
-          test "${#tarballs[@]}" -eq 1 || { echo "expected one packed tarball, found ${#tarballs[@]}"; exit 1; }
-          test -s "${tarballs[0]}"
-          rm -rf npm-consumer-check
-          mkdir -p npm-consumer-check
-          tar -xzf "${tarballs[0]}" -C npm-consumer-check
-          PKG="npm-consumer-check/package"
-          test -s "$PKG/package.json"
-          test -s "$PKG/dist/cli.js"
-          test -s "$PKG/dist/docs-index.generated.txt"
-          shopt -s nullglob
-          toolviews=( "$PKG"/dist/tool-views.generated-*.js )
-          shopt -u nullglob
-          test "${#toolviews[@]}" -ge 1 || { echo "packed tarball missing tool-views bundle"; exit 1; }
-          SRC_VERSION="$(bun -e 'console.log((await Bun.file("packages/coding-agent/package.json").json()).version)')"
-          PKG_VERSION="$(PKG_DIR="$PKG" bun -e 'console.log((await Bun.file(Bun.env.PKG_DIR + "/package.json").json()).version)')"
-          test "$SRC_VERSION" = "$PKG_VERSION" || { echo "packed version $PKG_VERSION != source $SRC_VERSION"; exit 1; }
-          CLI_VERSION="$(bun "$PKG/dist/cli.js" --version)"
-          echo "$CLI_VERSION" | grep -q "$SRC_VERSION" || { echo "bundled CLI reports '$CLI_VERSION', want version $SRC_VERSION"; exit 1; }
-          echo "npm bundle ok: tarball ${tarballs[0]}, version $SRC_VERSION, CLI '$CLI_VERSION'"
-
-  publish:
-    needs: [binaries, npm-bundle]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+  distribution:
+    name: Rust distribution
     permissions:
-      contents: write
+      contents: read
       id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.0'
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: binary-*
-          path: release-assets
-          merge-multiple: true
-      - name: Validate complete asset set and prepare legal files
-        shell: bash
-        run: |
-          set -euo pipefail
-          for asset in omp-linux-x64 omp-linux-arm64 omp-linux-musl-x64 omp-linux-musl-arm64 omp-darwin-x64 omp-darwin-arm64 omp-windows-x64.exe omp-windows-arm64.exe; do
-            test -s "release-assets/$asset"
-          done
-          cp LICENSE release-assets/LICENSE
-          cp THIRD-PARTY-NOTICES.txt release-assets/THIRD-PARTY-NOTICES.txt
-          bun scripts/ci-release-checksums.ts release-assets/SHA256SUMS.txt release-assets/omp-* release-assets/LICENSE release-assets/THIRD-PARTY-NOTICES.txt
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+      attestations: write
+    uses: ./.github/workflows/rust-release.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

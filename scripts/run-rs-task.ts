@@ -22,7 +22,7 @@ const RUST_AFFECTING_FILE_NAMES = [
 // the workspace's pedantic/nursery lints in its own manifest (most of it is
 // ported third-party code), it is held to default clippy and to zero rustc
 // warnings like everything else.
-const VENDORED_FORK_EXCLUDES = ["--exclude", "brush-core"] as const satisfies readonly string[];
+const VENDORED_FORK_EXCLUDES = ["--exclude", "harvest-brush-core"] as const satisfies readonly string[];
 const TASK_COMMANDS = {
 	"check:rs": [
 		["cargo", "fmt", "--all", "--", "--check"],

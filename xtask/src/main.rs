@@ -24,6 +24,14 @@ fn execute() -> Result<()> {
 	let task = arguments.next().unwrap_or_else(|| "help".to_owned());
 	let selection: Vec<String> = arguments.collect();
 	match task.as_str() {
+		"release-notes" => xtask::release_notes::execute(selection),
+		"web-replay" => xtask::web_replay::execute(selection),
+		"migration" => xtask::migration::execute(selection),
+		"registry" => xtask::registry::execute(selection),
+		"terminal-wasm" => xtask::terminal_wasm::execute(selection),
+		"checksums" => xtask::checksums::execute(selection),
+		"version" => xtask::versions::execute(selection),
+		"npm-versions" => xtask::npm_versions::execute(selection),
 		"package" => packaging::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
 		"test" => {
@@ -44,30 +52,36 @@ fn execute() -> Result<()> {
 				serde_json::from_str(include_str!("../../docs/rust-migration/capabilities.json"))?;
 			let progress = xtask::capabilities::inspect(&manifest)?;
 			println!(
-				"{}/{} capabilities have Rust implementations (partial or complete)",
-				progress.implemented, progress.total
+				"{}/{} retained capabilities have Rust implementations (partial or complete)",
+				progress.implemented, progress.retained
 			);
 			println!(
-				"{}/{} legacy capabilities verified for Rust parity",
-				progress.verified, progress.total
+				"{}/{} retained capabilities have verified replacement contracts",
+				progress.verified, progress.retained
+			);
+			println!(
+				"{}/{} intentionally retired interfaces have verified removal ({} total entries)",
+				progress.removed, progress.retired, progress.total
 			);
 			if selection
 				.iter()
 				.any(|argument| argument == "--require-complete")
-				&& progress.verified != progress.total
 			{
-				bail!(
-					"distribution cutover blocked: legacy capabilities still lack verified Rust parity"
-				);
+				progress.require_complete()?;
 			}
 			Ok(())
 		},
 		"help" | "--help" | "-h" => {
 			println!(
 				"cargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo package \
-				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
-				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
-				 --help\ncargo xtask secrets --help"
+				 selectors]\ncargo xtask migration <audit|status|verify> [--help]\ncargo xtask \
+				 registry verify --help\ncargo xtask capabilities [--require-complete]\nTests require \
+				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget|archives> \
+				 --help\ncargo xtask secrets --help\ncargo xtask checksums [--root DIR] \
+				 [--require-platforms] OUTPUT ASSET...\ncargo xtask web-replay --help\ncargo xtask \
+				 release-notes --help\ncargo xtask terminal-wasm [--check]\ncargo xtask version \
+				 [--root DIR] [--check] [VERSION]\ncargo xtask npm-versions [--root DIR] [--check] \
+				 [--release VERSION|--workspace]"
 			);
 			Ok(())
 		},

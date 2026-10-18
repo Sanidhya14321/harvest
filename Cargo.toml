@@ -4,7 +4,11 @@
 # because an ignored file stayed behind) is a hard error that fails the whole
 # workspace, not a skipped entry.
 members = [
+   "crates/harvest-protocol",
+   "crates/harvest-web",
    "crates/harvest-runtime",
+   "crates/harvest-terminal",
+   "crates/harvest-terminal-wasm",
    "crates/harvest-brain",
    "crates/pi-ast",
    "crates/pi-builtins",
@@ -29,8 +33,6 @@ license = "MIT"
 authors = ["Harvest Contributors"]
 repository = "https://github.com/Sanidhya14321/harvest"
 
-[patch.crates-io]
-brush-core = { path = "crates/vendor/brush-core" }
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -212,16 +214,16 @@ too_many_lines = "allow"     # Arbitrary limits don't account for necessary comp
 # ──────────────────────────────────────────────────────────────────────────────
 # Internal Libraries
 # ──────────────────────────────────────────────────────────────────────────────
-pi-ast = { path = "crates/pi-ast" }
-pi-diff = { path = "crates/pi-diff" }
-pi-edit = { path = "crates/pi-edit" }
-pi-iso = { path = "crates/pi-iso" }
-pi-shell = { path = "crates/pi-shell" }
-pi-voice = { path = "crates/pi-voice" }
-pi-walker = { path = "crates/pi-walker" }
-pi-vcs = { path = "crates/pi-vcs" }
-brush-core = { path = "crates/vendor/brush-core" }
-pi-builtins = { path = "crates/pi-builtins" }
+pi-ast = { path = "crates/pi-ast", version = "=0.1.0" }
+pi-diff = { path = "crates/pi-diff", version = "=0.1.0" }
+pi-edit = { path = "crates/pi-edit", version = "=0.1.0" }
+pi-iso = { path = "crates/pi-iso", version = "=0.1.0" }
+pi-shell = { path = "crates/pi-shell", version = "=0.1.0" }
+pi-voice = { path = "crates/pi-voice", version = "=0.1.0" }
+pi-walker = { path = "crates/pi-walker", version = "=0.1.0" }
+pi-vcs = { path = "crates/pi-vcs", version = "=0.1.0" }
+brush-core = { package = "harvest-brush-core", path = "crates/vendor/brush-core", version = "=0.1.0" }
+pi-builtins = { path = "crates/pi-builtins", version = "=0.1.0" }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Async Runtime & Concurrency

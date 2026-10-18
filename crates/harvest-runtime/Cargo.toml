@@ -12,8 +12,15 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 cap-std = "4.0.3"
-sha2 = "0.10.9"
+harvest-protocol = { path = "../harvest-protocol", version = "=0.1.0" }
 tokio.workspace = true
+xxhash-rust.workspace = true
+
+[target.'cfg(all(unix, not(target_os = "linux")))'.dependencies]
+libc.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

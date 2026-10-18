@@ -64,6 +64,7 @@ pub mod pty;
 pub mod shell;
 pub mod summary;
 pub mod task;
+pub mod terminal;
 #[cfg(test)]
 pub(crate) mod testing;
 pub mod text;

@@ -67,7 +67,9 @@ function captureWrites(term: VirtualTerminal): string[] {
 function headingAndSpacers(writes: string[], spacerCount: number): { heading: string; spacers: string[] } {
 	const paint = writes.find(write => write.includes(OSC66));
 	expect(paint).toBeDefined();
-	const rows = paint!.split("\r\n");
+	// Normal-screen paints use CRLF; resize's borrowed alternate screen uses
+	// absolute row addressing. Both place the reserved row below the heading.
+	const rows = paint!.split(/\r\n|\x1b\[\d+;1H/);
 	const idx = rows.findIndex(row => row.includes(OSC66));
 	expect(idx).toBeGreaterThanOrEqual(0);
 	return { heading: rows[idx]!, spacers: rows.slice(idx + 1, idx + 1 + spacerCount) };

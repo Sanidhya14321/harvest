@@ -6,12 +6,14 @@ class Omp < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-macos-aarch64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-darwin-arm64",
+          using: :nounzip,
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_MACOS_AARCH64@"
     end
     on_intel do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-macos-x86_64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-darwin-x64",
+          using: :nounzip,
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_MACOS_X86_64@"
     end
@@ -19,12 +21,14 @@ class Omp < Formula
 
   on_linux do
     on_arm do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-linux-aarch64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-linux-musl-arm64",
+          using: :nounzip,
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_LINUX_AARCH64@"
     end
     on_intel do
-      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-linux-x86_64",
+      url "https://github.com/Sanidhya14321/harvest/releases/download/v#{version}/omp-linux-musl-x64",
+          using: :nounzip,
           verified: "github.com/Sanidhya14321/harvest/"
       sha256 "@SHA256_LINUX_X86_64@"
     end
@@ -39,7 +43,9 @@ class Omp < Formula
     bin.install Dir["omp-*"].fetch(0) => "omp"
     chmod 0555, bin/"omp"
     bin.install_symlink bin/"omp" => "harvest"
-    generate_completions_from_executable(bin/"omp", "completions", shells: [:bash, :zsh, :fish])
+    with_env(HOME: buildpath) do
+      generate_completions_from_executable(bin/"omp", "completions", shells: [:bash, :zsh, :fish])
+    end
     (man1/"omp.1").write Utils.safe_popen_read(bin/"omp", "man")
   end
 

@@ -150,23 +150,24 @@ case "${OS}" in
             info "Rosetta detected; selecting the native Apple Silicon build"
         fi
         case "${ARCH}" in
-            x86_64 | amd64) ASSET=omp-macos-x86_64 ;;
-            arm64 | aarch64) ASSET=omp-macos-aarch64 ;;
+            x86_64 | amd64) ASSET=omp-darwin-x64 ;;
+            arm64 | aarch64) ASSET=omp-darwin-arm64 ;;
             *) fail "Omp does not publish a macOS release for architecture '${ARCH}'" ;;
         esac
         BINARY_NAME=omp
         ;;
     Linux)
         case "${ARCH}" in
-            x86_64 | amd64) ASSET=omp-linux-x86_64 ;;
-            arm64 | aarch64) ASSET=omp-linux-aarch64 ;;
+            x86_64 | amd64) ASSET=omp-linux-musl-x64 ;;
+            arm64 | aarch64) ASSET=omp-linux-musl-arm64 ;;
             *) fail "Omp does not publish a Linux release for architecture '${ARCH}'" ;;
         esac
         BINARY_NAME=omp
         ;;
     MINGW* | MSYS* | CYGWIN*)
         case "${ARCH}" in
-            x86_64 | amd64) ASSET=omp-windows-x86_64.exe ;;
+            x86_64 | amd64) ASSET=omp-windows-x64.exe ;;
+            arm64 | aarch64) ASSET=omp-windows-arm64.exe ;;
             *) fail "Omp does not publish a Windows release for architecture '${ARCH}'" ;;
         esac
         BINARY_NAME=omp.exe
@@ -216,7 +217,7 @@ trap cleanup EXIT HUP INT TERM
 make_temp_dir
 
 DOWNLOAD_PATH=${TEMP_DIR}/${ASSET}
-CHECKSUMS_PATH=${TEMP_DIR}/SHA256SUMS
+CHECKSUMS_PATH=${TEMP_DIR}/SHA256SUMS.txt
 
 download() {
     url=$1
@@ -258,7 +259,7 @@ fi
 
 info "detected ${OS} ${ARCH}"
 info "downloading Omp ${VERSION_LABEL}"
-download "${RELEASE_URL}/SHA256SUMS" "${CHECKSUMS_PATH}"
+download "${RELEASE_URL}/SHA256SUMS.txt" "${CHECKSUMS_PATH}"
 
 EXPECTED_CHECKSUM=$(awk -v asset="${ASSET}" '
     {

@@ -64,7 +64,29 @@ signed, multimodal, compaction and custom-message replay fail explicitly. Damage
 logs and unresolved tool calls need explicit recovery before resuming. Existing
 bytes and other branches remain intact. Provider usage accounting is pending;
 new assistant records mark `usageUnavailable` alongside zero-valued usage fields.
-The synchronous HTTP transport checks cancellation between reads and has a
-60-second request timeout; cancellation cannot yet interrupt a stalled read.
+The HTTP transport uses bounded asynchronous reads; cancellation interrupts pending
+headers and stalled body reads while callbacks stay on the calling host thread.
 Compatible OAuth, catalog/settings policy and the remaining lifecycle APIs are
 still being ported.
+
+
+Read-only terminal replay uses the same display projection as the browser viewer:
+
+```sh
+harvest replay --workspace /path/to/session-directory --leaf entry-id --columns 80 session.jsonl
+```
+
+Control characters render as visible text; hidden context, provider signatures
+and opaque payloads stay out of the transcript. Oversized projections fail before
+any terminal output. The transactional frame writer is a library foundation;
+this command does not implement an interactive editor or complete terminal UI.
+
+The opt-in `harvest rpc` command uses the asynchronous session owner and JSONL v1.
+It supports text `prompt`, FIFO `follow_up`, generation-scoped `abort`, `get_state`
+and exact persisted `get_messages`. `resume_follow_ups` explicitly resumes work
+parked by cancellation. Disconnection cancels work and releases the writer lease.
+It rejects steering, image prompts, slash commands, protocol v2 and other unported
+commands explicitly. Mutations are denied because this CLI has no approval host;
+the library accepts a host-owned policy. Configuration still uses the prototype
+formats above; production settings/auth parity remains required. The normal
+TypeScript `--mode rpc` stays active until its complete contract passes.

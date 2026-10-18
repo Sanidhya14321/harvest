@@ -116,10 +116,9 @@ function Install-Omp {
 
     $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
     switch ($architecture) {
-        "X64" { $asset = "omp-windows-x86_64.exe" }
+        "X64" { $asset = "omp-windows-x64.exe" }
         "Arm64" {
-            $asset = "omp-windows-x86_64.exe"
-            Write-Warning "a native Windows ARM64 build is not available; installing the x64 build"
+            $asset = "omp-windows-arm64.exe"
         }
         default { throw "Omp does not publish a Windows release for architecture '$architecture'" }
     }
@@ -152,14 +151,14 @@ function Install-Omp {
 
     $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("omp-install-" + [Guid]::NewGuid().ToString("N"))
     $downloadPath = Join-Path $tempDir $asset
-    $checksumsPath = Join-Path $tempDir "SHA256SUMS"
+    $checksumsPath = Join-Path $tempDir "SHA256SUMS.txt"
     $stagedBinary = $null
 
     New-Item -ItemType Directory -Path $tempDir | Out-Null
     try {
         Write-Info "detected Windows $architecture"
         Write-Info "downloading Omp $versionLabel"
-        Invoke-Download -Uri "$releaseUrl/SHA256SUMS" -OutFile $checksumsPath
+        Invoke-Download -Uri "$releaseUrl/SHA256SUMS.txt" -OutFile $checksumsPath
 
         $escapedAsset = [Regex]::Escape($asset)
         $expectedChecksum = $null

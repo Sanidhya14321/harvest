@@ -1,3 +1,14 @@
+# Harvest shell core
+
+`harvest-brush-core` is Harvest's maintained fork of upstream `brush-core`
+0.5.0. Its Rust library remains `brush_core`; Harvest consumers depend on the
+owned package through a `brush-core` Cargo alias. The fork uses Harvest's shared
+release version and repository, so registry consumers receive the same patched
+implementation as workspace builds without inheriting a `[patch.crates-io]`.
+
+The upstream project and MIT copyright are retained below and in `LICENSE`.
+The following upstream README describes brush rather than Harvest's CLI.
+
 <div align="center">
   <img src="https://github.com/user-attachments/assets/266b83a6-bacb-408c-afb7-2a2ddf37b272"/>
 </div>

@@ -1,0 +1,21 @@
+[package]
+name = "harvest-terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared terminal search and output algorithms for Harvest"
+
+[lints]
+workspace = true
+
+[dependencies]
+harvest-protocol = { path = "../harvest-protocol", version = "=0.1.0" }
+phf.workspace = true
+regex.workspace = true
+smallvec.workspace = true
+xutf.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true

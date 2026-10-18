@@ -39,6 +39,7 @@
   },
   "files": [
     "src",
+    "wasm",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -55,6 +56,14 @@
       "types": "./src/components/*.ts",
       "import": "./src/components/*.ts"
     },
-    "./*.js": "./src/*.ts"
+    "./*.js": "./src/*.ts",
+    "./fuzzy": {
+      "types": "./src/fuzzy.d.ts",
+      "import": "./src/fuzzy.js"
+    },
+    "./fuzzy.js": {
+      "types": "./src/fuzzy.d.ts",
+      "import": "./src/fuzzy.js"
+    }
   }
 }

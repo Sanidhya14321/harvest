@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
@@ -73,21 +71,17 @@ impl Model for HttpModel {
 
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage> {
 		let url = endpoint(&self.settings.base_url);
+
 		let request =
 			CompletionRequest { model: &self.settings.model, messages, tools, stream: false };
-		let agent = ureq::AgentBuilder::new()
-			.timeout(Duration::from_secs(60))
-			.build();
-		let mut call = agent.post(&url);
-		if !self.settings.api_key.is_empty() {
-			let header = format!("Bearer {}", self.settings.api_key);
-			call = call.set("Authorization", &header);
-		}
-		let response = call
-			.send_json(request)
-			.with_context(|| format!("model request to {url} failed"))?;
-		let bytes =
-			harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
+		let response = crate::transport::Response::open(
+			url,
+			self.settings.api_key.clone(),
+			serde_json::to_vec(&request)?,
+			false,
+			&harvest_runtime::cancel::CancelToken::default(),
+		)?;
+		let bytes = harvest_runtime::read_bounded(response, harvest_runtime::MAX_HTTP_BYTES)?;
 		let parsed: CompletionResponse =
 			serde_json::from_slice(&bytes).context("model response was not valid JSON")?;
 		let Some(choice) = parsed.choices.into_iter().next() else {
@@ -105,29 +99,19 @@ impl Model for HttpModel {
 	) -> Result<ChatMessage> {
 		cancellation.heartbeat()?;
 		let url = endpoint(&self.settings.base_url);
-		let agent = ureq::AgentBuilder::new()
-			.timeout(Duration::from_secs(60))
-			.build();
-		let mut call = agent.post(&url).set("Accept", "text/event-stream");
-		if !self.settings.api_key.is_empty() {
-			call = call.set("Authorization", &format!("Bearer {}", self.settings.api_key));
-		}
-		let response = call
-			.send_json(CompletionRequest {
-				model: &self.settings.model,
-				messages,
-				tools,
-				stream: true,
-			})
-			.with_context(|| format!("model request to {url} failed"))?;
-		if response
-			.header("Content-Type")
-			.is_some_and(|value| value.starts_with("text/event-stream"))
-		{
-			crate::streaming::decode(response.into_reader(), cancellation, on_text)
+		let request =
+			CompletionRequest { model: &self.settings.model, messages, tools, stream: true };
+		let response = crate::transport::Response::open(
+			url,
+			self.settings.api_key.clone(),
+			serde_json::to_vec(&request)?,
+			true,
+			cancellation,
+		)?;
+		if response.sse {
+			crate::streaming::decode(response, cancellation, on_text)
 		} else {
-			let bytes =
-				harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
+			let bytes = harvest_runtime::read_bounded(response, harvest_runtime::MAX_HTTP_BYTES)?;
 			let response: CompletionResponse = serde_json::from_slice(&bytes)?;
 			let message = response
 				.choices

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Missing dashboard assets now return 404, and WebAssembly assets load with the correct MIME type.
+
 ## [0.1.0] - 2026-10-08
 
 ### Fixed

@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import * as os from "node:os";
+import { connect } from "bun";
 import { type LocalRelay, startLocalRelay } from "../scripts/local-relay";
 import { packEnvelope, unpackEnvelope } from "../src/lib/link";
 
 const ROOM = "RelayRoom_12345";
 const REQUEST_TIMEOUT_MS = 1_000;
+const externalAddress = Object.values(os.networkInterfaces())
+	.flatMap(entries => entries ?? [])
+	.find(address => address.family === "IPv4" && !address.internal);
 
 let relay: LocalRelay | null = null;
 const sockets: WebSocket[] = [];
@@ -109,6 +114,29 @@ afterEach(() => {
 });
 
 describe("local collab relay", () => {
+	it.skipIf(!externalAddress)(
+		"accepts local requests while refusing connections to the host's network address",
+		async () => {
+			if (!externalAddress) throw new Error("non-loopback interface required");
+			relay = startLocalRelay();
+			const local = await fetch(`${relayHttpUrl()}/nope`);
+			expect(local.status).toBe(404);
+			await local.body?.cancel();
+			const port = Number(new URL(relay.url).port);
+			let connected = false;
+			try {
+				const socket = await connect({
+					hostname: externalAddress.address,
+					port,
+					socket: { data() {}, open() {}, close() {}, error() {} },
+				});
+				connected = true;
+				socket.end();
+			} catch {}
+			expect(connected).toBe(false);
+		},
+	);
+
 	it("rejects non-relay requests and guests before a host creates the room", async () => {
 		relay = startLocalRelay();
 

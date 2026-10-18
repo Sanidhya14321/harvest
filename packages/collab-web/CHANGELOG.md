@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The local collaboration relay binds only to loopback.
+
 ## [18.1.3] - 2026-09-02
 
 ### Fixed

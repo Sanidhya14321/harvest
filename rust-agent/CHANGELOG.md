@@ -7,6 +7,9 @@
 
 ### Added
 
+- Added experimental JSONL RPC with persistent messages, streaming, queued follow-ups and cancellation.
+- Replay a selected session branch as safe, width-bounded terminal text.
+
 - Resume text and function-tool session-v3 branches with durable writes and ordered streaming JSON events.
 
 - Inspect legacy and current session logs without rewriting their source.

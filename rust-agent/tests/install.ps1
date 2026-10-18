@@ -83,7 +83,7 @@ function Set-ReleaseFixture {
         [switch] $InvalidChecksum
     )
 
-    $asset = "omp-windows-x86_64.exe"
+    $asset = "omp-windows-x64.exe"
     $assetPath = Join-Path $Fixtures $asset
     if ($Executable) {
         New-ExecutableFixture -OutputAssembly $assetPath
@@ -92,7 +92,7 @@ function Set-ReleaseFixture {
         [IO.File]::WriteAllText($assetPath, $Contents)
     }
     $hash = if ($InvalidChecksum) { "0" * 64 } else { (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash }
-    [IO.File]::WriteAllText((Join-Path $Fixtures "SHA256SUMS"), "$hash  dist/$asset`n")
+    [IO.File]::WriteAllText((Join-Path $Fixtures "SHA256SUMS.txt"), "$hash  dist/$asset`n")
 }
 
 New-Item -ItemType Directory -Path $Fixtures | Out-Null
@@ -152,14 +152,14 @@ try {
     $binDir = Join-Path $TestRoot "successful-install\bin"
     $env:OMP_TEST_COMPLETION_LOG = Join-Path $TestRoot "completions.log"
     Set-ReleaseFixture -Executable
-    $expectedHash = (Get-FileHash -LiteralPath (Join-Path $Fixtures "omp-windows-x86_64.exe") -Algorithm SHA256).Hash
+    $expectedHash = (Get-FileHash -LiteralPath (Join-Path $Fixtures "omp-windows-x64.exe") -Algorithm SHA256).Hash
     & $Installer -Version "1.2.3" -BinDir $binDir -NoModifyPath *> (Join-Path $TestRoot "successful-install.log")
 
     $installed = Join-Path $binDir "omp.exe"
     $actualHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
     Assert-Equal -Expected $expectedHash -Actual $actualHash -Message "installed binary hash"
     Assert-Equal -Expected "completions powershell --install --automatic" -Actual ([IO.File]::ReadAllText($env:OMP_TEST_COMPLETION_LOG)) -Message "completion installation arguments"
-    Assert-Contains -Needle "https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-windows-x86_64.exe" -Path $DownloadsLog
+    Assert-Contains -Needle "https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-windows-x64.exe" -Path $DownloadsLog
     Assert-Contains -Needle "verified SHA-256 checksum" -Path (Join-Path $TestRoot "successful-install.log")
 
     Write-Host "test: resolves latest once and pins both downloads"
@@ -179,11 +179,11 @@ try {
     Write-Host "test: rejects invalid checksum records before fetching the binary"
     foreach ($checksumCase in @("duplicate", "missing", "malformed")) {
         Set-ReleaseFixture -Contents "new binary"
-        $checksums = Join-Path $Fixtures "SHA256SUMS"
+        $checksums = Join-Path $Fixtures "SHA256SUMS.txt"
         switch ($checksumCase) {
             "duplicate" { Add-Content -LiteralPath $checksums -Value ([IO.File]::ReadAllText($checksums)) }
             "missing" { [IO.File]::WriteAllText($checksums, (("0" * 64) + "  other.exe`n")) }
-            "malformed" { [IO.File]::WriteAllText($checksums, "invalid  omp-windows-x86_64.exe`n") }
+            "malformed" { [IO.File]::WriteAllText($checksums, "invalid  omp-windows-x64.exe`n") }
         }
         $downloadCount = (Get-Content -LiteralPath $DownloadsLog).Count
         Assert-InstallFailure -RequestedVersion "1.2.3" -Directory $binDir -Pattern "the release checksum*"
@@ -200,7 +200,7 @@ try {
 
     Assert-InstallFailure -RequestedVersion "latest" -Directory $binDir -Pattern "*checksum verification failed*" -Log (Join-Path $TestRoot "bad-checksum.log")
     Assert-Equal -Expected "existing binary" -Actual ([IO.File]::ReadAllText($installed)) -Message "existing installation"
-    Assert-Contains -Needle "https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-windows-x86_64.exe" -Path $DownloadsLog
+    Assert-Contains -Needle "https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-windows-x64.exe" -Path $DownloadsLog
 
     Write-Host "test: rejects unsafe version values before downloading"
     $downloadCount = (Get-Content -LiteralPath $DownloadsLog).Count

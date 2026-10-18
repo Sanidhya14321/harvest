@@ -1,6 +1,7 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import * as fs from "node:fs";
-import { TtyWriter } from "@harvest/pi-natives";
+import { chunkTerminalOutput, TtyWriter } from "@harvest/pi-natives";
+import type * as PortableTerminal from "../wasm/terminal.js";
 import {
 	$env,
 	isBunTestRuntime,
@@ -88,58 +89,11 @@ const MAX_CONPTY_WRITE_CHUNK_BYTES = 16 * 1024;
  * sole production caller.
  */
 export function chunkForConPTY(data: string, maxChunkBytes: number = MAX_CONPTY_WRITE_CHUNK_BYTES): string[] {
-	// Fast path: whole buffer fits in one write.
 	if (Buffer.byteLength(data, "utf8") <= maxChunkBytes) return [data];
-	const chunks: string[] = [];
-	const len = data.length;
-	let pos = 0;
-	while (pos < len) {
-		let bytes = 0;
-		// Index just past the most recent `\n` we've consumed inside [pos, i):
-		// the natural cut point that leaves escape sequences intact.
-		let lastNewlineEnd = -1;
-		let i = pos;
-		while (i < len) {
-			const cu = data.charCodeAt(i);
-			let cuLen = 1;
-			let cuBytes: number;
-			if (cu < 0x80) {
-				cuBytes = 1;
-			} else if (cu < 0x800) {
-				cuBytes = 2;
-			} else if (cu >= 0xd800 && cu < 0xdc00) {
-				// High surrogate: pair with the following low surrogate (4 bytes
-				// across two code units); an unpaired surrogate UTF-8-encodes as
-				// the 3-byte U+FFFD replacement character.
-				const next = i + 1 < len ? data.charCodeAt(i + 1) : 0;
-				if (next >= 0xdc00 && next < 0xe000) {
-					cuBytes = 4;
-					cuLen = 2;
-				} else {
-					cuBytes = 3;
-				}
-			} else {
-				// BMP non-surrogate or unpaired low surrogate → 3 bytes.
-				cuBytes = 3;
-			}
-			if (bytes + cuBytes > maxChunkBytes && i > pos) {
-				// Would overflow the cap. Cut at the last newline if we found one,
-				// otherwise hard-cut at the current code-point boundary.
-				const cut = lastNewlineEnd > pos ? lastNewlineEnd : i;
-				chunks.push(data.slice(pos, cut));
-				pos = cut;
-				break;
-			}
-			bytes += cuBytes;
-			i += cuLen;
-			if (cu === 0x0a) lastNewlineEnd = i;
-		}
-		if (i >= len) {
-			chunks.push(data.slice(pos));
-			pos = len;
-		}
-	}
-	return chunks;
+	const chunks = typeof chunkTerminalOutput === "function" ? chunkTerminalOutput(data, maxChunkBytes) : null;
+	if (Array.isArray(chunks)) return chunks;
+	const portable = require("../wasm/terminal.js") as typeof PortableTerminal;
+	return portable.chunkTerminalOutput(data, maxChunkBytes);
 }
 
 /**

@@ -3,6 +3,7 @@
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::{
+	borrow::Cow,
 	fs::File,
 	io::{Read, Write},
 	path::{Component, Path, PathBuf},
@@ -16,11 +17,54 @@ use cap_std::{
 	ambient_authority,
 	fs::{Dir, OpenOptions},
 };
-use sha2::{Digest, Sha256};
+pub use harvest_protocol::digest::{ContentDigest, content_hash};
 
 use crate::read_bounded;
 
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+fn authorized_suffix<'p>(path: &'p Path, root: &Path) -> Result<Cow<'p, Path>> {
+	#[cfg(not(windows))]
+	{
+		Ok(Cow::Borrowed(
+			path
+				.strip_prefix(root)
+				.context("path escapes the authorized root")?,
+		))
+	}
+	#[cfg(windows)]
+	{
+		use std::path::Prefix;
+		let mut remaining = path.components();
+		for expected in root.components() {
+			let actual = remaining
+				.next()
+				.context("path escapes the authorized root")?;
+			let same = match (expected, actual) {
+				(Component::Prefix(expected), Component::Prefix(actual)) => {
+					match (expected.kind(), actual.kind()) {
+						(
+							Prefix::Disk(a) | Prefix::VerbatimDisk(a),
+							Prefix::Disk(b) | Prefix::VerbatimDisk(b),
+						) => a == b,
+						(
+							Prefix::UNC(a, b) | Prefix::VerbatimUNC(a, b),
+							Prefix::UNC(c, d) | Prefix::VerbatimUNC(c, d),
+						) => a == c && b == d,
+						_ => expected == actual,
+					}
+				},
+				_ => expected == actual,
+			};
+			if !same {
+				bail!("path escapes the authorized root");
+			}
+		}
+		// Keep OsStr components intact: lossy UTF-8 normalization would change
+		// valid Windows names containing unpaired UTF-16 code units.
+		Ok(Cow::Owned(remaining.collect()))
+	}
+}
 
 #[derive(Debug)]
 pub struct JailedFs {
@@ -90,14 +134,83 @@ impl JailedFs {
 		&self.root
 	}
 
+	/// Resolve existing symlinks inside this capability, including ancestors of
+	/// a missing leaf. Callers reuse this path after taking lifetime ownership.
+	pub fn resource_path(&self, path: &Path) -> Result<PathBuf> {
+		let relative = self.relative(path)?;
+		if relative.as_os_str().is_empty() {
+			bail!("resource ownership requires a file, not the root");
+		}
+		let mut ancestor = relative.as_path();
+		let mut missing = Vec::new();
+		loop {
+			let lookup = if ancestor.as_os_str().is_empty() {
+				Path::new(".")
+			} else {
+				ancestor
+			};
+			match self.directory.canonicalize(lookup) {
+				Ok(resolved) => {
+					let mut resolved = self.root.join(self.relative(&resolved)?);
+					for part in missing.into_iter().rev() {
+						resolved.push(part);
+					}
+					return Ok(resolved);
+				},
+				Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+					missing.push(
+						ancestor
+							.file_name()
+							.context("resource has no existing ancestor")?,
+					);
+					ancestor = ancestor
+						.parent()
+						.context("resource has no existing ancestor")?;
+				},
+				Err(error) => return Err(error.into()),
+			}
+		}
+	}
+
+	/// Use the legacy application's kernel ownership namespace and `.lock`
+	/// identity. No Rust-only sidecar may permit a second production writer.
+	pub fn resource_lock(&self, path: &Path) -> Result<crate::file_lock::FileLock> {
+		let resource = self.resource_path(path)?;
+		let identity = resource.to_str().context("lock path is not valid UTF-8")?;
+		#[cfg(target_os = "windows")]
+		let identity = identity.to_lowercase();
+		let lock = PathBuf::from(format!("{identity}.lock"));
+		#[cfg(any(target_os = "linux", target_os = "windows"))]
+		let ownership = crate::file_lock::FileLock::try_acquire_path(&lock)?;
+		#[cfg(all(unix, not(target_os = "linux")))]
+		let ownership = {
+			let (directory, name) = self.parent(&lock, true)?;
+			if directory
+				.symlink_metadata(&name)
+				.is_ok_and(|meta| meta.file_type().is_symlink())
+			{
+				bail!("lock path is a symlink");
+			}
+			let mut options = OpenOptions::new();
+			options.read(true).write(true).create(true).mode(0o600);
+			let file = directory.open_with(&name, &options)?.into_std();
+			if !file.metadata()?.is_file() {
+				bail!("lock path is not a regular file");
+			}
+			crate::file_lock::FileLock::try_acquire_file(file)?
+		};
+		if !ownership.is_acquired() {
+			bail!("another writer owns this session");
+		}
+		Ok(ownership)
+	}
+
 	/// Normalize paths lexically; the directory capability enforces real access.
 	pub fn relative(&self, path: &Path) -> Result<PathBuf> {
 		let path = if path.is_absolute() {
-			path
-				.strip_prefix(&self.root)
-				.context("path escapes the authorized root")?
+			authorized_suffix(path, &self.root)?
 		} else {
-			path
+			Cow::Borrowed(path)
 		};
 		let mut result = PathBuf::new();
 		for component in path.components() {
@@ -154,8 +267,39 @@ impl JailedFs {
 		}
 	}
 
+	/// Stream an authorized regular file into a digest without buffering its
+	/// contents or reopening a checked lexical path.
+	pub fn hash_file(&self, path: &Path) -> Result<String> {
+		let relative = self.relative(path)?;
+		let mut file = self.directory.open(&relative)?;
+		if !file.metadata()?.is_file() {
+			bail!("expected a regular file");
+		}
+		let mut digest = ContentDigest::default();
+		let mut buffer = [0_u8; 16 * 1024];
+		loop {
+			let count = file.read(&mut buffer)?;
+			if count == 0 {
+				break;
+			}
+			digest.update(&buffer[..count]);
+		}
+		Ok(digest.hash())
+	}
+
 	/// Pin the parent, stage a fresh inode and replace atomically within it.
 	pub fn atomic_write(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+		self.atomic_write_with(path, |file| Ok(file.write_all(bytes)?))
+	}
+
+	/// Stream into a staged authorized inode. Failed producers leave the
+	/// previous destination intact and cannot publish a partial archive or
+	/// document.
+	pub fn atomic_write_with(
+		&self,
+		path: &Path,
+		write: impl FnOnce(&mut File) -> Result<()>,
+	) -> Result<()> {
 		let (directory, name) = self.parent(path, true)?;
 		let old_permissions = match directory.symlink_metadata(&name) {
 			Ok(metadata) => {
@@ -176,11 +320,11 @@ impl JailedFs {
 		options.write(true).create_new(true);
 		#[cfg(unix)]
 		options.mode(0o600);
-		let mut file = directory.open_with(&temp, &options)?;
+		let mut file = directory.open_with(&temp, &options)?.into_std();
 		let result = (|| -> Result<()> {
-			file.write_all(bytes)?;
+			write(&mut file)?;
 			if let Some(permissions) = old_permissions {
-				file.set_permissions(permissions)?;
+				file.set_permissions(permissions.into_std(&file)?)?;
 			}
 			file.sync_all()?;
 			drop(file);
@@ -193,6 +337,29 @@ impl JailedFs {
 			let _cleanup = directory.remove_file(&temp);
 		}
 		result
+	}
+
+	/// Copy an authorized regular file with an explicit size bound. The handle
+	/// remains capability-relative even when an ancestor is concurrently
+	/// changed.
+	pub fn copy_file_to(&self, path: &Path, output: &mut impl Write, limit: u64) -> Result<u64> {
+		let relative = self.relative(path)?;
+		let file = self.directory.open(&relative)?;
+		let metadata = file.metadata()?;
+		if !metadata.is_file() {
+			bail!("expected a regular file");
+		}
+		if metadata.len() > limit {
+			bail!("file exceeds copy limit");
+		}
+		let bytes = std::io::copy(
+			&mut file.take(limit.checked_add(1).context("copy limit overflow")?),
+			output,
+		)?;
+		if bytes > limit {
+			bail!("file exceeds copy limit");
+		}
+		Ok(bytes)
 	}
 
 	pub fn append(&self, path: &Path, bytes: &[u8], limit: usize) -> Result<()> {
@@ -216,6 +383,8 @@ impl JailedFs {
 		}
 		let mut options = OpenOptions::new();
 		options.create(true).read(true).append(true);
+		#[cfg(unix)]
+		options.mode(0o600);
 		let mut file = directory.open_with(&name, &options)?.into_std();
 		file.lock()?;
 		let metadata = file.metadata()?;
@@ -343,23 +512,5 @@ impl JailedFs {
 			Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
 			Err(error) => Err(error.into()),
 		}
-	}
-}
-
-/// Stable content fingerprints; never use process-dependent runtime hashes.
-pub fn content_hash(bytes: &[u8]) -> String {
-	format!("{:x}", Sha256::digest(bytes))
-}
-
-/// Incremental fingerprints avoid retaining a second copy of session history.
-#[derive(Default)]
-pub struct ContentDigest(Sha256);
-impl ContentDigest {
-	pub fn update(&mut self, bytes: &[u8]) {
-		self.0.update(bytes);
-	}
-
-	pub fn hash(&self) -> String {
-		format!("{:x}", self.0.clone().finalize())
 	}
 }

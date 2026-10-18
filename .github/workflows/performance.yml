@@ -44,7 +44,6 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: rust-agent
     env:
       TARGET: ${{ matrix.target }}
       BINARY: ${{ matrix.binary }}
@@ -63,7 +62,7 @@ jobs:
         with:
           key: performance-${{ matrix.target }}
       - name: Build the release binary
-        run: cargo build --release --locked --target "${TARGET}"
+        run: cargo build -p harvest-omp --bin omp --all-features --release --locked --target "${TARGET}"
       - name: Smoke test and enforce the size budget
         shell: bash
         run: |

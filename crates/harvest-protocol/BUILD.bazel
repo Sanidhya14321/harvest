@@ -1,0 +1,16 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+exports_files(["Cargo.toml"])
+
+rust_library(
+    name = "harvest-protocol",
+    srcs = glob(["src/**/*.rs"]),
+    aliases = aliases(),
+    crate_name = "harvest_protocol",
+    edition = "2024",
+    version = "0.1.0",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    deps = all_crate_deps(normal = True),
+)

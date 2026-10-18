@@ -27,11 +27,11 @@ trap 'rm -rf "${work}"' EXIT
 gh api "repos/${source_repo}/releases/tags/${tag}" >"${work}/release.json"
 jq -e '.draft == false and .prerelease == false' "${work}/release.json" >/dev/null
 gh release download "${tag}" --repo "${source_repo}" --dir "${work}" \
-    --pattern SHA256SUMS --pattern omp-winget-manifests.zip --pattern omp-windows-x86_64.zip
+    --pattern SHA256SUMS.txt --pattern omp-winget-manifests.zip --pattern omp-windows-x64.zip
 
 (
     cd "${work}"
-    awk '$2 == "omp-winget-manifests.zip" || $2 == "omp-windows-x86_64.zip"' SHA256SUMS >checksums
+    awk '$2 == "omp-winget-manifests.zip" || $2 == "omp-windows-x64.zip"' SHA256SUMS.txt >checksums
     count=$(wc -l <checksums | tr -d ' ')
     test "${count}" = 2
     shasum -a 256 --check checksums
@@ -46,9 +46,9 @@ for file in Pulkitxm.Omp.installer.yaml Pulkitxm.Omp.locale.en-US.yaml Pulkitxm.
     grep -Fx 'PackageIdentifier: Pulkitxm.Omp' "${work}/manifests/${file}" >/dev/null
     grep -Fx "PackageVersion: \"${version}\"" "${work}/manifests/${file}" >/dev/null
 done
-checksum=$(awk '$2 == "omp-windows-x86_64.zip" {print toupper($1)}' "${work}/SHA256SUMS")
+checksum=$(awk '$2 == "omp-windows-x64.zip" {print toupper($1)}' "${work}/SHA256SUMS.txt")
 grep -Fx "    InstallerSha256: \"${checksum}\"" "${work}/manifests/Pulkitxm.Omp.installer.yaml" >/dev/null
-grep -Fx "    InstallerUrl: https://github.com/${source_repo}/releases/download/${tag}/omp-windows-x86_64.zip" \
+grep -Fx "    InstallerUrl: https://github.com/${source_repo}/releases/download/${tag}/omp-windows-x64.zip" \
     "${work}/manifests/Pulkitxm.Omp.installer.yaml" >/dev/null
 
 git clone --quiet --depth=1 --filter=blob:none --sparse "https://github.com/${upstream}.git" "${work}/repository"

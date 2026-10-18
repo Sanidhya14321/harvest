@@ -8,10 +8,14 @@ mod cli;
 pub mod config;
 pub mod durable_session;
 pub mod provider;
-pub mod session_format;
+pub mod replay_cli;
+pub mod rpc;
+pub mod session_engine;
+pub use harvest_protocol::session as session_format;
 mod shell;
 mod streaming;
 pub mod tools;
+mod transport;
 
 /// Execute the Rust command line without installation side effects.
 ///

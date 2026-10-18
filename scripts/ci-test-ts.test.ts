@@ -1,5 +1,33 @@
 import { describe, expect, test } from "bun:test";
+import * as path from "node:path";
 import { describeChunkFailure } from "./ci-test-ts.ts";
+
+describe("transition UI suite planning", () => {
+	test("runs stats, benchmark and automation suites once with serial files in CI and local plans", async () => {
+		const packages = ["packages/stats", "packages/metaharness", "python/robomp/web"];
+		for (const mode of ["surfaces", "native", "local-ts"]) {
+			const child = Bun.spawn([process.execPath, path.join(import.meta.dir, "ci-test-ts.ts"), mode, "--dry-run"], {
+				env: { ...Bun.env, CI: "true", OMP_TEST_CONCURRENCY: "1" },
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const [output, error, code] = await Promise.all([
+				new Response(child.stdout).text(),
+				new Response(child.stderr).text(),
+				child.exited,
+			]);
+			expect(code).toBe(0);
+			expect(error).toBe("");
+			const groups = output.split("\n==> ").slice(1);
+			if (mode === "surfaces") expect(groups).toHaveLength(packages.length);
+			for (const pkg of packages) {
+				const matches = groups.filter(group => group.startsWith(`${pkg}\n`));
+				expect(matches).toHaveLength(1);
+				expect(matches[0]).toContain("--parallel=1");
+			}
+		}
+	});
+});
 
 // The two ways a chunk reaches SIGKILL are indistinguishable by exit code, so
 // these drive real subprocesses to produce a genuine 137 rather than asserting

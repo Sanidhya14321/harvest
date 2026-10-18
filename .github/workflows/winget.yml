@@ -20,7 +20,9 @@ concurrency:
 jobs:
   submit:
     name: Submit release manifests
-    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    # The active Bun distribution does not yet publish Rust WinGet manifests.
+    # Manual submission still validates the requested release in the script.
+    if: github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && contains(toJSON(github.event.release.assets.*.name), 'omp-winget-manifests.zip'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: pukbot-production

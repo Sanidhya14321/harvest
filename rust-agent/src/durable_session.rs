@@ -2,8 +2,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use harvest_runtime::{ContentDigest, JailedFs, RootLock, content_hash};
-use serde_json::{Value, json};
+use harvest_runtime::{ContentDigest, JailedFs, content_hash, file_lock::FileLock};
+use serde_json::{Value, json, value::RawValue};
 
 use crate::{
 	chat::{ChatMessage, FunctionCall, ToolCall},
@@ -11,23 +11,23 @@ use crate::{
 };
 
 pub struct DurableSession {
-	fs:         JailedFs,
-	path:       PathBuf,
-	_ownership: RootLock,
-	length:     usize,
-	digest:     ContentDigest,
-	id:         String,
-	leaf:       Option<String>,
-	messages:   Vec<ChatMessage>,
+	fs:              JailedFs,
+	path:            PathBuf,
+	_ownership:      FileLock,
+	length:          usize,
+	digest:          ContentDigest,
+	id:              String,
+	leaf:            Option<String>,
+	messages:        Vec<ChatMessage>,
+	stored_messages: Vec<Box<RawValue>>,
 }
 
 impl DurableSession {
 	/// Opens a current v3 log or creates one. Imports must use a separate file.
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
 		let fs = JailedFs::open(root)?;
-		let path = fs.relative(path)?;
-		let lock = PathBuf::from(format!("{}.rust-owner.lock", path.display()));
-		let ownership = fs.lock(&lock)?;
+		let path = fs.resource_path(path)?;
+		let ownership = fs.resource_lock(&path)?;
 		let mut bytes = fs.read_optional(&path, SESSION_LIMIT)?.unwrap_or_default();
 		if bytes.is_empty() {
 			if leaf.is_some() {
@@ -60,6 +60,7 @@ impl DurableSession {
 				.and_then(|raw| serde_json::from_str(raw.get()).ok())
 		});
 		let mut messages = Vec::new();
+		let mut stored_messages = Vec::new();
 		if let Some(leaf) = &leaf {
 			for entry in document.branch(leaf)? {
 				let kind: String = serde_json::from_str(
@@ -69,12 +70,11 @@ impl DurableSession {
 						.get(),
 				)?;
 				match kind.as_str() {
-					"message" => messages.push(replay(&serde_json::from_str::<Value>(
-						entry
-							.get("message")
-							.context("missing session message")?
-							.get(),
-					)?)?),
+					"message" => {
+						let stored = entry.get("message").context("missing session message")?;
+						messages.push(replay(&serde_json::from_str::<Value>(stored.get())?)?);
+						stored_messages.push(stored.clone());
+					},
 					"model_change"
 					| "thinking_level_change"
 					| "service_tier_change"
@@ -87,7 +87,17 @@ impl DurableSession {
 		validate_pairs(&messages, true)?;
 		let mut digest = ContentDigest::default();
 		digest.update(&bytes);
-		Ok(Self { fs, path, _ownership: ownership, length: bytes.len(), digest, id, leaf, messages })
+		Ok(Self {
+			fs,
+			path,
+			_ownership: ownership,
+			length: bytes.len(),
+			digest,
+			id,
+			leaf,
+			messages,
+			stored_messages,
+		})
 	}
 
 	pub fn id(&self) -> &str {
@@ -96,6 +106,11 @@ impl DurableSession {
 
 	pub fn messages(&self) -> &[ChatMessage] {
 		&self.messages
+	}
+
+	/// Original `AgentMessage` records, including timestamps and wire metadata.
+	pub fn stored_messages(&self) -> &[Box<RawValue>] {
+		&self.stored_messages
 	}
 
 	pub fn leaf(&self) -> Option<&str> {
@@ -108,6 +123,15 @@ impl DurableSession {
 
 	/// In-memory state advances only after the append has been synced to disk.
 	pub fn commit(&mut self, message: &ChatMessage, model: &str) -> Result<String> {
+		Ok(self.commit_with_receipt(message, model)?.entry_id)
+	}
+
+	/// Returns the persisted wire record only after the append is synced.
+	pub fn commit_with_receipt(
+		&mut self,
+		message: &ChatMessage,
+		model: &str,
+	) -> Result<CommitReceipt> {
 		validate_pairs(self.messages.iter().chain(std::iter::once(message)), false)?;
 		let timestamp = chrono::Utc::now();
 		let mut stored = stored_message(message, model, timestamp.timestamp_millis())?;
@@ -125,6 +149,7 @@ impl DurableSession {
 			stored["toolName"] = json!(name);
 		}
 		let id = content_hash(format!("{}:{}:{}", self.id, self.length, stored).as_bytes());
+		let stored_message = serde_json::value::to_raw_value(&stored)?;
 		let row = json!({"type":"message", "id":id, "parentId":self.leaf, "timestamp":timestamp.to_rfc3339(), "message":stored});
 		let mut bytes = serde_json::to_vec(&row)?;
 		if bytes.len() > harvest_runtime::MAX_EVENT_BYTES {
@@ -138,8 +163,16 @@ impl DurableSession {
 		self.digest.update(&bytes);
 		self.leaf = Some(id.clone());
 		self.messages.push(message.clone());
-		Ok(id)
+		self.stored_messages.push(stored_message.clone());
+		Ok(CommitReceipt { entry_id: id, message: stored_message })
 	}
+}
+
+/// A durable append acknowledgement with its exact public message payload.
+#[derive(Debug)]
+pub struct CommitReceipt {
+	pub entry_id: String,
+	pub message:  Box<RawValue>,
 }
 
 fn replay(message: &Value) -> Result<ChatMessage> {
@@ -204,7 +237,7 @@ fn replay(message: &Value) -> Result<ChatMessage> {
 	})
 }
 
-fn stored_message(message: &ChatMessage, model: &str, timestamp: i64) -> Result<Value> {
+pub(crate) fn stored_message(message: &ChatMessage, model: &str, timestamp: i64) -> Result<Value> {
 	let mut blocks = Vec::new();
 	if let Some(text) = &message.content {
 		blocks.push(json!({"type":"text", "text":text}));

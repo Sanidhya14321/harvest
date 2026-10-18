@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, env, io::Write, path::PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use harvest_runtime::JailedFs;
+use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 const HOMEBREW: &str = include_str!("../../rust-agent/Formula/omp.rb");
 const WINGET: [(&str, &str); 3] = [
@@ -21,10 +22,10 @@ const WINGET: [(&str, &str); 3] = [
 	),
 ];
 const ASSETS: [(&str, &str); 4] = [
-	("@SHA256_MACOS_AARCH64@", "omp-macos-aarch64"),
-	("@SHA256_MACOS_X86_64@", "omp-macos-x86_64"),
-	("@SHA256_LINUX_AARCH64@", "omp-linux-aarch64"),
-	("@SHA256_LINUX_X86_64@", "omp-linux-x86_64"),
+	("@SHA256_MACOS_AARCH64@", "omp-darwin-arm64"),
+	("@SHA256_MACOS_X86_64@", "omp-darwin-x64"),
+	("@SHA256_LINUX_AARCH64@", "omp-linux-musl-arm64"),
+	("@SHA256_LINUX_X86_64@", "omp-linux-musl-x64"),
 ];
 
 #[derive(Parser)]
@@ -36,6 +37,11 @@ struct Arguments {
 
 #[derive(Subcommand)]
 enum PackageCommand {
+	/// Create the two-alias payloads consumed by cargo-binstall and `WinGet`.
+	Archives {
+		#[arg(long)]
+		assets_dir: PathBuf,
+	},
 	Homebrew {
 		#[arg(long)]
 		version:   String,
@@ -62,6 +68,7 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 	// including nonexistent leaves and symlinked output-directory parents.
 	let fs = JailedFs::open(&env::current_dir()?)?;
 	match arguments.command {
+		PackageCommand::Archives { assets_dir } => archives(&fs, &assets_dir)?,
 		PackageCommand::Homebrew { version, checksums, output } => {
 			let checksums = read_checksums(&String::from_utf8(fs.read(&checksums, 1024 * 1024)?)?)?;
 			let formula = homebrew(&version, &checksums)?;
@@ -82,6 +89,40 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 	Ok(())
 }
 
+/// Stream each platform binary into a deterministic archive containing both
+/// public aliases. Keep the existing eight standalone downloads unchanged.
+pub fn archives(fs: &JailedFs, assets_dir: &std::path::Path) -> Result<()> {
+	const MAX_BINARY_BYTES: u64 = 512 * 1024 * 1024;
+	let assets_dir = fs.relative(assets_dir)?;
+	for asset in crate::checksums::PLATFORM_ASSETS {
+		let source = assets_dir.join(asset);
+		let archive = assets_dir.join(format!("{}.zip", asset.trim_end_matches(".exe")));
+		let extension = if std::path::Path::new(asset)
+			.extension()
+			.is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+		{
+			".exe"
+		} else {
+			""
+		};
+		fs.atomic_write_with(&archive, |file| {
+			let mut zip = ZipWriter::new(file);
+			let options = SimpleFileOptions::default()
+				.compression_method(CompressionMethod::Deflated)
+				.unix_permissions(0o755);
+			for alias in ["omp", "harvest"] {
+				zip.start_file(format!("{alias}{extension}"), options)?;
+				if fs.copy_file_to(&source, &mut zip, MAX_BINARY_BYTES)? == 0 {
+					bail!("empty release asset: {asset}");
+				}
+			}
+			zip.finish()?;
+			Ok(())
+		})?;
+	}
+	Ok(())
+}
+
 fn read_checksums(text: &str) -> Result<BTreeMap<String, String>> {
 	let mut checksums = BTreeMap::new();
 	for line in text.lines().filter(|line| !line.trim().is_empty()) {
@@ -97,7 +138,7 @@ fn read_checksums(text: &str) -> Result<BTreeMap<String, String>> {
 				.bytes()
 				.all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 		{
-			bail!("invalid SHA256SUMS entry");
+			bail!("invalid SHA256SUMS.txt entry");
 		}
 		if checksums.insert(name.into(), digest.into()).is_some() {
 			bail!("duplicate checksum asset: {name}");
@@ -183,7 +224,7 @@ fn winget(
 	validate_version(version)?;
 	validate_date(date)?;
 	let digest = checksums
-		.get("omp-windows-x86_64.zip")
+		.get("omp-windows-x64.zip")
 		.context("missing Windows archive checksum")?
 		.to_ascii_uppercase();
 	WINGET
@@ -222,12 +263,21 @@ mod tests {
 			let start = formula.find(&format!("/{asset}\"")).unwrap();
 			let section = formula[start..].split("    end").next().unwrap();
 			assert!(section.contains(&format!("sha256 \"{}\"", index.to_string().repeat(64))));
+			assert!(
+				section.contains("using: :nounzip"),
+				"bare binary must bypass Homebrew archive extraction"
+			);
 		}
+		assert!(
+			formula
+				.contains("with_env(HOME: buildpath) do\n      generate_completions_from_executable"),
+			"completion subprocess must use a sandbox-writable home"
+		);
 		let checksums =
-			read_checksums(&format!("{} *omp-windows-x86_64.zip\n", "a".repeat(64))).unwrap();
+			read_checksums(&format!("{} *omp-windows-x64.zip\n", "a".repeat(64))).unwrap();
 		let manifests = winget("1.2.3", "2024-02-29", &checksums).unwrap();
 		let installer = &manifests["Pulkitxm.Omp.installer.yaml"];
-		assert!(installer.contains("/v1.2.3/omp-windows-x86_64.zip"));
+		assert!(installer.contains("/v1.2.3/omp-windows-x64.zip"));
 		assert!(installer.contains(&format!("InstallerSha256: \"{}\"", "A".repeat(64))));
 		assert!(installer.contains("ReleaseDate: \"2024-02-29\""));
 		for manifest in manifests.values() {
@@ -237,7 +287,7 @@ mod tests {
 
 	#[test]
 	fn ambiguous_checksums_and_invalid_release_values_cannot_produce_packages() {
-		let row = format!("{}  omp-windows-x86_64.zip\n", "a".repeat(64));
+		let row = format!("{}  omp-windows-x64.zip\n", "a".repeat(64));
 		assert!(read_checksums(&(row.clone() + &row)).is_err());
 		assert!(read_checksums("abcd archive.zip").is_err());
 		let checksums = read_checksums(&row).unwrap();

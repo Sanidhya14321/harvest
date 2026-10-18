@@ -7,6 +7,8 @@
 export declare class AudioCapture {
   /** Open the default microphone and deliver low-latency mono PCM chunks. */
   constructor(sampleRate: number, onAudio: (error: Error | null, samples: Float32Array) => void)
+  /** Total number of microphone chunks dropped due to queue saturation. */
+  droppedChunks(): number
   /** Stop capture immediately and release the microphone. */
   stop(): void
 }
@@ -17,6 +19,8 @@ export declare class AudioPlayback {
   constructor(sampleRate: number)
   /** Queue mono floating-point PCM in playback order. */
   write(samples: Float32Array): void
+  /** Return the number of unrendered samples currently in the playback queue. */
+  queuedSamples(): number
   /** Scale audio at render time so gain changes affect already queued samples. */
   setGain(gain: number): void
   /**
@@ -339,6 +343,18 @@ export declare class PtySession {
   kill(): void
 }
 
+export declare class SelectorFuzzyMatcher {
+  constructor()
+  matches(query: string, text: string): SelectorFuzzyMatch
+  rank(query: string, texts: Array<string>): Array<SelectorFuzzyRank>
+  clear(): void
+}
+
+export declare class SelectorFuzzyText {
+  constructor(text: string)
+  matches(query: string): SelectorFuzzyMatch
+}
+
 /** Persistent brush-core shell session. */
 export declare class Shell {
   /**
@@ -368,6 +384,15 @@ export declare class Shell {
    * dropping it (which would SIGKILL them via kill-on-drop).
    */
   liveBackgroundJobCount(): Promise<number>
+}
+
+/** Transitional host adapter; the native terminal calls the same plain engines. */
+export declare class TerminalInput {
+  constructor()
+  scan(data: string, resumeSearchFrom: number): TerminalInputScan
+  decodePrintableKey(data: string): string | null
+  extractPrintableText(data: string): string | null
+  decodeKeypadText(data: string): string | null
 }
 
 /**
@@ -958,10 +983,14 @@ export interface BlockRangeOptions {
   line: number
 }
 
+export declare function canPrefixTerminalWidth(line: string): boolean
+
 export interface CaptureCaps {
   maxWidth?: number
   maxHeight?: number
 }
+
+export declare function chunkTerminalOutput(data: string, maxBytes: number): Array<string>
 
 /** Clipboard image payload encoded as PNG bytes. */
 export interface ClipboardImage {
@@ -970,6 +999,8 @@ export interface ClipboardImage {
   /** MIME type for the encoded image payload. */
   mimeType: string
 }
+
+export declare function coalesceTerminalSgr(line: string): string
 
 /** A context line (before or after a match). */
 export interface ContextLine {
@@ -1488,12 +1519,6 @@ export declare function executeShell(options: ShellExecuteOptions, onChunk?: ((e
 /** Locate `<SM:EDIT path="…">` payloads the model emitted as plain text. */
 export declare function extractInlineSloppyRegions(text: string): Array<InlineSloppyRegion>
 
-/**
- * Extract the before/after slices around an overlay region.
- *
- * Preserves ANSI state so the `after` segment renders correctly after
- * truncation.
- */
 export declare function extractSegments(line: string, beforeEnd: number, afterStart: number, afterLen: number, strictAfter: boolean, tabWidth: number): ExtractSegmentsResult
 
 /** Before/after UTF-16 segments around an overlay region, with measured widths. */
@@ -2085,26 +2110,13 @@ export interface Match {
   truncated?: boolean
 }
 
-/**
- * Match input data against a key identifier string.
- *
- * Returns true when the bytes represent the specified key with modifiers.
- */
+/** Match input data against a key identifier string. */
 export declare function matchesKey(data: string, keyId: string, kittyProtocolActive: boolean): boolean
 
-/**
- * Match Kitty protocol input against a codepoint and modifier mask.
- *
- * Returns true when the parsed sequence matches the expected codepoint (or
- * base layout key) and modifier bits.
- */
+/** Match Kitty protocol input against a codepoint and modifier mask. */
 export declare function matchesKittySequence(data: string, expectedCodepoint: number, expectedModifier: number): boolean
 
-/**
- * Check if input matches a legacy escape sequence for the given key name.
- *
- * Returns true only when the byte sequence maps to the exact key identifier.
- */
+/** Check if input matches a legacy escape sequence for the given key name. */
 export declare function matchesLegacySequence(data: string, keyName: string): boolean
 
 /** N-API opt-in handle for the minimizer. */
@@ -2242,18 +2254,10 @@ export interface ParsedKittyResult {
   eventType?: KeyEventType
 }
 
-/**
- * Parse terminal input and return a normalized key identifier.
- *
- * Returns a key id like "escape" or "ctrl+c", or None if unrecognized.
- */
+/** Parse terminal input and return a normalized key identifier. */
 export declare function parseKey(data: string, kittyProtocolActive: boolean): string | null
 
-/**
- * Parse a Kitty keyboard protocol sequence.
- *
- * Returns a structured parse result when the input is a valid Kitty sequence.
- */
+/** Parse a Kitty keyboard protocol sequence. */
 export declare function parseKittySequence(data: string): ParsedKittyResult | null
 
 /** One hunk of a unified diff, matching jsdiff `structuredPatch` hunks. */
@@ -2507,6 +2511,16 @@ export interface SearchResult {
   error?: string
 }
 
+export interface SelectorFuzzyMatch {
+  matches: boolean
+  score: number
+}
+
+export interface SelectorFuzzyRank {
+  index: number
+  score: number
+}
+
 export declare function setHangulCompatJamoWidthOverride(value: number): void
 
 /** Options for executing a shell command via brush-core. */
@@ -2583,12 +2597,6 @@ export interface SliceResult {
   width: number
 }
 
-/**
- * Slice a range of visible columns from a line.
- *
- * Counts terminal cells, skipping ANSI escapes, and optionally enforces strict
- * width.
- */
 export declare function sliceWithWidth(line: string, startCol: number, length: number, strict: boolean | undefined | null, tabWidth: number): SliceResult
 
 /** Shape options for one snapcompact frame. */
@@ -2716,11 +2724,13 @@ export interface SummarySegment {
  */
 export declare function supportsLanguage(lang: string): boolean
 
-/**
- * Truncate text to a visible width, preserving ANSI codes.
- *
- * Pads with spaces when requested.
- */
+export interface TerminalInputScan {
+  ranges: Uint32Array
+  remainderStart: number
+  resumeSearchFrom: number
+  discardFrom?: number
+}
+
 export declare function truncateToWidth(text: string, maxWidth: number, ellipsisKind: Ellipsis | undefined | null, pad: boolean | undefined | null, tabWidth: number): string
 
 /** Patch application options. */
@@ -2937,11 +2947,6 @@ export interface VectorTopK {
   scores: Float64Array
 }
 
-/**
- * Calculate visible width of text, excluding ANSI escape sequences.
- *
- * Tabs count as a fixed-width cell.
- */
 export declare function visibleWidth(text: string, tabWidth: number): number
 
 /** Warm syntax grammars and scope matchers on the native worker pool. */
@@ -2961,10 +2966,4 @@ export interface WorkProfile {
   sampleCount: number
 }
 
-/**
- * Wrap text to a visible width, preserving ANSI escape codes across line
- * breaks.
- *
- * Returns UTF-16 lines with active SGR codes carried across line boundaries.
- */
 export declare function wrapTextWithAnsi(text: string, width: number, tabWidth: number): Array<string>

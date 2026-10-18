@@ -23,10 +23,12 @@ import {
 	withTimeoutSignal,
 } from "../utils/fetch-timeout";
 
-const REPO = process.env.HARVEST_REPO ?? "harvest/harvest";
+const REPO = process.env.HARVEST_REPO || "Sanidhya14321/harvest";
 const PACKAGE = "@harvest/pi-coding-agent";
-const HOMEBREW_FORMULA = "harvest/tap/harvest";
-const MISE_TOOL = "github:harvest/harvest";
+const HOMEBREW_FORMULA = "Sanidhya14321/tap/omp";
+const MISE_TOOL = `github:${REPO}`;
+// Public artifact names retain the omp prefix for both executable aliases.
+const RELEASE_BINARY_PREFIX = "omp";
 const NIX_STORE_DIR = "/nix/store";
 /**
  * Official npm registry origin.
@@ -1085,14 +1087,14 @@ export function isMuslLinuxForTest(options: Required<MuslDetectionOptions>): boo
 /**
  * Get the appropriate binary name for this platform.
  */
-function getBinaryName(): string {
-	const platform = process.platform;
-	const arch = process.arch;
+export function resolveReleaseBinaryName(options: MuslDetectionOptions & { arch?: string } = {}): string {
+	const platform = options.platform ?? process.platform;
+	const arch = options.arch ?? process.arch;
 
 	let os: string;
 	switch (platform) {
 		case "linux":
-			os = isMuslLinux() ? "linux-musl" : "linux";
+			os = isMuslLinux(options) ? "linux-musl" : "linux";
 			break;
 		case "darwin":
 			os = "darwin";
@@ -1117,9 +1119,9 @@ function getBinaryName(): string {
 	}
 
 	if (os === "windows") {
-		return `${APP_NAME}-${os}-${archName}.exe`;
+		return `${RELEASE_BINARY_PREFIX}-${os}-${archName}.exe`;
 	}
-	return `${APP_NAME}-${os}-${archName}`;
+	return `${RELEASE_BINARY_PREFIX}-${os}-${archName}`;
 }
 
 /**
@@ -1708,7 +1710,7 @@ export async function updateViaBinaryAt(
 		verifyInstalledVersion?: typeof verifyInstalledVersion;
 	} = {},
 ): Promise<void> {
-	const binaryName = options.binaryName ?? getBinaryName();
+	const binaryName = options.binaryName ?? resolveReleaseBinaryName();
 	// Unique per attempt so two overlapping `omp update` runs never share a temp
 	// or backup path. A fixed temp name (`<binary>.new`) let the second run's
 	// pre-download unlink delete the first run's still-downloading temp file; the
@@ -1776,12 +1778,14 @@ export async function updateViaBinaryAt(
  * extensionless sh shim first, so leaving the old body behind would keep
  * launching the replaced install.
  */
-const SHIM_FORWARDERS: Record<string, string> = {
-	"": `#!/bin/sh\nexec "$(dirname "$0")/${APP_NAME}.exe" "$@"\n`,
-	".cmd": `@"%~dp0${APP_NAME}.exe" %*\r\n`,
-	".bat": `@"%~dp0${APP_NAME}.exe" %*\r\n`,
-	".ps1": `& "$PSScriptRoot\\${APP_NAME}.exe" @args\nexit $LASTEXITCODE\n`,
-};
+function shimForwarders(launcherName: string): Record<string, string> {
+	return {
+		"": `#!/bin/sh\nexec "$(dirname "$0")/${launcherName}.exe" "$@"\n`,
+		".cmd": `@"%~dp0${launcherName}.exe" %*\r\n`,
+		".bat": `@"%~dp0${launcherName}.exe" %*\r\n`,
+		".ps1": `& "$PSScriptRoot\\${launcherName}.exe" @args\nexit $LASTEXITCODE\n`,
+	};
+}
 
 /**
  * Take over a Windows script-launcher install for a binary-only release.
@@ -1808,9 +1812,14 @@ export async function updateViaShimTakeover(
 		verifyBinary?: typeof verifyBinaryAtPath;
 	} = {},
 ): Promise<void> {
-	const binaryName = options.binaryName ?? getBinaryName();
+	const binaryName = options.binaryName ?? resolveReleaseBinaryName();
 	const launcherDir = path.dirname(shimPath);
-	const exePath = path.join(launcherDir, `${APP_NAME}.exe`);
+	const launcherName = path.basename(shimPath, path.extname(shimPath));
+	if (launcherName.toLowerCase() !== "omp" && launcherName.toLowerCase() !== "harvest") {
+		throw new Error(`Unsupported script launcher: ${shimPath}`);
+	}
+	const forwarders = shimForwarders(launcherName);
+	const exePath = path.join(launcherDir, `${launcherName}.exe`);
 	const attempt = `${Date.now()}.${process.pid}.${updateAttemptSeq++}`;
 	const tempPath = `${exePath}.${attempt}.new`;
 	const asset = await getReleaseBinaryAsset(
@@ -1835,7 +1844,7 @@ export async function updateViaShimTakeover(
 	// never retire the same shims or reclaim a live run's backup before its
 	// verification can roll it back.
 	await withFileLock(exePath, async () => {
-		console.log(chalk.dim(`Installing ${APP_NAME}.exe beside the script launcher...`));
+		console.log(chalk.dim(`Installing ${launcherName}.exe beside the script launcher...`));
 		await fs.promises.rename(tempPath, exePath);
 		// Retire the shims so PATH resolution lands on the new exe. Renamed, not
 		// deleted: restorable on verification failure, and Windows permits
@@ -1846,7 +1855,7 @@ export async function updateViaShimTakeover(
 		const backupSuffix = `${attempt}.bak`;
 		const retired: Array<{ launcher: string; backup: string }> = [];
 		for (const ext of ["", ".cmd", ".ps1", ".bat"]) {
-			const launcher = path.join(launcherDir, `${APP_NAME}${ext}`);
+			const launcher = path.join(launcherDir, `${launcherName}${ext}`);
 			const backup = `${launcher}.${backupSuffix}`;
 			try {
 				await fs.promises.rename(launcher, backup);
@@ -1855,7 +1864,7 @@ export async function updateViaShimTakeover(
 				if (isEnoent(err)) continue;
 				try {
 					const original = await Bun.file(launcher).text();
-					await Bun.write(launcher, SHIM_FORWARDERS[ext]);
+					await Bun.write(launcher, forwarders[ext]);
 					forwarded.push({ launcher, original });
 				} catch {
 					stuck.push(launcher);
@@ -1881,7 +1890,7 @@ export async function updateViaShimTakeover(
 			}
 			await unlinkIfExists(exePath);
 			throw new Error(
-				`${formatVerificationFailure(verification, expectedVersion)}; restored previous ${APP_NAME} launcher`,
+				`${formatVerificationFailure(verification, expectedVersion)}; restored previous ${launcherName} launcher`,
 			);
 		}
 		for (const { backup } of retired) {
@@ -1889,7 +1898,7 @@ export async function updateViaShimTakeover(
 		}
 		// Reclaim exe backups and retired-shim leftovers from earlier attempts.
 		for (const ext of [".exe", "", ".cmd", ".ps1", ".bat"]) {
-			await sweepStaleUpdateArtifacts(path.join(launcherDir, `${APP_NAME}${ext}`));
+			await sweepStaleUpdateArtifacts(path.join(launcherDir, `${launcherName}${ext}`));
 		}
 	});
 	for (const { launcher } of forwarded) {

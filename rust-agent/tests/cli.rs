@@ -225,6 +225,15 @@ fn user_retrieval_honors_the_existing_application_agent_directory_override() {
 
 #[test]
 fn executable_streams_events_and_resumes_its_v3_session() {
+	check_executable_streaming_and_resume(false);
+}
+
+#[test]
+fn async_executable_streams_events_and_reopens_after_owner_shutdown() {
+	check_executable_streaming_and_resume(true);
+}
+
+fn check_executable_streaming_and_resume(async_session: bool) {
 	let root = or_abort(tempfile::tempdir());
 	let listener = or_abort(TcpListener::bind("127.0.0.1:0"));
 	let address = or_abort(listener.local_addr());
@@ -278,21 +287,23 @@ fn executable_streams_events_and_resumes_its_v3_session() {
 		}
 	});
 	for prompt in ["first question", "second question"] {
-		let result = omp()
-			.args([
-				"run",
-				"--workspace",
-				root.path().to_str().unwrap(),
-				"--session",
-				"current.jsonl",
-				"--prompt",
-				prompt,
-				"--base-url",
-				&format!("http://{address}/v1"),
-				"--events",
-			])
-			.assert()
-			.success();
+		let mut command = omp();
+		command.args([
+			"run",
+			"--workspace",
+			root.path().to_str().unwrap(),
+			"--session",
+			"current.jsonl",
+			"--prompt",
+			prompt,
+			"--base-url",
+			&format!("http://{address}/v1"),
+			"--events",
+		]);
+		if async_session {
+			command.arg("--async-session");
+		}
+		let result = command.assert().success();
 		let events: Vec<serde_json::Value> = result
 			.get_output()
 			.stdout
@@ -306,7 +317,21 @@ fn executable_streams_events_and_resumes_its_v3_session() {
 				.any(|event| event["event"]["type"] == "text_delta"
 					&& event["event"]["text"] == "remembered")
 		);
-		assert_eq!(events.last().unwrap()["event"]["type"], "completed");
+		assert!(
+			events
+				.iter()
+				.any(|event| event["event"]["type"] == "completed")
+		);
+		assert_eq!(
+			events.last().unwrap()["event"]["type"],
+			if async_session { "closed" } else { "completed" }
+		);
+		assert!(
+			events
+				.windows(2)
+				.all(|pair| pair[1]["sequence"].as_u64().unwrap()
+					== pair[0]["sequence"].as_u64().unwrap() + 1)
+		);
 	}
 	or_abort(server.join().map_err(|_| "server thread panicked"));
 	let bytes = or_abort(fs::read(root.path().join("current.jsonl")));

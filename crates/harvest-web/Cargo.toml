@@ -1,0 +1,23 @@
+[package]
+name = "harvest-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust/WASM read-only session replay for Harvest"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22.1"
+harvest-protocol = { path = "../harvest-protocol", version = "=0.1.0" }
+serde_json.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+leptos = { version = "0.8.22", default-features = false, features = ["csr"] }
+wasm-bindgen = "=0.2.128"
+web-sys = { version = "0.3.105", features = ["Window", "Document", "Element", "HtmlElement"] }

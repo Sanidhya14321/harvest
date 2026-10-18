@@ -10,6 +10,7 @@ type Mode =
 	| "local-ts"
 	| "workspace"
 	| "native"
+	| "surfaces"
 	| "coding-agent-singleton"
 	| "coding-agent-ui"
 	| "coding-agent-runtime"
@@ -54,6 +55,7 @@ const validModes: Record<Mode, true> = {
 	"local-ts": true,
 	workspace: true,
 	native: true,
+	surfaces: true,
 	"coding-agent-singleton": true,
 	"coding-agent-ui": true,
 	"coding-agent-runtime": true,
@@ -99,16 +101,14 @@ const fastWorkspacePackages = [
 // These suites cover the native package, TUI/browser-ish behavior, local servers,
 // or coding-agent-adjacent benchmark paths. Keep them low-concurrency and in jobs
 // that have downloaded the Linux x64 native addon artifacts.
+const surfacePackages = ["packages/stats", "packages/metaharness", "python/robomp/web"];
 const nativeAndIntegrationPackages = [
 	"packages/natives",
 	"packages/tui",
 	"packages/collab-web",
 	"packages/typescript-edit-benchmark",
+	...surfacePackages,
 ];
-
-// Packages the CI buckets deliberately skip but a local full run should still
-// cover. robomp-web lives under python/robomp and is outside every CI TS bucket.
-const localOnlyWorkspacePackages = ["python/robomp/web"];
 
 const codingAgentNativePathPatterns = [
 	/(^|\/)[^/]*(bash|native|browser|cmux|mnemopi|hindsight|memory)[^/]*\.test\.ts$/i,
@@ -209,6 +209,12 @@ function workspaceTestCommand(pkg: string, parallel: number, options: { extraArg
 		command: ["bun", "test", ...extraArgs],
 		parallel,
 	};
+}
+
+function integrationTestCommand(pkg: string, options: { extraArgs?: string[] } = {}): TestCommand {
+	// Dashboard suites share stats DB/profile state and metaharness environment
+	// switches within each process; keep their test files serial in every mode.
+	return workspaceTestCommand(pkg, surfacePackages.includes(pkg) ? 1 : 4, options);
 }
 
 // The Rust suite as one pooled command, so root `bun run test` reports TS and
@@ -328,7 +334,9 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 		case "workspace":
 			return fastWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 8));
 		case "native":
-			return nativeAndIntegrationPackages.map(pkg => workspaceTestCommand(pkg, 4));
+			return nativeAndIntegrationPackages.map(pkg => integrationTestCommand(pkg));
+		case "surfaces":
+			return surfacePackages.map(pkg => integrationTestCommand(pkg));
 		case "coding-agent-singleton":
 			return await codingAgentTestCommands("singleton");
 		case "coding-agent-ui":
@@ -352,14 +360,13 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 			];
 		// `local-ts` is the full local TypeScript run that root `bun run test:ts`
 		// drives: every package the old `--workspaces` fan-out covered (the CI
-		// `all` set plus robomp-web, which CI omits), routed through
+		// `all` set, including the browser/automation surfaces), routed through
 		// this one quiet runner so the whole suite shares one progress stream and
 		// one failure report. Repo script tests remain available via `test:scripts`.
 		case "local-ts":
 			return [
 				...fastWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 8, { extraArgs: onlyFailuresArgs })),
-				...nativeAndIntegrationPackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
-				...localOnlyWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
+				...nativeAndIntegrationPackages.map(pkg => integrationTestCommand(pkg, { extraArgs: onlyFailuresArgs })),
 				...(await commandsForMode("coding-agent-heavy")),
 			];
 		// `local` is what root `bun run test` drives: the full TS suite plus the

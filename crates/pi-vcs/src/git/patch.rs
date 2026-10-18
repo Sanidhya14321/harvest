@@ -1275,7 +1275,8 @@ fn augment_patch_sources(
 			continue;
 		}
 		let mode = source_mode.or(target_mode).unwrap_or(Mode::FILE);
-		if let Some((bytes, mode)) = read_worktree_entry(repo.root(), &repo.root().join(path), mode)? {
+		if let Some((bytes, mode)) = read_worktree_entry(repo.root(), &repo.root().join(path), mode)?
+		{
 			let id = gix_repo
 				.write_blob(bytes)
 				.map_err(|err| Error::backend("git hash patch source", err))?
@@ -1358,11 +1359,10 @@ fn untracked_worktree_map(
 /// crafted patch path or an untracked link farm — onto outside bytes.
 fn assert_no_symlink_ancestors(repo_root: &Path, path: &Path) -> Result<()> {
 	let Ok(rel) = path.strip_prefix(repo_root) else {
-		return Err(ApplyFailure::Invalid(format!(
-			"worktree path escapes repo root: {}",
-			path.display()
-		))
-		.into());
+		return Err(
+			ApplyFailure::Invalid(format!("worktree path escapes repo root: {}", path.display()))
+				.into(),
+		);
 	};
 	let Some(parent) = rel.parent() else {
 		return Ok(());
@@ -1370,14 +1370,14 @@ fn assert_no_symlink_ancestors(repo_root: &Path, path: &Path) -> Result<()> {
 	let mut current = repo_root.to_path_buf();
 	for comp in parent.components() {
 		current.push(comp);
-		if std::fs::symlink_metadata(&current)
-			.is_ok_and(|m| m.file_type().is_symlink())
-		{
-			return Err(ApplyFailure::Invalid(format!(
-				"worktree path parent is a symlink: {}",
-				current.display()
-			))
-			.into());
+		if std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink()) {
+			return Err(
+				ApplyFailure::Invalid(format!(
+					"worktree path parent is a symlink: {}",
+					current.display()
+				))
+				.into(),
+			);
 		}
 	}
 	Ok(())
@@ -1553,7 +1553,9 @@ fn validate_repo_worktree_path(
 	replace_link: bool,
 ) -> Result<PathBuf> {
 	validate_repo_path(rel_path).map_err(ApplyFailure::into_error)?;
-	let real_root = repo_root.canonicalize().unwrap_or_else(|_| repo_root.to_path_buf());
+	let real_root = repo_root
+		.canonicalize()
+		.unwrap_or_else(|_| repo_root.to_path_buf());
 	let mut current = repo_root.to_path_buf();
 	let path_buf = Path::new(rel_path);
 	if let Some(parent) = path_buf.parent() {
@@ -1562,38 +1564,37 @@ fn validate_repo_worktree_path(
 			// Any symlink in the parent chain redirects the effective target
 			// — including in-repo ones such as `a -> .git/` — so every link
 			// fails here instead of only outside-root escapes.
-			if std::fs::symlink_metadata(&current)
-				.is_ok_and(|m| m.file_type().is_symlink())
-			{
-				return Err(ApplyFailure::Invalid(format!(
-					"patch path parent is a symlink: {}",
-					current.display()
-				))
-				.into());
+			if std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink()) {
+				return Err(
+					ApplyFailure::Invalid(format!(
+						"patch path parent is a symlink: {}",
+						current.display()
+					))
+					.into(),
+				);
 			}
 		}
 	}
 	let target = repo_root.join(rel_path);
-	if std::fs::symlink_metadata(&target)
-		.is_ok_and(|m| m.file_type().is_symlink())
-	{
+	if std::fs::symlink_metadata(&target).is_ok_and(|m| m.file_type().is_symlink()) {
 		// Replacing the link itself (`remove` + recreate) never follows it,
 		// but writing file bytes through it would land on the link target.
 		if !replace_link {
-			return Err(ApplyFailure::Invalid(format!(
-				"patch target is a symlink: {}",
-				target.display()
-			))
-			.into());
+			return Err(
+				ApplyFailure::Invalid(format!("patch target is a symlink: {}", target.display()))
+					.into(),
+			);
 		}
 		if let Ok(resolved) = target.canonicalize()
 			&& !resolved.starts_with(&real_root)
 		{
-			return Err(ApplyFailure::Invalid(format!(
-				"patch target symlink resolves outside repo root: {}",
-				target.display()
-			))
-			.into());
+			return Err(
+				ApplyFailure::Invalid(format!(
+					"patch target symlink resolves outside repo root: {}",
+					target.display()
+				))
+				.into(),
+			);
 		}
 	}
 	Ok(target)
@@ -1612,19 +1613,23 @@ fn create_parent_dirs_no_follow(repo_root: &Path, rel_path: &str) -> Result<()> 
 		current.push(comp);
 		match std::fs::symlink_metadata(&current) {
 			Ok(meta) if meta.file_type().is_symlink() => {
-				return Err(ApplyFailure::Invalid(format!(
-					"patch path parent is a symlink: {}",
-					current.display()
-				))
-				.into());
+				return Err(
+					ApplyFailure::Invalid(format!(
+						"patch path parent is a symlink: {}",
+						current.display()
+					))
+					.into(),
+				);
 			},
 			Ok(meta) if meta.is_dir() => {},
 			Ok(_) => {
-				return Err(ApplyFailure::Invalid(format!(
-					"patch path parent is not a directory: {}",
-					current.display()
-				))
-				.into());
+				return Err(
+					ApplyFailure::Invalid(format!(
+						"patch path parent is not a directory: {}",
+						current.display()
+					))
+					.into(),
+				);
 			},
 			Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
 				std::fs::create_dir(&current)?;

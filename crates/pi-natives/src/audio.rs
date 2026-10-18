@@ -20,15 +20,16 @@ use pi_voice::audio::{CaptureStream, PlaybackState, PlaybackStream};
 type CaptureCallback = ThreadsafeFunction<Float32Array, UnknownReturnValue>;
 
 /// Maximum capture chunks buffered in the channel before dropping new chunks.
-/// At typical 20 ms capture periods, 64 chunks represents ~1.28 s of backpressure buffer.
+/// At typical 20 ms capture periods, 64 chunks represents ~1.28 s of
+/// backpressure buffer.
 const CAPTURE_QUEUE_CHUNKS: usize = 64;
 
 /// Default-microphone capture converted to mono `f32` at the requested sample
 /// rate.
 #[napi]
 pub struct AudioCapture {
-	stream: Mutex<Option<CaptureStream>>,
-	pump_handle: Mutex<Option<napi::tokio::task::JoinHandle<()>>>,
+	stream:         Mutex<Option<CaptureStream>>,
+	pump_handle:    Mutex<Option<napi::tokio::task::JoinHandle<()>>>,
 	dropped_chunks: Arc<AtomicU64>,
 }
 
@@ -45,16 +46,15 @@ impl AudioCapture {
 		let dropped_chunks = Arc::new(AtomicU64::new(0));
 		let dropped = Arc::clone(&dropped_chunks);
 
-		let stream = CaptureStream::start(sample_rate, move |samples| {
-			match tx.try_send(samples.to_vec()) {
+		let stream =
+			CaptureStream::start(sample_rate, move |samples| match tx.try_send(samples.to_vec()) {
 				Ok(()) => {},
 				Err(flume::TrySendError::Full(_)) => {
 					dropped.fetch_add(1, Ordering::Relaxed);
 				},
 				Err(flume::TrySendError::Disconnected(_)) => {},
-			}
-		})
-		.map_err(napi::Error::from_reason)?;
+			})
+			.map_err(napi::Error::from_reason)?;
 
 		let pump_handle = napi::tokio::spawn(async move {
 			while let Ok(chunk) = rx.recv_async().await {
@@ -84,7 +84,8 @@ impl AudioCapture {
 	/// Stop capture immediately and release the microphone.
 	#[napi]
 	pub fn stop(&self) -> Result<()> {
-		if let Some(handle) = self.pump_handle.lock().take() {
+		let handle = self.pump_handle.lock().take();
+		if let Some(handle) = handle {
 			handle.abort();
 		}
 		let stream = self.stream.lock().take();

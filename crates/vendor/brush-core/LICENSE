@@ -1,8 +1,9 @@
 This directory contains a vendored, locally-patched copy of brush-core from the
 brush shell project (https://github.com/reubeno/brush), used under the MIT
-License. It is wired into the workspace via `[patch.crates-io]` so these
-modifications can be maintained against the published release (brush-core
-0.5.0).
+License. Harvest distributes the patched implementation under the owned
+`harvest-brush-core` Cargo package name (upstream baseline: brush-core 0.5.0),
+while preserving the `brush_core` Rust library name. Consumers use explicit
+package aliases rather than inheriting a workspace registry patch.
 
   Copyright (c) 2024 reuben olinsky
 

@@ -115,6 +115,9 @@ describe("stats sync deduplicates forked-session entries", () => {
 			{ id: "parent00", cwd: "/tmp/project" },
 			[userEntry, assistantEntry],
 		);
+		// Preserve the original request's owner when a later-created fork
+		// copies it, independently of filesystem enumeration order.
+		await syncAllSessions({ workers: 1 });
 
 		// `SessionManager.createBranchedSession` / `forkFrom` deep-copy the
 		// parent's entries into the child file with `parentSession` in the

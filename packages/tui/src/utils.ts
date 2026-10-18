@@ -1,4 +1,5 @@
 import {
+	canPrefixTerminalWidth as nativeCanPrefixTerminalWidth,
 	Ellipsis,
 	type ExtractSegmentsResult,
 	extractSegments as nativeExtractSegments,
@@ -74,6 +75,13 @@ export function getPublishedLineWidths(lines: readonly string[]): readonly numbe
 		if (entry.lines[i] !== lines[i]) return undefined;
 	}
 	return entry.widths;
+}
+
+/** Whether ASCII left padding can be added to an already-published row width. */
+export function canCarryWidthWithPadding(line: string): boolean {
+	const first = line.charCodeAt(0);
+	if (line.length === 0 || (first >= 0x20 && first <= 0x7e)) return true;
+	return typeof nativeCanPrefixTerminalWidth === "function" && nativeCanPrefixTerminalWidth(line) === true;
 }
 
 export function setHangulCompatibilityJamoWidth(width: HangulCompatibilityJamoWidth): boolean {

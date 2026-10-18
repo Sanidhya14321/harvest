@@ -1,113 +1,116 @@
-name: Release
+name: Rust distribution (parity gated)
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing authoritative release tag; this workflow never bumps or tags
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing authoritative release tag; this workflow never bumps or tags
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release
+  # This reusable workflow owns the lock for both tag and manual entrypoints.
+  # A caller must not hold the same lock while waiting for this workflow.
+  group: harvest-public-release
   cancel-in-progress: false
-
-defaults:
-  run:
-    working-directory: rust-agent
 
 jobs:
   parity:
     name: Require complete Rust capability parity before release
     runs-on: ubuntu-latest
+    outputs:
+      revision: ${{ steps.candidate.outputs.revision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ inputs.tag }}
           persist-credentials: false
+      - name: Pin the candidate commit
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=$(git rev-parse --verify HEAD)
+          echo "revision=${revision}" >>"${GITHUB_OUTPUT}"
       - name: Install authoritative workspace toolchain
         working-directory: ${{ github.workspace }}
         run: rustup show
       - name: Distribution cutover gate
         working-directory: ${{ github.workspace }}
-        run: cargo xtask capabilities --require-complete
+        run: |
+          set -euo pipefail
+          cargo xtask capabilities --require-complete
+          cargo xtask migration status --require-complete
+          cargo xtask migration verify --scope release
+      - name: Verify the portable Rust generator outputs before distribution
+        working-directory: ${{ github.workspace }}
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo xtask terminal-wasm --check
   version:
     needs: parity
-    name: Bump version and tag
-    if: "github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore: release v')"
+    name: Validate the authoritative version and registry package
     runs-on: ubuntu-latest
-    environment: pukbot-production
     outputs:
-      tag: ${{ steps.bump.outputs.tag }}
-      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      revision: ${{ needs.parity.outputs.revision }}
     steps:
-      - id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
-        with:
-          client-id: ${{ vars.PUKBOT_CLIENT_ID }}
-          private-key: ${{ secrets.PUKBOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ needs.parity.outputs.revision }}
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: true
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
-        with:
-          components: rustfmt, clippy
+          persist-credentials: false
+      - run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-      - name: Choose the next patch version
-        id: bump
-        run: |
-          set -euo pipefail
-          current=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[0].version')
-          IFS=. read -r major minor patch <<<"${current}"
-          for _ in $(seq 1 100); do
-            patch=$((patch + 1))
-            next="${major}.${minor}.${patch}"
-            code=$(curl -sS -o /dev/null -w '%{http_code}' -A omp-release "https://crates.io/api/v1/crates/harvest-omp/${next}")
-            case "${code}" in
-              404) ;;
-              200) continue ;;
-              *) echo "unexpected crates.io status ${code} for ${next}" >&2; exit 1 ;;
-            esac
-            if git -C "${GITHUB_WORKSPACE}" rev-parse -q --verify "refs/tags/v${next}" >/dev/null; then continue; fi
-            echo "version=${next}" >>"${GITHUB_OUTPUT}"
-            echo "tag=v${next}" >>"${GITHUB_OUTPUT}"
-            echo "releasing ${current} -> ${next}"
-            exit 0
-          done
-          echo "no free patch version after ${current}" >&2
-          exit 1
-      - name: Apply the version
+      - name: Verify the existing tag and shared version
+        id: release
         env:
-          VERSION: ${{ steps.bump.outputs.version }}
+          TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          sed -i "0,/^version = .*/s//version = \"${VERSION}\"/" Cargo.toml
-          cargo update --workspace
-          test "$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[0].version')" = "${VERSION}"
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test --all-features --locked
-      - name: Commit the version bump
+          [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          version=$(cargo metadata --locked --format-version 1 --no-deps | jq -er '.packages[] | select(.name == "harvest-omp") | .version')
+          test "${TAG}" = "v${version}"
+          test "$(jq -r '.version' packages/coding-agent/package.json)" = "${version}"
+          # Check the manifest at the tag too; dispatching from a different
+          # checkout must not bypass the distribution cutover gate.
+          cargo xtask capabilities --require-complete
+          cargo xtask migration status --require-complete
+          echo "version=${version}" >>"${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >>"${GITHUB_OUTPUT}"
+      - name: Reject replacement of an existing public release
+        shell: bash
         env:
-          VERSION: ${{ steps.bump.outputs.version }}
-        working-directory: ${{ github.workspace }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          git config user.name 'pukbot[bot]'
-          git config user.email '320458784+pukbot[bot]@users.noreply.github.com'
-          git add rust-agent/Cargo.toml rust-agent/Cargo.lock
-          git commit -m "chore: release v${VERSION} [skip ci]"
-      - run: cargo package --locked
-      - name: Publish the release commit and tag
-        env:
-          VERSION: ${{ steps.bump.outputs.version }}
-        working-directory: ${{ github.workspace }}
+          status=$(curl --silent --show-error --location \
+            --output "${RUNNER_TEMP}/release-metadata.json" --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")
+          case "${status}" in
+            404) ;;
+            200) echo "Release ${TAG} already exists; its public artifacts are immutable." >&2; exit 1 ;;
+            *) echo "Could not verify release absence (HTTP ${status})." >&2; exit 1 ;;
+          esac
+      - name: Validate a real registry package, including full dependencies
         run: |
-          set -euo pipefail
-          git tag -a "v${VERSION}" -m "omp v${VERSION}"
-          git push --atomic origin HEAD:main "refs/tags/v${VERSION}"
+          cargo xtask version --check
+          cargo xtask npm-versions --check --workspace
+          cargo package -p harvest-omp --all-features --locked
 
   build:
     name: Build ${{ matrix.artifact }}
@@ -117,35 +120,47 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            artifact: omp-linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            artifact: omp-linux-x64
             binary: omp
             deb_arch: amd64
           - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            artifact: omp-linux-aarch64
+            target: aarch64-unknown-linux-gnu
+            artifact: omp-linux-arm64
             binary: omp
             deb_arch: arm64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: omp-linux-musl-x64
+            binary: omp
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            artifact: omp-linux-musl-arm64
+            binary: omp
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact: omp-macos-x86_64
+            artifact: omp-darwin-x64
             binary: omp
           - os: macos-14
             target: aarch64-apple-darwin
-            artifact: omp-macos-aarch64
+            artifact: omp-darwin-arm64
             binary: omp
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: omp-windows-x86_64.exe
+            artifact: omp-windows-x64.exe
+            binary: omp.exe
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            artifact: omp-windows-arm64.exe
             binary: omp.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.revision }}
           persist-credentials: false
       - name: Install musl linker
-        if: runner.os == 'Linux'
+        if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
@@ -155,7 +170,7 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --locked --target "${TARGET}"
+        run: cargo build -p harvest-omp --bins --all-features --release --locked --target "${TARGET}"
       - name: Prepare artifact (Unix)
         if: runner.os != 'Windows'
         env:
@@ -181,9 +196,12 @@ jobs:
         shell: pwsh
         env:
           ARTIFACT: ${{ matrix.artifact }}
-        run: $env:OMP_SKIP_INTEGRATIONS = '1'; & "./$env:ARTIFACT" --version
+        run: |
+          $env:OMP_SKIP_INTEGRATIONS = '1'
+          & "./$env:ARTIFACT" --version
+          if ($LASTEXITCODE -ne 0) { throw "Artifact smoke failed" }
       - name: Build Debian package
-        if: runner.os == 'Linux'
+        if: matrix.deb_arch != ''
         env:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -196,16 +214,16 @@ jobs:
           OMP_SKIP_INTEGRATIONS=1 "${binary}" completions zsh > "target/${TARGET}/release/omp.zsh"
           OMP_SKIP_INTEGRATIONS=1 "${binary}" man > "target/${TARGET}/release/omp.1"
           cargo install cargo-deb --version 3.7.0 --locked
-          cargo deb --no-build --no-strip --target "${TARGET}" --output "omp_${VERSION}_${DEB_ARCH}.deb"
+          cargo deb --manifest-path rust-agent/Cargo.toml --no-build --no-strip --target "${TARGET}" --output "omp_${VERSION}_${DEB_ARCH}.deb"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ${{ matrix.artifact }}
-          path: rust-agent/${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: runner.os == 'Linux'
+        if: matrix.deb_arch != ''
         with:
           name: omp-deb-${{ matrix.deb_arch }}
-          path: rust-agent/omp_${{ needs.version.outputs.version }}_${{ matrix.deb_arch }}.deb
+          path: omp_${{ needs.version.outputs.version }}_${{ matrix.deb_arch }}.deb
 
   publish-crate:
     name: Publish crate
@@ -217,12 +235,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.revision }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           lookup-only: true
+      - name: Recheck readiness and the public tag before registry publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          REVISION: ${{ needs.version.outputs.revision }}
+        run: |
+          set -euo pipefail
+          cargo xtask capabilities --require-complete
+          cargo xtask migration status --require-complete
+          actual=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq .sha)
+          test "${actual}" = "${REVISION}"
       - name: Check crate version
         id: crate
         env:
@@ -235,7 +265,7 @@ jobs:
         if: steps.crate.outputs.publish == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked
+        run: cargo publish -p harvest-omp --all-features --locked
 
   release:
     name: Publish GitHub release
@@ -262,23 +292,22 @@ jobs:
           permission-contents: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.revision }}
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           path: dist
           merge-multiple: true
-      - name: Prepare Winget archive
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Prepare installer archives
+        run: cargo xtask package archives --assets-dir dist
+      - name: Include release legal files
         run: |
-          set -euo pipefail
-          archive="${RUNNER_TEMP}/winget-archive"
-          mkdir "${archive}"
-          cp dist/omp-windows-x86_64.exe "${archive}/omp.exe"
-          cp dist/omp-windows-x86_64.exe "${archive}/harvest.exe"
-          (cd "${archive}" && zip -9 "${GITHUB_WORKSPACE}/dist/omp-windows-x86_64.zip" ./*.exe)
+          cp LICENSE dist/LICENSE
+          cp THIRD-PARTY-NOTICES.txt dist/THIRD-PARTY-NOTICES.txt
       - name: Generate checksums
-        working-directory: dist
-        run: sha256sum omp-* > SHA256SUMS
+        run: cargo xtask checksums --require-platforms dist/SHA256SUMS.txt dist/omp* dist/LICENSE dist/THIRD-PARTY-NOTICES.txt
       - name: Render Winget manifests
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -288,24 +317,33 @@ jobs:
           cargo xtask package winget \
             --version "${VERSION}" \
             --release-date "$(date -u +%F)" \
-            --checksums dist/SHA256SUMS \
+            --checksums dist/SHA256SUMS.txt \
             --output-dir "${manifests}"
           (cd "${manifests}" && zip -9 "${GITHUB_WORKSPACE}/dist/omp-winget-manifests.zip" ./*.yaml)
           rm -r "${manifests}"
-          (cd dist && sha256sum omp-* >SHA256SUMS)
-      - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          tag_name: ${{ needs.version.outputs.tag }}
-          generate_release_notes: true
-          files: dist/*
+          cargo xtask checksums --require-platforms dist/SHA256SUMS.txt dist/omp* dist/LICENSE dist/THIRD-PARTY-NOTICES.txt
+      - name: Publish the sealed assets without replacing an existing release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          REVISION: ${{ needs.version.outputs.revision }}
+        run: |
+          set -euo pipefail
+          cargo xtask capabilities --require-complete
+          cargo xtask migration status --require-complete
+          actual=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq .sha)
+          test "${actual}" = "${REVISION}"
+          # create fails if the release exists; never upload with --clobber.
+          cargo xtask release-notes "${TAG}" target/release-notes.md
+          gh release create "${TAG}" dist/* --verify-tag --generate-notes --notes-file target/release-notes.md --title "${TAG}"
       - name: Render the Homebrew formula
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           cargo xtask package homebrew \
-            --version "${VERSION}" --checksums dist/SHA256SUMS --output omp.rb
+            --version "${VERSION}" --checksums dist/SHA256SUMS.txt --output omp.rb
       - name: Mirror the formula to the tap repository
         env:
           PUKBOT_TOKEN: ${{ steps.app-token.outputs.token }}

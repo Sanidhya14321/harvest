@@ -1,7 +1,8 @@
 use std::{
 	env,
 	io::{self, Write},
-	path::PathBuf,
+	path::{Path, PathBuf},
+	sync::Arc,
 };
 
 use anyhow::{Context, Result, bail};
@@ -13,6 +14,7 @@ use crate::{
 	agent,
 	config::{self, Overrides},
 	provider::{HttpModel, Model},
+	session_engine::{SessionEngine, SessionEngineOptions},
 	shell,
 };
 
@@ -27,6 +29,10 @@ struct Cli {
 enum Commands {
 	#[command(about = "Run one prompt against the workspace")]
 	Run(RunArgs),
+	#[command(about = "Serve the experimental Rust JSONL v1 RPC subset")]
+	Rpc(RpcArgs),
+	#[command(about = "Render a persisted branch with the portable Rust terminal layout")]
+	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
 	#[command(about = "Inspect compatible session JSONL without changing its source")]
@@ -47,24 +53,22 @@ enum Commands {
 }
 
 #[derive(Debug, clap::Args)]
-struct SessionArgs {
+struct ReplayArgs {
 	#[arg(short, long, default_value = ".")]
 	workspace: PathBuf,
 	#[arg(long)]
-	leaf:      Option<String>,
+	leaf:      String,
+	#[arg(long, default_value_t = 80, value_parser = clap::value_parser!(u16).range(1..))]
+	columns:   u16,
 	file:      PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
-struct RunArgs {
+struct RpcArgs {
 	#[arg(long, default_value = ".omp/session.jsonl")]
 	session:   PathBuf,
 	#[arg(long)]
 	leaf:      Option<String>,
-	#[arg(long, help = "Emit ordered JSON events, including provisional streamed text")]
-	events:    bool,
-	#[arg(short, long)]
-	prompt:    String,
 	#[arg(short, long, default_value = ".")]
 	workspace: PathBuf,
 	#[arg(long)]
@@ -79,6 +83,43 @@ struct RunArgs {
 	api_key:   Option<String>,
 	#[arg(long)]
 	max_steps: Option<u32>,
+}
+
+#[derive(Debug, clap::Args)]
+struct SessionArgs {
+	#[arg(short, long, default_value = ".")]
+	workspace: PathBuf,
+	#[arg(long)]
+	leaf:      Option<String>,
+	file:      PathBuf,
+}
+
+#[derive(Debug, clap::Args)]
+struct RunArgs {
+	#[arg(long, default_value = ".omp/session.jsonl")]
+	session:       PathBuf,
+	#[arg(long)]
+	leaf:          Option<String>,
+	#[arg(long, help = "Emit ordered JSON events, including provisional streamed text")]
+	events:        bool,
+	#[arg(long, help = "Use the experimental asynchronous session owner")]
+	async_session: bool,
+	#[arg(short, long)]
+	prompt:        String,
+	#[arg(short, long, default_value = ".")]
+	workspace:     PathBuf,
+	#[arg(long)]
+	agent_dir:     Option<PathBuf>,
+	#[arg(long)]
+	tag:           Vec<String>,
+	#[arg(long)]
+	model:         Option<String>,
+	#[arg(long)]
+	base_url:      Option<String>,
+	#[arg(long)]
+	api_key:       Option<String>,
+	#[arg(long)]
+	max_steps:     Option<u32>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -104,6 +145,11 @@ pub(crate) fn execute() -> Result<u8> {
 fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
 		Commands::Run(args) => run(args),
+		Commands::Rpc(args) => rpc(args),
+		Commands::Replay(args) => {
+			crate::replay_cli::execute(&args.workspace, &args.file, &args.leaf, args.columns)?;
+			Ok(0)
+		},
 		Commands::Tools => tools(),
 		Commands::Session(args) => inspect_session(args),
 		Commands::Completions(args) => completions(args),
@@ -143,6 +189,59 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 	Ok(0)
 }
 
+fn rpc(args: RpcArgs) -> Result<u8> {
+	let workspace = args
+		.workspace
+		.canonicalize()
+		.context("failed to resolve RPC workspace")?;
+	let environment = config::environment_from(|key| env::var(key).ok())?;
+	let settings = config::resolve(
+		&workspace,
+		&Overrides {
+			model:     args.model,
+			base_url:  args.base_url,
+			api_key:   args.api_key,
+			max_steps: args.max_steps,
+		},
+		&environment,
+	)?;
+	let user_agent_dir =
+		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
+	let runtime = tokio::runtime::Builder::new_multi_thread()
+		.worker_threads(2)
+		.enable_all()
+		.build()?;
+	let result = runtime.block_on(async {
+		let options = crate::rpc::RpcOptions {
+			session_file: workspace.join(&args.session),
+			model:        settings.model.clone(),
+		};
+		let max_model_turns = Some(settings.max_steps);
+		let session = SessionEngine::open(
+			&workspace,
+			&args.session,
+			args.leaf.as_deref(),
+			Arc::new(HttpModel::new(settings)),
+			Arc::new(crate::tools::DenyMutations),
+			SessionEngineOptions {
+				max_model_turns,
+				user_agent_dir,
+				tags: args.tag.into_iter().collect(),
+				event_capacity: 256,
+				..Default::default()
+			},
+		)
+		.await?;
+		crate::rpc::serve(session, tokio::io::stdin(), tokio::io::stdout(), options).await?;
+		Ok(0)
+	});
+	// Tokio's stdin adapter can retain a blocking read after its async task
+	// is cancelled. The session has already drained and released ownership;
+	// don't let a disconnected client keep the CLI alive through that read.
+	runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+	result
+}
+
 fn run(args: RunArgs) -> Result<u8> {
 	if args.prompt.is_empty() {
 		bail!("prompt is empty");
@@ -155,18 +254,21 @@ fn run(args: RunArgs) -> Result<u8> {
 	let settings = config::resolve(
 		&workspace,
 		&Overrides {
-			model:     args.model,
-			base_url:  args.base_url,
-			api_key:   args.api_key,
+			model:     args.model.clone(),
+			base_url:  args.base_url.clone(),
+			api_key:   args.api_key.clone(),
 			max_steps: args.max_steps,
 		},
 		&environment,
 	)?;
+	let user_agent_dir = config::agent_dir_from(args.agent_dir.clone(), |key| env::var_os(key))
+		.filter(|path| path.is_dir());
+	if args.async_session {
+		return run_async_session(&args, &workspace, settings, user_agent_dir);
+	}
 	let max_steps = settings.max_steps;
 	let model = HttpModel::new(settings);
 	let model_ref: &dyn Model = &model;
-	let user_agent_dir =
-		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
 	let mut session =
 		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
 	let mut output = io::stdout().lock();
@@ -193,6 +295,88 @@ fn run(args: RunArgs) -> Result<u8> {
 		writeln!(output, "{answer}")?;
 	}
 	Ok(0)
+}
+
+fn run_async_session(
+	args: &RunArgs,
+	workspace: &Path,
+	settings: config::Settings,
+	user_agent_dir: Option<PathBuf>,
+) -> Result<u8> {
+	let runtime = tokio::runtime::Builder::new_multi_thread()
+		.worker_threads(2)
+		.enable_all()
+		.build()?;
+	runtime.block_on(async {
+		let max_model_turns = Some(settings.max_steps);
+		let session = SessionEngine::open(
+			workspace,
+			&args.session,
+			args.leaf.as_deref(),
+			Arc::new(HttpModel::new(settings)),
+			Arc::new(crate::tools::TerminalApproval),
+			SessionEngineOptions {
+				max_model_turns,
+				user_agent_dir,
+				tags: args.tag.iter().cloned().collect(),
+				..Default::default()
+			},
+		)
+		.await?;
+		let mut subscription = session.subscribe().await?;
+		let ticket = session.submit(args.prompt.clone()).await?;
+		let abort = ticket.handle.clone();
+		let completion = ticket.wait();
+		let interrupt = tokio::signal::ctrl_c();
+		tokio::pin!(completion, interrupt);
+		let mut interrupted = false;
+		let mut output = io::stdout().lock();
+		let outcome: Result<_> = loop {
+			tokio::select! {
+				result = &mut completion => break Ok(result),
+				event = subscription.events.recv(), if args.events => {
+					let written = match event {
+						Ok(event) => serde_json::to_writer(&mut output, event.as_ref())
+							.map_err(anyhow::Error::from)
+							.and_then(|()| { writeln!(output)?; output.flush()?; Ok(()) }),
+						Err(error) => Err(anyhow::anyhow!("async session event stream interrupted: {error}")),
+					};
+					if let Err(error) = written { break Err(error); }
+				},
+				signal = &mut interrupt, if !interrupted => {
+					if let Err(error) = signal { break Err(error.into()); }
+					interrupted = true;
+					abort.abort();
+				},
+			}
+		};
+		if outcome.is_err() {
+			abort.abort();
+			let _ = completion.await;
+		}
+		session.shutdown().await?;
+		if args.events {
+			loop {
+				match subscription.events.try_recv() {
+					Ok(event) => {
+						serde_json::to_writer(&mut output, event.as_ref())?;
+						writeln!(output)?;
+					},
+					Err(
+						tokio::sync::broadcast::error::TryRecvError::Empty
+						| tokio::sync::broadcast::error::TryRecvError::Closed,
+					) => break,
+					Err(error) => bail!("async session event stream interrupted: {error}"),
+				}
+			}
+			output.flush()?;
+		}
+		let answer = outcome??;
+		if !args.events {
+			writeln!(output, "{answer}")?;
+		}
+		Ok(0)
+	})
 }
 
 fn tools() -> Result<u8> {

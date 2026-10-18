@@ -4341,7 +4341,13 @@ mod tests {
 		assert_eq!(
 			paths,
 			vec!["flake.nix", "modules/common/zsh.nix"],
-			"an explicit non-repo search root must not inherit ignore files from unrelated parents"
+			"an explicit non-repo search root must not inherit ignore files from unrelated parents; \
+			 repository ancestors: {:?}",
+			tree
+				.path()
+				.ancestors()
+				.filter(|parent| has_repo_marker(parent))
+				.collect::<Vec<_>>()
 		);
 	}
 

@@ -86,11 +86,15 @@ impl PathPolicy {
 				// paths above the workspace) stay lexical here; the read jail
 				// (`check_read`) and the host write jail own those.
 				let jail = lexical_normalize(&self.cwd);
-				check_existing_within_root(&absolute, &jail, &format!(
-					"Path traversal rejected: \"{display}\" resolves outside the workspace root \
-					 (to \"{}\").",
-					absolute.display()
-				))?;
+				check_existing_within_root(
+					&absolute,
+					&jail,
+					&format!(
+						"Path traversal rejected: \"{display}\" resolves outside the workspace root (to \
+						 \"{}\").",
+						absolute.display()
+					),
+				)?;
 				absolute
 			}
 		};
@@ -224,7 +228,11 @@ impl PathPolicy {
 				.as_ref()
 				.ok_or_else(|| EditError::apply(VAULT_DISABLED_MESSAGE))?;
 			let (host, _) = split_url_authority(rest)?;
-			let key = if host.is_empty() || host == "_" { "_" } else { host.as_str() };
+			let key = if host.is_empty() || host == "_" {
+				"_"
+			} else {
+				host.as_str()
+			};
 			return roots
 				.iter()
 				.find(|(name, _)| name == key)
@@ -234,8 +242,8 @@ impl PathPolicy {
 		for prefix in INTERNAL_PREFIXES {
 			if normalized.starts_with(prefix) {
 				return Err(EditError::apply(format!(
-					"Path \"{display}\" uses internal scheme \"{prefix}\" and must be resolved \
-					 through the proper protocol handler, not as a filesystem path."
+					"Path \"{display}\" uses internal scheme \"{prefix}\" and must be resolved through \
+					 the proper protocol handler, not as a filesystem path."
 				)));
 			}
 		}
@@ -777,8 +785,11 @@ mod tests {
 
 		let mut files = FileCache::new(policy(root));
 		// An absolute path outside the workspace never opens…
-		let outside_display =
-			outside.path().join("secret.txt").to_string_lossy().into_owned();
+		let outside_display = outside
+			.path()
+			.join("secret.txt")
+			.to_string_lossy()
+			.into_owned();
 		let err = files.read(&outside_display).unwrap_err().to_string();
 		assert!(err.contains("resolves outside"), "{err}");
 		assert!(!err.contains("S3CR3T"), "{err}");
@@ -811,7 +822,10 @@ mod tests {
 		// sandbox fails closed at resolve time.
 		let err = p.resolve("local://link.txt").unwrap_err().to_string();
 		assert!(err.contains("escapes local root"), "{err}");
-		let err = p.resolve("local://evildir/secret.txt").unwrap_err().to_string();
+		let err = p
+			.resolve("local://evildir/secret.txt")
+			.unwrap_err()
+			.to_string();
 		assert!(err.contains("escapes local root"), "{err}");
 	}
 
