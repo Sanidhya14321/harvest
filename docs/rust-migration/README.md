@@ -10,7 +10,9 @@ because a Rust command or tool has the same name.
 - One Cargo workspace, lockfile, toolchain and build profile configuration for
   the existing native engines and the experimental application.
 - `cargo xtask check`, `cargo xtask test` (nextest followed by doctests), and a
-  capability inventory with a distribution cutover gate.
+  capability inventory with a distribution cutover gate. Focused test target
+  selectors apply to nextest while doctests retain package/build options;
+  `--test session_recovery` no longer fails by mixing `--doc` and target flags.
 - Shared capability-relative filesystem operations, bounded reads/appends,
   atomic replacement, root writer locks and cancellation in `harvest-runtime`.
   `pi-shell` retains its cancellation API through re-exports.
@@ -121,6 +123,7 @@ required before global automatic maintenance can satisfy the complete plan.
 ```sh
 cargo xtask test -p harvest-runtime -p harvest-brain -p harvest-omp
 cargo xtask test -p harvest-omp --features full
+cargo xtask test -p harvest-omp --test session_recovery
 cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-omp \
   -p xtask --all-targets --all-features -- -D warnings
 cargo xtask capabilities

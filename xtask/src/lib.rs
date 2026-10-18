@@ -3,3 +3,4 @@ pub mod capabilities;
 pub mod migration;
 pub mod packaging;
 pub mod secrets;
+pub mod testing;

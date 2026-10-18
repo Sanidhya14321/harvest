@@ -28,11 +28,12 @@ fn execute() -> Result<()> {
 		"migration" => xtask::migration::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
 		"test" => {
+			let doctest_selection = xtask::testing::doctest_selection(&selection)?;
 			let mut nextest = vec!["nextest".into(), "run".into(), "--locked".into()];
 			nextest.extend(selection.iter().cloned());
 			cargo(&nextest)?;
 			let mut docs = vec!["test".into(), "--doc".into(), "--locked".into()];
-			docs.extend(selection);
+			docs.extend(doctest_selection);
 			cargo(&docs)
 		},
 		"check" => {
@@ -65,8 +66,8 @@ fn execute() -> Result<()> {
 		},
 		"help" | "--help" | "-h" => {
 			println!(
-				"cargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo package \
-				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
+				"cargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and \
+				 target selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
 				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
 				 --help\ncargo xtask secrets --help\ncargo xtask migration [--require-complete]"
 			);
