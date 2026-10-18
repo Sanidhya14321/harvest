@@ -137,7 +137,11 @@ Rust CI runs the coverage gate independently of capability parity. The command
 uses the Git index, so stage intended deletions before checking removal evidence.
 New tracked source files require ledger entries. Baseline paths must never be
 removed just because their source was deleted; retain their completed records.
-Changes to the baseline itself require review against the recorded Git commit.
+The gate checks the baseline against the original Git tree, so shrinking both
+ledger and baseline cannot hide deletions. Shallow checkouts must fetch the
+recorded baseline commit; CI checks and release parity fetch history for this.
+Rust release requires both source completion and capability parity before it
+can create a release commit or tag.
 
 For each path, review its behavior, consumers, persisted formats, dependencies,
 Rust destination and verification requirements. Use explicit `none` where a

@@ -1,5 +1,9 @@
 //! Persistent source inventory: deletion is not evidence of a completed port.
-use std::{collections::BTreeSet, path::Path, process::Command};
+use std::{
+	collections::BTreeSet,
+	path::Path,
+	process::{Command, Stdio},
+};
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -146,6 +150,56 @@ pub fn inspect(baseline: &Baseline, ledger: &Ledger, tracked: &[String]) -> Resu
 	Ok(completed)
 }
 
+fn validate_baseline(baseline: &Baseline, original: &[String]) -> Result<()> {
+	let recorded: BTreeSet<&str> = baseline.paths.iter().map(String::as_str).collect();
+	let expected: BTreeSet<&str> = original
+		.iter()
+		.filter(|path| source(path))
+		.map(String::as_str)
+		.collect();
+	if recorded.len() != baseline.paths.len() || recorded != expected {
+		bail!(
+			"source baseline disagrees with its recorded Git tree; deleted sources must retain their \
+			 inventory rows"
+		);
+	}
+	Ok(())
+}
+
+fn git_paths(root: &Path, revision: Option<&str>) -> Result<Vec<String>> {
+	let mut command = Command::new("git");
+	if let Some(revision) = revision {
+		command.args(["ls-tree", "-r", "--name-only", "-z", revision]);
+	} else {
+		command.args(["ls-files", "-z"]);
+	}
+	let mut child = command
+		.current_dir(root)
+		.stdout(Stdio::piped())
+		.stderr(Stdio::null())
+		.spawn()?;
+	let output = harvest_runtime::read_bounded(
+		child.stdout.take().context("missing Git stdout")?,
+		8 * 1024 * 1024,
+	);
+	let bytes = match output {
+		Ok(bytes) => bytes,
+		Err(error) => {
+			let _ = child.kill();
+			let _ = child.wait();
+			return Err(error);
+		},
+	};
+	if !child.wait()?.success() {
+		bail!("could not enumerate Git sources");
+	}
+	Ok(String::from_utf8(bytes)?
+		.split('\0')
+		.filter(|path| !path.is_empty())
+		.map(str::to_owned)
+		.collect())
+}
+
 pub fn execute(arguments: Vec<String>) -> Result<()> {
 	if arguments
 		.iter()
@@ -156,23 +210,18 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 	let root = Path::new(env!("CARGO_MANIFEST_DIR"))
 		.parent()
 		.context("workspace root missing")?;
-	let baseline = serde_json::from_slice(&std::fs::read(
+	let baseline: Baseline = serde_json::from_slice(&std::fs::read(
 		root.join("docs/rust-migration/source-baseline.json"),
 	)?)?;
 	let ledger: Ledger =
 		serde_json::from_slice(&std::fs::read(root.join("docs/rust-migration/source-ledger.json"))?)?;
-	let output = Command::new("git")
-		.args(["ls-files", "-z"])
-		.current_dir(root)
-		.output()?;
-	if !output.status.success() {
-		bail!("could not enumerate tracked sources");
+	if baseline.commit.len() != 40 || !baseline.commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+		bail!("migration baseline requires a full Git commit ID");
 	}
-	let tracked: Vec<String> = String::from_utf8(output.stdout)?
-		.split('\0')
-		.filter(|path| !path.is_empty())
-		.map(str::to_owned)
-		.collect();
+	let original = git_paths(root, Some(&baseline.commit))
+		.context("migration baseline revision unavailable; fetch its recorded Git commit")?;
+	validate_baseline(&baseline, &original)?;
+	let tracked = git_paths(root, None)?;
 	let completed = inspect(&baseline, &ledger, &tracked)?;
 	println!("{completed}/{} source entries migrated and verified", ledger.entries.len());
 	if arguments
@@ -227,6 +276,17 @@ mod tests {
 		entry["installed_verification"] = json!("verified");
 		entry["retirement_reason"] = serde_json::Value::Null;
 		assert!(inspect(&baseline, &ledger(&entry)?, &[]).is_err());
+		Ok(())
+	}
+	#[test]
+	fn shrinking_the_baseline_cannot_hide_deleted_legacy_sources() -> Result<()> {
+		let mut baseline: Baseline = serde_json::from_value(
+			json!({"version":1,"commit":"a".repeat(40),"paths":["app.ts","worker.ts"]}),
+		)?;
+		let original = vec!["app.ts".into(), "worker.ts".into(), "Cargo.toml".into()];
+		validate_baseline(&baseline, &original)?;
+		baseline.paths.pop();
+		assert!(validate_baseline(&baseline, &original).is_err());
 		Ok(())
 	}
 }

@@ -22,12 +22,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install authoritative workspace toolchain
         working-directory: ${{ github.workspace }}
         run: rustup show
       - name: Distribution cutover gate
         working-directory: ${{ github.workspace }}
-        run: cargo xtask capabilities --require-complete
+        run: |
+          cargo xtask migration --require-complete
+          cargo xtask capabilities --require-complete
   version:
     needs: parity
     name: Bump version and tag
