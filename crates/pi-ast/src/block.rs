@@ -345,15 +345,13 @@ mod tests {
 	use super::*;
 
 	fn resolve(code: &str, path: &str, line: u32) -> Option<BlockRange> {
-		match block_range_at(BlockRangeOptions {
+		block_range_at(BlockRangeOptions {
 			code: code.to_string(),
 			lang: None,
 			path: Some(path.to_string()),
 			line,
-		}) {
-			Ok(range) => range,
-			Err(_) => None,
-		}
+		})
+		.unwrap_or_default()
 	}
 
 	fn chain(code: &str, path: &str, line: u32) -> Vec<NodeSpan> {
