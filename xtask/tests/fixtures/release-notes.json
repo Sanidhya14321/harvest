@@ -1,0 +1,51 @@
+[
+  {
+    "name": "silent versions merge with newest duplicate precedence",
+    "floor": "1.2.0",
+    "target": "1.4.0",
+    "content": "# Changes\n## [Unreleased]\n### Added\n- Pending only\n## [1.4.0]\nBefore-category prose\n### Fixed\n- Current fix\n### Added\n- Shared entry\n  continuation\n### Other\n- Extra item\n## [1.3.0]\n### Changed\n- Silent release change\n### Added\n- Shared entry\n  continuation\n- Silent release addition\n## [Unreleased archive]\n### Fixed\n- Not a version section\n## [1.2.0]\n### Breaking Changes\n- Previous release change\n### Removed\n- Old removal\n",
+    "expected": "### Added\n\n- Shared entry\n  continuation\n- Silent release addition\n\n### Changed\n\n- Silent release change\n\n### Fixed\n\n- Current fix\n\n### Other\n\n- Extra item"
+  },
+  {
+    "name": "single version excludes silent predecessors",
+    "floor": null,
+    "target": "1.4.0",
+    "content": "# Changes\n## [Unreleased]\n### Added\n- Pending only\n## [1.4.0]\nBefore-category prose\n### Fixed\n- Current fix\n### Added\n- Shared entry\n  continuation\n### Other\n- Extra item\n## [1.3.0]\n### Changed\n- Silent release change\n### Added\n- Shared entry\n  continuation\n- Silent release addition\n## [Unreleased archive]\n### Fixed\n- Not a version section\n## [1.2.0]\n### Breaking Changes\n- Previous release change\n### Removed\n- Old removal\n",
+    "expected": "### Added\n\n- Shared entry\n  continuation\n\n### Fixed\n\n- Current fix\n\n### Other\n\n- Extra item"
+  },
+  {
+    "name": "target absent still includes in-range unpublished sections",
+    "floor": "1.2.0",
+    "target": "1.5.0",
+    "content": "# Changes\n## [Unreleased]\n### Added\n- Pending only\n## [1.4.0]\nBefore-category prose\n### Fixed\n- Current fix\n### Added\n- Shared entry\n  continuation\n### Other\n- Extra item\n## [1.3.0]\n### Changed\n- Silent release change\n### Added\n- Shared entry\n  continuation\n- Silent release addition\n## [Unreleased archive]\n### Fixed\n- Not a version section\n## [1.2.0]\n### Breaking Changes\n- Previous release change\n### Removed\n- Old removal\n",
+    "expected": "### Added\n\n- Shared entry\n  continuation\n- Silent release addition\n\n### Changed\n\n- Silent release change\n\n### Fixed\n\n- Current fix\n\n### Other\n\n- Extra item"
+  },
+  {
+    "name": "floor and future sections excluded",
+    "floor": "1.2.0",
+    "target": "1.3.0",
+    "content": "# Changes\n## [Unreleased]\n### Added\n- Pending only\n## [1.4.0]\nBefore-category prose\n### Fixed\n- Current fix\n### Added\n- Shared entry\n  continuation\n### Other\n- Extra item\n## [1.3.0]\n### Changed\n- Silent release change\n### Added\n- Shared entry\n  continuation\n- Silent release addition\n## [Unreleased archive]\n### Fixed\n- Not a version section\n## [1.2.0]\n### Breaking Changes\n- Previous release change\n### Removed\n- Old removal\n",
+    "expected": "### Added\n\n- Shared entry\n  continuation\n- Silent release addition\n\n### Changed\n\n- Silent release change"
+  },
+  {
+    "name": "first release includes all prior stable sections",
+    "floor": "0.0.0",
+    "target": "1.4.0",
+    "content": "# Changes\n## [Unreleased]\n### Added\n- Pending only\n## [1.4.0]\nBefore-category prose\n### Fixed\n- Current fix\n### Added\n- Shared entry\n  continuation\n### Other\n- Extra item\n## [1.3.0]\n### Changed\n- Silent release change\n### Added\n- Shared entry\n  continuation\n- Silent release addition\n## [Unreleased archive]\n### Fixed\n- Not a version section\n## [1.2.0]\n### Breaking Changes\n- Previous release change\n### Removed\n- Old removal\n",
+    "expected": "### Breaking Changes\n\n- Previous release change\n\n### Added\n\n- Shared entry\n  continuation\n- Silent release addition\n\n### Changed\n\n- Silent release change\n\n### Fixed\n\n- Current fix\n\n### Removed\n\n- Old removal\n\n### Other\n\n- Extra item"
+  },
+  {
+    "name": "no matching single version emits empty text",
+    "floor": null,
+    "target": "1.5.0",
+    "content": "# Changes\n## [Unreleased]\n### Added\n- Pending only\n## [1.4.0]\nBefore-category prose\n### Fixed\n- Current fix\n### Added\n- Shared entry\n  continuation\n### Other\n- Extra item\n## [1.3.0]\n### Changed\n- Silent release change\n### Added\n- Shared entry\n  continuation\n- Silent release addition\n## [Unreleased archive]\n### Fixed\n- Not a version section\n## [1.2.0]\n### Breaking Changes\n- Previous release change\n### Removed\n- Old removal\n",
+    "expected": ""
+  },
+  {
+    "name": "non-version heading ends a stable section",
+    "floor": null,
+    "target": "1.0.0",
+    "content": "## [1.0.0]\n### Fixed\n- Keep this\n## [Draft]\n### Fixed\n- Exclude this\n",
+    "expected": "### Fixed\n\n- Keep this"
+  }
+]

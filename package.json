@@ -160,6 +160,7 @@
 		"gen:stats": "bun --cwd=packages/stats run gen:stats",
 		"gen:stats:reset": "bun --cwd=packages/stats run gen:stats:reset",
 		"gen:changelog": "bun scripts/rewrite-changelog.ts",
+		"ci:release:notes": "cargo xtask release-notes",
 		"gen:nix": "bun scripts/gen-nix-bun.ts",
 		"gen:tool-views": "bun --cwd=packages/collab-web run gen:tool-views",
 		"gen:bundle": "bun --cwd=packages/coding-agent run gen:bundle",

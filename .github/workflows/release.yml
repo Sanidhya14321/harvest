@@ -158,4 +158,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        run: |
+          cargo xtask release-notes "$GITHUB_REF_NAME" release-notes.md
+          gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --generate-notes --notes-file release-notes.md --title "$GITHUB_REF_NAME"

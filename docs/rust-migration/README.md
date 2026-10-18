@@ -7,6 +7,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask release-notes VERSION [OUTPUT]` replaces the old TS release-notes
+  script and supplies curated bodies to both release workflows. It merges
+  unpublished-tag changelog sections through the target, deduplicates entries,
+  and includes native crate/application changelogs as well as legacy packages.
+  Automatic floor lookup uses authenticated `gh release list` and fails closed;
+  `--floor VERSION`, `--single-version` and `--published-releases JSON_FILE`
+  support explicit/offline runs. Seven legacy-oracle cases also passed through
+  installed xtask without Bun/Node. All 41 xtask tests, strict Clippy and workflow
+  YAML validation passed; no GitHub release was published during verification.
+
 - Native session replay projects text compactions, handoffs, branch summaries
   and durable context resets onto the selected branch without rewriting history.
   Eight legacy-oracle cases match, including reset/compaction precedence and

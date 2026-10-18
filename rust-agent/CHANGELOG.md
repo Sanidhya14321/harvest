@@ -28,6 +28,8 @@
 
 ### Changed
 
+- Curated release notes now include native changelogs and run through Rust tooling, retaining entries from unpublished tags.
+
 - Repository credential checks now run through Rust tooling without the redundant Python scanner.
 
 - Native edits preserve BOMs, line endings and notebook metadata through the shared Rust edit engine.

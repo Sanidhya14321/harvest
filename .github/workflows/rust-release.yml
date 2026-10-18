@@ -304,11 +304,17 @@ jobs:
           (cd "${manifests}" && zip -9 "${GITHUB_WORKSPACE}/dist/omp-winget-manifests.zip" ./*.yaml)
           rm -r "${manifests}"
           cargo xtask checksums dist/SHA256SUMS dist/omp-*
+      - name: Generate curated release notes
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: cargo xtask release-notes "${RELEASE_TAG}" release-notes.md
       - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
         with:
           token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ needs.version.outputs.tag }}
           generate_release_notes: true
+          body_path: release-notes.md
           files: dist/*
       - name: Render the Homebrew formula
         env:
