@@ -140,6 +140,38 @@ impl JailedFs {
 		read_bounded(file, limit)
 	}
 
+	/// Hash a regular file incrementally through the authorized directory
+	/// handle. The limit bounds disk work, rather than allocating the entire
+	/// asset.
+	pub fn hash_file(&self, path: &Path, limit: u64) -> Result<String> {
+		let relative = self.relative(path)?;
+		let mut file = self.directory.open(&relative)?;
+		let metadata = file.metadata()?;
+		if !metadata.is_file() {
+			bail!("expected a regular file");
+		}
+		if metadata.len() > limit {
+			bail!("file exceeds hash byte limit");
+		}
+		let mut digest = ContentDigest::default();
+		let mut consumed = 0_u64;
+		let mut buffer = [0_u8; 16 * 1024];
+		loop {
+			let count = file.read(&mut buffer)?;
+			if count == 0 {
+				break;
+			}
+			consumed = consumed
+				.checked_add(u64::try_from(count)?)
+				.context("hash byte count overflow")?;
+			if consumed > limit {
+				bail!("file exceeds hash byte limit");
+			}
+			digest.update(&buffer[..count]);
+		}
+		Ok(digest.hash())
+	}
+
 	pub fn read_optional(&self, path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
 		let relative = self.relative(path)?;
 		match self.directory.open(&relative) {

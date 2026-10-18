@@ -7,6 +7,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Both release checksum consumers and the package alias use `cargo xtask
+  checksums OUTPUT ASSET...`. The TS generator and its tests are removed.
+  The Rust command streams authorized regular files with bounded memory, emits
+  deterministic sha256sum-compatible basenames, and rejects duplicate, unsafe,
+  escaping or missing inputs before atomic manifest replacement. The installed
+  Linux command works without runtimes on PATH; `sha256sum --check` verified its
+  output. The 36-test runtime/xtask suite and strict Clippy passed. Remote
+  release and cross-platform execution remain unverified.
+
 - `cargo xtask version` reads the root inherited version; `--set VERSION
   --expect CURRENT` changes it atomically under a writer lock while preserving
   TOML comments and unrelated fields. Rust release jobs use root manifest,
