@@ -42,6 +42,18 @@ Inspect an existing session without changing it:
 harvest session --workspace /path/to/session-directory --leaf entry-id session.jsonl
 ```
 
+Import an existing v1/v2/v3 log to a separate v3 file:
+
+```sh
+harvest session --workspace /path/to/session-directory --import-v3 imported.jsonl legacy.jsonl
+```
+
+The import keeps every branch and preserves the source bytes. It rejects damaged
+records, broken parent chains and existing destinations. The destination
+filesystem must support hard links so publication cannot overwrite another
+writer's file. Reading or importing opaque provider data does not establish
+support for resuming it; unsupported replay still fails explicitly.
+
 The bounded codec preserves raw v3 bytes and opaque provider payloads. V1/v2
 records migrate in memory; inspection does not persist the migration. Session
 text/function replay and durable appends are available in the experimental CLI:

@@ -156,9 +156,23 @@ impl JailedFs {
 
 	/// Pin the parent, stage a fresh inode and replace atomically within it.
 	pub fn atomic_write(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+		self.atomic_persist(path, bytes, false)
+	}
+
+	/// Publish fully synced bytes at a new path without replacing any existing
+	/// entry, even when another writer creates it while bytes are staged.
+	/// Requires hard-link support on the destination filesystem.
+	pub fn atomic_create(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+		self.atomic_persist(path, bytes, true)
+	}
+
+	fn atomic_persist(&self, path: &Path, bytes: &[u8], create_only: bool) -> Result<()> {
 		let (directory, name) = self.parent(path, true)?;
 		let old_permissions = match directory.symlink_metadata(&name) {
 			Ok(metadata) => {
+				if create_only {
+					bail!("destination already exists; refusing to overwrite it");
+				}
 				if metadata.file_type().is_symlink() || !metadata.is_file() {
 					bail!("refusing to replace a symlink or non-file");
 				}
@@ -184,7 +198,15 @@ impl JailedFs {
 			}
 			file.sync_all()?;
 			drop(file);
-			directory.rename(&temp, &directory, &name)?;
+			if create_only {
+				directory.hard_link(&temp, &directory, &name).context(
+					"could not publish new file without overwriting; destination filesystem must \
+					 support hard links",
+				)?;
+				directory.remove_file(&temp)?;
+			} else {
+				directory.rename(&temp, &directory, &name)?;
+			}
 			#[cfg(unix)]
 			directory.open(".")?.sync_all()?;
 			Ok(())

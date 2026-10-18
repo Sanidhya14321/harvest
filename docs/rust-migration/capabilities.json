@@ -1561,10 +1561,25 @@
     {
       "id": "surface:session-v1-v2-import",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/session_format.rs",
+          "rust-agent/src/cli.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/session_import.rs",
+          "rust-agent/tests/session_format.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/session/"
+        ],
+        "removable": false
       }
     },
     {

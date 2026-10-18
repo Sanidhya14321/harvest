@@ -1,8 +1,12 @@
 //! Bounded, lossless session JSONL decoding for the Rust migration.
 //! This codec does not replace legacy persistence or provider replay yet.
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+	collections::{BTreeMap, BTreeSet},
+	path::Path,
+};
 
 use anyhow::{Context, Result, bail};
+use harvest_runtime::JailedFs;
 use serde_json::value::RawValue;
 
 pub const SESSION_LIMIT: usize = 64 * 1024 * 1024;
@@ -190,6 +194,51 @@ impl SessionDocument {
 	/// Original bytes remain available even after in-memory legacy migration.
 	pub fn original_bytes(&self) -> &[u8] {
 		&self.original
+	}
+
+	fn validate_tree(&self) -> Result<()> {
+		let mut visited = BTreeSet::new();
+		for start in 0..self.entries.len() {
+			let mut chain = BTreeSet::new();
+			let mut cursor = Some(start);
+			while let Some(index) = cursor {
+				if visited.contains(&index) {
+					break;
+				}
+				if !chain.insert(index) {
+					bail!("cyclic session parent chain");
+				}
+				let raw = self.entries[index]
+					.get("parentId")
+					.context("missing session parentId")?;
+				let parent: Option<String> = serde_json::from_str(raw.get())?;
+				cursor = parent
+					.map(|id| self.by_id.get(&id).copied().context("missing branch entry"))
+					.transpose()?;
+			}
+			visited.extend(chain);
+		}
+		Ok(())
+	}
+
+	/// Publish an explicit, non-destructive v3 import through the workspace
+	/// jail. Inspection may tolerate malformed rows; imports must never drop
+	/// them.
+	pub fn import_to(&self, fs: &JailedFs, destination: &Path) -> Result<()> {
+		if self.malformed_records != 0 {
+			bail!(
+				"damaged session requires explicit recovery before import; no records were discarded"
+			);
+		}
+		self.validate_tree()?;
+		let mut bytes = self.export_v3()?;
+		if !bytes.ends_with(b"\n") {
+			bytes.push(b'\n');
+		}
+		if bytes.len() > SESSION_LIMIT {
+			bail!("imported session exceeds size limit");
+		}
+		fs.atomic_create(destination, &bytes)
 	}
 
 	/// Produce a separate v3 import body without changing the original file.

@@ -52,6 +52,12 @@ struct SessionArgs {
 	workspace: PathBuf,
 	#[arg(long)]
 	leaf:      Option<String>,
+	#[arg(
+		long,
+		value_name = "FILE",
+		help = "Import every branch to a separate v3 file without overwriting existing files"
+	)]
+	import_v3: Option<PathBuf>,
 	file:      PathBuf,
 }
 
@@ -122,6 +128,9 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 		.as_deref()
 		.map(|leaf| document.branch(leaf).map(|branch| branch.len()))
 		.transpose()?;
+	if let Some(destination) = &args.import_v3 {
+		document.import_to(&fs, destination)?;
+	}
 	#[derive(serde::Serialize)]
 	#[serde(rename_all = "camelCase")]
 	struct SessionInspection<'a> {
@@ -130,6 +139,8 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 		branch_entries:     Option<usize>,
 		malformed_records:  usize,
 		migration_required: bool,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		imported_to:        Option<String>,
 	}
 	let report = SessionInspection {
 		header: document.header(),
@@ -137,6 +148,10 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 		branch_entries,
 		malformed_records: document.malformed_records(),
 		migration_required: document.migrated(),
+		imported_to: args
+			.import_v3
+			.as_ref()
+			.map(|path| path.display().to_string()),
 	};
 	serde_json::to_writer(io::stdout().lock(), &report)?;
 	writeln!(io::stdout().lock())?;

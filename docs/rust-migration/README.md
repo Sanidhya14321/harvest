@@ -58,8 +58,15 @@ because a Rust command or tool has the same name.
   branch without rewriting its source. The experimental Rust `AgentSession` now
   replays text/function branches, streams OpenAI-compatible SSE, executes approved
   tools and durably appends v3 messages. Ownership locks, content comparisons,
-  generation-specific handles and committed events are tested. Signed/multimodal
-  replay, compaction, imports, crash repair and large-log streaming remain pending.
+  generation-specific handles and committed events are tested. Explicit
+  `session --import-v3` exports all branches to a new file, rejects malformed records and invalid
+  parent chains, preserves source bytes and unknown values, and never overwrites
+  a destination. Shared atomic creation publishes fully synced content using
+  no-clobber hard links. Signed/multimodal replay, compaction, crash repair and
+  large-log streaming remain pending. Local installed full-profile `harvest` and
+  `omp` passed v1 import, local-provider replay/continuation, durable writes,
+  source preservation and overwrite rejection with no runtimes on `PATH`.
+  This does not certify live providers or other operating systems.
 - Help/version have no setup side effects. Experimental release automation now
   requires capability parity and is explicitly dispatched instead of publishing
   an incomplete application on each source push.
@@ -77,8 +84,8 @@ The manifest includes 41 legacy commands, 29 canonical tools, three hidden tools
 84 slash entries and integration surfaces. Primitive Rust tools are partial:
 legacy read/edit/grep/bash behavior and settings still have richer contracts.
 
-Complete provider streaming/OAuth/catalog KDL resolution; compatible session
-imports, fork/compaction, recovery and legacy ownership integration; RPC/ACP;
+Complete provider streaming/OAuth/catalog KDL resolution; remaining session
+import/replay adapters, fork/compaction, recovery and legacy ownership integration; RPC/ACP;
 the inline terminal; delegation,
 goals/advisor; MCP/LSP/DAP; browser/WASM/eval/SSH; collaboration; media/inference;
 stats/benchmarks; Python automation; generators and consolidated distribution
