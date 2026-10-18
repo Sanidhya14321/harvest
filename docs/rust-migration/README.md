@@ -7,6 +7,14 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Native settings/override/environment diagnostics omit API keys and endpoint
+  URLs. Invalid TOML errors retain only the config filename and byte offset,
+  dropping parser source-line/error chains; malformed environment step counts
+  no longer echo their input. SDK and real CLI failure contracts cover both
+  aliases, no session creation and unchanged config bytes. Eight installed
+  credential-bearing parse failures passed without Bun/Node. This does not
+  implement credential storage, OAuth or compatible profile/settings migration.
+
 - `cargo xtask release-notes VERSION [OUTPUT]` replaces the old TS release-notes
   script and supplies curated bodies to both release workflows. It merges
   unpublished-tag changelog sections through the target, deduplicates entries,

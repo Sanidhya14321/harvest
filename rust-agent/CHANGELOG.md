@@ -40,6 +40,8 @@
 
 ### Fixed
 
+- Configuration errors and SDK debug output keep API keys and credential-bearing endpoint URLs out of diagnostics.
+
 - Authorized Unix reads and hashing reject named pipes without waiting for a writer.
 
 - Native provider failures and model diagnostics keep credentials, endpoint URLs and untrusted server text out of errors.
