@@ -90,7 +90,7 @@ fn invoke_authorized(
 	let output = match name {
 		"read" => read_file(root, &parse::<ReadArgs>(arguments)?)?,
 		"write" => write_file(root, &parse::<WriteArgs>(arguments)?)?,
-		"edit" => edit_file(root, &parse::<EditArgs>(arguments)?)?,
+		"edit" => crate::edit::replace(root, &parse::<EditArgs>(arguments)?, cancellation)?,
 		"grep" => grep(root, &parse::<GrepArgs>(arguments)?)?,
 		"bash" => bash(root, &parse::<BashArgs>(arguments)?, cancellation)?,
 		_ => bail!("unknown tool {name}"),
@@ -110,10 +110,10 @@ struct WriteArgs {
 }
 
 #[derive(Debug, Deserialize)]
-struct EditArgs {
-	path: String,
-	old:  String,
-	new:  String,
+pub(crate) struct EditArgs {
+	pub path: String,
+	pub old:  String,
+	pub new:  String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,26 +147,6 @@ fn write_file(root: &Path, args: &WriteArgs) -> Result<String> {
 	}
 	JailedFs::open(root)?.atomic_write(Path::new(&args.path), args.contents.as_bytes())?;
 	Ok(format!("wrote {}", args.path))
-}
-
-fn edit_file(root: &Path, args: &EditArgs) -> Result<String> {
-	if args.old.is_empty() {
-		bail!("old text is empty");
-	}
-	let fs = JailedFs::open(root)?;
-	let path = fs.relative(Path::new(&args.path))?;
-	let text =
-		String::from_utf8(fs.read(&path, MAX_FILE_BYTES)?).context("edit target is not UTF-8")?;
-	let count = text.matches(&args.old).count();
-	if count != 1 {
-		bail!("expected one occurrence of the old text, found {count}");
-	}
-	let updated = text.replacen(&args.old, &args.new, 1);
-	if updated.len() > MAX_FILE_BYTES {
-		bail!("edit exceeds file limit");
-	}
-	fs.atomic_write(&path, updated.as_bytes())?;
-	Ok(format!("edited {}", args.path))
 }
 
 fn grep(root: &Path, args: &GrepArgs) -> Result<String> {
@@ -380,7 +360,7 @@ mod tests {
 		assert!(wrote.contains("wrote"), "{wrote}");
 		let error = invoke(root.path(), &call("edit", r#"{"path":"a.txt","old":"one","new":"two"}"#))
 			.unwrap_err();
-		assert!(error.to_string().contains("one occurrence"));
+		assert!(error.to_string().contains("2 occurrences"));
 		let escaped = invoke(root.path(), &call("read", r#"{"path":"../secret"}"#)).unwrap_err();
 		assert!(escaped.to_string().contains("escapes"));
 	}

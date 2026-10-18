@@ -3729,6 +3729,7 @@ dependencies = [
  "flume",
  "harvest-brain",
  "harvest-runtime",
+ "pi-edit",
  "pi-shell",
  "predicates",
  "regex",

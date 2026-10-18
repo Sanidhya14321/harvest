@@ -429,19 +429,22 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/edit.rs",
+          "crates/pi-edit/src"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/tests/native_edit.rs",
+          "crates/pi-edit/tests"
         ]
       },
       "installation": "experimental-rust-cli",
       "legacy": {
         "paths": [
-          "packages/coding-agent/src/core/tools/edit.ts"
+          "packages/coding-agent/src/core/tools/edit.ts",
+          "packages/coding-agent/src/edit/index.ts"
         ],
         "removable": false
       }
