@@ -38,6 +38,34 @@ pub struct FileRead {
 }
 
 impl FileRead {
+	/// Decode text read by a host-owned filesystem capability, preserving the
+	/// same notebook, BOM and line-ending contracts as the default file cache.
+	pub fn from_raw(resolved: Resolved, raw: String) -> EditResult<Self> {
+		let is_notebook = notebook::is_notebook_path(&resolved.absolute);
+		let (bom, text) = if is_notebook {
+			let editable = notebook::notebook_to_editable_text(&raw, &resolved.display)
+				.map_err(|err| EditError::apply(err.to_string()))?;
+			("", normalize_to_lf(&editable).into_owned())
+		} else {
+			let (bom, body) = strip_bom(&raw);
+			(bom, normalize_to_lf(body).into_owned())
+		};
+		let ending = if is_notebook {
+			LineEnding::Lf
+		} else {
+			detect_line_ending(strip_bom(&raw).1)
+		};
+		Ok(Self {
+			canonical: canonical_key(&resolved.absolute),
+			resolved,
+			raw,
+			bom,
+			ending,
+			text,
+			is_notebook,
+		})
+	}
+
 	/// Encode LF-normalized post-edit text back to the bytes this file
 	/// persists with: BOM and line endings restored, notebooks re-serialized.
 	pub fn persist(&self, after_lf: &str) -> EditResult<String> {
@@ -138,29 +166,7 @@ impl FileCache {
 			return Err(EditError::apply(message));
 		}
 		let raw = String::from_utf8_lossy(&bytes).into_owned();
-		let is_notebook = notebook::is_notebook_path(&resolved.absolute);
-		let (bom, text) = if is_notebook {
-			let editable = notebook::notebook_to_editable_text(&raw, &resolved.display)
-				.map_err(|err| EditError::apply(err.to_string()))?;
-			("", normalize_to_lf(&editable).into_owned())
-		} else {
-			let (bom, body) = strip_bom(&raw);
-			(bom, normalize_to_lf(body).into_owned())
-		};
-		let ending = if is_notebook {
-			LineEnding::Lf
-		} else {
-			detect_line_ending(strip_bom(&raw).1)
-		};
-		let read = Arc::new(FileRead {
-			canonical: canonical_key(&resolved.absolute),
-			resolved: resolved.clone(),
-			raw,
-			bom,
-			ending,
-			text,
-			is_notebook,
-		});
+		let read = Arc::new(FileRead::from_raw(resolved.clone(), raw)?);
 		self
 			.reads
 			.insert(resolved.absolute.clone(), (current, Arc::clone(&read)));

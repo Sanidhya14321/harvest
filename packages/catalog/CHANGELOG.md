@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Protocol generation retains required Cursor and Devin messages when TypeScript consumers are removed during migration.
+
 ## [18.1.14] - 2026-09-07
 
 ### Fixed

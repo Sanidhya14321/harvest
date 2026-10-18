@@ -22,11 +22,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install authoritative workspace toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - run: cargo fmt -p harvest-runtime -p harvest-brain -p harvest-omp -p xtask -- --check
       - run: cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-omp -p xtask --all-targets --all-features -- -D warnings
+      - run: cargo xtask migration
       - run: cargo xtask capabilities
   test:
     name: Contracts (${{ matrix.os }}, ${{ matrix.features }})
@@ -53,9 +55,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           key: test-${{ matrix.os }}-${{ matrix.features }}
-      - run: cargo xtask test -p harvest-runtime -p harvest-brain -p harvest-omp --no-default-features --features "${FEATURES}"
+      - run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-omp --no-default-features --features "${FEATURES}"
       - name: Release-profile contracts
-        run: cargo xtask test -p harvest-runtime -p harvest-brain -p harvest-omp --release --no-default-features --features "${FEATURES}"
+        run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-omp --release --no-default-features --features "${FEATURES}"
       - run: cargo build --locked -p harvest-omp --no-default-features --features "${FEATURES}"
       - run: cargo run --locked -p harvest-omp --bin harvest -- --help
       - run: cargo run --locked -p harvest-omp --bin omp -- brain --scope project organize --dry-run --json

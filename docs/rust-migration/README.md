@@ -7,10 +7,79 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Native grep delegates traversal and ignore matching to `pi-walker`; file bytes
+  still pass through the workspace capability. Explicit `case`/`gitignore`
+  options, cancellation, file/encoding limits, and search-limit notices have
+  host contracts and an installed model/tool/result workflow. Shared Unix read,
+  optional-read and hashing operations reject FIFOs before they can block.
+  Tool prompts are static Markdown assets. The combined Rust suite passed 149
+  tests, core app 79, and rebuilt-addon legacy brain/edit suites 22. Grep's
+  remote/archive/selector, advanced matching, pagination and renderer contracts
+  remain pending; no legacy grep source or parity status was removed.
+
+- Shared native HTTP request construction returns typed status/transport errors
+  without attaching raw URL/status/body diagnostics; `HttpModel` debug output
+  omits configured credentials. Real loopback 401/429 failures, invalid schemes
+  and rejected JSON/SSE finish reasons exercise both SDK request paths. This
+  does not implement credential storage, OAuth refresh or provider retry policy.
+  The 72-test app suite, strict Clippy and installed HTTP-failure checks through
+  both aliases passed; installed failures preserve the user turn and commit no
+  assistant output. The unchanged legacy usage-attribution suite passed 22 tests.
+
+- Native OpenAI-compatible streaming and JSON responses preserve raw usage
+  metadata, normalize complete integer token/cache reports and persist them
+  before committed events. Unknown numeric metadata remains lossless and stays
+  out of replayed model requests. `--request-usage` explicitly enables the wire
+  request option; the default preserves compatibility with unsupported hosts.
+  Seven accounting cases captured from the legacy helper match both installed
+  aliases without runtimes on PATH. Partial/invalid reports retain raw bytes and
+  remain unavailable; catalog pricing and other provider families remain pending.
+  Explicitly unsuccessful JSON responses cannot commit assistant output.
+
+- `cargo xtask dev <check|fmt|lint|fix|test>` replaces the Bun Rust-task launcher.
+  Root aliases, the pooled test runner and CI invoke it. It preserves the
+  vendored-fork exclusion, local change skips, CI forcing and Rustup Cargo
+  selection; bounded Git failures run gates conservatively. New untracked
+  directories are inspected recursively. Real Cargo fixture contracts verify
+  repair/recheck and nextest/doctest failure ordering. Installed commands run
+  without Bun or Node; remote macOS/Windows execution remains pending.
+
+- Native `session --title TEXT FILE` updates or adds a fixed-width title slot
+  under the Rust writer lease, preserving every remaining session byte,
+  including unknown signed/provider records. Unicode truncation, clearing,
+  malformed/legacy/tree rejection, active-writer exclusion and symlink safety
+  are covered. Resume now validates all branches before opening a writer.
+  The combined app/runtime/xtask suite passed 99 tests; both installed aliases
+  ran without runtimes, and the legacy title reader accepted their output.
+  Cached prefix overlays and legacy writer coordination remain pending.
+
+- Both release checksum consumers and the package alias use `cargo xtask
+  checksums OUTPUT ASSET...`. The TS generator and its tests are removed.
+  The Rust command streams authorized regular files with bounded memory, emits
+  deterministic sha256sum-compatible basenames, and rejects duplicate, unsafe,
+  escaping or missing inputs before atomic manifest replacement. The installed
+  Linux command works without runtimes on PATH; `sha256sum --check` verified its
+  output. The 36-test runtime/xtask suite and strict Clippy passed. Remote
+  release and cross-platform execution remain unverified.
+
+- `cargo xtask version` reads the root inherited version; `--set VERSION
+  --expect CURRENT` changes it atomically under a writer lock while preserving
+  TOML comments and unrelated fields. Rust release jobs use root manifest,
+  lockfile and target paths, explicit application package selectors, and the
+  nextest/doctest gate. Release remains blocked while the legacy release workflow
+  owns tags or source/capability parity is incomplete. The crate publication
+  dependency graph, installer naming, complete platform matrix and actual remote
+  release validation remain pending. Local validation covers 21 xtask contracts,
+  strict Clippy, and a two-member fixture whose inherited versions were checked
+  through Cargo metadata after running the updater without runtimes on PATH.
+  Workflow YAML parses locally; hosted release jobs have not been executed.
+
 - One Cargo workspace, lockfile, toolchain and build profile configuration for
   the existing native engines and the experimental application.
 - `cargo xtask check`, `cargo xtask test` (nextest followed by doctests), and a
-  capability inventory with a distribution cutover gate.
+  capability inventory with a distribution cutover gate. Focused test target
+  selectors apply to nextest while doctests retain package/build options;
+  `--test session_recovery` no longer fails by mixing `--doc` and target flags.
 - Shared capability-relative filesystem operations, bounded reads/appends,
   atomic replacement, root writer locks and cancellation in `harvest-runtime`.
   `pi-shell` retains its cancellation API through re-exports.
@@ -36,23 +105,60 @@ because a Rust command or tool has the same name.
   Rustdoc, feature powerset, packaging and installer verification.
 - Rust credential scanning preserves the prototype detection rules, redacts
   matched values and caps manifests, source sizes and findings. Read failures,
-  escaping paths and oversized input fail the check. Both scanners run during
-  migration; the existing Python scanner has not been removed.
+  escaping paths and oversized input fail the check. The redundant Python scanner
+  and its dedicated lint configuration/job have been removed after Rust contract
+  and installed-binary verification. Hygiene now uses the Rust scanner alone;
+  repository-wide Gitleaks remains unchanged.
 - Both Rust binary aliases share a library. The prototype uses bounded I/O,
   jailed session writes, embedded Markdown prompts, ephemeral retrieval from
   project/user brains and host-owned approvals. Shell execution in `full`
-  reuses `pi-shell` with a bounded channel, capped capture and a timeout.
+  reuses `pi-shell` with a bounded channel, capped capture and a timeout. Native
+  builds now enable `full` by default; `--no-default-features --features core`
+  keeps the explicit lightweight build. Default/core application suites passed
+  57/56 tests. A default-installed binary completed an approved shell round trip
+  through a PTY, evaluated arithmetic in the workspace and durably recorded the
+  tool result without runtimes on `PATH`. Other platform shipping checks remain
+  pending.
+- Native replacement edits now call `pi-edit` directly through capability-relative,
+  bounded host reads and atomic writes. BOM/CRLF and notebook preservation,
+  generated-file protection, ambiguous matches, cancellation and symlink escapes
+  have native application contract tests. Other edit modes, streaming previews,
+  LSP/ACP write-through and freshness integration still require host ports.
+  Local core tests passed (324); full-profile application/edit/AST tests passed
+  (408, one skipped), with doctest passes. Strict linting and formatting passed
+  on the changed Rust packages; installed cross-platform parity remains pending.
 - A bounded session codec reads title slots and v3 trees, preserves original
   bytes and raw unknown/provider values, and migrates v1/v2 entries in memory.
   `harvest session --workspace <root> --leaf <id> <file>` reports a selected
   branch without rewriting its source. The experimental Rust `AgentSession` now
   replays text/function branches, streams OpenAI-compatible SSE, executes approved
   tools and durably appends v3 messages. Ownership locks, content comparisons,
-  generation-specific handles and committed events are tested. Signed/multimodal
-  replay, compaction, imports, crash repair and large-log streaming remain pending.
+  generation-specific handles and committed events are tested. Explicit
+  `session --import-v3` exports all branches to a new file, rejects malformed records and invalid
+  parent chains, preserves source bytes and unknown values, and never overwrites
+  a destination. Shared atomic creation publishes fully synced content using
+  no-clobber hard links. Explicit `session --recover-to` preserves the raw v3
+  prefix and original source, reports the source hash and excluded tail size,
+  and rejects interior corruption, broken trees and complete final records.
+  Both snapshot commands share the cooperating Rust writer lease; unresolved
+  tool calls still block resume. Recovery has seven CLI contracts; the full
+  application suite passed 57 tests and strict linting. Installed full-profile
+  recovery/continuation passed using a local provider fixture with no runtimes
+  on `PATH`. The rebuilt native addon also passed eight legacy edit tests. Signed/multimodal replay, compaction, automatic
+  repair, legacy ownership coordination and large-log streaming remain pending. Local installed full-profile `harvest` and
+  `omp` passed v1 import, local-provider replay/continuation, durable writes,
+  source preservation and overwrite rejection with no runtimes on `PATH`.
+  This does not certify live providers or other operating systems.
 - Help/version have no setup side effects. Experimental release automation now
   requires capability parity and is explicitly dispatched instead of publishing
   an incomplete application on each source push.
+
+- Protocol generation now uses explicit message/enum roots in
+  `packages/catalog/scripts/protocol-roots.json`, replacing Cursor TS-import
+  scanning. Cursor/Devin output remains byte-identical when generated in an
+  isolated tree containing only the generator, parser, roots and `.proto` files.
+  Unknown roots fail before outputs are written. The compiler itself and its
+  generated TypeScript runtime still require Rust replacements.
 
 ## Remaining before cutover
 
@@ -60,8 +166,8 @@ The manifest includes 41 legacy commands, 29 canonical tools, three hidden tools
 84 slash entries and integration surfaces. Primitive Rust tools are partial:
 legacy read/edit/grep/bash behavior and settings still have richer contracts.
 
-Complete provider streaming/OAuth/catalog KDL resolution; compatible session
-imports, fork/compaction, recovery and legacy ownership integration; RPC/ACP;
+Complete provider streaming/OAuth/catalog KDL resolution; remaining session
+import/replay adapters, fork/compaction, recovery and legacy ownership integration; RPC/ACP;
 the inline terminal; delegation,
 goals/advisor; MCP/LSP/DAP; browser/WASM/eval/SSH; collaboration; media/inference;
 stats/benchmarks; Python automation; generators and consolidated distribution
@@ -90,6 +196,7 @@ required before global automatic maintenance can satisfy the complete plan.
 ```sh
 cargo xtask test -p harvest-runtime -p harvest-brain -p harvest-omp
 cargo xtask test -p harvest-omp --features full
+cargo xtask test -p harvest-omp --test session_recovery
 cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-omp \
   -p xtask --all-targets --all-features -- -D warnings
 cargo xtask capabilities
@@ -111,3 +218,47 @@ macOS/Windows parity.
 The proposed binary/RSS/paint/retrieval performance targets are not yet certified.
 No legacy application entrypoints were removed. Distribution remains blocked
 until capability parity is verified; no release has been published.
+
+## Source migration ledger
+
+`source-baseline.json` freezes the tracked TS/TSX/MTS/CTS, JavaScript,
+Python and Julia paths at its recorded commit, including declarations, fixtures,
+examples and generated sources. `source-ledger.json` retains one entry per path.
+The initial inventory contains 5,220 paths. Reviewed entries retain their evidence
+while other paths require individual contract review; this enumeration does not
+establish that step 1 of the migration is complete.
+
+Run `cargo xtask migration` to validate coverage and deletion evidence, or
+`cargo xtask migration --require-complete` to enforce the source cutover gate.
+Rust CI runs the coverage gate independently of capability parity. The command
+uses the Git index, so stage intended deletions before checking removal evidence.
+New tracked source files require ledger entries. Baseline paths must never be
+removed just because their source was deleted; retain their completed records.
+The gate checks the baseline against the original Git tree, so shrinking both
+ledger and baseline cannot hide deletions. Shallow checkouts must fetch the
+recorded baseline commit; CI checks and release parity fetch history for this.
+Rust release requires both source completion and capability parity before it
+can create a release commit or tag.
+
+For each path, review its behavior, consumers, persisted formats, dependencies,
+Rust destination and verification requirements. Use explicit `none` where a
+review finds no persisted format or dependency; null means unreviewed. Record
+replacement, intentional retirement, fixture materialization or browser glue as
+separate dispositions. Retirement needs a rationale; all other reviewed entries
+need a destination. Record concrete contract suites and installed-workflow evidence
+in verification requirements before changing their independent status fields.
+Evidence strings are reviewed assertions, not an automatic certification of tests.
+
+Implementation, behavioral verification, installed verification and legacy removal
+are independent. Deletion requires completed implementation (or retirement work),
+both verification stages and reviewed contract analysis. Fixture sources must move
+to data assets and be materialized by Rust tests. Only documented browser bootstrap
+JavaScript may remain as browser glue; application logic and TypeScript cannot use
+that exception. Capability parity, installed workflows, platform validation and
+release consolidation remain separate mandatory gates.
+
+Initial ledger validation: pinned `nightly-2026-08-08` formatting, strict
+Clippy and `cargo xtask test -p xtask` passed (11 tests plus the doctest pass).
+`cargo xtask migration` reports 0/5,220 completed entries, and the completion
+gate rejects that unfinished inventory as intended. CI includes xtask tests in
+its cross-platform core/full matrix; those remote runs remain pending.

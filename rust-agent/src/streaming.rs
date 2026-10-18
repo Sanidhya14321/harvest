@@ -6,15 +6,36 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use harvest_runtime::{MAX_EVENT_BYTES, MAX_HTTP_BYTES, cancel::CancelToken};
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Value, value::RawValue};
 
-use crate::chat::{ChatMessage, FunctionCall, ToolCall};
+use crate::{
+	chat::{ChatMessage, FunctionCall, ToolCall},
+	provider::ModelResponse,
+	usage::UsageReport,
+};
 
+#[derive(Deserialize)]
+struct StreamChunk {
+	choices: Option<Vec<Value>>,
+	usage:   Option<Box<RawValue>>,
+	error:   Option<Box<RawValue>>,
+}
+
+#[cfg(test)]
 pub fn decode(
 	reader: impl Read,
 	cancellation: &CancelToken,
 	on_text: &mut dyn FnMut(&str) -> Result<()>,
 ) -> Result<ChatMessage> {
+	Ok(decode_response(reader, cancellation, on_text)?.message)
+}
+
+pub fn decode_response(
+	reader: impl Read,
+	cancellation: &CancelToken,
+	on_text: &mut dyn FnMut(&str) -> Result<()>,
+) -> Result<ModelResponse> {
 	let mut reader = BufReader::new(reader.take(u64::try_from(MAX_HTTP_BYTES)? + 1));
 	let mut line = Vec::new();
 	let mut event = String::new();
@@ -22,6 +43,7 @@ pub fn decode(
 	let mut content = String::new();
 	let mut calls: BTreeMap<usize, ToolCall> = BTreeMap::new();
 	let mut finished = false;
+	let mut usage = None;
 	loop {
 		cancellation.heartbeat()?;
 		line.clear();
@@ -71,21 +93,25 @@ pub fn decode(
 					bail!("tool arguments must be an object");
 				}
 			}
-			return Ok(ChatMessage {
-				role:         "assistant".into(),
-				content:      (!content.is_empty()).then_some(content),
-				tool_calls:   (!calls.is_empty()).then(|| calls.into_values().collect()),
-				tool_call_id: None,
+			return Ok(ModelResponse {
+				message: ChatMessage {
+					role:         "assistant".into(),
+					content:      (!content.is_empty()).then_some(content),
+					tool_calls:   (!calls.is_empty()).then(|| calls.into_values().collect()),
+					tool_call_id: None,
+				},
+				usage,
 			});
 		}
-		let chunk: Value = serde_json::from_str(&event).context("invalid stream event JSON")?;
+		let chunk: StreamChunk = serde_json::from_str(&event).context("invalid stream event JSON")?;
 		event.clear();
-		if chunk.get("error").is_some() {
+		if chunk.error.is_some() {
 			bail!("provider returned a stream error");
 		}
-		let choices = chunk["choices"]
-			.as_array()
-			.context("stream missing choices")?;
+		if let Some(raw) = chunk.usage {
+			usage = Some(UsageReport::from_raw(raw));
+		}
+		let choices = chunk.choices.context("stream missing choices")?;
 		for choice in choices {
 			if choice["index"].as_u64() != Some(0) {
 				bail!("unsupported stream choice index");
@@ -106,7 +132,7 @@ pub fn decode(
 			merge_tools(delta, &mut calls)?;
 			if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
 				if !matches!(reason, "stop" | "tool_calls") {
-					bail!("stream stopped unsuccessfully: {reason}");
+					bail!("stream stopped with an unsuccessful finish reason");
 				}
 				finished = true;
 			}
@@ -214,16 +240,19 @@ mod tests {
 		);
 	}
 	#[test]
-	fn cancellation_after_a_delta_stops_assembly() {
+	fn cancellation_after_a_delta_stops_otherwise_complete_usage_assembly() -> Result<()> {
 		let mut token = CancelToken::default();
 		let abort = token.emplace_abort_token();
-		let source = frame(json!({"content":"partial"}), Value::Null);
-		assert!(
-			decode(source.as_bytes(), &token, &mut |_| {
-				abort.abort(harvest_runtime::cancel::AbortReason::User);
-				Ok(())
-			})
-			.is_err()
-		);
+		let mut source = frame(json!({"content":"partial"}), json!("stop"));
+		source.push_str("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n");
+		let complete = decode_response(source.as_bytes(), &Default::default(), &mut |_| Ok(()))?;
+		assert_eq!(complete.usage.unwrap().tokens.unwrap().total_tokens, 12);
+		let error = decode_response(source.as_bytes(), &token, &mut |_| {
+			abort.abort(harvest_runtime::cancel::AbortReason::User);
+			Ok(())
+		})
+		.unwrap_err();
+		assert!(error.to_string().contains("Aborted: User"));
+		Ok(())
 	}
 }

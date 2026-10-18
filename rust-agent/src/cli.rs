@@ -49,36 +49,53 @@ enum Commands {
 #[derive(Debug, clap::Args)]
 struct SessionArgs {
 	#[arg(short, long, default_value = ".")]
-	workspace: PathBuf,
+	workspace:  PathBuf,
 	#[arg(long)]
-	leaf:      Option<String>,
-	file:      PathBuf,
+	leaf:       Option<String>,
+	#[arg(
+		long,
+		value_name = "FILE",
+		help = "Import every branch to a separate v3 file without overwriting existing files"
+	)]
+	import_v3:  Option<PathBuf>,
+	#[arg(
+		long,
+		value_name = "FILE",
+		conflicts_with = "import_v3",
+		help = "Recover an interrupted final v3 record into a new file; preserve the original"
+	)]
+	recover_to: Option<PathBuf>,
+	#[arg(long, value_name = "TEXT", conflicts_with_all = ["import_v3", "recover_to"], help = "Update only the title slot of an intact v3 session")]
+	title:      Option<String>,
+	file:       PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
 struct RunArgs {
+	#[arg(long, help = "Explicitly request OpenAI-style streamed usage; requires host support")]
+	request_usage: bool,
 	#[arg(long, default_value = ".omp/session.jsonl")]
-	session:   PathBuf,
+	session:       PathBuf,
 	#[arg(long)]
-	leaf:      Option<String>,
+	leaf:          Option<String>,
 	#[arg(long, help = "Emit ordered JSON events, including provisional streamed text")]
-	events:    bool,
+	events:        bool,
 	#[arg(short, long)]
-	prompt:    String,
+	prompt:        String,
 	#[arg(short, long, default_value = ".")]
-	workspace: PathBuf,
+	workspace:     PathBuf,
 	#[arg(long)]
-	agent_dir: Option<PathBuf>,
+	agent_dir:     Option<PathBuf>,
 	#[arg(long)]
-	tag:       Vec<String>,
+	tag:           Vec<String>,
 	#[arg(long)]
-	model:     Option<String>,
+	model:         Option<String>,
 	#[arg(long)]
-	base_url:  Option<String>,
+	base_url:      Option<String>,
 	#[arg(long)]
-	api_key:   Option<String>,
+	api_key:       Option<String>,
 	#[arg(long)]
-	max_steps: Option<u32>,
+	max_steps:     Option<u32>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -115,12 +132,31 @@ fn dispatch(cli: Cli) -> Result<u8> {
 
 fn inspect_session(args: SessionArgs) -> Result<u8> {
 	let fs = harvest_runtime::JailedFs::open(&args.workspace)?;
+	let _source_ownership =
+		if args.import_v3.is_some() || args.recover_to.is_some() || args.title.is_some() {
+			Some(crate::durable_session::lock_session(&fs, &args.file)?)
+		} else {
+			None
+		};
 	let bytes = fs.read(&args.file, crate::session_format::SESSION_LIMIT)?;
-	let document = crate::session_format::SessionDocument::decode(&bytes)?;
+	let mut document = crate::session_format::SessionDocument::decode(&bytes)?;
 	let branch_entries = args
 		.leaf
 		.as_deref()
 		.map(|leaf| document.branch(leaf).map(|branch| branch.len()))
+		.transpose()?;
+	if let Some(title) = &args.title {
+		let bytes = document.retitled(title, Some("user"), &chrono::Utc::now().to_rfc3339())?;
+		fs.atomic_write(&args.file, &bytes)?;
+		document = crate::session_format::SessionDocument::decode(&bytes)?;
+	}
+	if let Some(destination) = &args.import_v3 {
+		document.import_to(&fs, destination)?;
+	}
+	let recovery = args
+		.recover_to
+		.as_ref()
+		.map(|destination| document.recover_to(&fs, destination))
 		.transpose()?;
 	#[derive(serde::Serialize)]
 	#[serde(rename_all = "camelCase")]
@@ -130,6 +166,12 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 		branch_entries:     Option<usize>,
 		malformed_records:  usize,
 		migration_required: bool,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		imported_to:        Option<String>,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		recovered_to:       Option<String>,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		recovery:           Option<crate::session_format::RecoveryReport>,
 	}
 	let report = SessionInspection {
 		header: document.header(),
@@ -137,6 +179,15 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 		branch_entries,
 		malformed_records: document.malformed_records(),
 		migration_required: document.migrated(),
+		imported_to: args
+			.import_v3
+			.as_ref()
+			.map(|path| path.display().to_string()),
+		recovered_to: args
+			.recover_to
+			.as_ref()
+			.map(|path| path.display().to_string()),
+		recovery,
 	};
 	serde_json::to_writer(io::stdout().lock(), &report)?;
 	writeln!(io::stdout().lock())?;
@@ -163,7 +214,7 @@ fn run(args: RunArgs) -> Result<u8> {
 		&environment,
 	)?;
 	let max_steps = settings.max_steps;
-	let model = HttpModel::new(settings);
+	let model = HttpModel::new(settings).request_usage(args.request_usage);
 	let model_ref: &dyn Model = &model;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());

@@ -134,9 +134,6 @@ pub fn scan_files(fs: &JailedFs, manifest: &[u8]) -> Result<(usize, Vec<Finding>
 		let path = PathBuf::from(std::str::from_utf8(bytes).context("invalid tracked filename")?);
 		// Validate even excluded names so an untrusted manifest cannot hide an escape.
 		fs.relative(&path)?;
-		if path == Path::new("rust-agent/scripts/check_secrets.py") {
-			continue;
-		}
 		if SKIP_SUFFIXES
 			.iter()
 			.any(|suffix| path.to_string_lossy().ends_with(suffix))
@@ -285,6 +282,19 @@ mod tests {
 				.scan(&credential.repeat(FINDING_LIMIT + 1), Path::new("fixture"))
 				.is_err()
 		);
+		Ok(())
+	}
+	#[test]
+	fn legacy_scanner_filename_cannot_bypass_credential_detection() -> Result<()> {
+		let root = tempfile::tempdir()?;
+		let fs = JailedFs::open(root.path())?;
+		let path = Path::new("rust-agent/scripts/check_secrets.py");
+		fs.atomic_write(path, format!("ghp_{}", "a".repeat(36)).as_bytes())?;
+		let (scanned, findings) = scan_files(&fs, b"rust-agent/scripts/check_secrets.py\0")?;
+		assert_eq!(scanned, 1);
+		assert_eq!(findings.len(), 1);
+		assert_eq!(findings[0].path, path);
+		assert_eq!(findings[0].rule, "github token");
 		Ok(())
 	}
 }

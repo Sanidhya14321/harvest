@@ -429,19 +429,22 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/edit.rs",
+          "crates/pi-edit/src"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/tests/native_edit.rs",
+          "crates/pi-edit/tests"
         ]
       },
       "installation": "experimental-rust-cli",
       "legacy": {
         "paths": [
-          "packages/coding-agent/src/core/tools/edit.ts"
+          "packages/coding-agent/src/core/tools/edit.ts",
+          "packages/coding-agent/src/edit/index.ts"
         ],
         "removable": false
       }
@@ -514,13 +517,17 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/search.rs",
+          "crates/pi-walker",
+          "crates/harvest-runtime/src/filesystem.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/search.rs",
+          "rust-agent/tests/native_search.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -1486,14 +1493,17 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/provider.rs",
-          "rust-agent/src/streaming.rs"
+          "rust-agent/src/streaming.rs",
+          "rust-agent/src/usage.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
           "rust-agent/src/streaming.rs",
-          "rust-agent/tests/cli.rs"
+          "rust-agent/tests/cli.rs",
+          "rust-agent/tests/provider_usage.rs",
+          "rust-agent/tests/provider_diagnostics.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -1558,10 +1568,25 @@
     {
       "id": "surface:session-v1-v2-import",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/session_format.rs",
+          "rust-agent/src/cli.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/session_import.rs",
+          "rust-agent/tests/session_format.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/session/"
+        ],
+        "removable": false
       }
     },
     {
@@ -1793,6 +1818,31 @@
       "legacy": {
         "paths": [
           "packages/coding-agent/src/session/session-memory.ts"
+        ],
+        "removable": false
+      }
+    },
+    {
+      "id": "surface:session-tail-recovery",
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/session_format.rs",
+          "rust-agent/src/durable_session.rs",
+          "rust-agent/src/cli.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/session_recovery.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/session/session-manager.ts",
+          "packages/coding-agent/src/session/session-loader.ts"
         ],
         "removable": false
       }

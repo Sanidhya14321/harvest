@@ -4,7 +4,7 @@
 use std::os::unix::fs::MetadataExt;
 use std::{
 	fs::File,
-	io::{Read, Write},
+	io::{self, Read, Write},
 	path::{Component, Path, PathBuf},
 	sync::atomic::{AtomicU64, Ordering},
 };
@@ -14,7 +14,7 @@ use anyhow::{Context, Result, bail};
 use cap_std::fs::OpenOptionsExt;
 use cap_std::{
 	ambient_authority,
-	fs::{Dir, OpenOptions},
+	fs::{Dir, File as CapabilityFile, OpenOptions},
 };
 use sha2::{Digest, Sha256};
 
@@ -128,27 +128,73 @@ impl JailedFs {
 		Ok((directory, PathBuf::from(name)))
 	}
 
+	/// Query through the directory capability, including existing symlink
+	/// parents.
+	pub fn file_type(&self, path: &Path) -> Result<cap_std::fs::FileType> {
+		let relative = self.relative(path)?;
+		let metadata = if relative.as_os_str().is_empty() {
+			self.directory.dir_metadata()?
+		} else {
+			self.directory.metadata(relative)?
+		};
+		Ok(metadata.file_type())
+	}
+
+	fn open_regular(&self, relative: &Path) -> io::Result<CapabilityFile> {
+		let mut options = OpenOptions::new();
+		options.read(true);
+		// A FIFO can block during open, before metadata can reject it. This flag
+		// is ignored for regular files and also closes the type-swap race.
+		#[cfg(unix)]
+		options.custom_flags(libc::O_NONBLOCK);
+		let file = self.directory.open_with(relative, &options)?;
+		if !file.metadata()?.is_file() {
+			return Err(io::Error::new(io::ErrorKind::InvalidInput, "expected a regular file"));
+		}
+		Ok(file)
+	}
+
 	pub fn read(&self, path: &Path, limit: usize) -> Result<Vec<u8>> {
 		let relative = self.relative(path)?;
 		let file = self
-			.directory
-			.open(&relative)
+			.open_regular(&relative)
 			.with_context(|| format!("failed to read {}", relative.display()))?;
-		if !file.metadata()?.is_file() {
-			bail!("expected a regular file");
-		}
 		read_bounded(file, limit)
+	}
+
+	/// Hash a regular file incrementally through the authorized directory
+	/// handle. The limit bounds disk work, rather than allocating the entire
+	/// asset.
+	pub fn hash_file(&self, path: &Path, limit: u64) -> Result<String> {
+		let relative = self.relative(path)?;
+		let mut file = self.open_regular(&relative)?;
+		let metadata = file.metadata()?;
+		if metadata.len() > limit {
+			bail!("file exceeds hash byte limit");
+		}
+		let mut digest = ContentDigest::default();
+		let mut consumed = 0_u64;
+		let mut buffer = [0_u8; 16 * 1024];
+		loop {
+			let count = file.read(&mut buffer)?;
+			if count == 0 {
+				break;
+			}
+			consumed = consumed
+				.checked_add(u64::try_from(count)?)
+				.context("hash byte count overflow")?;
+			if consumed > limit {
+				bail!("file exceeds hash byte limit");
+			}
+			digest.update(&buffer[..count]);
+		}
+		Ok(digest.hash())
 	}
 
 	pub fn read_optional(&self, path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
 		let relative = self.relative(path)?;
-		match self.directory.open(&relative) {
-			Ok(file) => {
-				if !file.metadata()?.is_file() {
-					bail!("expected a regular file");
-				}
-				Ok(Some(read_bounded(file, limit)?))
-			},
+		match self.open_regular(&relative) {
+			Ok(file) => Ok(Some(read_bounded(file, limit)?)),
 			Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
 			Err(error) => Err(error.into()),
 		}
@@ -156,9 +202,23 @@ impl JailedFs {
 
 	/// Pin the parent, stage a fresh inode and replace atomically within it.
 	pub fn atomic_write(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+		self.atomic_persist(path, bytes, false)
+	}
+
+	/// Publish fully synced bytes at a new path without replacing any existing
+	/// entry, even when another writer creates it while bytes are staged.
+	/// Requires hard-link support on the destination filesystem.
+	pub fn atomic_create(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+		self.atomic_persist(path, bytes, true)
+	}
+
+	fn atomic_persist(&self, path: &Path, bytes: &[u8], create_only: bool) -> Result<()> {
 		let (directory, name) = self.parent(path, true)?;
 		let old_permissions = match directory.symlink_metadata(&name) {
 			Ok(metadata) => {
+				if create_only {
+					bail!("destination already exists; refusing to overwrite it");
+				}
 				if metadata.file_type().is_symlink() || !metadata.is_file() {
 					bail!("refusing to replace a symlink or non-file");
 				}
@@ -184,7 +244,15 @@ impl JailedFs {
 			}
 			file.sync_all()?;
 			drop(file);
-			directory.rename(&temp, &directory, &name)?;
+			if create_only {
+				directory.hard_link(&temp, &directory, &name).context(
+					"could not publish new file without overwriting; destination filesystem must \
+					 support hard links",
+				)?;
+				directory.remove_file(&temp)?;
+			} else {
+				directory.rename(&temp, &directory, &name)?;
+			}
 			#[cfg(unix)]
 			directory.open(".")?.sync_all()?;
 			Ok(())

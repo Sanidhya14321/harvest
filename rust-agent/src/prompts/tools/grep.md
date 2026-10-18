@@ -1,0 +1,1 @@
+Search UTF-8 workspace files with a Rust regular expression. Matching is case-sensitive and honors ignore rules by default; set case=false or gitignore=false to override. Binary and oversized files are skipped. Results are bounded, and search-limit markers indicate incomplete traversal.

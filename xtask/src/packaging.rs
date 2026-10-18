@@ -106,14 +106,10 @@ fn read_checksums(text: &str) -> Result<BTreeMap<String, String>> {
 	Ok(checksums)
 }
 
-fn validate_version(version: &str) -> Result<()> {
-	let fields: Vec<_> = version.split('.').collect();
-	if version.len() > 32
-		|| fields.len() != 3
-		|| fields
-			.iter()
-			.any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-	{
+pub(crate) fn validate_version(version: &str) -> Result<()> {
+	let parsed = semver::Version::parse(version)
+		.context("expected stable release version MAJOR.MINOR.PATCH")?;
+	if version.len() > 32 || !parsed.pre.is_empty() || !parsed.build.is_empty() {
 		bail!("expected stable release version MAJOR.MINOR.PATCH");
 	}
 	Ok(())

@@ -49,18 +49,22 @@ struct ToolParameters {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 struct ToolProperties {
+	#[serde(rename = "case", skip_serializing_if = "Option::is_none")]
+	case_sensitive: Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	path:     Option<StringProperty>,
+	gitignore:      Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	old:      Option<StringProperty>,
+	path:           Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	new:      Option<StringProperty>,
+	old:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	contents: Option<StringProperty>,
+	new:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	command:  Option<StringProperty>,
+	contents:       Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pattern:  Option<StringProperty>,
+	command:        Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pattern:        Option<StringProperty>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -68,6 +72,13 @@ struct StringProperty {
 	#[serde(rename = "type")]
 	kind: &'static str,
 }
+
+#[derive(Debug, Clone, Copy, Serialize)]
+struct BooleanProperty {
+	#[serde(rename = "type")]
+	kind: &'static str,
+}
+const BOOLEAN: BooleanProperty = BooleanProperty { kind: "boolean" };
 
 const STRING: StringProperty = StringProperty { kind: "string" };
 
@@ -108,31 +119,37 @@ pub fn specs() -> Vec<ToolSpec> {
 	vec![
 		spec(
 			"read",
-			"Read a UTF-8 file inside the workspace.",
+			include_str!("prompts/tools/read.md").trim_end(),
 			ToolProperties { path: Some(STRING), ..EMPTY },
 			&["path"],
 		),
 		spec(
 			"write",
-			"Create or replace a UTF-8 file inside the workspace.",
+			include_str!("prompts/tools/write.md").trim_end(),
 			ToolProperties { path: Some(STRING), contents: Some(STRING), ..EMPTY },
 			&["path", "contents"],
 		),
 		spec(
 			"edit",
-			"Replace the one occurrence of old with new.",
+			include_str!("prompts/tools/edit.md").trim_end(),
 			ToolProperties { path: Some(STRING), old: Some(STRING), new: Some(STRING), ..EMPTY },
 			&["path", "old", "new"],
 		),
 		spec(
 			"grep",
-			"Search workspace files with a Rust regex.",
-			ToolProperties { pattern: Some(STRING), path: Some(STRING), ..EMPTY },
+			include_str!("prompts/tools/grep.md").trim_end(),
+			ToolProperties {
+				pattern: Some(STRING),
+				path: Some(STRING),
+				case_sensitive: Some(BOOLEAN),
+				gitignore: Some(BOOLEAN),
+				..EMPTY
+			},
 			&["pattern"],
 		),
 		spec(
 			"bash",
-			"Run a command in the workspace and return its output.",
+			include_str!("prompts/tools/bash.md").trim_end(),
 			ToolProperties { command: Some(STRING), ..EMPTY },
 			&["command"],
 		),
@@ -140,12 +157,14 @@ pub fn specs() -> Vec<ToolSpec> {
 }
 
 const EMPTY: ToolProperties = ToolProperties {
-	path:     None,
-	old:      None,
-	new:      None,
-	contents: None,
-	command:  None,
-	pattern:  None,
+	case_sensitive: None,
+	gitignore:      None,
+	path:           None,
+	old:            None,
+	new:            None,
+	contents:       None,
+	command:        None,
+	pattern:        None,
 };
 
 const fn spec(

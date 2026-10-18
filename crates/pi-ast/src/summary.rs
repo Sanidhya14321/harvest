@@ -845,18 +845,12 @@ fn build_segments(source: &str, total_lines: u32, spans: &[LineSpan]) -> Vec<Sum
 	for line_number in 1..=total_lines {
 		let is_elided = elided_lines.contains(&line_number);
 		let kind = if is_elided { "elided" } else { "kept" };
-		if let Some(existing) = current_kind {
-			if existing != kind {
-				push_segment(
-					&mut segments,
-					existing,
-					current_start,
-					line_number - 1,
-					&current_lines,
-				);
-				current_start = line_number;
-				current_lines.clear();
-			}
+		if let Some(existing) = current_kind
+			&& existing != kind
+		{
+			push_segment(&mut segments, existing, current_start, line_number - 1, &current_lines);
+			current_start = line_number;
+			current_lines.clear();
 		}
 		current_kind = Some(kind);
 		if !is_elided {

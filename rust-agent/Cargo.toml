@@ -33,9 +33,9 @@ name = "harvest"
 path = "src/bin/harvest.rs"
 
 [features]
-default = ["core"]
+default = ["full"]
 core = []
-full = ["dep:pi-shell", "dep:tokio", "dep:flume"]
+full = ["core", "dep:pi-shell", "dep:tokio", "dep:flume"]
 
 [dependencies]
 anyhow.workspace = true
@@ -46,6 +46,8 @@ clap_mangen = "0.2.31"
 flume = { workspace = true, optional = true }
 harvest-brain = { path = "../crates/harvest-brain" }
 harvest-runtime = { path = "../crates/harvest-runtime" }
+pi-edit = { path = "../crates/pi-edit" }
+pi-walker = { path = "../crates/pi-walker" }
 pi-shell = { path = "../crates/pi-shell", optional = true }
 regex.workspace = true
 serde.workspace = true
