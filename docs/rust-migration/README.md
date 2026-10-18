@@ -62,8 +62,15 @@ because a Rust command or tool has the same name.
   `session --import-v3` exports all branches to a new file, rejects malformed records and invalid
   parent chains, preserves source bytes and unknown values, and never overwrites
   a destination. Shared atomic creation publishes fully synced content using
-  no-clobber hard links. Signed/multimodal replay, compaction, crash repair and
-  large-log streaming remain pending. Local installed full-profile `harvest` and
+  no-clobber hard links. Explicit `session --recover-to` preserves the raw v3
+  prefix and original source, reports the source hash and excluded tail size,
+  and rejects interior corruption, broken trees and complete final records.
+  Both snapshot commands share the cooperating Rust writer lease; unresolved
+  tool calls still block resume. Recovery has seven CLI contracts; the full
+  application suite passed 57 tests and strict linting. Installed full-profile
+  recovery/continuation passed using a local provider fixture with no runtimes
+  on `PATH`. The rebuilt native addon also passed eight legacy edit tests. Signed/multimodal replay, compaction, automatic
+  repair, legacy ownership coordination and large-log streaming remain pending. Local installed full-profile `harvest` and
   `omp` passed v1 import, local-provider replay/continuation, durable writes,
   source preservation and overwrite rejection with no runtimes on `PATH`.
   This does not certify live providers or other operating systems.

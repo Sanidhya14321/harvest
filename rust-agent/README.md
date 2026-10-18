@@ -54,6 +54,21 @@ filesystem must support hard links so publication cannot overwrite another
 writer's file. Reading or importing opaque provider data does not establish
 support for resuming it; unsupported replay still fails explicitly.
 
+Recover an interrupted final record from a v3 log into a new file:
+
+```sh
+harvest session --workspace /path/to/session-directory --recover-to recovered.jsonl interrupted.jsonl
+```
+
+Recovery preserves the original and reports its hash, the recovered byte count
+and the excluded tail byte count. It accepts incomplete final JSON objects,
+including an interrupted UTF-8 character. Complete records, malformed syntax,
+interior damage and broken branch references are rejected. Import and recovery
+require cooperating Rust writers to release ownership first. A pending tool
+call whose result was interrupted still prevents resume; recovery never removes
+its call or executes it again. Legacy writer coordination and automatic repair
+remain pending.
+
 The bounded codec preserves raw v3 bytes and opaque provider payloads. V1/v2
 records migrate in memory; inspection does not persist the migration. Session
 text/function replay and durable appends are available in the experimental CLI:

@@ -49,16 +49,23 @@ enum Commands {
 #[derive(Debug, clap::Args)]
 struct SessionArgs {
 	#[arg(short, long, default_value = ".")]
-	workspace: PathBuf,
+	workspace:  PathBuf,
 	#[arg(long)]
-	leaf:      Option<String>,
+	leaf:       Option<String>,
 	#[arg(
 		long,
 		value_name = "FILE",
 		help = "Import every branch to a separate v3 file without overwriting existing files"
 	)]
-	import_v3: Option<PathBuf>,
-	file:      PathBuf,
+	import_v3:  Option<PathBuf>,
+	#[arg(
+		long,
+		value_name = "FILE",
+		conflicts_with = "import_v3",
+		help = "Recover an interrupted final v3 record into a new file; preserve the original"
+	)]
+	recover_to: Option<PathBuf>,
+	file:       PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
@@ -121,6 +128,11 @@ fn dispatch(cli: Cli) -> Result<u8> {
 
 fn inspect_session(args: SessionArgs) -> Result<u8> {
 	let fs = harvest_runtime::JailedFs::open(&args.workspace)?;
+	let _source_ownership = if args.import_v3.is_some() || args.recover_to.is_some() {
+		Some(crate::durable_session::lock_session(&fs, &args.file)?)
+	} else {
+		None
+	};
 	let bytes = fs.read(&args.file, crate::session_format::SESSION_LIMIT)?;
 	let document = crate::session_format::SessionDocument::decode(&bytes)?;
 	let branch_entries = args
@@ -131,6 +143,11 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 	if let Some(destination) = &args.import_v3 {
 		document.import_to(&fs, destination)?;
 	}
+	let recovery = args
+		.recover_to
+		.as_ref()
+		.map(|destination| document.recover_to(&fs, destination))
+		.transpose()?;
 	#[derive(serde::Serialize)]
 	#[serde(rename_all = "camelCase")]
 	struct SessionInspection<'a> {
@@ -141,6 +158,10 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 		migration_required: bool,
 		#[serde(skip_serializing_if = "Option::is_none")]
 		imported_to:        Option<String>,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		recovered_to:       Option<String>,
+		#[serde(skip_serializing_if = "Option::is_none")]
+		recovery:           Option<crate::session_format::RecoveryReport>,
 	}
 	let report = SessionInspection {
 		header: document.header(),
@@ -152,6 +173,11 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 			.import_v3
 			.as_ref()
 			.map(|path| path.display().to_string()),
+		recovered_to: args
+			.recover_to
+			.as_ref()
+			.map(|path| path.display().to_string()),
+		recovery,
 	};
 	serde_json::to_writer(io::stdout().lock(), &report)?;
 	writeln!(io::stdout().lock())?;

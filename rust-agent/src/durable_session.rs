@@ -10,6 +10,13 @@ use crate::{
 	session_format::{SESSION_LIMIT, SessionDocument},
 };
 
+/// Mutation and snapshot commands share the same cooperating-writer lease.
+pub(crate) fn lock_session(fs: &JailedFs, path: &Path) -> Result<RootLock> {
+	let mut lock = fs.relative(path)?.into_os_string();
+	lock.push(".rust-owner.lock");
+	fs.lock(Path::new(&lock))
+}
+
 pub struct DurableSession {
 	fs:         JailedFs,
 	path:       PathBuf,
@@ -26,8 +33,7 @@ impl DurableSession {
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
 		let fs = JailedFs::open(root)?;
 		let path = fs.relative(path)?;
-		let lock = PathBuf::from(format!("{}.rust-owner.lock", path.display()));
-		let ownership = fs.lock(&lock)?;
+		let ownership = lock_session(&fs, &path)?;
 		let mut bytes = fs.read_optional(&path, SESSION_LIMIT)?.unwrap_or_default();
 		if bytes.is_empty() {
 			if leaf.is_some() {

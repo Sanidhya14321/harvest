@@ -7,6 +7,8 @@
 
 ### Added
 
+- Recover interrupted v3 session tails to new files while preserving original data and reporting excluded bytes.
+
 - Import legacy sessions to separate v3 files without overwriting existing data or discarding damaged records.
 
 - Resume text and function-tool session-v3 branches with durable writes and ordered streaming JSON events.

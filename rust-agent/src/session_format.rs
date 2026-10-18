@@ -6,13 +6,24 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use harvest_runtime::JailedFs;
+use harvest_runtime::{JailedFs, content_hash};
+use serde::Serialize;
 use serde_json::value::RawValue;
 
 pub const SESSION_LIMIT: usize = 64 * 1024 * 1024;
 const ENTRY_LIMIT: usize = 100_000;
 pub const TITLE_SLOT_BYTES: usize = 256;
 pub type SessionObject = BTreeMap<String, Box<RawValue>>;
+
+/// A recovery receipt describes the exact preserved prefix and excluded tail.
+/// The source remains untouched; excluded bytes remain available in it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryReport {
+	pub source_hash:         String,
+	pub recovered_bytes:     usize,
+	pub excluded_tail_bytes: usize,
+}
 
 pub struct SessionDocument {
 	original:          Vec<u8>,
@@ -239,6 +250,59 @@ impl SessionDocument {
 			bail!("imported session exceeds size limit");
 		}
 		fs.atomic_create(destination, &bytes)
+	}
+
+	/// Recover a v3 log whose final JSON record was interrupted during append.
+	/// Only an incomplete final record is excluded; interior damage, complete
+	/// records and malformed syntax require a different explicit action.
+	pub fn recover_to(&self, fs: &JailedFs, destination: &Path) -> Result<RecoveryReport> {
+		if self.migrated {
+			bail!(
+				"tail recovery requires a v3 session; legacy recovery needs an explicit migration \
+				 review"
+			);
+		}
+		if self.original.ends_with(b"\n") {
+			bail!("session has no unterminated final record; use --import-v3 for a complete session");
+		}
+		let boundary = self
+			.original
+			.iter()
+			.rposition(|byte| *byte == b'\n')
+			.context("session has no complete header before its interrupted record")?
+			+ 1;
+		let (prefix, tail) = self.original.split_at(boundary);
+		let textual_tail = match std::str::from_utf8(tail) {
+			Ok(_) => tail,
+			Err(error) if error.error_len().is_none() => &tail[..error.valid_up_to()],
+			Err(_) => bail!("final record contains invalid UTF-8; manual recovery is required"),
+		};
+		if textual_tail.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
+			bail!("final fragment is not an interrupted JSON record; manual recovery is required");
+		}
+		match serde_json::from_slice::<SessionObject>(textual_tail) {
+			Err(error) if error.is_eof() => {},
+			Ok(_) => bail!("final record is complete; use --import-v3 to add its missing delimiter"),
+			Err(_) => {
+				bail!("final record is malformed rather than truncated; manual recovery is required")
+			},
+		}
+		// The incomplete tail must be the only row the original decoder could
+		// not parse. Reuse its complete prefix tree without allocating and
+		// decoding another full session snapshot.
+		if self.malformed_records != 1 {
+			bail!(
+				"damaged session has malformed records before its interrupted tail; no records were \
+				 discarded"
+			);
+		}
+		self.validate_tree()?;
+		fs.atomic_create(destination, prefix)?;
+		Ok(RecoveryReport {
+			source_hash:         content_hash(&self.original),
+			recovered_bytes:     prefix.len(),
+			excluded_tail_bytes: tail.len(),
+		})
 	}
 
 	/// Produce a separate v3 import body without changing the original file.

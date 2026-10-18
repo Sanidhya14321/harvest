@@ -1814,6 +1814,31 @@
         ],
         "removable": false
       }
+    },
+    {
+      "id": "surface:session-tail-recovery",
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/session_format.rs",
+          "rust-agent/src/durable_session.rs",
+          "rust-agent/src/cli.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/session_recovery.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/session/session-manager.ts",
+          "packages/coding-agent/src/session/session-loader.ts"
+        ],
+        "removable": false
+      }
     }
   ]
 }
