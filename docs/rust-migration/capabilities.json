@@ -1645,10 +1645,31 @@
     {
       "id": "surface:terminal-input-resize-restoration",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "crates/harvest-tui/src/keys.rs",
+          "crates/harvest-tui/src/keys/text.rs",
+          "crates/harvest-tui/src/paste.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-tui/src/keys.rs",
+          "crates/harvest-tui/src/keys/text.rs",
+          "crates/harvest-tui/src/paste.rs",
+          "packages/tui/test/keys.test.ts",
+          "packages/tui/test/bracketed-paste.test.ts"
+        ]
+      },
+      "installation": "experimental-rust-sdk",
+      "legacy": {
+        "paths": [
+          "packages/tui/src/keys.ts",
+          "packages/tui/src/stdin-buffer.ts",
+          "packages/tui/src/terminal.ts"
+        ],
+        "removable": false
       }
     },
     {

@@ -74,6 +74,7 @@ clap_mangen = "0.2.31"
 flume = { workspace = true, optional = true }
 harvest-brain = { path = "../crates/harvest-brain" }
 harvest-runtime = { path = "../crates/harvest-runtime" }
+harvest-tui = { path = "../crates/harvest-tui" }
 pi-edit = { path = "../crates/pi-edit" }
 pi-walker = { path = "../crates/pi-walker" }
 pi-shell = { path = "../crates/pi-shell", optional = true }

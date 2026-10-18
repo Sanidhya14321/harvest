@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Keyboard text and tmux paste decoding use the shared Rust terminal protocol library.
+
 ## [0.1.0] - 2026-10-08
 
 ### Changed

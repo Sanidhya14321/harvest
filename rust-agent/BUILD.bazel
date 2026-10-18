@@ -30,6 +30,7 @@ rust_library(
         ":build_script",
         "//crates/harvest-brain",
         "//crates/harvest-runtime",
+        "//crates/harvest-tui",
         "//crates/pi-edit",
         "//crates/pi-shell",
         "//crates/pi-walker",

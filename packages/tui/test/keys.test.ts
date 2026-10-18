@@ -1,12 +1,31 @@
 import { describe, expect, it } from "bun:test";
+import { KeyEventType } from "@harvest/pi-natives";
 import {
 	extractPrintableText,
 	isWindowsTerminalSession,
 	matchesKey,
 	matchesRawBackspace,
 	parseKey,
+	parseKittySequence,
 	setKittyProtocolActive,
 } from "@harvest/pi-tui/keys";
+
+it("preserves alternate-layout modifier and event semantics across the native bridge", () => {
+	for (const [wire, event] of [
+		[1, KeyEventType.Press],
+		[2, KeyEventType.Repeat],
+		[3, KeyEventType.Release],
+	] as const) {
+		expect(parseKittySequence(`\x1b[1089:67:99;5:${wire}u`)).toEqual({
+			codepoint: 1089,
+			shiftedKey: 67,
+			baseLayoutKey: 99,
+			modifier: 4,
+			eventType: event,
+		});
+	}
+	expect(parseKittySequence("\x1b[97;0u")).toBeNull();
+});
 
 describe("matchesKey", () => {
 	it("matches ctrl+letter sequences", () => {

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Expose shared Rust keyboard text and tmux paste decoding for native SDK and TUI consumers.
+
 - Added native project and user Markdown brain indexing and retrieval.
 
 ### Fixed

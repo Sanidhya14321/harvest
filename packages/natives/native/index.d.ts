@@ -1017,6 +1017,15 @@ export declare function cosineSimilarityPairs(vectors: Float64Array, count: numb
  */
 export declare function countTokens(input: string | string[], encoding?: Encoding | undefined | null): number
 
+/** Decode the keypad text fast path before matching navigation bindings. */
+export declare function decodeKittyKeypadText(data: string): string | null
+
+/** Decode text-producing Kitty CSI-u or xterm modifyOtherKeys input. */
+export declare function decodePrintableKey(data: string): string | null
+
+/** Decode tmux-reencoded paste control bytes before editor sanitization. */
+export declare function decodeReencodedPasteControls(data: string): string
+
 /**
  * Decode one complete SIXEL control string into a PNG.
  *
@@ -1487,6 +1496,9 @@ export declare function executeShell(options: ShellExecuteOptions, onChunk?: ((e
 
 /** Locate `<SM:EDIT path="…">` payloads the model emitted as plain text. */
 export declare function extractInlineSloppyRegions(text: string): Array<InlineSloppyRegion>
+
+/** Extract text for insertion without replaying terminal control sequences. */
+export declare function extractPrintableText(data: string): string | null
 
 /**
  * Extract the before/after slices around an overlay region.
@@ -2086,25 +2098,18 @@ export interface Match {
 }
 
 /**
- * Match input data against a key identifier string.
- *
- * Returns true when the bytes represent the specified key with modifiers.
+ * Match editor input in one bridge call, including keypad and Backspace
+ * policy.
  */
+export declare function matchesInputKey(data: string, keyId: string, kittyProtocolActive: boolean, rawBackspaceIsCtrl: boolean): boolean
+
+/** Match terminal input against a normalized key identifier. */
 export declare function matchesKey(data: string, keyId: string, kittyProtocolActive: boolean): boolean
 
-/**
- * Match Kitty protocol input against a codepoint and modifier mask.
- *
- * Returns true when the parsed sequence matches the expected codepoint (or
- * base layout key) and modifier bits.
- */
+/** Match Kitty input against a codepoint and modifier mask. */
 export declare function matchesKittySequence(data: string, expectedCodepoint: number, expectedModifier: number): boolean
 
-/**
- * Check if input matches a legacy escape sequence for the given key name.
- *
- * Returns true only when the byte sequence maps to the exact key identifier.
- */
+/** Match an exact legacy escape sequence against a key name. */
 export declare function matchesLegacySequence(data: string, keyName: string): boolean
 
 /** N-API opt-in handle for the minimizer. */
@@ -2242,18 +2247,13 @@ export interface ParsedKittyResult {
   eventType?: KeyEventType
 }
 
-/**
- * Parse terminal input and return a normalized key identifier.
- *
- * Returns a key id like "escape" or "ctrl+c", or None if unrecognized.
- */
+/** Normalize editor input in one bridge call with explicit terminal facts. */
+export declare function parseInputKey(data: string, kittyProtocolActive: boolean, rawBackspaceIsCtrl: boolean): string | null
+
+/** Parse terminal input into a normalized key identifier. */
 export declare function parseKey(data: string, kittyProtocolActive: boolean): string | null
 
-/**
- * Parse a Kitty keyboard protocol sequence.
- *
- * Returns a structured parse result when the input is a valid Kitty sequence.
- */
+/** Decode a complete Kitty keyboard protocol sequence. */
 export declare function parseKittySequence(data: string): ParsedKittyResult | null
 
 /** One hunk of a unified diff, matching jsdiff `structuredPatch` hunks. */

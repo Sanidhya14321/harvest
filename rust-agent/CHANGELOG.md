@@ -7,6 +7,8 @@
 
 ### Added
 
+- Rust SDK exposes shared keyboard protocol and paste normalization helpers through `harvest_omp::tui`.
+
 - Resume text-compacted sessions, handoffs and branch summaries while honoring durable context resets and preserving historical logs.
 
 - Native grep honors shared ignore rules, supports explicit case/ignore overrides, and reports search limits.

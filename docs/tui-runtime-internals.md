@@ -34,6 +34,13 @@ Input path:
 
 `StdinBuffer` assembles fragmented CSI/OSC/DCS/APC/SS3 sequences and bracketed paste before dispatch. TUI input listeners may consume or transform input first. Key releases are filtered unless the focused component opts in.
 
+Keyboard normalization, text-producing key decoding and tmux paste-control
+decoding share the Rust `crates/harvest-tui` library through thin N-API adapters.
+The Rust SDK exposes those same primitives as `harvest_omp::tui`. `StdinBuffer`
+timers and framing, terminal lifecycle, focus and resize handling still belong
+to the TypeScript terminal; extracting the parsers does not transfer ownership
+of those contracts to a native interactive backend.
+
 `setFocus()` updates `Focusable.focused`; focused components emit `CURSOR_MARKER`, which the frame writer strips while recording the physical cursor target.
 
 Optimistic user submissions call `renderNow()` before agent dispatch so synchronous startup/model work cannot delay the visible user row.

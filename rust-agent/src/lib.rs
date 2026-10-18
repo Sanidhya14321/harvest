@@ -16,6 +16,9 @@ mod shell;
 mod streaming;
 pub mod tools;
 
+/// Terminal protocol primitives usable without an embedded JavaScript runtime.
+pub use harvest_tui as tui;
+
 /// Execute the Rust command line without installation side effects.
 ///
 /// # Errors

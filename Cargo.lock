@@ -3777,6 +3777,7 @@ dependencies = [
  "handlebars",
  "harvest-brain",
  "harvest-runtime",
+ "harvest-tui",
  "pi-edit",
  "pi-shell",
  "pi-walker",
@@ -3801,6 +3802,13 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "harvest-tui"
+version = "0.1.0"
+dependencies = [
+ "phf 0.13.1",
 ]
 
 [[package]]
@@ -6531,6 +6539,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "harvest-brain",
+ "harvest-tui",
  "heapless 0.9.3",
  "html-to-markdown-rs",
  "icy_sixel",
@@ -6550,7 +6559,6 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "pdf-inspector",
- "phf 0.13.1",
  "pi-ast",
  "pi-diff",
  "pi-edit",

@@ -103,8 +103,8 @@ jobs:
       - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
         with:
           tool: cargo-nextest
-      - run: cargo clippy -p harvest-omp -p xtask --all-targets --all-features --locked -- -D warnings
-      - run: cargo xtask test -p harvest-omp -p xtask --all-features
+      - run: cargo clippy -p harvest-omp -p harvest-tui -p xtask --all-targets --all-features --locked -- -D warnings
+      - run: cargo xtask test -p harvest-omp -p harvest-tui -p xtask --all-features
       - name: Commit the version bump
         env:
           VERSION: ${{ steps.bump.outputs.version }}
