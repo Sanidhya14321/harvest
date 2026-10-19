@@ -1857,7 +1857,8 @@
           "xtask/src/packaging.rs",
           "rust-agent/install.sh",
           "rust-agent/install.ps1",
-          ".github/workflows/rust-release.yml"
+          ".github/workflows/rust-release.yml",
+          "xtask/src/elf.rs"
         ]
       },
       "verification": {
@@ -1865,7 +1866,8 @@
         "contract_suites": [
           "xtask/tests/artifacts_cli.rs",
           "rust-agent/tests/install.sh",
-          "rust-agent/tests/install.ps1"
+          "rust-agent/tests/install.ps1",
+          "xtask/src/elf.rs"
         ]
       },
       "installation": "experimental-rust-cli",

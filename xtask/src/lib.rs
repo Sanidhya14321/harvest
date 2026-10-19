@@ -5,6 +5,7 @@ pub mod capabilities;
 pub mod checksums;
 pub mod clippy_config;
 pub mod development;
+pub mod elf;
 pub mod migration;
 pub mod packaging;
 mod process;

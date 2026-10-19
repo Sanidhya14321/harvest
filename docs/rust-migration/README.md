@@ -7,6 +7,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask fix-elf-verdef --workspace ROOT FILE...` repairs stale GNU
+  version-definition pointers through bounded, jailed, atomic streaming writes.
+  Invalid metadata, reader failures and unwinds leave the original intact;
+  outside hardlink aliases are preserved. All 193 shared Rust regressions and
+  19 rebuilt-addon regressions passed. Five installed legacy-oracle cases match;
+  controlled x64 and emulated ARM64 glibc 2.17 loader failures recover without
+  Bun/Node on the repair command's PATH. The host patchelf chain kept its pointer
+  current, so this is deliberate-corruption recovery evidence. The clean Nix
+  consumer build is being validated before retiring the old script/test.
+
 - `cargo xtask clippy-config [--check]` owns Bazel lint policy generation.
   Root/release callers and Rust CI use it; the TS generator is removed. Five
   installed legacy-oracle cases preserve generated flags, and missing/stale

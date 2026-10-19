@@ -229,3 +229,76 @@ fn authorized_child_descriptor_stays_pinned_after_a_path_is_replaced() {
 	input.read_to_string(&mut content).unwrap();
 	assert_eq!(content, "authorized");
 }
+
+#[test]
+fn streamed_replacement_keeps_the_old_file_on_reader_failure_or_limit_overflow() {
+	struct Fails {
+		emitted: bool,
+	}
+	impl std::io::Read for Fails {
+		fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+			if bytes.is_empty() {
+				return Ok(0);
+			}
+			if self.emitted {
+				return Err(std::io::ErrorKind::Other.into());
+			}
+			self.emitted = true;
+			bytes[0] = b'x';
+			Ok(1)
+		}
+	}
+	let root = tempfile::tempdir().unwrap();
+	let jail = JailedFs::open(root.path()).unwrap();
+	let path = Path::new("output");
+	jail.atomic_write(path, b"original").unwrap();
+	assert!(
+		jail
+			.atomic_write_from(path, Fails { emitted: false }, 100)
+			.is_err()
+	);
+	assert_eq!(jail.read(path, 100).unwrap(), b"original");
+	assert!(jail.atomic_write_from(path, &b"too large"[..], 4).is_err());
+	assert_eq!(jail.read(path, 100).unwrap(), b"original");
+	assert_eq!(jail.atomic_write_from(path, &b"complete"[..], 8).unwrap(), 8);
+	assert_eq!(jail.read(path, 100).unwrap(), b"complete");
+}
+
+#[test]
+fn a_panicking_stream_cannot_leave_partial_payload_files_or_replace_the_original() {
+	struct Panics {
+		emitted: bool,
+	}
+	impl std::io::Read for Panics {
+		fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+			if bytes.is_empty() {
+				return Ok(0);
+			}
+			assert!(!self.emitted, "reader failed");
+			self.emitted = true;
+			let count = bytes.len().min(7);
+			bytes[..count].copy_from_slice(&b"private"[..count]);
+			Ok(count)
+		}
+	}
+	let root = tempfile::tempdir().unwrap();
+	let jail = JailedFs::open(root.path()).unwrap();
+	let path = Path::new("output");
+	jail.atomic_write(path, b"original").unwrap();
+	let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+		jail.atomic_write_from(path, Panics { emitted: false }, 100)
+	}));
+	assert!(result.is_err());
+	assert_eq!(jail.read(path, 100).unwrap(), b"original");
+	for entry in fs::read_dir(root.path()).unwrap() {
+		let entry = entry.unwrap();
+		if entry.file_type().unwrap().is_file() {
+			assert!(
+				!fs::read(entry.path())
+					.unwrap()
+					.windows(7)
+					.any(|window| window == b"private")
+			);
+		}
+	}
+}

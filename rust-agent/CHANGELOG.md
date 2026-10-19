@@ -7,6 +7,8 @@
 
 ### Added
 
+- Repair ELF GNU version-definition pointers with native Rust tooling while preserving binary payloads and permissions.
+
 - Rust SDK exposes shared keyboard protocol and paste normalization helpers through `harvest_omp::tui`.
 
 - Resume text-compacted sessions, handoffs and branch summaries while honoring durable context resets and preserving historical logs.

@@ -436,3 +436,18 @@ Workspaces that hardlinked a `.node` before GC retain access via the kernel inod
 - Stuck lock: `rm /data/cache/pi-natives/<repo-slug>/.lock` (only when no orchestrator process is touching the repo).
 
 For a fixed target suffix, a committed `HEAD` change under `crates/`, `Cargo.lock`, `Cargo.toml`, `rust-toolchain.toml`, or `packages/natives/` produces an automatic miss. Changing platform/architecture, or `TARGET_VARIANT` on x64, also selects a different key. Merely editing an uncommitted worktree changes neither the `HEAD` hashes nor the key.
+
+## ELF version-definition repair
+
+`cargo xtask fix-elf-verdef --workspace ROOT FILE...` accepts regular ELF64
+little-endian files beneath an explicit workspace. It resolves the version table
+from section metadata, updates the dynamic pointer and streams all other bytes
+unchanged to an atomic replacement, retaining executable permissions. It rejects
+out-of-range, oversized, duplicate and unterminated metadata before publication.
+The file cap is 4 GiB and each metadata table is capped at 4 MiB. A file without
+version definitions or with an already-current pointer needs no rewrite.
+
+The native command and shared filesystem contracts are verified locally; the Nix
+post-fixup consumer is under clean-build validation before the legacy helper and
+its tests are removed. ARM64 loader recovery was verified through explicit QEMU
+emulation on CentOS 7, separately from native hardware certification.
