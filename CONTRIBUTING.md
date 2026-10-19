@@ -1,101 +1,160 @@
-# Contributing to oh-my-pi
+# Contributing to Harvest
 
-Pull requests are welcome. Keep them focused, understand the work you submit,
-and be prepared to explain and maintain it.
+Thank you for contributing to Harvest. Bug reports, documentation, tests, code,
+and thoughtful design feedback all help improve the project. Contributions are
+welcome from everyone; no invitation or vouch is required.
 
-> [!NOTE]
-> Pull requests are **temporarily open to everyone** as a trial. We previously
-> required a vouch before accepting PRs; that requirement is lifted for now
-> while we evaluate how open contributions go. Depending on the results, the
-> vouch system may return.
+This guide explains how to prepare a focused contribution, verify it, and work
+with maintainers through review.
 
 ## Before you start
 
-### Small changes
+- Read the [README](README.md), the relevant feature documentation under
+  [docs](docs/), and the repository's [development rules](AGENTS.md).
+- Search existing [issues](https://github.com/Sanidhya14321/harvest/issues) and
+  [pull requests](https://github.com/Sanidhya14321/harvest/pulls) for related work.
+- Small bug fixes, documentation updates, and narrowly scoped improvements can
+  go directly to a pull request.
+- Discuss major features, new dependencies, architectural changes, and changes
+  spanning several packages with Harvest maintainers before implementation.
+  Use the relevant existing discussion or a proposal pull request to agree on
+  scope. Prior discussion does not guarantee acceptance.
 
-Bug fixes, documentation updates, and narrowly scoped improvements can go
-straight to a pull request.
+If you are already implementing a change, do not open a separate actionable
+issue for the same work: repository automation may pick it up independently.
+Link an existing issue in your pull request when one applies.
 
-### Major changes
+## Reporting a problem
 
-Discuss major features and broad architectural or behavioral changes in
-[Discord](https://discord.gg/4NMW9cdXZa) **before writing the implementation**.
-This includes new subsystems, large UI changes, new dependencies, and changes
-that span several packages. A GitHub issue is not a substitute for this
-discussion, and prior discussion does not guarantee that a pull request will be
-merged.
+Include a concise description, steps to reproduce, expected and actual
+behavior, Harvest version, operating system, terminal, and relevant provider or
+configuration details. Provide a minimal example and sanitized logs or
+screenshots when they help explain the problem. Remove credentials, tokens,
+private repository content, and other sensitive data before posting.
 
-### Do not open an issue for work you are about to submit
+For a suspected security vulnerability, use
+[GitHub's private vulnerability reporting](https://github.com/Sanidhya14321/harvest/security/advisories/new)
+if it is enabled. Otherwise, request a private reporting channel from a
+maintainer before sharing exploit details publicly.
 
-If you intend to implement a change yourself, **do not create an issue for it
-first**. robomp treats actionable issues as work to pick up and may start the
-same fix in parallel, wasting compute and maintainer time.
+## Development setup
 
-Open an issue when you are reporting a problem or proposing work that you are
-not already turning into a pull request. If a relevant issue already exists,
-link it from your pull request instead of creating another one.
+Install Git, [Bun](https://bun.sh/), the Rust toolchain specified in
+[rust-toolchain.toml](rust-toolchain.toml), and the platform build tools required
+for native compilation. On macOS, install Xcode Command Line Tools first.
 
-## AI-assisted contributions
+Fork the repository, clone your fork, and create a branch for your change. From
+the repository root, run:
 
-AI agents are welcome as tools, not as unattended contributors. Do not give an
-agent a vague goal and submit whatever it produces.
+```sh
+bun setup
+bun dev
+```
 
-Before opening a pull request, you must:
+`bun setup` installs workspace dependencies and builds the native addon. After
+changing Rust crates or native bindings, run `bun run build:native` again.
+For application structure and subsystem references, see the
+[development guide](packages/coding-agent/DEVELOPMENT.md). The experimental Rust
+runtime has its own [setup and compatibility notes](rust-agent/README.md).
 
-- constrain the agent to the agreed scope and reject unrelated changes;
-- review every changed file and understand the resulting behavior;
-- run the relevant checks and exercise the changed behavior yourself; and
-- submit the pull request only after that review, rather than letting an agent
-  publish it autonomously.
+## Preparing your change
 
-You are responsible for the code, regardless of who or what generated it.
+Keep each pull request to one logical change. Follow existing conventions and
+reuse shared utilities. Avoid unrelated cleanup, broad formatting changes,
+dependency updates, and generated noise.
+
+Add or update documentation when behavior, configuration, commands, or public
+interfaces change. Add focused regression coverage for bug fixes and meaningful
+behavioral changes. For user-visible package changes, add a concise entry under
+`[Unreleased]` in the affected package's changelog; do not rewrite released
+entries. Documentation-only changes generally do not need a package changelog.
+
+Do not hand-edit generated catalog files. Update their sources and run the
+appropriate generator, such as `bun run gen:compat` or `bun run gen:models`,
+including the resulting outputs with the change.
+
+## Verification
+
+Run checks appropriate to the affected area. Common commands from the root are:
+
+| Purpose                                 | Command                                           |
+| --------------------------------------- | ------------------------------------------------- |
+| Application lint, formatting, and types | `bun --cwd=packages/coding-agent run check`       |
+| Application types only                  | `bun --cwd=packages/coding-agent run check:types` |
+| Focused TypeScript test                 | `bun test <path-to-test>`                         |
+| TypeScript CI suite                     | `bun scripts/ci-test-ts.ts <suite>`               |
+| Rust tests and doctests                 | `bun run test:rs`                                 |
+| Source CLI startup                      | `bun dev -- --version`                            |
+
+Use package check commands for type checking; do not invoke the TypeScript
+compiler directly. Use the CI runner for full TypeScript suites and the
+repository runner for Rust tests. Check the relevant package's documentation
+for additional requirements.
+
+Verify the changed behavior as well as the automated checks. For a bug fix,
+reproduce the original failure and repeat the same scenario after the fix.
+For a feature, exercise the workflow end to end. For a UI change, interact with
+the interface and inspect the result. For documentation, check commands,
+relative links, image paths, and rendered formatting.
+
+Report the exact scenario, command, and result in the pull request. State any
+checks you could not run and any known failures; a passing type check alone
+does not establish that a feature works.
 
 ## Pull request requirements
 
-Every pull request body **MUST include at least one sentence written by you, in
-your own words**, explaining what changed and why. A generated summary, pasted
-agent transcript, or checklist alone does not satisfy this requirement.
+Use a descriptive title and include:
 
-One honest line is enough:
+- The problem or motivation and the resulting behavior.
+- At least one sentence written by you, in your own words, explaining what
+  changed and why. A generated summary, transcript, or checklist alone does not
+  satisfy this requirement.
+- Relevant issue or proposal links, when available.
+- Verification commands, observed results, and remaining limitations.
+- Screenshots or terminal captures for visible UI changes, with sensitive
+  information removed and fixture data identified.
+- Migration or compatibility notes when existing users are affected.
 
-> I reviewed the full diff; this change fixes duplicate PR reviews by reusing
-> the existing delivery guard.
+Review every changed file before submitting. Respond to maintainer feedback
+and apply suggestions only after checking them. Maintainers may request changes
+or close submissions that lack verification, skip required discussion, contain
+unreviewed output, or combine unrelated work.
 
-You **MUST verify that the change works as intended**. `bun check` and automated
-tests are expected where relevant, but they are not proof that the behavior
-works. Exercise the changed path yourself and report the exact scenario and
-result in the pull request:
+## AI-assisted contributions
 
-- for a bug fix, reproduce the bug and confirm the same reproduction no longer
-  fails;
-- for a feature, launch the product and use the feature end to end; and
-- for a UI change, interact with it and inspect the rendered result.
+AI tools may assist your work. You remain responsible for its correctness,
+scope, licensing, and maintenance. Give tools a clear scope, review the full
+diff, reject unrelated changes, and understand the resulting behavior.
 
-“`bun check` passes” by itself is not sufficient verification. For coding-agent
-development commands and repository structure, see
-[`packages/coding-agent/DEVELOPMENT.md`](packages/coding-agent/DEVELOPMENT.md).
+Run the relevant checks and exercise the change yourself before submission.
+Submit only after that review; do not let an agent publish unreviewed work.
+Write your own explanation and answer review questions yourself.
 
-Keep each pull request to one logical change. Avoid unrelated cleanup,
-drive-by refactors, generated noise, or features that were not part of the
-agreed scope.
+## Contribution licensing and attribution
 
-## Contribution licensing
+By intentionally submitting a contribution for inclusion in Harvest, you agree
+to license it under the [MIT License](LICENSE). You must have the right to
+submit the material. No Contributor License Agreement (CLA) or Developer
+Certificate of Origin (DCO) sign-off is required.
 
-A contribution intentionally submitted for inclusion in OMP is licensed under
-the MIT License.
+This policy does not relicense third-party or vendored material. Preserve all
+applicable copyright, license, attribution, and notice files. Identify the
+source and license of any third-party material you add, including assets and
+documentation examples.
 
-This policy does not relicense third-party or vendored code. You must have the
-right to submit your contribution and must preserve applicable copyright,
-license, attribution, and notice material. Submitting a contribution does not
-require signing a Contributor License Agreement (CLA) or certifying a
-Developer Certificate of Origin (DCO).
+Contributors retain copyright in their original work. The root license names
+Harvest's recorded human contributors individually: Sanidhya Vats, Naman, and
+Pulkit. Inherited copyright and permission notices are preserved in
+[third-party notices](THIRD-PARTY-NOTICES.txt). Attribution does not transfer
+ownership or replace applicable notices. When adding contributor attribution,
+use verified names from the contribution history and preserve existing rights.
+Recorded code and documentation contributions appear in the
+[contributor list](https://github.com/Sanidhya14321/harvest/graphs/contributors)
+and repository history.
 
-## Review
+## Working together
 
-Maintainers review the submitted behavior and the contributor's understanding
-of it—not the volume of generated code. Respond to review feedback yourself,
-and only apply suggestions you have checked.
-
-Pull requests may be closed when they skip required prior discussion, lack the
-human-written explanation, contain unreviewed agent output, or mix unrelated
-changes.
+Keep discussion respectful, specific, and focused on the work. Explain tradeoffs,
+provide reproducible evidence, and allow time for review. Contributions of any
+size are valuable when they improve Harvest and are ready for others to use
+and maintain.
