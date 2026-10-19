@@ -1,5 +1,7 @@
 # Rust migration implementation status
 
+Continuation checkpoint and agent instructions: [HANDOFF.md](HANDOFF.md) (2026-10-20).
+
 The normal application still launches TypeScript. This change establishes the
 shared Rust foundations and native brain maintenance; it does not complete the
 application rewrite. No capability is marked as legacy-parity complete simply
