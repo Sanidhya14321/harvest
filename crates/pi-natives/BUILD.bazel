@@ -99,6 +99,7 @@ rust_shared_library(
     deps = all_crate_deps(normal = True) + [
         "//crates/harvest-brain",
         "//crates/harvest-tui",
+        "//crates/harvest-media",
         "//crates/harvest-tokenizer",
         "//crates/pi-ast",
         "//crates/pi-diff",

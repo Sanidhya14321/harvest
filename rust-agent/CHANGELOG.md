@@ -7,6 +7,8 @@
 
 ### Added
 
+- Rust SDK converts HTML to Markdown and rasterizes SVG previews through `harvest_omp::media`.
+
 - Repair published ESM specifiers with `cargo xtask emit-extensions`, including read-only drift checks.
 
 - Rust SDK decodes SGR mouse input through `harvest_omp::tui::mouse`.

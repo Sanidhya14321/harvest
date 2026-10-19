@@ -24,6 +24,7 @@ wayland-pipewire = ["dep:pipewire"]
 [dependencies]
 harvest-brain = { path = "../harvest-brain" }
 harvest-tui = { path = "../harvest-tui" }
+harvest-media = { path = "../harvest-media" }
 harvest-tokenizer = { path = "../harvest-tokenizer" }
 anyhow.workspace = true
 async-trait.workspace = true
@@ -39,11 +40,9 @@ futures.workspace = true
 grep-pcre2.workspace = true
 grep-regex.workspace = true
 grep-searcher.workspace = true
-html-to-markdown-rs.workspace = true
 icy_sixel.workspace = true
 ignore.workspace = true
 image = { workspace = true, features = ["bmp"] }
-resvg.workspace = true
 # Feature activation only (see workspace manifest): zune-jpeg needs `log` to compile.
 zune-jpeg.workspace = true
 # Upstream pinning only (see workspace manifest): tinyvec 1.13.0 is broken upstream.

@@ -1830,10 +1830,31 @@
     {
       "id": "surface:media-local-inference",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "crates/harvest-media/src/html.rs",
+          "crates/harvest-media/src/svg.rs",
+          "rust-agent/src/lib.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-media/src/html.rs",
+          "crates/harvest-media/src/svg.rs",
+          "packages/natives/test/native.test.ts",
+          "packages/coding-agent/test/tools/fetch-binary-dispatch.test.ts",
+          "packages/coding-agent/test/git-tui-sidebar.test.ts"
+        ]
+      },
+      "installation": "experimental-rust-sdk",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/utils/image-loading.ts",
+          "packages/coding-agent/src/tools/fetch.ts",
+          "packages/coding-agent/src/cli/git-tui/state.ts"
+        ],
+        "removable": false
       }
     },
     {

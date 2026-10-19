@@ -7,6 +7,19 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-media::{html,svg}` exposes the existing HTML-to-Markdown and SVG/SVGZ
+  preview engines through `harvest_omp::media`. N-API only converts/owns inputs
+  and schedules the original blocking-pool calls. Standalone installed Rust
+  without a JS runtime and the rebuilt addon each match 40 HTML conversions
+  and 20 SVG renders/errors byte-for-byte. Eight media tests and one doctest
+  cover Markdown structure, explicit image omission, cleanup, depth rejection,
+  aspect ratio/pixels, canvas limits and blocked external versus embedded images.
+  All 252 shared Rust tests, actual Bazel media tests, strict Cargo Clippy,
+  package gates, eight native HTML tests and 26 fetch/Git preview tests pass.
+  Rust CI now includes this crate. Full media loading, terminal integration,
+  local inference and platform/font parity remain pending; no TS frontend
+  source is retired by this extraction.
+
 - `harvest-tui::mouse` decodes SGR clicks, release, drag and vertical-only
   wheel reports directly from Rust. Installed Rust (without a JS runtime),
   rebuilt addon and frontend each match 2,637 legacy reports, including

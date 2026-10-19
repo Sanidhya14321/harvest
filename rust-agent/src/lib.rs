@@ -16,6 +16,8 @@ mod shell;
 mod streaming;
 pub mod tools;
 
+/// Document conversion and SVG previews shared with the native addon.
+pub use harvest_media as media;
 /// Offline tokenizers shared with the legacy host, with unchanged vocabularies.
 pub use harvest_tokenizer as tokenizer;
 /// Terminal protocol primitives usable without an embedded JavaScript runtime.
