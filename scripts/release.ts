@@ -369,7 +369,7 @@ async function cmdRelease(versionOrBump: string): Promise<void> {
 	// bazel/clippy.bazelrc mirrors [workspace.lints] in Cargo.toml; regenerate
 	// it here (like the lockfiles) so the bazel clippy policy can never drift.
 	// The release_gate CI job runs the matching `--check`.
-	await $`bun scripts/gen-clippy-bazelrc.ts`;
+	await $`cargo xtask clippy-config`;
 	console.log();
 
 	// 5. Update changelogs

@@ -33,6 +33,7 @@ jobs:
             echo "distribution cutover blocked: legacy release workflow still owns release tags" >&2
             exit 1
           fi
+          cargo xtask clippy-config --check
           cargo xtask migration --require-complete
           cargo xtask capabilities --require-complete
   version:

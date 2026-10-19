@@ -26,6 +26,7 @@ fn execute() -> Result<()> {
 	match task.as_str() {
 		"dev" => xtask::development::execute(selection),
 		"checksums" => xtask::checksums::execute(selection),
+		"clippy-config" => xtask::clippy_config::execute(selection),
 		"release-notes" => xtask::release_notes::execute(selection),
 		"version" => xtask::version::execute(selection),
 		"package" => packaging::execute(selection),
@@ -71,12 +72,12 @@ fn execute() -> Result<()> {
 		"help" | "--help" | "-h" => {
 			println!(
 				"cargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums OUTPUT \
-				 ASSET...\ncargo xtask release-notes --help\ncargo xtask version [--set VERSION \
-				 --expect CURRENT]\ncargo xtask check [Cargo package selectors]\ncargo xtask test \
-				 [Cargo package and target selectors]\ncargo xtask capabilities \
-				 [--require-complete]\nTests require cargo-nextest and include doctests.\ncargo xtask \
-				 package <homebrew|winget> --help\ncargo xtask secrets --help\ncargo xtask migration \
-				 [--require-complete]"
+				 ASSET...\ncargo xtask clippy-config --help\ncargo xtask release-notes --help\ncargo \
+				 xtask version [--set VERSION --expect CURRENT]\ncargo xtask check [Cargo package \
+				 selectors]\ncargo xtask test [Cargo package and target selectors]\ncargo xtask \
+				 capabilities [--require-complete]\nTests require cargo-nextest and include \
+				 doctests.\ncargo xtask package <homebrew|winget> --help\ncargo xtask secrets \
+				 --help\ncargo xtask migration [--require-complete]"
 			);
 			Ok(())
 		},

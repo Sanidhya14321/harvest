@@ -20,6 +20,7 @@ Build side:
 - `bazel/variants/BUILD.bazel` — `baseline`/`modern` ISA constraint values
 - `bazel/toolchains/` — musl rustc disambiguation + the msvc cross cc toolchain (`msvc/NOTES.md`)
 - `bazel/clippy.bazelrc` — generated from `[workspace.lints]` in `Cargo.toml`
+  by `cargo xtask clippy-config`; `--check` rejects drift without changing files.
 - `MODULE.bazel`, `MODULE.bazel.lock`, `.bazelrc`, `.bazelversion` (Bazel 9.2.0)
 - `scripts/bazel-natives.ts` — the canonical driver (build + locate + install)
 - `crates/pi-natives/BUILD.bazel`, `crates/pi-natives/Cargo.toml`

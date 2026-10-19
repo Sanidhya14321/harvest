@@ -7,6 +7,14 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask clippy-config [--check]` owns Bazel lint policy generation.
+  Root/release callers and Rust CI use it; the TS generator is removed. Five
+  installed legacy-oracle cases preserve generated flags, and missing/stale
+  checks leave files untouched without Bun/Node on PATH. All 55 xtask tests,
+  strict Clippy and an actual Bazel strict-Clippy build passed. Model catalogs,
+  compatibility compilation, browser assets and other generators remain pending;
+  the overall codegen capability remains unverified.
+
 - The Rust SDK and legacy TUI now share bounded terminal input framing, paste
   recovery and Escape deadlines through `harvest-tui::input`. The TS adapter
   schedules host timers and delivers events. Shared Rust tests, legacy framing

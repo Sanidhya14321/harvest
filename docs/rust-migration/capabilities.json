@@ -1826,10 +1826,26 @@
     {
       "id": "surface:codegen",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "xtask/src/clippy_config.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "xtask/src/clippy_config.rs"
+        ]
+      },
+      "installation": "native-xtask",
+      "legacy": {
+        "paths": [
+          "packages/catalog/scripts/generate-models.ts",
+          "packages/coding-agent/scripts/generate-share-viewer.ts",
+          "scripts/gen-nix-bun.ts",
+          "scripts/sync-themes.ts"
+        ],
+        "removable": false
       }
     },
     {

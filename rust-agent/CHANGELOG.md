@@ -30,6 +30,8 @@
 
 ### Changed
 
+- Generate and check Bazel lint policy through Rust workspace tooling.
+
 - Native packaging and installers share eight platform/ABI asset names, ship both aliases in ZIP archives, and use SHA256SUMS.txt.
 
 - Curated release notes now include native changelogs and run through Rust tooling, retaining entries from unpublished tags.

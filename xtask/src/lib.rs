@@ -3,6 +3,7 @@ pub mod abi;
 pub mod artifacts;
 pub mod capabilities;
 pub mod checksums;
+pub mod clippy_config;
 pub mod development;
 pub mod migration;
 pub mod packaging;
