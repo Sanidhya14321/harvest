@@ -38,19 +38,12 @@ fn generate(root: &Path, check: bool) -> Result<(bool, usize)> {
 	let fs = JailedFs::open(root)?;
 	let mut files = Vec::new();
 	for entry in fs.entries(Path::new(DIRECTORY), ENTRY_LIMIT)? {
-		if Path::new(&entry.name)
-			.extension()
-			.is_none_or(|extension| extension != "json")
-		{
+		let Some(stem) = entry.name.strip_suffix(".json") else {
 			continue;
-		}
+		};
 		if !entry.is_file || entry.is_symlink {
 			bail!("embedded theme assets must be regular files");
 		}
-		let stem = entry
-			.name
-			.strip_suffix(".json")
-			.context("theme file extension is missing")?;
 		if stem.is_empty()
 			|| entry
 				.name
