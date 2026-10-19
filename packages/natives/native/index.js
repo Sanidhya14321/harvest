@@ -111,6 +111,7 @@ export const notebookToEditableText = nativeBindings.notebookToEditableText;
 export const parseInputKey = nativeBindings.parseInputKey;
 export const parseKey = nativeBindings.parseKey;
 export const parseKittySequence = nativeBindings.parseKittySequence;
+export const parseSgrMouse = nativeBindings.parseSgrMouse;
 export const pdfToMarkdown = nativeBindings.pdfToMarkdown;
 export const planDeccaraCuts = nativeBindings.planDeccaraCuts;
 export const rasterizeSvg = nativeBindings.rasterizeSvg;

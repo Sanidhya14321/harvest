@@ -45,6 +45,7 @@ pub mod iofs;
 pub mod js;
 pub mod keys;
 pub mod live;
+pub mod mouse;
 pub mod oauth_callback;
 pub mod output;
 /// PDF inspection and Markdown conversion.

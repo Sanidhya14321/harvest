@@ -2244,6 +2244,16 @@ export interface NativePasteEvent {
   enter?: string
 }
 
+export interface NativeSgrMouseEvent {
+  button: number
+  col: number
+  row: number
+  release: boolean
+  wheel?: number
+  motion: boolean
+  leftClick: boolean
+}
+
 export interface NativeStdinBufferOptions {
   timeout?: number
   partialHoldTimeout?: number
@@ -2296,6 +2306,8 @@ export declare function parseKey(data: string, kittyProtocolActive: boolean): st
 
 /** Decode a complete Kitty keyboard protocol sequence. */
 export declare function parseKittySequence(data: string): ParsedKittyResult | null
+
+export declare function parseSgrMouse(data: string): NativeSgrMouseEvent | null
 
 /** One hunk of a unified diff, matching jsdiff `structuredPatch` hunks. */
 export interface PatchHunk {

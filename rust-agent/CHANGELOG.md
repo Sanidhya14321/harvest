@@ -7,6 +7,8 @@
 
 ### Added
 
+- Rust SDK decodes SGR mouse input through `harvest_omp::tui::mouse`.
+
 - Rust SDK exposes shared syntax highlighting and incremental parser state through `harvest_omp::tui::highlight`.
 
 - Rust SDK exposes the rectangular background-fill planner through `harvest_omp::tui::deccara`.

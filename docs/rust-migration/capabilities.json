@@ -1655,7 +1655,8 @@
           "crates/harvest-tui/src/writer.rs",
           "crates/harvest-tui/src/text.rs",
           "crates/harvest-tui/src/deccara.rs",
-          "crates/harvest-tui/src/highlight.rs"
+          "crates/harvest-tui/src/highlight.rs",
+          "crates/harvest-tui/src/mouse.rs"
         ]
       },
       "verification": {
@@ -1684,7 +1685,9 @@
           "packages/tui/test/deccara.test.ts",
           "crates/harvest-tui/src/highlight.rs",
           "packages/coding-agent/test/modes/theme/highlight-stream.test.ts",
-          "packages/coding-agent/test/theme-highlight-diff-parity.test.ts"
+          "packages/coding-agent/test/theme-highlight-diff-parity.test.ts",
+          "crates/harvest-tui/src/mouse.rs",
+          "packages/tui/test/mouse.test.ts"
         ]
       },
       "installation": "experimental-rust-sdk",
@@ -1694,7 +1697,8 @@
           "packages/tui/src/stdin-buffer.ts",
           "packages/tui/src/terminal.ts",
           "packages/tui/src/utils.ts",
-          "packages/tui/src/deccara.ts"
+          "packages/tui/src/deccara.ts",
+          "packages/tui/src/mouse.ts"
         ],
         "removable": false
       }

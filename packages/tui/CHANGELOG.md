@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Mouse reports use the shared Rust decoder when the native addon is available.
+
 - Syntax-highlighting grammars and streaming parser state are shared with the Rust SDK.
 
 - Rectangular background-fill planning uses the shared Rust terminal engine.

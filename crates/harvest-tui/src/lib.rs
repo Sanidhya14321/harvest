@@ -7,6 +7,7 @@ pub mod deccara;
 pub mod highlight;
 pub mod input;
 pub mod keys;
+pub mod mouse;
 pub mod output;
 pub mod paste;
 pub mod text;

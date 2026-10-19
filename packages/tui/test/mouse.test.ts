@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn, vi } from "bun:test";
+import * as natives from "@harvest/pi-natives";
 import {
 	parseSgrMouse,
 	routeSelectListMouse,
@@ -7,7 +8,24 @@ import {
 	type SgrMouseEvent,
 } from "@harvest/pi-tui/mouse";
 
+afterEach(() => vi.restoreAllMocks());
+
 describe("parseSgrMouse", () => {
+	it("keeps mouse routing available when an optional native addon declines decoding", () => {
+		spyOn(natives, "parseSgrMouse").mockReturnValue(null);
+		const calls: number[] = [];
+		expect(routeSgrMouseInput("\x1b[<65;4;8M", event => calls.push(event.wheel ?? 0) > 0)).toBe(true);
+		expect(calls).toEqual([1]);
+	});
+
+	it("preserves large numeric button flags and zero-based coordinate boundaries", () => {
+		const event = parseSgrMouse("\x1b[<4294967361;0000;9007199254740993M");
+		expect(event?.wheel).toBe(1);
+		expect(event?.col).toBe(-1);
+		expect(event?.row).toBe(9007199254740991);
+		expect(parseSgrMouse("\x1b[<0;1;1M\n")).toBeNull();
+		expect(parseSgrMouse("\x1b[<0;１;1M")).toBeNull();
+	});
 	it("returns null for non-mouse input", () => {
 		expect(parseSgrMouse("a")).toBeNull();
 		expect(parseSgrMouse("\x1b[A")).toBeNull();
@@ -61,6 +79,9 @@ describe("parseSgrMouse", () => {
 });
 
 describe("routeSgrMouseInput", () => {
+	it("lets a handler decline a mouse event so the host can continue routing", () => {
+		expect(routeSgrMouseInput("\x1b[<0;2;3M", () => false)).toBe(false);
+	});
 	it("returns false and does not call the handler for non-mouse input", () => {
 		let called = false;
 		const handled = routeSgrMouseInput("a", () => {

@@ -7,6 +7,17 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-tui::mouse` decodes SGR clicks, release, drag and vertical-only
+  wheel reports directly from Rust. Installed Rust (without a JS runtime),
+  rebuilt addon and frontend each match 2,637 legacy reports, including
+  malformed reports, zero-based coordinates, huge numeric fields and modifiers.
+  The existing frontend decoder remains for older/unavailable optional addons;
+  component hit-test routing is still TypeScript. All 100 TUI tests, four
+  doctests, 191 combined Rust tests, 97 focused frontend tests, strict Clippy
+  and package gates pass. Warmed 20,000-event probes measured old 4.56/5.04 ms
+  and shared 17.64/21.51 ms: host bridge overhead is explicit, with no claimed
+  speedup. Full interactive terminal parity and legacy removal remain pending.
+
 - `harvest-tui::highlight` shares the existing syntax engine with ordinary Rust
   consumers. All five bundled grammar assets moved byte-for-byte; N-API only
   converts inputs, owns its inline palette and schedules warmup. Palettes are
