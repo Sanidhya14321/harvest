@@ -15,7 +15,9 @@ because a Rust command or tool has the same name.
   controlled x64 and emulated ARM64 glibc 2.17 loader failures recover without
   Bun/Node on the repair command's PATH. The host patchelf chain kept its pointer
   current, so this is deliberate-corruption recovery evidence. The clean Nix
-  consumer build is being validated before retiring the old script/test.
+  Linux x64 consumer build passed: the real auto-patchelf chain relocated
+  DT_VERDEF, native repair corrected it, and the installed CLI version/help
+  checks passed. The old script/test are removed.
 
 - `cargo xtask clippy-config [--check]` owns Bazel lint policy generation.
   Root/release callers and Rust CI use it; the TS generator is removed. Five

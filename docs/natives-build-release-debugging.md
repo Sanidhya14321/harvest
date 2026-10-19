@@ -447,7 +447,8 @@ out-of-range, oversized, duplicate and unterminated metadata before publication.
 The file cap is 4 GiB and each metadata table is capped at 4 MiB. A file without
 version definitions or with an already-current pointer needs no rewrite.
 
-The native command and shared filesystem contracts are verified locally; the Nix
-post-fixup consumer is under clean-build validation before the legacy helper and
-its tests are removed. ARM64 loader recovery was verified through explicit QEMU
+The Nix Linux build compiles the helper before the native addon and invokes it
+after auto-patchelf, before install checks. A clean tracked-source build corrected
+a real relocated pointer and passed the installed CLI version/help checks. The
+legacy Bun helper and tests are removed. ARM64 loader recovery was verified through explicit QEMU
 emulation on CentOS 7, separately from native hardware certification.
