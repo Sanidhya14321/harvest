@@ -388,44 +388,30 @@ export declare class Shell {
   liveBackgroundJobCount(): Promise<number>
 }
 
-/**
- * Dedicated writer thread for one terminal fd.
- *
- * Constructed by the TUI's `ProcessTerminal` around stdout. The fd is
- * `dup(2)`'d at construction and closed on drop, so later manipulation of the
- * original descriptor does not affect the pump.
- */
+/** Dedicated output pump owning a duplicate of the supplied Unix descriptor. */
 export declare class TtyWriter {
   /**
-   * Start a pump thread for `fd` (typically 1). Fails on non-Unix hosts and
-   * when the descriptor cannot be duplicated.
+   * Start an output thread. Descriptor duplication does not make it
+   * inheritable by child processes; the thread owns and closes the duplicate.
    */
-  constructor(fd: number)
+  constructor(fd: number, maxQueuedBytes?: number | undefined | null)
   /**
-   * Enqueue terminal output; never blocks. Returns the total bytes now
-   * pending (including this chunk).
-   *
-   * Reads the JS string as UTF-16 through the thread's scratch arena and
-   * transcodes it with `xutf` straight into the shared back buffer, so a
-   * warm writer costs no per-call heap allocation.
+   * Enqueue terminal output without waiting for the terminal. Queue overflow
+   * rejects the whole frame. Warm UTF-16 transcoding uses the scratch arena.
    */
   write(data: string): number
   /** Bytes accepted but not yet written to the terminal. */
   pending(): number
-  /** True once a write failed (dead PTY); queued output has been dropped. */
+  /** A failed backend has discarded its remaining queued output. */
   get dead(): boolean
   /**
-   * Block the calling thread until the queue drains, the writer dies, or
-   * `timeout_ms` elapses. Returns true when fully drained. Exit paths only.
+   * Wait for an empty queue; `dead` distinguishes discarded output from
+   * delivery.
    */
   flushSync(timeoutMs: number): boolean
   /**
-   * Flush (bounded by `flush_timeout_ms`), stop the pump thread, and join it.
-   *
-   * A pump stuck in a blocked `write(2)` (stalled-but-alive PTY consumer)
-   * cannot be joined without freezing the caller: when the bounded flush
-   * times out the thread is detached instead and its dup'd fd is leaked —
-   * closing it under a blocked write would race kernel fd reuse.
+   * Stop accepting frames and flush within the deadline. A blocked operation
+   * detaches; its descriptor closes after that operation returns.
    */
   stop(flushTimeoutMs: number): void
 }

@@ -64817,6 +64817,21 @@
       "retirement_reason": null
     },
     {
+      "path": "packages/natives/test/tty-writer.test.ts",
+      "disposition": "replace",
+      "implementation": "partial",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
+      "legacy_removal": "retained",
+      "contract": "The native terminal writer keeps an owned descriptor after the host closes its original, rejects whole UTF-8-byte and bounded UTF-16 frames without partial output, preserves legacy encoded bytes, refuses post-stop frames, and rejects invalid descriptors.",
+      "consumers": "packages/natives test command and focused native/TUI integration checks; transitional N-API adapter until the Rust terminal host replaces the legacy frontend.",
+      "persisted_formats": "none; temporary output fixtures are removed after each contract.",
+      "external_dependencies": "Bun test host and the rebuilt N-API addon for legacy boundary verification; Rust queue and socket contracts use only the standard library.",
+      "rust_destination": "crates/harvest-tui/src/writer.rs; installed Rust terminal host contracts must replace the transitional N-API test before removal.",
+      "verification_requirements": "Local shared terminal suite: 59 Rust tests plus doctest; rebuilt-addon native/TUI integration: 42 tests. Native queue, socket order, whole-frame failure and bounded shutdown contracts pass; clean installed Rust terminal lifecycle and supported-platform verification remain required.",
+      "retirement_reason": null
+    },
+    {
       "path": "packages/natives/test/vcs.test.ts",
       "disposition": "review-required",
       "implementation": "absent",

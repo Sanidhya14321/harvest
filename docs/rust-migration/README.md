@@ -13,6 +13,9 @@ because a Rust command or tool has the same name.
   and editor suites cover fragmented protocols, same-read paste/Enter delivery,
   watchdogs and discarded OSC tails. Shared output byte chunking and backlog
   progress detection preserve Unicode and keep slow draining frames alive.
+  A shared bounded output pump now accepts Rust-owned backends directly, keeps
+  in-flight bytes inside its cap and releases detached backend ownership once
+  blocked I/O resumes. The legacy Unix adapter uses the same queue.
   Terminal lifecycle, renderer, resize,
   restoration and native interactive installation still require implementation
   and verification; terminal capability parity remains unverified.

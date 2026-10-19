@@ -1651,7 +1651,8 @@
           "crates/harvest-tui/src/keys/text.rs",
           "crates/harvest-tui/src/paste.rs",
           "crates/harvest-tui/src/input.rs",
-          "crates/harvest-tui/src/output.rs"
+          "crates/harvest-tui/src/output.rs",
+          "crates/harvest-tui/src/writer.rs"
         ]
       },
       "verification": {
@@ -1667,7 +1668,10 @@
           "crates/harvest-tui/src/output.rs",
           "packages/tui/test/issue-2034-repro.test.ts",
           "packages/tui/test/stdout-stall-watchdog.test.ts",
-          "packages/tui/test/process-terminal-render.test.ts"
+          "packages/tui/test/process-terminal-render.test.ts",
+          "crates/harvest-tui/src/writer.rs",
+          "packages/natives/test/tty-writer.test.ts",
+          "packages/tui/test/terminal-oversized-frame.test.ts"
         ]
       },
       "installation": "experimental-rust-sdk",

@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- Terminal output rejects oversized frames without partial writes and releases detached descriptors after stalled output resumes.
+
 - Fixed concurrent shell cancellation waits and preserved the first cancellation reason.
 - Fixed local native builds using the development profile.
 

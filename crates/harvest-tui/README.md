@@ -53,6 +53,23 @@ the same policy and slices original JS strings at Rust-computed UTF-16 offsets,
 so isolated surrogate code units survive until output encoding. Real Windows
 ConPTY execution remains necessary in addition to platform-routing tests.
 
+`writer::TtyWriter` owns an unbuffered `Write + Send` backend on a dedicated
+thread and is usable without N-API. A default 256 MiB ceiling includes both
+queued and in-flight bytes; hosts can lower it. Oversized frames fail as a
+whole before publication. Bytes are accounted before queue publication; empty-queue notifications pair
+with the waiter lock, preventing counter underflow and missed drain wakeups.
+Each backend call is at most 16 KiB. Short/interrupted writes preserve their
+unwritten tail; failures close admission and discard remaining output.
+
+`stop` closes admission before its bounded flush. A blocked backend operation
+can outlive a timed-out stop. Once it completes, the worker drops the remaining
+output and releases its backend. The Unix
+N-API adapter duplicates descriptors with close-on-exec and uses the same
+queue with bounded scratch/spill UTF-16 conversion. It remains Unix-only;
+Windows still uses the existing host output route. Real socket, controlled
+blocked-write and legacy renderer contracts cover this path; actual Windows
+terminal execution and full native lifecycle/restoration remain pending.
+
 This library is an input foundation. The existing TypeScript terminal still
 owns terminal lifecycle, renderer, focus and resize behavior. A native interactive terminal must verify those contracts
 before the legacy implementation can be removed. No terminal backend has been
@@ -74,3 +91,11 @@ A deterministic legacy comparison covered 1,152 chunk cases, including isolated
 surrogates, and 40,000 backlog state transitions without differences. This
 isolates chunking and does not certify rendering, actual Windows execution, or
 whole-application performance.
+
+A local output-pump probe used 100 writes of a 2,000-row ANSI/CJK/emoji frame
+(18,600,800 bytes per sample) to a real regular file, followed by bounded drain.
+Separate fresh processes each ran three warmups and nine measured samples.
+The old adapter median was 16.53 ms; the shared-pump median was 11.51 ms. This
+measures local file output and transcoding, not a terminal emulator or Windows.
+The legacy N-API adapter retains its permissive lone-surrogate byte encoding;
+Rust `enqueue` callers provide explicit byte frames.
