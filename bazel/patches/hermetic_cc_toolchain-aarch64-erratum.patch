@@ -1,0 +1,155 @@
+Keep Rust's AArch64 Cortex-A53 erratum mitigation with Zig 0.14.
+
+Rust 1.98 adds --fix-cortex-a53-843419 (rust-lang/rust#155453), but
+Zig's cc argument parser rejects it. Stage the driver link privately and
+perform the final protected link through the same pinned Zig/LLD binary.
+LLD's self-contained reproducer preserves quoted and relative input paths,
+including Bazel's /proc/self/cwd paths. Validate and bound every archive
+entry before extracting into a fresh private tree; reject links, duplicate
+files, traversal, excessive entries and excessive bytes. No diagnostic
+command line is parsed. The protected result replaces the requested output
+atomically; prior outputs survive failures and private staging is cleaned.
+
+This preserves the mitigation instead of discarding an unsupported flag.
+Windows-hosted GNU cross links retain their previous behavior; shipping
+GNU jobs run on Linux. Other driver invocations keep the exec fast path.
+
+https://github.com/rust-lang/rust/pull/155453
+
+diff --git a/toolchain/zig-wrapper.zig b/toolchain/zig-wrapper.zig
+--- a/toolchain/zig-wrapper.zig
++++ b/toolchain/zig-wrapper.zig
+@@ -129,6 +129,9 @@
+     switch (action) {
+         .err => |msg| return fatal("{s}", .{msg}),
+         .exec => |params| {
++            if (builtin.os.tag != .windows and needsCortexFix(params.args.items))
++                return linkWithCortexFix(arena, params) catch |err|
++                    return fatal("Cortex-A53 link failed: {s}\n", .{@errorName(err)});
+             if (builtin.os.tag == .windows)
+                 return spawnWindows(arena, params)
+             else
+@@ -566,3 +569,123 @@
+ 
+     return b;
+ }
++
++// Rust 1.98 requests the A53 workaround, which Zig 0.14's cc parser cannot
++// forward. LLD's reproducer supplies a lossless response file for a protected
++// second link. Never parse an unquoted verbose command or omit the workaround.
++fn needsCortexFix(args: []const []const u8) bool {
++    if (args.len < 2 or (!mem.eql(u8, args[1], "cc") and !mem.eql(u8, args[1], "c++"))) return false;
++    for (args) |arg| {
++        if (mem.eql(u8, arg, "-Wl,--fix-cortex-a53-843419")) return true;
++    }
++    return false;
++}
++
++fn copyEnvironment(arena: mem.Allocator, original: *const process.EnvMap) !process.EnvMap {
++    var result = process.EnvMap.init(arena);
++    var entries = original.iterator();
++    while (entries.next()) |entry| try result.put(entry.key_ptr.*, entry.value_ptr.*);
++    return result;
++}
++
++fn runLinkProcess(arena: mem.Allocator, args: []const []const u8, env: *const process.EnvMap, cwd: ?[]const u8) !u8 {
++    var child = ChildProcess.init(args, arena);
++    child.env_map = env;
++    child.cwd = cwd;
++    return switch (try child.spawnAndWait()) {
++        .Exited => |code| code,
++        else => error.LinkerTerminated,
++    };
++}
++
++fn linkWithCortexFix(arena: mem.Allocator, params: ExecParams) !u8 {
++    const cwd = fs.cwd();
++    const original_cwd = try process.getCwdAlloc(arena);
++    const zig = try fs.path.resolve(arena, &.{ original_cwd, params.args.items[0] });
++    var output_index: ?usize = null;
++    var arguments = ArrayListUnmanaged([]const u8){};
++    for (params.args.items) |arg| {
++        if (!mem.eql(u8, arg, "-Wl,--fix-cortex-a53-843419")) try arguments.append(arena, arg);
++    }
++    for (arguments.items, 0..) |arg, index| {
++        if (mem.eql(u8, arg, "-o") and index + 1 < arguments.items.len) output_index = index + 1;
++    }
++    const output_arg = output_index orelse return error.MissingLinkOutput;
++    const output = try fs.path.resolve(arena, &.{ original_cwd, arguments.items[output_arg] });
++    var random: [16]u8 = undefined;
++    std.crypto.random.bytes(&random);
++    const suffix = std.fmt.fmtSliceHexLower(&random);
++    const temporary = try std.fmt.allocPrint(arena, "harvest-cortex-{s}", .{suffix});
++    const temporary_root = params.env.get("TMPDIR") orelse "/tmp";
++    const directory = try fs.path.resolve(arena, &.{ original_cwd, temporary_root, temporary });
++    try std.posix.mkdir(directory, 0o700);
++    defer cwd.deleteTree(directory) catch {};
++    const staging = try fs.path.join(arena, &.{ directory, "stage" });
++    const unpacked = try fs.path.join(arena, &.{ directory, "unpack" });
++    try std.posix.mkdir(staging, 0o700);
++    try std.posix.mkdir(unpacked, 0o700);
++    const staged = try fs.path.join(arena, &.{ staging, fs.path.basename(output) });
++    const archive = try fs.path.join(arena, &.{ directory, "cortex.tar" });
++    const response = try fs.path.join(arena, &.{ unpacked, "cortex", "response.txt" });
++    const protected = try std.fmt.allocPrint(arena, "{s}.cortex-{s}.tmp", .{ output, suffix });
++    defer cwd.deleteFile(protected) catch {};
++    arguments.items[output_arg] = staged;
++    var initial_env = try copyEnvironment(arena, &params.env);
++    try initial_env.put("LLD_REPRODUCE", archive);
++    const first = try runLinkProcess(arena, arguments.items, &initial_env, null);
++    if (first != 0) return first;
++
++    var file = try cwd.openFile(archive, .{});
++    defer file.close();
++    if ((try file.stat()).size > 2 * 1024 * 1024 * 1024) return error.LinkReproducerTooLarge;
++    var extraction = try cwd.openDir(unpacked, .{ .no_follow = true });
++    defer extraction.close();
++    var name_buffer: [fs.max_path_bytes]u8 = undefined;
++    var link_buffer: [fs.max_path_bytes]u8 = undefined;
++    var tar = std.tar.iterator(file.reader(), .{ .file_name_buffer = &name_buffer, .link_name_buffer = &link_buffer });
++    var entries: usize = 0;
++    var total: u64 = 0;
++    var found_response = false;
++    while (try tar.next()) |entry| {
++        // No existing archive-controlled symlinks are admitted into this fresh
++        // private tree. Validate every subpath before branching by entry kind.
++        if (fs.path.isAbsolute(entry.name)) return error.InvalidReproducerPath;
++        if (!mem.eql(u8, entry.name, "cortex") and !mem.startsWith(u8, entry.name, "cortex/")) return error.InvalidReproducerPath;
++        var components = mem.splitScalar(u8, entry.name, '/');
++        while (components.next()) |component| {
++            if (mem.eql(u8, component, "..")) return error.InvalidReproducerPath;
++        }
++        entries += 1;
++        if (entries > 16384 or entry.size > 2 * 1024 * 1024 * 1024) return error.LinkReproducerTooLarge;
++        total += entry.size;
++        if (total > 2 * 1024 * 1024 * 1024) return error.LinkReproducerTooLarge;
++        switch (entry.kind) {
++            .directory => try extraction.makePath(entry.name),
++            .file => {
++                if (mem.eql(u8, entry.name, "cortex/response.txt")) {
++                    if (found_response or entry.size > 4 * 1024 * 1024) return error.InvalidLinkResponse;
++                    found_response = true;
++                }
++                if (fs.path.dirname(entry.name)) |parent| try extraction.makePath(parent);
++                var extracted = try extraction.createFile(entry.name, .{ .exclusive = true, .mode = 0o600 });
++                defer extracted.close();
++                try entry.writeAll(extracted.writer());
++            },
++            else => return error.InvalidReproducerEntry,
++        }
++    }
++    if (!found_response) return error.MissingLinkResponse;
++
++    var final_env = try copyEnvironment(arena, &params.env);
++    for ([_][]const u8{ "ZIG_LIB_DIR", "ZIG_LOCAL_CACHE_DIR", "ZIG_GLOBAL_CACHE_DIR", "LLD_REPRODUCE" }) |name| {
++        if (final_env.get(name)) |value| {
++            if (!fs.path.isAbsolute(value)) try final_env.put(name, try fs.path.resolve(arena, &.{ original_cwd, value }));
++        }
++    }
++    const response_arg = try std.fmt.allocPrint(arena, "@{s}", .{response});
++    const final_args = [_][]const u8{ zig, "ld.lld", response_arg, "--fix-cortex-a53-843419", "-o", protected };
++    const reproduction_root = try fs.path.join(arena, &.{ unpacked, "cortex" });
++    const last = try runLinkProcess(arena, &final_args, &final_env, reproduction_root);
++    if (last == 0) try cwd.rename(protected, output);
++    return last;
++}

@@ -99,6 +99,17 @@ jobs:
         run: cargo xtask test -p harvest-omp --test cli --all-features
       - name: Execute the same artifact contracts on GNU libc 2.17
         run: sh rust-agent/tests/portable-gnu.sh portable/omp
+      - name: Preserve the AArch64 CPU erratum mitigation through the driver
+        if: matrix.arch == 'arm64'
+        run: |
+          set -euo pipefail
+          bazel build //bazel/tests:aarch64-erratum //bazel/tests:aarch64-erratum-unfixed --platforms=//bazel/platforms:linux-arm64 --jobs=2
+          bazel-bin/bazel/tests/aarch64-erratum
+          set +e
+          bazel-bin/bazel/tests/aarch64-erratum-unfixed
+          status=$?
+          set -e
+          test "${status}" -eq 1
 
   installers:
     name: Installers (${{ matrix.os }})

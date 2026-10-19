@@ -66,6 +66,21 @@ contracts against the actual shipping binary, with no helpers on its PATH.
 The last command repeats those contracts in a digest-pinned CentOS 7 container
 with GLIBC 2.17, a read-only root, no capabilities, and only disposable test
 fixtures mounted. Host networking reaches the fixtures' loopback-only model.
+The helper selects a pinned architecture manifest. For an emulated ARM64 run,
+set `HARVEST_PORTABLE_PLATFORM=linux/arm64` and
+`HARVEST_PORTABLE_EMULATOR=/absolute/path/to/qemu-aarch64-static`; the emulator
+is copied into the disposable fixture tree. No host kernel registration or
+privileged container is needed.
+
+The pinned compiler requests the Cortex-A53 843419 workaround on AArch64.
+Zig 0.14's driver does not accept that flag, so the shared driver stages its
+link privately and uses the same embedded LLD with its lossless reproducer to
+perform the final protected link. Extraction bounds bytes and entries and
+rejects traversal, links and duplicate files. The completed binary replaces the
+requested output atomically. A self-checking AArch64 assembly fixture, built
+from a path containing spaces, exits successfully only when the vulnerable
+load has been replaced by the workaround thunk; ARM CI and release jobs run it
+alongside an unprotected negative control that must exit with status 1.
 
 Local Linux verification used the default `full` release profile, including
 shell execution. The release build took 4m06s in this workspace and produced
@@ -92,3 +107,13 @@ Other platform execution, registry publication dependency closure and final
 legacy release-owner removal must still be resolved before cutover. The source
 and capability gates block native publication until the full migration is
 verified; this artifact verification does not bypass them.
+
+The final shared-toolchain build also produced a 118,083,056-byte ARM64 GNU
+binary with a maximum GLIBC requirement of 2.17. The same six CLI contracts
+passed on the final x64 build in the x64 container and on the ARM64 build under
+QEMU 7.2 in the ARM64 GLIBC 2.17 container. The A53 fixture passed under QEMU
+and its unprotected control exited with status 1. ARM64 results here are
+emulated execution; they do not establish native ARM hardware, macOS or Windows
+coverage. Direct driver probes also checked relative/whitespace paths,
+repeatable output, caller-owned reproducers, prior-output preservation, and
+rejection of traversal, absolute, symlink, duplicate and oversized tar entries.

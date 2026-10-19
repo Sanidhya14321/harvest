@@ -44,6 +44,8 @@
 
 ### Fixed
 
+- ARM64 GNU builds preserve the Cortex-A53 CPU workaround and support isolated execution checks on older GNU runtimes.
+
 - GNU release binaries enforce the GLIBC 2.17 compatibility floor and run provider/tool/session contracts on that runtime.
 
 - Install both command aliases independently of shell completions, accept existing matching aliases, and preserve unrelated commands during upgrades.

@@ -165,6 +165,18 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build -p harvest-omp --bins --release --locked --target "${TARGET}"
+      - name: Verify the AArch64 CPU erratum workaround
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bazel build //bazel/tests:aarch64-erratum //bazel/tests:aarch64-erratum-unfixed --platforms=//bazel/platforms:linux-arm64 --jobs=2
+          bazel-bin/bazel/tests/aarch64-erratum
+          set +e
+          bazel-bin/bazel/tests/aarch64-erratum-unfixed
+          status=$?
+          set -e
+          test "${status}" -eq 1
       - name: Prepare artifact (Unix)
         if: runner.os != 'Windows'
         env:

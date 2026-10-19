@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Run on ARM64: exit 0 only if the linker has replaced the vulnerable load
+# with an erratum thunk. This catches a wrapper that merely drops the flag.
+cc_binary(
+    name = "aarch64-erratum",
+    srcs = ["fixtures with spaces/aarch64-erratum.s"],
+    linkopts = ["-nostdlib", "-static", "-Wl,-e,_start", "-Wl,--fix-cortex-a53-843419"],
+    linkstatic = True,
+    target_compatible_with = ["@platforms//os:linux", "@platforms//cpu:arm64"],
+    tags = ["manual"],
+)
+
+# Negative control: the same program must return 1 without the workaround.
+cc_binary(
+    name = "aarch64-erratum-unfixed",
+    srcs = ["fixtures with spaces/aarch64-erratum.s"],
+    linkopts = ["-nostdlib", "-static", "-Wl,-e,_start"],
+    linkstatic = True,
+    target_compatible_with = ["@platforms//os:linux", "@platforms//cpu:arm64"],
+    tags = ["manual"],
+)
