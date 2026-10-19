@@ -51,7 +51,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
         with:
           tool: cargo-nextest
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
@@ -82,7 +82,7 @@ jobs:
           persist-credentials: false
       - run: rustup show
       - uses: bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
         with:
           tool: cargo-nextest
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
@@ -166,7 +166,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
         with:
           tool: cargo-hack
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
@@ -223,7 +223,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
         with:
           tool: cargo-llvm-cov,cargo-nextest
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
@@ -234,11 +234,11 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path lcov.info
       - name: Enforce the floor
         run: cargo llvm-cov report --fail-under-lines 65
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: coverage-lcov
           path: lcov.info
-      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -286,7 +286,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
         with:
           tool: cargo-nextest
       - name: Formula templates render without a published release
@@ -316,7 +316,7 @@ jobs:
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
       - name: Set up Homebrew
         if: steps.release.outputs.present == 'true'
-        uses: Homebrew/actions/setup-homebrew@1f8e202ffddf94def7f42f6fa3a482e821489f9c
+        uses: Homebrew/actions/setup-homebrew@4790763c0a3ba4036f72634dc079c4a7dfcd4878
       - name: Render the formula for the latest release
         if: steps.release.outputs.present == 'true'
         env:
