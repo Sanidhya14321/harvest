@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { getThemeByName, highlightCode, setThemeInstance } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { loadTheme } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { highlightCode, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 
 const unifiedDiffChunks = [
 	[
@@ -25,19 +26,18 @@ const unifiedDiffChunks = [
 const unifiedDiff = unifiedDiffChunks.join("\n");
 const diffLanguages: Array<"diff" | "patch"> = ["diff", "patch"];
 
+let darkTheme: Theme;
 beforeAll(async () => {
-	const darkTheme = await getThemeByName("dark");
-	if (!darkTheme) throw new Error("Expected dark theme to exist");
-	setThemeInstance(darkTheme);
+	darkTheme = await loadTheme("dark", { mode: "truecolor" });
 });
 
 describe("diff highlighter chunk parity", () => {
 	for (const lang of diffLanguages) {
 		it(`highlights newline-complete ${lang} chunks with whole-block visual styles`, () => {
 			const completeDiff = `${unifiedDiff}\n`;
-			const wholeBlock = highlightCode(completeDiff, lang);
+			const wholeBlock = highlightCode(completeDiff, lang, darkTheme);
 			const chunkedLines = unifiedDiffChunks.flatMap(chunk => {
-				const highlighted = highlightCode(`${chunk}\n`, lang);
+				const highlighted = highlightCode(`${chunk}\n`, lang, darkTheme);
 				return highlighted.slice(0, -1);
 			});
 			chunkedLines.push("");
