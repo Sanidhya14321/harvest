@@ -7,6 +7,21 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-tui::deccara` owns the exported rectangular-background planner;
+  the TypeScript module is now a thin snapshot/cutoff adapter. This helper is
+  currently exported by the SDK, not wired into the main TUI renderer. Native
+  and rebuilt-addon probes match 3,745 corrected legacy frame plans and 8,424
+  analyses; 3,313 original well-formed frame fixtures are unchanged. The
+  independent surrogate-width fix covers the remaining malformed UTF-16 cases.
+  Kitty terminal-core emulation exposed and verifies the fix for lost inverse
+  and underlined padding. Unsupported/decorated SGR, oversized frames and
+  overflowing coordinates retain complete original rows. All 328 shared Rust
+  tests/doctests, 127 focused TS contracts, package gates and strict Clippy pass.
+  A warmed 100-frame/40-row probe measured old medians 5.82/9.94 ms and shared
+  medians 5.94/5.64 ms; this overlapping microbenchmark is not whole-app proof.
+  Platform terminal capability discovery and complete renderer parity remain
+  pending; the legacy host capability decision and adapter are retained.
+
 - `harvest-tui::text` now owns ANSI-aware width, wrapping, truncation and
   column/overlay slicing. The Rust SDK calls it directly; N-API retains a thin
   UTF-16 adapter and its existing output convention. Unchanged truncation

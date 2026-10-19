@@ -31,6 +31,7 @@ pub mod clipboard;
 pub mod crash_handler;
 pub mod desktop;
 pub mod devicecheck;
+pub mod deccara;
 pub mod diff;
 pub mod edit;
 pub mod fd;

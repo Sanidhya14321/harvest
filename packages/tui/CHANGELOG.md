@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Rectangular background-fill planning uses the shared Rust terminal engine.
+
 - Terminal write chunking and stalled-output detection use shared Rust policy and a monotonic clock.
 
 - Terminal input framing and paste recovery use the shared Rust engine.
@@ -11,6 +13,8 @@
 - Keyboard text and tmux paste decoding use the shared Rust terminal protocol library.
 
 ### Fixed
+
+- Preserve inverse and decorated padding when planning rectangular background fills.
 
 - Keep terminal alignment correct while streamed text contains an incomplete UTF-16 surrogate.
 

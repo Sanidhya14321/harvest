@@ -1653,7 +1653,8 @@
           "crates/harvest-tui/src/input.rs",
           "crates/harvest-tui/src/output.rs",
           "crates/harvest-tui/src/writer.rs",
-          "crates/harvest-tui/src/text.rs"
+          "crates/harvest-tui/src/text.rs",
+          "crates/harvest-tui/src/deccara.rs"
         ]
       },
       "verification": {
@@ -1677,7 +1678,9 @@
           "packages/tui/test/visible-width.test.ts",
           "packages/tui/test/wrap-ansi.test.ts",
           "packages/tui/test/truncate-to-width.test.ts",
-          "packages/tui/test/text-utils.test.ts"
+          "packages/tui/test/text-utils.test.ts",
+          "crates/harvest-tui/src/deccara.rs",
+          "packages/tui/test/deccara.test.ts"
         ]
       },
       "installation": "experimental-rust-sdk",
@@ -1686,7 +1689,8 @@
           "packages/tui/src/keys.ts",
           "packages/tui/src/stdin-buffer.ts",
           "packages/tui/src/terminal.ts",
-          "packages/tui/src/utils.ts"
+          "packages/tui/src/utils.ts",
+          "packages/tui/src/deccara.ts"
         ],
         "removable": false
       }

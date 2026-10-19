@@ -4,13 +4,15 @@
 //! (<https://github.com/anomalyco/opentui>), MIT License, copyright (c) 2025 opentui.
 use std::{borrow::Cow, fmt, mem, time::Duration};
 
-use crate::keys::{InputMode, parse_kitty_sequence};
+use crate::{
+	MAX_CSI_BYTES,
+	keys::{InputMode, parse_kitty_sequence},
+};
 
 /// Maximum bytes accepted by one `feed` call, before any state changes.
 pub const MAX_INPUT_CHUNK: usize = 1024 * 1024;
 const MAX_PASTE: usize = 64 * 1024 * 1024;
 const MAX_STRING: usize = 16 * 1024 * 1024;
-const MAX_CSI: usize = 4096;
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
 const RAW_WINDOW: Duration = Duration::from_millis(10);
@@ -33,7 +35,7 @@ impl Default for InputOptions {
 			partial_hold_timeout: Duration::from_millis(150),
 			paste_timeout:        Duration::from_secs(1),
 			paste_byte_limit:     MAX_PASTE,
-			csi_byte_limit:       MAX_CSI,
+			csi_byte_limit:       MAX_CSI_BYTES,
 			string_byte_limit:    MAX_STRING,
 		}
 	}
@@ -146,7 +148,7 @@ impl fmt::Debug for InputBuffer {
 impl InputBuffer {
 	pub fn new(options: InputOptions, mode: InputMode) -> Result<Self, InputError> {
 		if options.paste_byte_limit > MAX_PASTE
-			|| !(6..=MAX_CSI).contains(&options.csi_byte_limit)
+			|| !(6..=MAX_CSI_BYTES).contains(&options.csi_byte_limit)
 			|| !(4..=MAX_STRING).contains(&options.string_byte_limit)
 		{
 			return Err(InputError::InvalidLimits);

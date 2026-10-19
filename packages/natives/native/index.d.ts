@@ -660,6 +660,8 @@ export declare function __ompInstallTokioRuntime(): void
  */
 export declare function __piNativesV0_1_0(): void
 
+export declare function analyzeDeccaraLine(line: string, width: number): NativeBgFillAnalysis | null
+
 /**
  * Apply ast-grep rewrite rules to matching files; honors `dryRun` and returns
  * a promise.
@@ -1444,6 +1446,8 @@ export interface EnclosingBoundaryOptions {
   ranges: Array<LineRange>
 }
 
+export declare function encodeDeccaraRectangle(top: number, left: number, bottom: number, right: number, sgr: string): string
+
 /**
  * Encode image bytes into a SIXEL escape sequence for terminal rendering.
  *
@@ -2214,6 +2218,21 @@ export interface MinimizerResult {
  */
 export declare function mmrRerankIndices(contents: Array<string>, scores: Float64Array, lambdaParam: number, topK: number): Uint32Array
 
+export interface NativeBgFillAnalysis {
+  cut: number
+  leftCol: number
+  bg: string
+}
+
+export interface NativeDeccaraCuts {
+  /**
+   * UTF-16 cutoffs; -1 means preserve the original row. Empty means no
+   * changes.
+   */
+  cuts: Array<number>
+  sequence: string
+}
+
 /** Construction options for [`NativeOAuthCallback`]. */
 export interface NativeOAuthCallbackOptions {
   /** Custom URL scheme to register. */
@@ -2320,6 +2339,8 @@ export interface PdfMarkdownResult {
  * be parsed or converted.
  */
 export declare function pdfToMarkdown(input: Uint8Array): Promise<PdfMarkdownResult>
+
+export declare function planDeccaraCuts(lines: string[], width: number, firstScreenRow?: number | undefined | null): NativeDeccaraCuts
 
 export interface PointerOptions {
   button?: string

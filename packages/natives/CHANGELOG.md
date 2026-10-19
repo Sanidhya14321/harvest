@@ -4,6 +4,8 @@
 
 ### Added
 
+- Expose bounded native rectangular-fill analysis, encoding and frame planning helpers.
+
 - Expose terminal output chunk boundaries and backlog progress detection for Rust SDK and TUI consumers.
 
 - Expose bounded terminal input framing with host-driven deadlines for SDK and TUI consumers.

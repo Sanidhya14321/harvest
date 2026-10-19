@@ -7,6 +7,8 @@
 
 ### Added
 
+- Rust SDK exposes the rectangular background-fill planner through `harvest_omp::tui::deccara`.
+
 - Rust SDK exposes shared ANSI text measurement, wrapping, truncation and column slicing through `harvest_omp::tui::text`.
 
 - Rust SDK exposes the existing offline tokenizers directly through `harvest_omp::tokenizer`.

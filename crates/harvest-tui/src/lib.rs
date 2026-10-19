@@ -1,5 +1,9 @@
 //! Terminal protocol primitives shared by the native application and N-API
 //! bridge.
+/// Shared safety bound for one terminal CSI sequence.
+pub const MAX_CSI_BYTES: usize = 4096;
+
+pub mod deccara;
 pub mod input;
 pub mod keys;
 pub mod output;
