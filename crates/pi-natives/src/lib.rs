@@ -45,6 +45,7 @@ pub mod js;
 pub mod keys;
 pub mod live;
 pub mod oauth_callback;
+pub mod output;
 /// PDF inspection and Markdown conversion.
 pub mod pdf;
 pub mod sixel;
@@ -65,6 +66,7 @@ pub mod pty;
 pub mod shell;
 pub mod summary;
 pub mod task;
+mod terminal;
 #[cfg(test)]
 pub(crate) mod testing;
 pub mod text;

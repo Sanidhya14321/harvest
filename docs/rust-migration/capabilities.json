@@ -1650,7 +1650,8 @@
           "crates/harvest-tui/src/keys.rs",
           "crates/harvest-tui/src/keys/text.rs",
           "crates/harvest-tui/src/paste.rs",
-          "crates/harvest-tui/src/input.rs"
+          "crates/harvest-tui/src/input.rs",
+          "crates/harvest-tui/src/output.rs"
         ]
       },
       "verification": {
@@ -1662,7 +1663,11 @@
           "packages/tui/test/keys.test.ts",
           "packages/tui/test/bracketed-paste.test.ts",
           "crates/harvest-tui/src/input.rs",
-          "packages/tui/test/stdin-buffer.test.ts"
+          "packages/tui/test/stdin-buffer.test.ts",
+          "crates/harvest-tui/src/output.rs",
+          "packages/tui/test/issue-2034-repro.test.ts",
+          "packages/tui/test/stdout-stall-watchdog.test.ts",
+          "packages/tui/test/process-terminal-render.test.ts"
         ]
       },
       "installation": "experimental-rust-sdk",

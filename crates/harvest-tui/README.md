@@ -44,6 +44,15 @@ and Enter delivery atomic. An oversized call fails before changing state.
 The TypeScript `StdinBuffer` now only schedules host timers, converts its legacy
 text input convention, and emits events from this engine. Existing framing,
 watchdog, malformed-stream and editor contracts exercise that native bridge.
+`output::ConptyChunks` yields borrowed UTF-8 writes under a byte limit,
+preferring line boundaries. A scalar wider than a deliberately tiny limit is
+emitted intact. `output::StallWatchdog` keeps watching an unhealthy backlog
+below its original arm threshold and restarts its deadline only at new
+low-water marks. Hosts supply monotonic elapsed time. The legacy terminal uses
+the same policy and slices original JS strings at Rust-computed UTF-16 offsets,
+so isolated surrogate code units survive until output encoding. Real Windows
+ConPTY execution remains necessary in addition to platform-routing tests.
+
 This library is an input foundation. The existing TypeScript terminal still
 owns terminal lifecycle, renderer, focus and resize behavior. A native interactive terminal must verify those contracts
 before the legacy implementation can be removed. No terminal backend has been
@@ -57,3 +66,11 @@ with a monotonic clock and deadline query on each feed. These isolate the
 compatibility bridge cost: the legacy path is slower, and this is not an
 end-to-end terminal performance improvement or a shipping performance gate.
 The Rust application can use the engine directly without crossing N-API.
+
+A separate warm output probe used 100 paints of 2,000 ANSI/CJK/emoji rows per
+sample (17,800,800 UTF-16 units), three warmups and nine alternating samples.
+The legacy chunker median was 31.71 ms; the native bridge median was 23.66 ms.
+A deterministic legacy comparison covered 1,152 chunk cases, including isolated
+surrogates, and 40,000 backlog state transitions without differences. This
+isolates chunking and does not certify rendering, actual Windows execution, or
+whole-application performance.

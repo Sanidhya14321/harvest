@@ -11,7 +11,9 @@ because a Rust command or tool has the same name.
   recovery and Escape deadlines through `harvest-tui::input`. The TS adapter
   schedules host timers and delivers events. Shared Rust tests, legacy framing
   and editor suites cover fragmented protocols, same-read paste/Enter delivery,
-  watchdogs and discarded OSC tails. Terminal lifecycle, renderer, resize,
+  watchdogs and discarded OSC tails. Shared output byte chunking and backlog
+  progress detection preserve Unicode and keep slow draining frames alive.
+  Terminal lifecycle, renderer, resize,
   restoration and native interactive installation still require implementation
   and verification; terminal capability parity remains unverified.
 

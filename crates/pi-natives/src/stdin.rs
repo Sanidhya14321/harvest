@@ -1,5 +1,5 @@
 //! Compatibility bridge; framing, deadlines and recovery live in harvest-tui.
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use harvest_tui::{
 	input::{InputBuffer, InputEvent, InputOptions, MAX_INPUT_CHUNK},
@@ -10,6 +10,8 @@ use napi::{
 	bindgen_prelude::{Buffer, Either},
 };
 use napi_derive::napi;
+
+use crate::terminal::{byte_count, milliseconds};
 
 #[napi(object)]
 pub struct NativeStdinBufferOptions {
@@ -38,15 +40,17 @@ impl NativeStdinBuffer {
 	pub fn new(options: Option<NativeStdinBufferOptions>) -> Result<Self> {
 		let mut parsed = InputOptions::default();
 		if let Some(options) = options {
-			parsed.timeout = milliseconds(options.timeout, parsed.timeout)?;
-			parsed.partial_hold_timeout =
-				milliseconds(options.partial_hold_timeout, parsed.partial_hold_timeout)?;
-			parsed.paste_timeout = milliseconds(options.paste_timeout, parsed.paste_timeout)?;
+			if let Some(value) = options.timeout {
+				parsed.timeout = milliseconds(value, f64::from(i32::MAX))?;
+			}
+			if let Some(value) = options.partial_hold_timeout {
+				parsed.partial_hold_timeout = milliseconds(value, f64::from(i32::MAX))?;
+			}
+			if let Some(value) = options.paste_timeout {
+				parsed.paste_timeout = milliseconds(value, f64::from(i32::MAX))?;
+			}
 			if let Some(limit) = options.paste_byte_limit {
-				if !limit.is_finite() || limit < 0.0 {
-					return Err(Error::from_reason("paste byte limit must be finite and nonnegative"));
-				}
-				parsed.paste_byte_limit = limit as usize;
+				parsed.paste_byte_limit = byte_count(limit)?;
 			}
 		}
 		Ok(Self {
@@ -112,17 +116,6 @@ impl NativeStdinBuffer {
 	pub fn get_buffer(&self) -> String {
 		String::from_utf8_lossy(&self.buffer.buffered_input()).into_owned()
 	}
-}
-
-fn milliseconds(value: Option<f64>, fallback: Duration) -> Result<Duration> {
-	let Some(value) = value else {
-		return Ok(fallback);
-	};
-	if !value.is_finite() || !(0.0..=f64::from(i32::MAX)).contains(&value) {
-		return Err(Error::from_reason("terminal timeout must be within the finite timer range"));
-	}
-	Duration::try_from_secs_f64(value / 1000.0)
-		.map_err(|_| Error::from_reason("terminal timeout is not representable"))
 }
 
 fn map_events(events: Vec<InputEvent>) -> Vec<Either<String, NativePasteEvent>> {

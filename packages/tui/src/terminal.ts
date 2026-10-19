@@ -1,6 +1,6 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import * as fs from "node:fs";
-import { TtyWriter } from "@harvest/pi-natives";
+import { conptyChunkEnds, NativeStdoutStallWatchdog as StdoutStallWatchdog, TtyWriter } from "@harvest/pi-natives";
 import {
 	$env,
 	isBunTestRuntime,
@@ -22,6 +22,8 @@ import {
 } from "./terminal-capabilities";
 import { isInsideTmux, wrapTmuxPassthrough } from "./tmux";
 import { setHangulCompatibilityJamoWidth } from "./utils";
+
+export { StdoutStallWatchdog };
 
 const TERMINAL_PROGRESS_KEEPALIVE_MS = 1000;
 const TERMINAL_PROGRESS_ACTIVE_SEQUENCE = "\x1b]9;4;3\x07";
@@ -78,81 +80,20 @@ const MAX_CONPTY_WRITE_CHUNK_BYTES = 16 * 1024;
  * write is strictly worse than a one-frame escape-sequence glitch on a
  * buffer the renderer effectively never produces.
  *
- * UTF-16 code units are walked manually rather than measuring with
- * `Buffer.byteLength` per slice candidate: each code unit's UTF-8 width is
- * known from its value (BMP `<0x80` → 1, `<0x800` → 2, surrogate pair → 4
- * bytes across two units, other BMP → 3), and surrogate pairs are kept
- * together so the chunker never splits a non-BMP character.
+ * The shared Rust engine returns UTF-16 end offsets; slicing the original
+ * string keeps isolated surrogates intact until the host's UTF-8 write.
  *
  * Exported for unit testing of the chunking contract; `#safeWrite` is the
  * sole production caller.
  */
 export function chunkForConPTY(data: string, maxChunkBytes: number = MAX_CONPTY_WRITE_CHUNK_BYTES): string[] {
-	// Fast path: whole buffer fits in one write.
-	if (Buffer.byteLength(data, "utf8") <= maxChunkBytes) return [data];
-	const chunks: string[] = [];
-	const len = data.length;
-	let pos = 0;
-	while (pos < len) {
-		let bytes = 0;
-		// Index just past the most recent `\n` we've consumed inside [pos, i):
-		// the natural cut point that leaves escape sequences intact.
-		let lastNewlineEnd = -1;
-		let i = pos;
-		while (i < len) {
-			const cu = data.charCodeAt(i);
-			let cuLen = 1;
-			let cuBytes: number;
-			if (cu < 0x80) {
-				cuBytes = 1;
-			} else if (cu < 0x800) {
-				cuBytes = 2;
-			} else if (cu >= 0xd800 && cu < 0xdc00) {
-				// High surrogate: pair with the following low surrogate (4 bytes
-				// across two code units); an unpaired surrogate UTF-8-encodes as
-				// the 3-byte U+FFFD replacement character.
-				const next = i + 1 < len ? data.charCodeAt(i + 1) : 0;
-				if (next >= 0xdc00 && next < 0xe000) {
-					cuBytes = 4;
-					cuLen = 2;
-				} else {
-					cuBytes = 3;
-				}
-			} else {
-				// BMP non-surrogate or unpaired low surrogate → 3 bytes.
-				cuBytes = 3;
-			}
-			if (bytes + cuBytes > maxChunkBytes && i > pos) {
-				// Would overflow the cap. Cut at the last newline if we found one,
-				// otherwise hard-cut at the current code-point boundary.
-				const cut = lastNewlineEnd > pos ? lastNewlineEnd : i;
-				chunks.push(data.slice(pos, cut));
-				pos = cut;
-				break;
-			}
-			bytes += cuBytes;
-			i += cuLen;
-			if (cu === 0x0a) lastNewlineEnd = i;
-		}
-		if (i >= len) {
-			chunks.push(data.slice(pos));
-			pos = len;
-		}
-	}
-	return chunks;
+	let start = 0;
+	return conptyChunkEnds(data, maxChunkBytes).map(end => {
+		const chunk = data.slice(start, end);
+		start = end;
+		return chunk;
+	});
 }
-
-/**
- * Backlog ceiling that arms the stall watchdog. A live terminal keeps this
- * near zero; crossing it means either a genuinely wedged PTY reader (#6854) or
- * a single legitimately-huge frame — a `--resume` transcript repaint of many
- * inline images is one multi-tens-of-MiB write (#10430). The two are told
- * apart by {@link StdoutStallWatchdog} (drain progress), not by this number
- * alone: inter-frame production is already gated at 256 KiB
- * (`TUI.#deferRenderForOutputBacklog`), so the only way to reach this cap is a
- * lone oversized frame or a reader that has stopped consuming entirely.
- */
-const MAX_STDOUT_BACKLOG_BYTES = 64 * 1024 * 1024;
 
 /**
  * Backlog at or below which stdout is healthy again: the pump has kept up, the
@@ -164,90 +105,8 @@ const MAX_STDOUT_BACKLOG_BYTES = 64 * 1024 * 1024;
  */
 export const STDOUT_BACKLOG_CLEAR_BYTES = 256 * 1024;
 
-/**
- * How long an armed backlog may go without any drain progress before the
- * consumer is declared gone. A slow-but-alive terminal keeps reaching new
- * low-water marks (so it never trips); a wedged one that flushes nothing is
- * torn down within this window.
- */
-const STDOUT_STALL_TIMEOUT_MS = 2_000;
-
 /** Cadence at which {@link ProcessTerminal} re-samples the backlog while an episode is armed. */
 const STDOUT_STALL_POLL_MS = 250;
-
-/**
- * Bounds a never-draining stdout backlog without killing a single large but
- * actively-draining frame.
- *
- * `process.stdout.write()` returns `false` once its buffer exceeds the stream
- * high-water mark, and the off-thread pump's `pending()` climbs the same way;
- * a stalled-but-alive PTY reader never throws, so the byte count is the only
- * signal that output is going nowhere. Tripping on the instantaneous count
- * alone is wrong: a legitimate oversized frame (a resume repaint of dozens of
- * inline screenshots, #10430) briefly exceeds the cap and then drains.
- *
- * An episode starts when the backlog first exceeds `armBytes` and lasts until
- * it drains back to `clearBytes` (healthy). The backlog can fall below
- * `armBytes` while still unhealthy, so the episode must outlive that dip
- * (#10434): during it the watchdog declares the terminal disconnected only when
- * the backlog makes no drain progress (no new low-water mark) for `stallMs` —
- * a draining terminal keeps lowering the mark and never trips, while a wedged
- * one (#6854) still tears down within the window.
- *
- * Exported for unit testing; `ProcessTerminal` is the sole production user.
- */
-export class StdoutStallWatchdog {
-	#lowWater = Number.POSITIVE_INFINITY;
-	#stalledSinceMs = 0;
-	#armed = false;
-
-	constructor(
-		private readonly armBytes: number = MAX_STDOUT_BACKLOG_BYTES,
-		private readonly clearBytes: number = STDOUT_BACKLOG_CLEAR_BYTES,
-		private readonly stallMs: number = STDOUT_STALL_TIMEOUT_MS,
-	) {}
-
-	/** True while an episode is active and the backlog must be polled to completion. */
-	get armed(): boolean {
-		return this.#armed;
-	}
-
-	/**
-	 * Feed the current pending-byte count and clock reading. Returns true once an
-	 * armed episode has gone `stallMs` with no drain progress, at which point the
-	 * caller treats the terminal as disconnected.
-	 */
-	sample(pending: number, nowMs: number): boolean {
-		if (!this.#armed) {
-			// Idle: only an oversized backlog starts an episode.
-			if (pending <= this.armBytes) return false;
-			this.#armed = true;
-			this.#lowWater = pending;
-			this.#stalledSinceMs = nowMs;
-			return false;
-		}
-		if (pending <= this.clearBytes) {
-			// Drained back to a healthy level: the episode is over.
-			this.reset();
-			return false;
-		}
-		if (pending < this.#lowWater) {
-			// Drain progress: a new low-water mark restarts the stall clock.
-			this.#lowWater = pending;
-			this.#stalledSinceMs = nowMs;
-			return false;
-		}
-		// Still unhealthy with no new low-water mark since the clock started.
-		return nowMs - this.#stalledSinceMs >= this.stallMs;
-	}
-
-	/** Episode ended (drained) or terminal torn down: stop watching. */
-	reset(): void {
-		this.#armed = false;
-		this.#lowWater = Number.POSITIVE_INFINITY;
-		this.#stalledSinceMs = 0;
-	}
-}
 
 /**
  * Minimal terminal interface for TUI
@@ -1974,7 +1833,7 @@ export class ProcessTerminal implements Terminal {
 	 * caught. See {@link StdoutStallWatchdog}, #6854, #10430, and #10434.
 	 */
 	#trackStdoutBacklog(pending: number): void {
-		if (this.#stdoutStall.sample(pending, Date.now())) {
+		if (this.#stdoutStall.sample(pending, performance.now())) {
 			this.#disarmStdoutStallWatchdog();
 			this.#markTerminalDisconnected("stdout backlog stalled without draining; PTY consumer stalled");
 			return;

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Terminal write chunking and stalled-output detection use shared Rust policy and a monotonic clock.
+
 - Terminal input framing and paste recovery use the shared Rust engine.
 
 - Keyboard text and tmux paste decoding use the shared Rust terminal protocol library.

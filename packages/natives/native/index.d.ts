@@ -267,6 +267,13 @@ export declare class NativeStdinBuffer {
   getBuffer(): string
 }
 
+export declare class NativeStdoutStallWatchdog {
+  constructor(armBytes?: number | undefined | null, clearBytes?: number | undefined | null, stallMs?: number | undefined | null)
+  get armed(): boolean
+  sample(pending: number, nowMs: number): boolean
+  reset(): void
+}
+
 /**
  * Long-lived cross-platform power assertion.
  *
@@ -981,6 +988,12 @@ export interface ClipboardImage {
   /** MIME type for the encoded image payload. */
   mimeType: string
 }
+
+/**
+ * Return UTF-16 end offsets so JavaScript slices preserve original code units,
+ * including isolated surrogates that the terminal itself encodes as U+FFFD.
+ */
+export declare function conptyChunkEnds(data: string, maxChunkBytes?: number | undefined | null): Array<number>
 
 /** A context line (before or after a match). */
 export interface ContextLine {
