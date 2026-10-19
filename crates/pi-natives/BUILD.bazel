@@ -52,7 +52,6 @@ rust_shared_library(
     srcs = glob(["src/**/*.rs"]),
     aliases = aliases(),
     compile_data = glob([
-        "src/syntaxes/*.sublime-syntax",
         "src/fonts/*",
     ]) + select({
         "@platforms//os:macos": [":oauth_callback_darwin_helper"],

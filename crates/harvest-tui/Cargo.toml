@@ -13,3 +13,4 @@ workspace = true
 phf.workspace = true
 smallvec.workspace = true
 xutf.workspace = true
+syntect.workspace = true

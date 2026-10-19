@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Syntax-highlighting grammars and streaming parser state are shared with the Rust SDK.
+
 - Rectangular background-fill planning uses the shared Rust terminal engine.
 
 - Terminal write chunking and stalled-output detection use shared Rust policy and a monotonic clock.

@@ -4,6 +4,7 @@
 pub const MAX_CSI_BYTES: usize = 4096;
 
 pub mod deccara;
+pub mod highlight;
 pub mod input;
 pub mod keys;
 pub mod output;

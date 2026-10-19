@@ -7,6 +7,20 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-tui::highlight` shares the existing syntax engine with ordinary Rust
+  consumers. All five bundled grammar assets moved byte-for-byte; N-API only
+  converts inputs, owns its inline palette and schedules warmup. Palettes are
+  borrowed per push without retaining host handles. Installed Rust and rebuilt
+  addon probes match 288 whole-code cases and 720 streamed chunks over 32
+  language/alias paths, three palette modes and unknown/empty-input boundaries.
+  Async warmup and palette overflow/recovery pass. All 332 shared Rust tests,
+  96 Bazel TUI tests, three doctests, strict Clippy and package gates pass;
+  native alias/stream and colored Markdown/diff checks pass. The diff test now
+  supplies an explicit color mode instead of depending on ambient `NO_COLOR`.
+  Warmed 200-call probes measured old 48.64/48.83 ms and shared 49.76/50.48 ms;
+  this small bridge overhead is recorded without a whole-app performance claim.
+  Native Markdown widgets and complete interactive renderer parity remain pending.
+
 - `harvest-tui::deccara` owns the exported rectangular-background planner;
   the TypeScript module is now a thin snapshot/cutoff adapter. This helper is
   currently exported by the SDK, not wired into the main TUI renderer. Native

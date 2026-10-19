@@ -3824,6 +3824,7 @@ version = "0.1.0"
 dependencies = [
  "phf 0.13.1",
  "smallvec",
+ "syntect",
  "xutf",
 ]
 
@@ -6593,7 +6594,6 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "syntect",
  "tempfile",
  "tinyvec",
  "tokio",
