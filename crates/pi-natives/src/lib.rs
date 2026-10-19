@@ -53,7 +53,8 @@ pub mod snapcompact;
 pub mod spelling;
 pub mod stdin;
 pub mod svg;
-pub mod utok;
+/// Native Rust tokenizer API retained under the existing module path.
+pub use harvest_tokenizer as utok;
 pub mod vcs;
 pub use pi_ast::language;
 

@@ -16,6 +16,8 @@ mod shell;
 mod streaming;
 pub mod tools;
 
+/// Offline tokenizers shared with the legacy host, with unchanged vocabularies.
+pub use harvest_tokenizer as tokenizer;
 /// Terminal protocol primitives usable without an embedded JavaScript runtime.
 pub use harvest_tui as tui;
 

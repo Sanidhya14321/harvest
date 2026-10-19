@@ -14,15 +14,15 @@ drops that metadata, parses the public `⟨bow⟩the⟨eow⟩` key notation into
 compact C0 marker alphabet (single bytes `0x01`–`0x05`; safe because `nfc`
 strips C0 controls from input), adds the glued contraction spellings, and
 front-codes the sorted piece list into the version-2 binary format produced
-by `../tools/gen-ctok-vocab.ts` (~4.7 MB of upstream JSON →
+by `../../pi-natives/tools/gen-ctok-vocab.ts` (~4.7 MB of upstream JSON →
 ~254 KB front-coded → ~106 KB after zstd -19).
 
 Regenerate the front-coded binaries, then compress them here:
 
 ```sh
-cd ../tools
+cd ../../pi-natives/tools
 bun gen-ctok-vocab.ts   # fetch upstream, emit raw bins into cache/
-bun pack-ctok.ts        # zstd -19 into ../data/
+bun pack-ctok.ts        # zstd -19 into ../../harvest-tokenizer/data/
 ```
 
 If the upstream pin moves, also regenerate
@@ -30,5 +30,5 @@ If the upstream pin moves, also regenerate
 (see the fixture doc in `../src/utok/claude/mod.rs`).
 
 The other `*.bin.zst` files here are the UTOK1 BPE rank tables packed by
-the per-family scripts in `../tools/` (container format and per-family
+the per-family scripts in `../../pi-natives/tools/` (container format and per-family
 split specs: `families.json` in this directory).

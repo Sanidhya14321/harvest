@@ -1689,13 +1689,16 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/agent_session.rs"
+          "rust-agent/src/agent_session.rs",
+          "crates/harvest-tokenizer/src/",
+          "rust-agent/src/lib.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/tests/agent_session.rs"
+          "rust-agent/tests/agent_session.rs",
+          "crates/harvest-tokenizer/src/utok/tests/"
         ]
       },
       "installation": "experimental-rust-cli",

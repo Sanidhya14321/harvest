@@ -9,7 +9,7 @@ from tokenizers import Tokenizer
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 tok = Tokenizer.from_file(os.path.join(ROOT, "tools/cache/qwen3.8.tokenizer.json"))
 
-with open(os.path.join(ROOT, "fixtures/corpus.json")) as f:
+with open(os.path.join(ROOT, "../harvest-tokenizer/fixtures/corpus.json")) as f:
     texts = json.load(f)
 
 # Family-specific edge cases.
@@ -88,7 +88,7 @@ out = {
     "generator": "tools/gen-qwen-fixtures.py: HF tokenizers Tokenizer.from_file(tools/cache/qwen3.8.tokenizer.json).encode(text, add_special_tokens=False)",
     "cases": cases,
 }
-with open(os.path.join(ROOT, "fixtures/qwen3.json"), "w") as f:
+with open(os.path.join(ROOT, "../harvest-tokenizer/fixtures/qwen3.json"), "w") as f:
     json.dump(out, f, ensure_ascii=False, indent=1)
     f.write("\n")
 print(f"{len(cases)} cases, total {sum(c['count'] for c in cases)} tokens")

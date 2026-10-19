@@ -3777,6 +3777,7 @@ dependencies = [
  "handlebars",
  "harvest-brain",
  "harvest-runtime",
+ "harvest-tokenizer",
  "harvest-tui",
  "pi-edit",
  "pi-shell",
@@ -3802,6 +3803,19 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "harvest-tokenizer"
+version = "0.1.0"
+dependencies = [
+ "fancy-regex 0.16.2",
+ "regex",
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "xutf",
+ "zstd",
 ]
 
 [[package]]
@@ -6528,7 +6542,6 @@ dependencies = [
  "clipboard-win",
  "core-graphics",
  "enigo",
- "fancy-regex 0.16.2",
  "flume",
  "fontdue",
  "foreign-types",
@@ -6539,6 +6552,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "harvest-brain",
+ "harvest-tokenizer",
  "harvest-tui",
  "heapless 0.9.3",
  "html-to-markdown-rs",
@@ -6579,7 +6593,6 @@ dependencies = [
  "smallvec",
  "syntect",
  "tempfile",
- "tiktoken-rs",
  "tinyvec",
  "tokio",
  "tokio-util",
@@ -6593,7 +6606,6 @@ dependencies = [
  "xutf",
  "xxhash-rust",
  "zbus",
- "zstd",
  "zune-jpeg",
 ]
 

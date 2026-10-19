@@ -24,6 +24,7 @@ wayland-pipewire = ["dep:pipewire"]
 [dependencies]
 harvest-brain = { path = "../harvest-brain" }
 harvest-tui = { path = "../harvest-tui" }
+harvest-tokenizer = { path = "../harvest-tokenizer" }
 anyhow.workspace = true
 async-trait.workspace = true
 arboard.workspace = true
@@ -73,7 +74,6 @@ tokio.workspace = true
 tokio-util.workspace = true
 toml.workspace = true
 xutf.workspace = true
-zstd.workspace = true
 xxhash-rust.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -111,8 +111,6 @@ uiautomation = "=0.25.0"
 winreg.workspace = true
 
 [dev-dependencies]
-fancy-regex.workspace = true # utok scanner differential oracle
-tiktoken-rs.workspace = true # utok openai differential oracle
 xkeysym = "=0.2.1"
 
 [build-dependencies]

@@ -26,8 +26,8 @@ jobs:
       - name: Install authoritative workspace toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-      - run: cargo fmt -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp -p xtask -- --check
-      - run: cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp -p xtask --all-targets --all-features -- -D warnings
+      - run: cargo fmt -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-tokenizer -p harvest-omp -p xtask -- --check
+      - run: cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-tokenizer -p harvest-omp -p xtask --all-targets --all-features -- -D warnings
       - run: cargo xtask clippy-config --check
       - run: cargo xtask theme-index --check
       - run: cargo xtask migration
@@ -57,9 +57,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           key: test-${{ matrix.os }}-${{ matrix.features }}
-      - run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp --no-default-features --features "${FEATURES}"
+      - run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-tokenizer -p harvest-omp --no-default-features --features "${FEATURES}"
       - name: Release-profile contracts
-        run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp --release --no-default-features --features "${FEATURES}"
+        run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-tokenizer -p harvest-omp --release --no-default-features --features "${FEATURES}"
       - run: cargo build --locked -p harvest-omp --no-default-features --features "${FEATURES}"
       - run: cargo run --locked -p harvest-omp --bin harvest -- --help
       - run: cargo run --locked -p harvest-omp --bin omp -- brain --scope project organize --dry-run --json
@@ -154,7 +154,7 @@ jobs:
             -D rustdoc::invalid_html_tags
             -D rustdoc::bare_urls
         run: >-
-          cargo doc -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp -p xtask
+          cargo doc -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-tokenizer -p harvest-omp -p xtask
           --no-deps --all-features --document-private-items --locked
 
 
@@ -229,7 +229,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - run: rustup component add llvm-tools-preview
       - name: Measure coverage
-        run: cargo llvm-cov nextest -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp -p xtask --all-features --locked --no-report
+        run: cargo llvm-cov nextest -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-tokenizer -p harvest-omp -p xtask --all-features --locked --no-report
       - name: Report
         run: cargo llvm-cov report --lcov --output-path lcov.info
       - name: Enforce the floor
@@ -361,7 +361,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show
-      - run: cargo xtask check -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp -p xtask --all-features
+      - run: cargo xtask check -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-tokenizer -p harvest-omp -p xtask --all-features
 
   ci:
     name: Rust CI

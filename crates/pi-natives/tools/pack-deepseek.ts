@@ -12,7 +12,7 @@
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SRC = `${ROOT}tools/cache/deepseek-v4.tokenizer.json`;
-const OUT = `${ROOT}data/deepseek3.bin.zst`;
+const OUT = new URL("../../harvest-tokenizer/data/deepseek3.bin.zst", import.meta.url).pathname;
 const VOCAB_SIZE = 128_000;
 
 // GPT-2 bytes_to_unicode, inverted: alphabet char -> original byte.

@@ -23,7 +23,7 @@ ranks = load_tiktoken_bpe(str(ROOT / "tools/cache/kimi.tiktoken.model"))
 assert len(ranks) == 163_584, len(ranks)
 enc = tiktoken.Encoding(name="kimi", pat_str=pat_str, mergeable_ranks=ranks, special_tokens={})
 
-corpus = json.loads((ROOT / "fixtures/corpus.json").read_text())
+corpus = json.loads((ROOT.parent / "harvest-tokenizer/fixtures/corpus.json").read_text())
 
 extra = [
     # Han-heavy text.
@@ -65,5 +65,5 @@ out = {
     "generator": f"tiktoken {tiktoken.__version__} Encoding(kimi, tokenization_kimi.py pat_str) encode_ordinary",
     "cases": cases,
 }
-(ROOT / "fixtures/kimi_k2.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
+(ROOT.parent / "harvest-tokenizer/fixtures/kimi_k2.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
 print(f"{len(cases)} cases, total {sum(c['count'] for c in cases)} tokens")

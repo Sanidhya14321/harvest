@@ -63,7 +63,7 @@ for text, rank, noim in probes:
     print(f"  {text!r}: with={rank} without={noim}")
 assert probes, "no ignore_merges divergence found — short-circuit unproven"
 
-corpus = json.loads((ROOT / "fixtures/corpus.json").read_text())
+corpus = json.loads((ROOT.parent / "harvest-tokenizer/fixtures/corpus.json").read_text())
 extra = [
     # Chinese samples
     "智谱清言是由北京智谱华章科技有限公司开发的大语言模型。",
@@ -88,6 +88,6 @@ out = {
     "generator": "uv run --with tokenizers tools/gen-glm-fixtures.py (tokenizers reference, add_special_tokens=False)",
     "cases": cases,
 }
-(ROOT / "fixtures/glm5.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
+(ROOT.parent / "harvest-tokenizer/fixtures/glm5.json").write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
 noim_path.unlink()
 print(f"wrote {len(cases)} cases to fixtures/glm5.json")

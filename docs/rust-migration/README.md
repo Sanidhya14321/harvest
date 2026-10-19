@@ -7,6 +7,20 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-tokenizer` extracts the existing offline counting engine, embedded
+  vocabularies and reference tests from N-API. The Rust SDK exports it directly;
+  the legacy addon delegates to the same library. All eight vocabulary blobs
+  are unchanged. An installed native probe matches 14,020 UTF-8/UTF-16 legacy
+  counts over 701 inputs without Bun/Node on PATH; the rebuilt addon matches
+  7,010 counts. All 295 shared Rust tests/doctests, 38 tokenizer tests in the
+  Bazel harness, strict Clippy, the native package gate and 24 focused addon/
+  agent tests pass. Fifteen stale expectations from five renamed Claude texts
+  were corrected against all 1,479 pinned `ctok==1.0.0` references, without a
+  runtime algorithm change. Warmed, CPU-affined 10,000-call probes measured
+  old medians 100.7/105.3 ms and shared-engine medians 103.4/109.7 ms; this is
+  narrow overhead evidence, not an end-to-end performance claim. Catalog
+  selection, message/frame accounting and compaction parity remain pending.
+
 - `cargo xtask theme-index [--check]` owns bundled theme registry generation,
   including release regeneration and Rust CI drift checks. It fixes the stale
   defaults path and preserves all 98 current exported names and palette values.

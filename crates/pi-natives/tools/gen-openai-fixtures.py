@@ -11,7 +11,7 @@ import pathlib
 import tiktoken
 
 root = pathlib.Path(__file__).resolve().parent.parent
-corpus = json.loads((root / "fixtures" / "corpus.json").read_text())
+corpus = json.loads((root.parent / "harvest-tokenizer" / "fixtures" / "corpus.json").read_text())
 
 edge_cases = [
     # very long single piece (one letter run stresses the merge loop)
@@ -72,6 +72,6 @@ for name in ("o200k_base", "cl100k_base"):
         "generator": f"python tiktoken {tiktoken.__version__} {name} encode_ordinary",
         "cases": cases,
     }
-    path = root / "fixtures" / f"{name}.json"
+    path = root.parent / "harvest-tokenizer" / "fixtures" / f"{name}.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n")
     print(f"{name}: {len(cases)} cases -> {path}")

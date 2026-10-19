@@ -7,6 +7,8 @@
 
 ### Added
 
+- Rust SDK exposes the existing offline tokenizers directly through `harvest_omp::tokenizer`.
+
 - Repair ELF GNU version-definition pointers with native Rust tooling while preserving binary payloads and permissions.
 
 - Rust SDK exposes shared keyboard protocol and paste normalization helpers through `harvest_omp::tui`.

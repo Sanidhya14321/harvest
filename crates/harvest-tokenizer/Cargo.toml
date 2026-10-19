@@ -1,0 +1,21 @@
+[package]
+name = "harvest-tokenizer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Embedded UTF-generic offline tokenizers for Harvest"
+
+[lints]
+workspace = true
+
+[dependencies]
+xutf.workspace = true
+zstd.workspace = true
+
+[dev-dependencies]
+fancy-regex.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tiktoken-rs.workspace = true
