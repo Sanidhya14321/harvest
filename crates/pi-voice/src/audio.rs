@@ -316,7 +316,7 @@ fn fill_playback(
 		output_offset += count;
 		let _ = state
 			.queued_samples
-			.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |q| Some(q.saturating_sub(count)));
+			.try_update(Ordering::Relaxed, Ordering::Relaxed, |q| Some(q.saturating_sub(count)));
 	}
 }
 

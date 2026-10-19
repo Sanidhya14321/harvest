@@ -84,7 +84,8 @@ impl AudioCapture {
 	/// Stop capture immediately and release the microphone.
 	#[napi]
 	pub fn stop(&self) -> Result<()> {
-		if let Some(handle) = self.pump_handle.lock().take() {
+		let handle = self.pump_handle.lock().take();
+		if let Some(handle) = handle {
 			handle.abort();
 		}
 		let stream = self.stream.lock().take();
