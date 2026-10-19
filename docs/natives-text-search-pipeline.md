@@ -223,7 +223,13 @@ Text functions generally return deterministic transformed output; errors are lim
 
 ## 6) Syntax highlighting (`highlight`)
 
-`highlight.rs` is pure transformation; it does not use the filesystem scan cache.
+The pure parser, scope-role mapping and bundled grammar assets live in
+`crates/harvest-tui/src/highlight.rs` and `src/syntaxes/`; the Rust SDK exposes
+this as `harvest_omp::tui::highlight`. `crates/pi-natives/src/highlight.rs` only
+owns N-API conversion, inline palette storage and the background warmup adapter.
+Highlighting does not use the filesystem scan cache. Rust palettes are borrowed
+per operation; `HighlightStream::push` retains parser state, not host strings.
+Feed newline-complete chunks, with an optional incomplete final chunk.
 
 ### Flow
 

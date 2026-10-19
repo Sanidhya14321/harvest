@@ -1,11 +1,188 @@
 # Rust migration implementation status
 
+Continuation checkpoint and agent instructions: [HANDOFF.md](HANDOFF.md) (2026-10-20).
+
 The normal application still launches TypeScript. This change establishes the
 shared Rust foundations and native brain maintenance; it does not complete the
 application rewrite. No capability is marked as legacy-parity complete simply
 because a Rust command or tool has the same name.
 
 ## Implemented
+
+- `harvest-media::{html,svg}` exposes the existing HTML-to-Markdown and SVG/SVGZ
+  preview engines through `harvest_omp::media`. N-API only converts/owns inputs
+  and schedules the original blocking-pool calls. Standalone installed Rust
+  without a JS runtime and the rebuilt addon each match 40 HTML conversions
+  and 20 SVG renders/errors byte-for-byte. Eight media tests and one doctest
+  cover Markdown structure, explicit image omission, cleanup, depth rejection,
+  aspect ratio/pixels, canvas limits and blocked external versus embedded images.
+  All 252 shared Rust tests, actual Bazel media tests, strict Cargo Clippy,
+  package gates, eight native HTML tests and 26 fetch/Git preview tests pass.
+  Rust CI now includes this crate. Full media loading, terminal integration,
+  local inference and platform/font parity remain pending; no TS frontend
+  source is retired by this extraction.
+
+- `harvest-tui::mouse` decodes SGR clicks, release, drag and vertical-only
+  wheel reports directly from Rust. Installed Rust (without a JS runtime),
+  rebuilt addon and frontend each match 2,637 legacy reports, including
+  malformed reports, zero-based coordinates, huge numeric fields and modifiers.
+  The existing frontend decoder remains for older/unavailable optional addons;
+  component hit-test routing is still TypeScript. All 100 TUI tests, four
+  doctests, 191 combined Rust tests, 97 focused frontend tests, strict Clippy
+  and package gates pass. Warmed 20,000-event probes measured old 4.56/5.04 ms
+  and shared 17.64/21.51 ms: host bridge overhead is explicit, with no claimed
+  speedup. Full interactive terminal parity and legacy removal remain pending.
+
+- `harvest-tui::highlight` shares the existing syntax engine with ordinary Rust
+  consumers. All five bundled grammar assets moved byte-for-byte; N-API only
+  converts inputs, owns its inline palette and schedules warmup. Palettes are
+  borrowed per push without retaining host handles. Installed Rust and rebuilt
+  addon probes match 288 whole-code cases and 720 streamed chunks over 32
+  language/alias paths, three palette modes and unknown/empty-input boundaries.
+  Async warmup and palette overflow/recovery pass. All 332 shared Rust tests,
+  96 Bazel TUI tests, three doctests, strict Clippy and package gates pass;
+  native alias/stream and colored Markdown/diff checks pass. The diff test now
+  supplies an explicit color mode instead of depending on ambient `NO_COLOR`.
+  Warmed 200-call probes measured old 48.64/48.83 ms and shared 49.76/50.48 ms;
+  this small bridge overhead is recorded without a whole-app performance claim.
+  Native Markdown widgets and complete interactive renderer parity remain pending.
+
+- `harvest-tui::deccara` owns the exported rectangular-background planner;
+  the TypeScript module is now a thin snapshot/cutoff adapter. This helper is
+  currently exported by the SDK, not wired into the main TUI renderer. Native
+  and rebuilt-addon probes match 3,745 corrected legacy frame plans and 8,424
+  analyses; 3,313 original well-formed frame fixtures are unchanged. The
+  independent surrogate-width fix covers the remaining malformed UTF-16 cases.
+  Kitty terminal-core emulation exposed and verifies the fix for lost inverse
+  and underlined padding. Unsupported/decorated SGR, oversized frames and
+  overflowing coordinates retain complete original rows. All 328 shared Rust
+  tests/doctests, 127 focused TS contracts, package gates and strict Clippy pass.
+  A warmed 100-frame/40-row probe measured old medians 5.82/9.94 ms and shared
+  medians 5.94/5.64 ms; this overlapping microbenchmark is not whole-app proof.
+  Platform terminal capability discovery and complete renderer parity remain
+  pending; the legacy host capability decision and adapter are retained.
+
+- `harvest-tui::text` now owns ANSI-aware width, wrapping, truncation and
+  column/overlay slicing. The Rust SDK calls it directly; N-API retains a thin
+  UTF-16 adapter and its existing output convention. Unchanged truncation
+  borrows its input; huge column ranges reserve against existing text instead
+  of requesting gigabytes. All 317 shared Rust tests/doctests, the 81-test
+  Bazel TUI harness, strict Clippy, both package gates and 119 focused TUI/
+  fallback contracts pass. Installed core and rebuilt-addon probes each match
+  3,074 legacy operations, including malformed UTF-16 and terminal sequences.
+  Warmed CPU-affined 18,000-operation probes overlap (old 16.98/18.81 ms,
+  shared engine 17.39/17.13 ms); no whole-app speedup is claimed. Widget layout,
+  renderer lifecycle, restoration and installed terminal parity remain pending.
+
+- `harvest-tokenizer` extracts the existing offline counting engine, embedded
+  vocabularies and reference tests from N-API. The Rust SDK exports it directly;
+  the legacy addon delegates to the same library. All eight vocabulary blobs
+  are unchanged. An installed native probe matches 14,020 UTF-8/UTF-16 legacy
+  counts over 701 inputs without Bun/Node on PATH; the rebuilt addon matches
+  7,010 counts. All 295 shared Rust tests/doctests, 38 tokenizer tests in the
+  Bazel harness, strict Clippy, the native package gate and 24 focused addon/
+  agent tests pass. Fifteen stale expectations from five renamed Claude texts
+  were corrected against all 1,479 pinned `ctok==1.0.0` references, without a
+  runtime algorithm change. Warmed, CPU-affined 10,000-call probes measured
+  old medians 100.7/105.3 ms and shared-engine medians 103.4/109.7 ms; this is
+  narrow overhead evidence, not an end-to-end performance claim. Catalog
+  selection, message/frame accounting and compaction parity remain pending.
+
+- `cargo xtask emit-extensions --directory DIR [--kind types|js] [--check]`
+  repairs ESM specifiers in emitted package output. The retained publisher
+  invokes Rust for both declaration and runtime output; the old TS helper is
+  deleted. All 73 xtask tests, strict Clippy, root tools gate and six publisher
+  tests pass. Installed Linux tooling runs without Bun/Node on PATH and matches
+  22 fixture rewrites. Real tsgo output matches all 26 omptype files and 52
+  rewrites, including paths with spaces; Node ESM loads the repaired runtime
+  graph and correctly accepts/rejects schema inputs. Traversal/file/plan bounds,
+  lexical escapes, invalid UTF-8, external symlinks and read-only drift checks
+  have Rust contracts. The publisher and overall release cutover remain pending.
+
+- `cargo xtask theme-index [--check]` owns bundled theme registry generation,
+  including release regeneration and Rust CI drift checks. It fixes the stale
+  defaults path and preserves all 98 current exported names and palette values.
+  Installed no-runtime generator probes cover identifier collisions, reserved
+  names, prototype keys, deleted assets and read-only stale checks; 67 xtask
+  tests, strict Clippy, the package gate and 32 theme/startup/export tests pass.
+  The old generator is removed; its generated TypeScript registry remains until
+  the frontend consumers migrate.
+
+- `cargo xtask fix-elf-verdef --workspace ROOT FILE...` repairs stale GNU
+  version-definition pointers through bounded, jailed, atomic streaming writes.
+  Invalid metadata, reader failures and unwinds leave the original intact;
+  outside hardlink aliases are preserved. All 193 shared Rust regressions and
+  19 rebuilt-addon regressions passed. Five installed legacy-oracle cases match;
+  controlled x64 and emulated ARM64 glibc 2.17 loader failures recover without
+  Bun/Node on the repair command's PATH. The host patchelf chain kept its pointer
+  current, so this is deliberate-corruption recovery evidence. The clean Nix
+  Linux x64 consumer build passed: the real auto-patchelf chain relocated
+  DT_VERDEF, native repair corrected it, and the installed CLI version/help
+  checks passed. The old script/test are removed.
+
+- `cargo xtask clippy-config [--check]` owns Bazel lint policy generation.
+  Root/release callers and Rust CI use it; the TS generator is removed. Five
+  installed legacy-oracle cases preserve generated flags, and missing/stale
+  checks leave files untouched without Bun/Node on PATH. All 55 xtask tests,
+  strict Clippy and an actual Bazel strict-Clippy build passed. Model catalogs,
+  compatibility compilation, browser assets and other generators remain pending;
+  the overall codegen capability remains unverified.
+
+- The Rust SDK and legacy TUI now share bounded terminal input framing, paste
+  recovery and Escape deadlines through `harvest-tui::input`. The TS adapter
+  schedules host timers and delivers events. Shared Rust tests, legacy framing
+  and editor suites cover fragmented protocols, same-read paste/Enter delivery,
+  watchdogs and discarded OSC tails. Shared output byte chunking and backlog
+  progress detection preserve Unicode and keep slow draining frames alive.
+  A shared bounded output pump now accepts Rust-owned backends directly, keeps
+  in-flight bytes inside its cap and releases detached backend ownership once
+  blocked I/O resumes. The legacy Unix adapter uses the same queue.
+  Terminal lifecycle, renderer, resize,
+  restoration and native interactive installation still require implementation
+  and verification; terminal capability parity remains unverified.
+
+- Native distribution uses one eight-target registry for release/CI matrices,
+  package names, Homebrew bindings and both WinGet architectures. ZIPs include
+  both real aliases, deterministic metadata and legal notices; validation checks
+  all targets, alias bytes/modes, headers and legal files. WinGet generation and
+  submitted-archive verification run through Rust and reject unknown manifest
+  fields or changed downloads before extraction. Canonical bootstrap consumers
+  use `SHA256SUMS.txt`. Local fixtures passed 176 combined Rust tests, 90 core
+  app tests and shell installer routing/upgrade/refusal checks. A full release
+  build completed, and real cargo-binstall 1.26.0 installed both aliases from a
+  loopback archive; execution and completion setup worked without Bun/Node.
+  PowerShell files passed the real parser and the non-Windows refusal contract;
+  native Windows/macOS runs, GNU portability-floor builds and Cargo publication
+  dependency closure remain part of distribution parity. See
+  [distribution contracts](distribution.md).
+
+- Native settings/override/environment diagnostics omit API keys and endpoint
+  URLs. Invalid TOML errors retain only the config filename and byte offset,
+  dropping parser source-line/error chains; malformed environment step counts
+  no longer echo their input. SDK and real CLI failure contracts cover both
+  aliases, no session creation and unchanged config bytes. Eight installed
+  credential-bearing parse failures passed without Bun/Node. This does not
+  implement credential storage, OAuth or compatible profile/settings migration.
+
+- `cargo xtask release-notes VERSION [OUTPUT]` replaces the old TS release-notes
+  script and supplies curated bodies to both release workflows. It merges
+  unpublished-tag changelog sections through the target, deduplicates entries,
+  and includes native crate/application changelogs as well as legacy packages.
+  Automatic floor lookup uses authenticated `gh release list` and fails closed;
+  `--floor VERSION`, `--single-version` and `--published-releases JSON_FILE`
+  support explicit/offline runs. Seven legacy-oracle cases also passed through
+  installed xtask without Bun/Node. All 41 xtask tests, strict Clippy and workflow
+  YAML validation passed; no GitHub release was published during verification.
+
+- Native session replay projects text compactions, handoffs, branch summaries
+  and durable context resets onto the selected branch without rewriting history.
+  Eight legacy-oracle cases match, including reset/compaction precedence and
+  sibling isolation. Missing/forward/sibling kept references, active opaque
+  compaction payloads and broken tool pairs fail before writing. All 16 installed
+  alias/case continuations passed without Bun/Node; app/runtime/brain/xtask passed
+  155 tests and the explicit core app passed 85. Custom messages, inferred
+  settings, general prompt formatting, provider replay, bitmap archives and
+  automatic compaction generation remain pending; session parity is unverified.
 
 - Native grep delegates traversal and ignore matching to `pi-walker`; file bytes
   still pass through the workspace capability. Explicit `case`/`gitignore`

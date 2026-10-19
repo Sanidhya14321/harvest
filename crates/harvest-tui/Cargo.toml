@@ -1,0 +1,16 @@
+[package]
+name = "harvest-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reusable terminal input protocols for Harvest"
+
+[lints]
+workspace = true
+
+[dependencies]
+phf.workspace = true
+smallvec.workspace = true
+xutf.workspace = true
+syntect.workspace = true

@@ -31,6 +31,7 @@ pub mod clipboard;
 pub mod crash_handler;
 pub mod desktop;
 pub mod devicecheck;
+pub mod deccara;
 pub mod diff;
 pub mod edit;
 pub mod fd;
@@ -44,14 +45,18 @@ pub mod iofs;
 pub mod js;
 pub mod keys;
 pub mod live;
+pub mod mouse;
 pub mod oauth_callback;
+pub mod output;
 /// PDF inspection and Markdown conversion.
 pub mod pdf;
 pub mod sixel;
 pub mod snapcompact;
 pub mod spelling;
+pub mod stdin;
 pub mod svg;
-pub mod utok;
+/// Native Rust tokenizer API retained under the existing module path.
+pub use harvest_tokenizer as utok;
 pub mod vcs;
 pub use pi_ast::language;
 
@@ -64,6 +69,7 @@ pub mod pty;
 pub mod shell;
 pub mod summary;
 pub mod task;
+mod terminal;
 #[cfg(test)]
 pub(crate) mod testing;
 pub mod text;

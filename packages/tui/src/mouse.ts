@@ -1,3 +1,5 @@
+import { parseSgrMouse as nativeParseSgrMouse } from "@harvest/pi-natives";
+
 /**
  * SGR mouse report parsing (`\x1b[<button;col;rowM` / `…m`).
  *
@@ -37,6 +39,15 @@ export interface SgrMouseEvent {
  * before paying for the regex.
  */
 export function parseSgrMouse(data: string): SgrMouseEvent | null {
+	// Older or unavailable optional addons retain the existing parser until
+	// the frontend itself moves to Rust. Native reports skip the JS decoder.
+	if (typeof nativeParseSgrMouse === "function") {
+		const event = nativeParseSgrMouse(data);
+		if (event) {
+			const wheel = event.wheel === -1 ? -1 : event.wheel === 1 ? 1 : null;
+			return { ...event, wheel };
+		}
+	}
 	const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
 	if (!match) return null;
 	const button = Number(match[1]);

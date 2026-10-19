@@ -13,7 +13,7 @@ tok = Tokenizer.from_file(str(ROOT / "tools/cache/deepseek-v4.tokenizer.json"))
 # Required for the dead-entry probes below; a no-op for every other case.
 tok.encode_special_tokens = True
 
-corpus = json.loads((ROOT / "fixtures/corpus.json").read_text())
+corpus = json.loads((ROOT.parent / "harvest-tokenizer/fixtures/corpus.json").read_text())
 
 edge_cases = [
     # Split-chain interaction: digits then CJK then latin.
@@ -81,7 +81,7 @@ out = {
     "cases": cases,
     "v3_parity": {"text": PARITY_TEXT, "ids": v3_ids, "count": len(v3_ids)},
 }
-(ROOT / "fixtures/deepseek3.json").write_text(
+(ROOT.parent / "harvest-tokenizer/fixtures/deepseek3.json").write_text(
     json.dumps(out, ensure_ascii=False, indent=1) + "\n"
 )
 print(f"wrote {len(cases)} cases")

@@ -89,3 +89,47 @@ native_addon = rule(
         ),
     },
 )
+
+# The standalone application follows Cargo's shipping `release` profile.
+# Keep this separate from the measured addon CI profile above.
+def _application_transition_impl(settings, attr):
+    return {
+        "//command_line_option:platforms": str(attr.platform),
+        "//command_line_option:compilation_mode": "opt",
+        "@rules_rust//rust/settings:lto": "fat",
+        "@rules_rust//rust/settings:extra_rustc_flags": [
+            "-Ccodegen-units=1",
+            "-Cstrip=symbols",
+        ],
+    }
+
+_application_transition = transition(
+    implementation = _application_transition_impl,
+    inputs = [],
+    outputs = [
+        "//command_line_option:platforms",
+        "//command_line_option:compilation_mode",
+        "@rules_rust//rust/settings:lto",
+        "@rules_rust//rust/settings:extra_rustc_flags",
+    ],
+)
+
+def _application_impl(ctx):
+    binary = ctx.attr.binary[0][DefaultInfo].files_to_run.executable
+    if binary == None:
+        fail("expected an executable from {}".format(ctx.attr.binary[0].label))
+    out = ctx.actions.declare_file(ctx.label.name + "/omp")
+    ctx.actions.symlink(output = out, target_file = binary, is_executable = True)
+    return [DefaultInfo(files = depset([out]), executable = out)]
+
+native_application = rule(
+    implementation = _application_impl,
+    executable = True,
+    attrs = {
+        "binary": attr.label(cfg = _application_transition, mandatory = True),
+        "platform": attr.label(mandatory = True),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    },
+)

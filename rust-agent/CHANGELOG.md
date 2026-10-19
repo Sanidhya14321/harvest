@@ -7,6 +7,26 @@
 
 ### Added
 
+- Rust SDK converts HTML to Markdown and rasterizes SVG previews through `harvest_omp::media`.
+
+- Repair published ESM specifiers with `cargo xtask emit-extensions`, including read-only drift checks.
+
+- Rust SDK decodes SGR mouse input through `harvest_omp::tui::mouse`.
+
+- Rust SDK exposes shared syntax highlighting and incremental parser state through `harvest_omp::tui::highlight`.
+
+- Rust SDK exposes the rectangular background-fill planner through `harvest_omp::tui::deccara`.
+
+- Rust SDK exposes shared ANSI text measurement, wrapping, truncation and column slicing through `harvest_omp::tui::text`.
+
+- Rust SDK exposes the existing offline tokenizers directly through `harvest_omp::tokenizer`.
+
+- Repair ELF GNU version-definition pointers with native Rust tooling while preserving binary payloads and permissions.
+
+- Rust SDK exposes shared keyboard protocol and paste normalization helpers through `harvest_omp::tui`.
+
+- Resume text-compacted sessions, handoffs and branch summaries while honoring durable context resets and preserving historical logs.
+
 - Native grep honors shared ignore rules, supports explicit case/ignore overrides, and reports search limits.
 
 - Preserve provider usage metadata and persist normalized token/cache counts; use `--request-usage` to request streamed accounting explicitly.
@@ -26,6 +46,12 @@
 
 ### Changed
 
+- Generate and check Bazel lint policy through Rust workspace tooling.
+
+- Native packaging and installers share eight platform/ABI asset names, ship both aliases in ZIP archives, and use SHA256SUMS.txt.
+
+- Curated release notes now include native changelogs and run through Rust tooling, retaining entries from unpublished tags.
+
 - Repository credential checks now run through Rust tooling without the redundant Python scanner.
 
 - Native edits preserve BOMs, line endings and notebook metadata through the shared Rust edit engine.
@@ -35,6 +61,14 @@
 - Require host approval for mutations and shell execution, with bounded file, session, HTTP and shell output.
 
 ### Fixed
+
+- ARM64 GNU builds preserve the Cortex-A53 CPU workaround and support isolated execution checks on older GNU runtimes.
+
+- GNU release binaries enforce the GLIBC 2.17 compatibility floor and run provider/tool/session contracts on that runtime.
+
+- Install both command aliases independently of shell completions, accept existing matching aliases, and preserve unrelated commands during upgrades.
+
+- Configuration errors and SDK debug output keep API keys and credential-bearing endpoint URLs out of diagnostics.
 
 - Authorized Unix reads and hashing reject named pipes without waiting for a writer.
 

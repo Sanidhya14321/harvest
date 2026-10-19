@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use harvest_runtime::{JailedFs, MAX_FILE_BYTES, truncate_bytes};
+use harvest_runtime::{JailedFs, MAX_FILE_BYTES};
 use serde::Deserialize;
 
 use crate::chat::ToolCall;
@@ -171,7 +171,7 @@ fn bash(
 			let mut captured = String::new();
 			while let Ok(chunk) = receiver.recv_async().await {
 				let remaining = harvest_runtime::MAX_TOOL_BYTES.saturating_sub(captured.len());
-				captured.push_str(truncate_bytes(&chunk, remaining));
+				captured.push_str(harvest_runtime::truncate_bytes(&chunk, remaining));
 			}
 			captured
 		});

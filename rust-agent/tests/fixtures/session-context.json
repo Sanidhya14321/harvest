@@ -1,0 +1,633 @@
+[
+  {
+    "name": "uncompacted text history",
+    "leaf": "b",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "b",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "old assistant"
+            }
+          ],
+          "timestamp": 1
+        }
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "old user"
+      },
+      {
+        "role": "assistant",
+        "content": "old assistant"
+      }
+    ]
+  },
+  {
+    "name": "soft summary precedes kept tail and later turns",
+    "leaf": "after",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "b",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "old assistant"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "kept",
+        "parentId": "b",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "recent user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "c",
+        "parentId": "kept",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "kept",
+        "tokensBefore": 200,
+        "method": "soft"
+      },
+      {
+        "type": "message",
+        "id": "after",
+        "parentId": "c",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "post compaction"
+            }
+          ],
+          "timestamp": 1
+        }
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "Prior model work/tool state available.\nMUST build on prior work; NEVER duplicate prior work.\n\n<summary>\nResolved <cache> & persisted {{literal}}.\nContinue from the verified state.\n</summary>"
+      },
+      {
+        "role": "user",
+        "content": "recent user"
+      },
+      {
+        "role": "assistant",
+        "content": "post compaction"
+      }
+    ]
+  },
+  {
+    "name": "handoff with empty kept tail",
+    "leaf": "handoff",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "b",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "old assistant"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "handoff",
+        "parentId": "b",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "handoff",
+        "tokensBefore": 200,
+        "method": "handoff"
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "Context replaced. The <handoff> below is a handoff document a prior instance of you wrote from the full conversation. It is your own working memory, not user input.\n- First person inside it refers to you (the prior instance).\n- \"Next Steps\" is your own resumed plan; re-check it against the latest user message before acting.\n- The handoff already exists and is complete: NEVER write another handoff document unless the user explicitly asks.\nMUST build on prior work; NEVER duplicate prior work.\n\n<handoff>\nResolved <cache> & persisted {{literal}}.\nContinue from the verified state.\n</handoff>"
+      }
+    ]
+  },
+  {
+    "name": "reset after opaque compaction discards prior context",
+    "leaf": "fresh",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "b",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "old assistant"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "kept",
+        "parentId": "b",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "recent user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "c",
+        "parentId": "kept",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "kept",
+        "tokensBefore": 200,
+        "method": "remote",
+        "preserveData": {
+          "openaiRemoteCompaction": {
+            "provider": "openai-codex",
+            "replacementHistory": [
+              {
+                "type": "compaction",
+                "encrypted_content": "opaque"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "reset_boundary",
+        "id": "reset",
+        "parentId": "c",
+        "timestamp": "2026-10-18T00:00:00.000Z"
+      },
+      {
+        "type": "message",
+        "id": "fresh",
+        "parentId": "reset",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "new request"
+            }
+          ],
+          "timestamp": 1
+        }
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "new request"
+      }
+    ]
+  },
+  {
+    "name": "later compaction supersedes reset",
+    "leaf": "c2",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "b",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "old assistant"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "kept",
+        "parentId": "b",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "recent user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "c",
+        "parentId": "kept",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "kept",
+        "tokensBefore": 200,
+        "method": "soft"
+      },
+      {
+        "type": "reset_boundary",
+        "id": "reset",
+        "parentId": "c",
+        "timestamp": "2026-10-18T00:00:00.000Z"
+      },
+      {
+        "type": "message",
+        "id": "new",
+        "parentId": "reset",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "after reset"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "c2",
+        "parentId": "new",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "new",
+        "tokensBefore": 200,
+        "method": "soft"
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "Prior model work/tool state available.\nMUST build on prior work; NEVER duplicate prior work.\n\n<summary>\nResolved <cache> & persisted {{literal}}.\nContinue from the verified state.\n</summary>"
+      },
+      {
+        "role": "user",
+        "content": "after reset"
+      }
+    ]
+  },
+  {
+    "name": "selected sibling excludes newest off-branch compaction",
+    "leaf": "kept",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "b",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "old assistant"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "kept",
+        "parentId": "b",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "recent user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "sibling",
+        "parentId": "b",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "b",
+        "tokensBefore": 200,
+        "method": "soft"
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "old user"
+      },
+      {
+        "role": "assistant",
+        "content": "old assistant"
+      },
+      {
+        "role": "user",
+        "content": "recent user"
+      }
+    ]
+  },
+  {
+    "name": "branch return summary is context and empty summary is omitted",
+    "leaf": "empty",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "branch_summary",
+        "id": "branch",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "fromId": "other",
+        "summary": "Fixed A & B; preserve <tag> and {{literal}}."
+      },
+      {
+        "type": "branch_summary",
+        "id": "empty",
+        "parentId": "branch",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "fromId": "other",
+        "summary": ""
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "old user"
+      },
+      {
+        "role": "user",
+        "content": "Branch-return summary:\n\n<summary>\nFixed A & B; preserve <tag> and {{literal}}.\n</summary>"
+      }
+    ]
+  },
+  {
+    "name": "latest summary supersedes earlier summary",
+    "leaf": "c2",
+    "entries": [
+      {
+        "type": "message",
+        "id": "a",
+        "parentId": null,
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "old user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "b",
+        "parentId": "a",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "old assistant"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "message",
+        "id": "kept",
+        "parentId": "b",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "recent user"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "c",
+        "parentId": "kept",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "kept",
+        "tokensBefore": 200,
+        "method": "soft"
+      },
+      {
+        "type": "message",
+        "id": "d",
+        "parentId": "c",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "latest kept"
+            }
+          ],
+          "timestamp": 1
+        }
+      },
+      {
+        "type": "compaction",
+        "id": "c2",
+        "parentId": "d",
+        "timestamp": "2026-10-18T00:00:00.000Z",
+        "summary": "Resolved <cache> & persisted {{literal}}.\nContinue from the verified state.",
+        "firstKeptEntryId": "d",
+        "tokensBefore": 200,
+        "method": "soft"
+      }
+    ],
+    "expected": [
+      {
+        "role": "user",
+        "content": "Prior model work/tool state available.\nMUST build on prior work; NEVER duplicate prior work.\n\n<summary>\nResolved <cache> & persisted {{literal}}.\nContinue from the verified state.\n</summary>"
+      },
+      {
+        "role": "user",
+        "content": "latest kept"
+      }
+    ]
+  }
+]

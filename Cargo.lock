@@ -1798,6 +1798,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
+name = "derive_builder"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "507dfb09ea8b7fa618fcf76e953f4f5e192547945816d5358edffe39f6f94947"
+dependencies = [
+ "derive_builder_macro",
+]
+
+[[package]]
+name = "derive_builder_core"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d5bcf7b024d6835cfb3d473887cd966994907effbe9227e8c8219824d06c4e8"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "derive_builder_macro"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab63b0e2bf4d5928aff72e83a7dace85d7bba5fe12dcc3c5a572d78caffd3f3c"
+dependencies = [
+ "derive_builder_core",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3692,6 +3723,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "handlebars"
+version = "6.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75c54236f9045c8004a77942bebc52145b4844639db934a5c70fe08617fbe61a"
+dependencies = [
+ "derive_builder",
+ "log",
+ "num-order",
+ "pest",
+ "pest_derive",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "harfrust"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3717,6 +3764,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "harvest-media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "html-to-markdown-rs",
+ "image",
+ "resvg",
+ "tempfile",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "harvest-omp"
 version = "0.1.0"
 dependencies = [
@@ -3727,13 +3787,18 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "flume",
+ "handlebars",
  "harvest-brain",
+ "harvest-media",
  "harvest-runtime",
+ "harvest-tokenizer",
+ "harvest-tui",
  "pi-edit",
  "pi-shell",
  "pi-walker",
  "predicates",
  "regex",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",
@@ -3752,6 +3817,29 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "harvest-tokenizer"
+version = "0.1.0"
+dependencies = [
+ "fancy-regex 0.16.2",
+ "regex",
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "xutf",
+ "zstd",
+]
+
+[[package]]
+name = "harvest-tui"
+version = "0.1.0"
+dependencies = [
+ "phf 0.13.1",
+ "smallvec",
+ "syntect",
+ "xutf",
 ]
 
 [[package]]
@@ -5454,6 +5542,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-modular"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd8e500409e6cd603b03e477c26a6caecdc27ac58979a53e881c75eafc079f44"
+
+[[package]]
+name = "num-order"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "537b596b97c40fcf8056d153049eb22f481c17ebce72a513ec9286e4986d1bb6"
+dependencies = [
+ "num-modular",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6456,7 +6559,6 @@ dependencies = [
  "clipboard-win",
  "core-graphics",
  "enigo",
- "fancy-regex 0.16.2",
  "flume",
  "fontdue",
  "foreign-types",
@@ -6467,8 +6569,10 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "harvest-brain",
+ "harvest-media",
+ "harvest-tokenizer",
+ "harvest-tui",
  "heapless 0.9.3",
- "html-to-markdown-rs",
  "icy_sixel",
  "ignore",
  "image",
@@ -6486,7 +6590,6 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "pdf-inspector",
- "phf 0.13.1",
  "pi-ast",
  "pi-diff",
  "pi-edit",
@@ -6501,13 +6604,10 @@ dependencies = [
  "rayon",
  "regex",
  "reis",
- "resvg",
  "serde",
  "serde_json",
  "smallvec",
- "syntect",
  "tempfile",
- "tiktoken-rs",
  "tinyvec",
  "tokio",
  "tokio-util",
@@ -6521,7 +6621,6 @@ dependencies = [
  "xutf",
  "xxhash-rust",
  "zbus",
- "zstd",
  "zune-jpeg",
 ]
 
@@ -9131,6 +9230,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 
 [[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10667,8 +10772,10 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tempfile",
  "toml_edit",
+ "zip",
 ]
 
 [[package]]
@@ -10937,6 +11044,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.5",
+]
+
+[[package]]
+name = "zip"
+version = "9.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "nix 0.31.3",
+ "typed-path",
 ]
 
 [[package]]

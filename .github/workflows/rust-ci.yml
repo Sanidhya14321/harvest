@@ -26,8 +26,10 @@ jobs:
       - name: Install authoritative workspace toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-      - run: cargo fmt -p harvest-runtime -p harvest-brain -p harvest-omp -p xtask -- --check
-      - run: cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-omp -p xtask --all-targets --all-features -- -D warnings
+      - run: cargo fmt -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp -p xtask -- --check
+      - run: cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp -p xtask --all-targets --all-features -- -D warnings
+      - run: cargo xtask clippy-config --check
+      - run: cargo xtask theme-index --check
       - run: cargo xtask migration
       - run: cargo xtask capabilities
   test:
@@ -55,19 +57,68 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           key: test-${{ matrix.os }}-${{ matrix.features }}
-      - run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-omp --no-default-features --features "${FEATURES}"
+      - run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp --no-default-features --features "${FEATURES}"
       - name: Release-profile contracts
-        run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-omp --release --no-default-features --features "${FEATURES}"
+        run: cargo xtask test -p xtask -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp --release --no-default-features --features "${FEATURES}"
       - run: cargo build --locked -p harvest-omp --no-default-features --features "${FEATURES}"
       - run: cargo run --locked -p harvest-omp --bin harvest -- --help
       - run: cargo run --locked -p harvest-omp --bin omp -- brain --scope project organize --dry-run --json
+
+  hermetic-gnu:
+    name: Portable GNU artifact (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
+        with:
+          tool: cargo-nextest
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Build the shipping profile and enforce its ABI ceiling
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          bazel build "//:app-linux-${ARCH}" --jobs=2
+          mkdir -p portable
+          cp "bazel-bin/app-linux-${ARCH}/omp" portable/omp
+          cargo xtask package verify-glibc --binary portable/omp --max-glibc 2.17
+      - name: Provider, file tool, persistence and streamed resume through the actual artifact
+        env:
+          HARVEST_TEST_BINARY: ${{ github.workspace }}/portable/omp
+        run: cargo xtask test -p harvest-omp --test cli --all-features
+      - name: Execute the same artifact contracts on GNU libc 2.17
+        run: sh rust-agent/tests/portable-gnu.sh portable/omp
+      - name: Preserve the AArch64 CPU erratum mitigation through the driver
+        if: matrix.arch == 'arm64'
+        run: |
+          set -euo pipefail
+          bazel build //bazel/tests:aarch64-erratum //bazel/tests:aarch64-erratum-unfixed --platforms=//bazel/platforms:linux-arm64 --jobs=2
+          bazel-bin/bazel/tests/aarch64-erratum
+          set +e
+          bazel-bin/bazel/tests/aarch64-erratum-unfixed
+          status=$?
+          set -e
+          test "${status}" -eq 1
 
   installers:
     name: Installers (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -103,7 +154,7 @@ jobs:
             -D rustdoc::invalid_html_tags
             -D rustdoc::bare_urls
         run: >-
-          cargo doc -p harvest-runtime -p harvest-brain -p harvest-omp -p xtask
+          cargo doc -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp -p xtask
           --no-deps --all-features --document-private-items --locked
 
 
@@ -122,20 +173,25 @@ jobs:
       - run: cargo hack check -p harvest-omp --feature-powerset --locked
 
 
+  shipping-targets:
+    name: Resolve shipping artifact matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - id: matrix
+        run: echo "value=$(cargo xtask package matrix)" >>"${GITHUB_OUTPUT}"
+
   cross:
+    needs: shipping-targets
     name: Cross build ${{ matrix.target }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+      matrix: ${{ fromJson(needs.shipping-targets.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -145,7 +201,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install musl linker
-        if: runner.os == 'Linux'
+        if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
       - run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
@@ -173,7 +229,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - run: rustup component add llvm-tools-preview
       - name: Measure coverage
-        run: cargo llvm-cov nextest -p harvest-runtime -p harvest-brain -p harvest-omp -p xtask --all-features --locked --no-report
+        run: cargo llvm-cov nextest -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp -p xtask --all-features --locked --no-report
       - name: Report
         run: cargo llvm-cov report --lcov --output-path lcov.info
       - name: Enforce the floor
@@ -252,7 +308,7 @@ jobs:
             exit 0
           fi
           if ! gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" \
-            --json assets --jq '.assets[].name' | grep -qx "omp-linux-x86_64"; then
+            --json assets --jq '.assets[].name' | grep -qx "omp-linux-x64"; then
             echo "present=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -271,9 +327,9 @@ jobs:
           tag="${TAG}"
           version=${tag#v}
           gh release download "${tag}" --repo "${GITHUB_REPOSITORY}" \
-            --pattern SHA256SUMS --dir homebrew-release
+            --pattern SHA256SUMS.txt --dir homebrew-release
           cargo xtask package homebrew --version "${version}" \
-            --checksums homebrew-release/SHA256SUMS \
+            --checksums homebrew-release/SHA256SUMS.txt \
             --output homebrew-release/omp.rb
       - name: Stage the formula in a test tap
         if: steps.release.outputs.present == 'true'
@@ -305,12 +361,12 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup show
-      - run: cargo xtask check -p harvest-runtime -p harvest-brain -p harvest-omp -p xtask --all-features
+      - run: cargo xtask check -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp -p xtask --all-features
 
   ci:
     name: Rust CI
     if: always()
-    needs: [checks, test, installers, docs, features, cross, coverage, package, homebrew, toolchain]
+    needs: [checks, test, hermetic-gnu, installers, docs, features, cross, coverage, package, homebrew, toolchain]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed

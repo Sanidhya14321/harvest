@@ -4,9 +4,19 @@
 
 ### Added
 
+- Expose bounded native rectangular-fill analysis, encoding and frame planning helpers.
+
+- Expose terminal output chunk boundaries and backlog progress detection for Rust SDK and TUI consumers.
+
+- Expose bounded terminal input framing with host-driven deadlines for SDK and TUI consumers.
+
+- Expose shared Rust keyboard text and tmux paste decoding for native SDK and TUI consumers.
+
 - Added native project and user Markdown brain indexing and retrieval.
 
 ### Fixed
+
+- Terminal output rejects oversized frames without partial writes and releases detached descriptors after stalled output resumes.
 
 - Fixed concurrent shell cancellation waits and preserved the first cancellation reason.
 - Fixed local native builds using the development profile.

@@ -37,7 +37,7 @@ pub struct SessionDocument {
 fn has_string(object: &SessionObject, key: &str, expected: &str) -> bool {
 	decoded_string(object, key).is_ok_and(|value| value == expected)
 }
-fn decoded_string(object: &SessionObject, key: &str) -> Result<String> {
+pub(crate) fn decoded_string(object: &SessionObject, key: &str) -> Result<String> {
 	serde_json::from_str(
 		object
 			.get(key)

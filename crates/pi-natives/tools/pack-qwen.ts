@@ -15,7 +15,7 @@
 // Run: bun tools/pack-qwen.ts
 
 const SRC = new URL("cache/qwen3.8.tokenizer.json", import.meta.url).pathname;
-const OUT = new URL("../data/qwen3.bin.zst", import.meta.url).pathname;
+const OUT = new URL("../../harvest-tokenizer/data/qwen3.bin.zst", import.meta.url).pathname;
 
 const VOCAB_SIZE = 248_044; // base vocab; 33 added tokens (248044-248076) excluded
 const ALPHABET_SIZE = 256;
@@ -107,4 +107,6 @@ const raw = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 
 const packed = Bun.zstdCompressSync(raw, { level: 19 });
 await Bun.write(OUT, packed);
-console.log(`qwen3: ${entries.length} entries (${dead} dead slots emptied), raw ${raw.length} B -> ${packed.length} B zstd`);
+console.log(
+	`qwen3: ${entries.length} entries (${dead} dead slots emptied), raw ${raw.length} B -> ${packed.length} B zstd`,
+);

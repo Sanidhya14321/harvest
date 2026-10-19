@@ -4,7 +4,7 @@
 # Note: musl addons intentionally reuse the plain linux-<arch> filenames — the
 # loader never sees gnu and musl side by side; release jobs keep them apart.
 
-load("//bazel:defs.bzl", "native_addon")
+load("//bazel:defs.bzl", "native_addon", "native_application")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -54,4 +54,17 @@ filegroup(
         ":natives-darwin-arm64",
         ":natives-darwin-x64-baseline",
     ],
+)
+
+# GNU standalone releases must share the explicit GLIBC 2.17 toolchain.
+native_application(
+    name = "app-linux-x64",
+    binary = "//rust-agent:omp",
+    platform = "//bazel/platforms:linux-x64-baseline",
+)
+
+native_application(
+    name = "app-linux-arm64",
+    binary = "//rust-agent:omp",
+    platform = "//bazel/platforms:linux-arm64",
 )

@@ -138,6 +138,12 @@ stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
+    ${lib.optionalString stdenv.hostPlatform.isLinux ''
+      echo "Building native ELF fixup tooling"
+      cargo build --locked --release -p xtask
+      export HARVEST_FIXUP_XTASK="$PWD/target/release/xtask"
+    ''}
+
     echo "Building pi-natives"
     cargo build --release -p pi-natives ${lib.optionalString withWaylandScreencast "--features wayland-pipewire"}
     install -Dm755 "target/release/${platform.nativeLibrary}" \
@@ -239,7 +245,7 @@ stdenv.mkDerivation {
   # which the field can be corrected; wrapProgram moved the real ELF to
   # `.omp-wrapped`.
   preInstallCheck = lib.optionalString stdenv.hostPlatform.isLinux ''
-    bun ${../scripts/fix-dt-verdef.ts} "$out/bin/.omp-wrapped"
+    "$HARVEST_FIXUP_XTASK" fix-elf-verdef --workspace "$out" bin/.omp-wrapped
   '';
 
   doInstallCheck = true;

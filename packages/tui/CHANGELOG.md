@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Mouse reports use the shared Rust decoder when the native addon is available.
+
+- Syntax-highlighting grammars and streaming parser state are shared with the Rust SDK.
+
+- Rectangular background-fill planning uses the shared Rust terminal engine.
+
+- Terminal write chunking and stalled-output detection use shared Rust policy and a monotonic clock.
+
+- Terminal input framing and paste recovery use the shared Rust engine.
+
+- Keyboard text and tmux paste decoding use the shared Rust terminal protocol library.
+
+### Fixed
+
+- Preserve inverse and decorated padding when planning rectangular background fills.
+
+- Keep terminal alignment correct while streamed text contains an incomplete UTF-16 surrogate.
+
+- Terminal output stays bounded during stalled writes and releases detached terminal descriptors when output resumes.
+
 ## [0.1.0] - 2026-10-08
 
 ### Changed

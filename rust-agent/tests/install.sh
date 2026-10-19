@@ -56,7 +56,7 @@ prepare_release() {
     asset=$1
     contents=$2
     printf '%s' "${contents}" >"${FIXTURES}/${asset}"
-    printf '%s  dist/%s\n' "$(sha256 "${FIXTURES}/${asset}")" "${asset}" >"${FIXTURES}/SHA256SUMS"
+    printf '%s  dist/%s\n' "$(sha256 "${FIXTURES}/${asset}")" "${asset}" >"${FIXTURES}/SHA256SUMS.txt"
 }
 
 cat >"${FAKE_BIN}/uname" <<'EOF'
@@ -128,6 +128,15 @@ else
     cp "$OMP_TEST_FIXTURES/${url##*/}" "$output"
 fi
 EOF
+cat >"${FAKE_BIN}/ldd" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${OMP_TEST_LIBC:-glibc}"
+EOF
+cat >"${FAKE_BIN}/sysctl" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${OMP_TEST_TRANSLATED:-0}"
+EOF
+chmod +x "${FAKE_BIN}/ldd" "${FAKE_BIN}/sysctl"
 chmod +x "${FAKE_BIN}/uname" "${FAKE_BIN}/curl"
 
 run_installer() {
@@ -151,30 +160,61 @@ run_installer() {
 printf 'test: installs a pinned Linux x86_64 release\n'
 case_dir=${TEST_ROOT}/linux-x86
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-x86_64 'linux x86 binary'
+prepare_release omp-linux-x64 'linux x86 binary'
 run_installer "${case_dir}/home" Linux x86_64 --version 1.2.3 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
 assert_equals 'linux x86 binary' "$(cat "${bin_dir}/omp")"
 [ -x "${bin_dir}/omp" ] || fail "installed Unix binary is not executable"
-assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-x86_64' "${DOWNLOAD_LOG}"
+assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-x64' "${DOWNLOAD_LOG}"
 assert_contains 'verified SHA-256 checksum' "${case_dir}.out"
 
 printf 'test: selects the latest macOS Apple Silicon release\n'
 case_dir=${TEST_ROOT}/macos-arm
 bin_dir=${case_dir}/bin
-prepare_release omp-macos-aarch64 'macOS ARM binary'
+prepare_release omp-darwin-arm64 'macOS ARM binary'
 before=$(wc -l <"${DOWNLOAD_LOG}" | tr -d ' ')
 run_installer "${case_dir}/home" Darwin arm64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
 assert_equals 'macOS ARM binary' "$(cat "${bin_dir}/omp")"
-assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-macos-aarch64' "${DOWNLOAD_LOG}"
+assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-darwin-arm64' "${DOWNLOAD_LOG}"
 assert_equals "$((before + 3))" "$(wc -l <"${DOWNLOAD_LOG}" | tr -d ' ')"
 
 printf 'test: selects the Linux ARM64 release\n'
 case_dir=${TEST_ROOT}/linux-arm
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-aarch64 'Linux ARM binary'
+prepare_release omp-linux-arm64 'Linux ARM binary'
 run_installer "${case_dir}/home" Linux aarch64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
 assert_equals 'Linux ARM binary' "$(cat "${bin_dir}/omp")"
-assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-aarch64' "${DOWNLOAD_LOG}"
+assert_contains 'https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/omp-linux-arm64' "${DOWNLOAD_LOG}"
+
+printf 'test: selects native musl, Rosetta and Windows ARM64 assets\n'
+for routing in 'Linux x86_64 musl 0 omp-linux-musl-x64 omp' 'Linux aarch64 musl 0 omp-linux-musl-arm64 omp' 'Darwin x86_64 glibc 1 omp-darwin-arm64 omp' 'MINGW64_NT aarch64 glibc 0 omp-windows-arm64.exe omp.exe'; do
+    set -- ${routing}
+    case_dir=${TEST_ROOT}/route-$5
+    prepare_release "$5" "binary for $5"
+    OMP_TEST_LIBC=$3 OMP_TEST_TRANSLATED=$4 run_installer "${case_dir}/home" "$1" "$2" --version 1.2.3 --bin-dir "${case_dir}/bin" >"${case_dir}.out" 2>&1
+    assert_equals "binary for $5" "$(cat "${case_dir}/bin/$6")"
+    assert_contains "releases/download/v1.2.3/$5" "${DOWNLOAD_LOG}"
+done
+
+printf 'test: installs and upgrades both aliases with an unsupported shell\n'
+case_dir=${TEST_ROOT}/alias-upgrade
+bin_dir=${case_dir}/bin
+prepare_release omp-linux-x64 'first binary'
+run_installer "${case_dir}/home" Linux x86_64 --version 1.2.3 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
+assert_equals 'first binary' "$(cat "${bin_dir}/harvest")"
+prepare_release omp-linux-x64 'second binary'
+run_installer "${case_dir}/home" Linux x86_64 --version 1.2.3 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
+assert_equals 'second binary' "$(cat "${bin_dir}/omp")"
+assert_equals 'second binary' "$(cat "${bin_dir}/harvest")"
+
+printf 'test: an unrelated harvest alias prevents replacing either command\n'
+printf 'user-owned command' >"${bin_dir}/different"
+mv "${bin_dir}/different" "${bin_dir}/harvest"
+prepare_release omp-linux-x64 'third binary'
+if run_installer "${case_dir}/home" Linux x86_64 --version 1.2.3 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1; then
+    fail 'unrelated harvest alias was overwritten'
+fi
+assert_equals 'second binary' "$(cat "${bin_dir}/omp")"
+assert_equals 'user-owned command' "$(cat "${bin_dir}/harvest")"
 
 printf 'test: rejects invalid release redirects before fetching assets\n'
 for latest_url in 'https://example.com/releases/tag/v1.2.3' 'https://github.com/Sanidhya14321/harvest/releases/tag/v1.2.3-beta.1'; do
@@ -192,14 +232,14 @@ case_dir=${TEST_ROOT}/invalid-checksum
 mkdir -p "${case_dir}/bin"
 printf 'existing binary' >"${case_dir}/bin/omp"
 for checksum_case in duplicate missing malformed; do
-    prepare_release omp-linux-x86_64 'new binary'
+    prepare_release omp-linux-x64 'new binary'
     case "${checksum_case}" in
         duplicate)
-            cp "${FIXTURES}/SHA256SUMS" "${FIXTURES}/duplicate"
-            cat "${FIXTURES}/duplicate" >>"${FIXTURES}/SHA256SUMS"
+            cp "${FIXTURES}/SHA256SUMS.txt" "${FIXTURES}/duplicate"
+            cat "${FIXTURES}/duplicate" >>"${FIXTURES}/SHA256SUMS.txt"
             ;;
-        missing) printf '%064d  omp-linux-aarch64\n' 0 >"${FIXTURES}/SHA256SUMS" ;;
-        malformed) printf 'invalid  omp-linux-x86_64\n' >"${FIXTURES}/SHA256SUMS" ;;
+        missing) printf '%064d  omp-linux-arm64\n' 0 >"${FIXTURES}/SHA256SUMS.txt" ;;
+        malformed) printf 'invalid  omp-linux-x64\n' >"${FIXTURES}/SHA256SUMS.txt" ;;
         *) fail "unsupported checksum fixture" ;;
     esac
     before=$(wc -l <"${DOWNLOAD_LOG}" | tr -d ' ')
@@ -216,8 +256,8 @@ case_dir=${TEST_ROOT}/bad-checksum
 bin_dir=${case_dir}/bin
 mkdir -p "${bin_dir}"
 printf 'existing binary' >"${bin_dir}/omp"
-printf 'tampered binary' >"${FIXTURES}/omp-linux-x86_64"
-printf '%064d  omp-linux-x86_64\n' 0 >"${FIXTURES}/SHA256SUMS"
+printf 'tampered binary' >"${FIXTURES}/omp-linux-x64"
+printf '%064d  omp-linux-x64\n' 0 >"${FIXTURES}/SHA256SUMS.txt"
 if run_installer "${case_dir}/home" Linux x86_64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1; then
     fail "checksum mismatch unexpectedly succeeded"
 fi
@@ -228,7 +268,7 @@ printf 'test: installs completions for the configured shell\n'
 case_dir=${TEST_ROOT}/completions
 home_dir=${case_dir}/home
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-x86_64 '#!/bin/sh
+prepare_release omp-linux-x64 '#!/bin/sh
 set -eu
 [ "$1" = completions ] && [ "$2" = bash ] && [ "$3" = --install ] && [ "$4" = --automatic ]
 target=${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/omp
@@ -242,22 +282,22 @@ printf 'test: installs harvest when SHELL is empty\n'
 case_dir=${TEST_ROOT}/empty-shell
 home_dir=${case_dir}/home
 bin_dir=${case_dir}/bin
-prepare_release omp-linux-x86_64 '#!/bin/sh
+prepare_release omp-linux-x64 '#!/bin/sh
 set -eu
 [ "$1" = completions ] && [ "$2" = bash ] && [ "$3" = --install ] && [ "$4" = --automatic ]
 target=${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/omp
 mkdir -p "$(dirname "$target")"
 printf "fallback bash completions\\n" >"$target"
-ln -s omp "$(dirname "$0")/harvest"'
+'
 OMP_TEST_SHELL='' run_installer "${home_dir}" Linux x86_64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
-[ -L "${bin_dir}/harvest" ] || fail "harvest was not installed when SHELL was empty"
+[ -f "${bin_dir}/harvest" ] || fail "harvest was not installed when SHELL was empty"
 assert_contains 'fallback bash completions' "${home_dir}/.local/share/bash-completion/completions/omp"
 assert_contains 'SHELL is not set; using bash completion paths' "${case_dir}.out"
 
 printf 'test: updates a shell profile once for the default bin directory\n'
 case_dir=${TEST_ROOT}/path-update
 home_dir=${case_dir}/home
-prepare_release omp-linux-x86_64 '#!/bin/sh
+prepare_release omp-linux-x64 '#!/bin/sh
 exit 0'
 mkdir -p "${home_dir}"
 for run in 1 2; do
@@ -301,12 +341,12 @@ if [ "${OMP_TEST_ROOT_DEFAULT:-0}" = 1 ]; then
     [ ! -e /usr/local/bin/harvest ] || fail "/usr/local/bin/harvest already exists"
     case_dir=${TEST_ROOT}/root-default
     home_dir=${case_dir}/home
-    prepare_release omp-linux-x86_64 '#!/bin/sh
+    prepare_release omp-linux-x64 '#!/bin/sh
 set -eu
 case "$1" in
     completions)
         [ "$2" = bash ] && [ "$3" = --install ] && [ "$4" = --automatic ]
-        ln -s omp "$(dirname "$0")/harvest"
+
         ;;
     --version) printf "omp test\\n" ;;
     *) exit 2 ;;

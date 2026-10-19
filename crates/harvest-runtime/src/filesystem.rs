@@ -28,6 +28,22 @@ pub struct JailedFs {
 	directory: Dir,
 }
 
+/// Closing before unlink also releases staging files on Windows and unwinds.
+struct StagedFile<'a> {
+	directory:      &'a Dir,
+	name:           PathBuf,
+	file:           Option<CapabilityFile>,
+	remove_on_drop: bool,
+}
+impl Drop for StagedFile<'_> {
+	fn drop(&mut self) {
+		drop(self.file.take());
+		if self.remove_on_drop {
+			let _cleanup = self.directory.remove_file(&self.name);
+		}
+	}
+}
+
 /// A lock is tied to the authorized open file, not a pathname reopened later.
 #[derive(Debug)]
 pub struct RootLock {
@@ -162,6 +178,18 @@ impl JailedFs {
 		read_bounded(file, limit)
 	}
 
+	/// Open an authorized, regular file as a pinned read-only descriptor for a
+	/// child process. Checks the initial size; callers must bound consumption
+	/// if another writer may grow the file after opening.
+	pub fn open_read(&self, path: &Path, initial_limit: u64) -> Result<File> {
+		let relative = self.relative(path)?;
+		let file = self.open_regular(&relative)?;
+		if file.metadata()?.len() > initial_limit {
+			bail!("file exceeds descriptor byte limit");
+		}
+		Ok(file.into_std())
+	}
+
 	/// Hash a regular file incrementally through the authorized directory
 	/// handle. The limit bounds disk work, rather than allocating the entire
 	/// asset.
@@ -212,7 +240,33 @@ impl JailedFs {
 		self.atomic_persist(path, bytes, true)
 	}
 
+	/// Stage bounded streamed content before replacing the authorized path.
+	/// Reader errors and size-limit failures leave the previous file intact.
+	pub fn atomic_write_from(&self, path: &Path, reader: impl Read, limit: u64) -> Result<u64> {
+		let mut copied = 0;
+		self.atomic_persist_with(path, false, |file| {
+			copied = io::copy(&mut reader.take(limit.saturating_add(1)), file)?;
+			if copied > limit {
+				bail!("streamed file exceeds its byte limit");
+			}
+			Ok(())
+		})?;
+		Ok(copied)
+	}
+
 	fn atomic_persist(&self, path: &Path, bytes: &[u8], create_only: bool) -> Result<()> {
+		self.atomic_persist_with(path, create_only, |file| {
+			file.write_all(bytes)?;
+			Ok(())
+		})
+	}
+
+	fn atomic_persist_with(
+		&self,
+		path: &Path,
+		create_only: bool,
+		write: impl FnOnce(&mut CapabilityFile) -> Result<()>,
+	) -> Result<()> {
 		let (directory, name) = self.parent(path, true)?;
 		let old_permissions = match directory.symlink_metadata(&name) {
 			Ok(metadata) => {
@@ -236,31 +290,35 @@ impl JailedFs {
 		options.write(true).create_new(true);
 		#[cfg(unix)]
 		options.mode(0o600);
-		let mut file = directory.open_with(&temp, &options)?;
-		let result = (|| -> Result<()> {
-			file.write_all(bytes)?;
-			if let Some(permissions) = old_permissions {
-				file.set_permissions(permissions)?;
-			}
-			file.sync_all()?;
-			drop(file);
-			if create_only {
-				directory.hard_link(&temp, &directory, &name).context(
+		let file = directory.open_with(&temp, &options)?;
+		let mut staged = StagedFile {
+			directory:      &directory,
+			name:           temp,
+			file:           Some(file),
+			remove_on_drop: true,
+		};
+		let file = staged.file.as_mut().context("staging file is closed")?;
+		write(file)?;
+		if let Some(permissions) = old_permissions {
+			file.set_permissions(permissions)?;
+		}
+		file.sync_all()?;
+		drop(staged.file.take());
+		if create_only {
+			directory
+				.hard_link(&staged.name, &directory, &name)
+				.context(
 					"could not publish new file without overwriting; destination filesystem must \
 					 support hard links",
 				)?;
-				directory.remove_file(&temp)?;
-			} else {
-				directory.rename(&temp, &directory, &name)?;
-			}
-			#[cfg(unix)]
-			directory.open(".")?.sync_all()?;
-			Ok(())
-		})();
-		if result.is_err() {
-			let _cleanup = directory.remove_file(&temp);
+			directory.remove_file(&staged.name)?;
+		} else {
+			directory.rename(&staged.name, &directory, &name)?;
 		}
-		result
+		staged.remove_on_drop = false;
+		#[cfg(unix)]
+		directory.open(".")?.sync_all()?;
+		Ok(())
 	}
 
 	pub fn append(&self, path: &Path, bytes: &[u8], limit: usize) -> Result<()> {

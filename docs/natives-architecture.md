@@ -83,8 +83,8 @@ Set `PI_DEBUG_STARTUP` to emit synchronous `[startup]` markers to stderr around 
 `crates/pi-natives/src/lib.rs` registers the current modules:
 
 - platform/runtime: `appearance`, `clipboard`, `crash_handler`, `desktop`, `devicecheck`, `file_lock`, `iofs`, `power`, `prof`, `ps`, `pty`, `shell`, `spelling`, `tty_writer`, `vcs`;
-- media/live: `audio`, `live`, `sixel`, `snapcompact`, `svg`;
-- code/data: `ast`, `block`, `diff`, `fd`, `glob`, `glob_util`, `grep`, `highlight`, `html`, `keys`, `pdf`, `summary`, `text`, `tokens`, `utok`, `vectors`, `workspace`;
+- media/live: `audio`, `live`, `sixel`, `snapcompact`, `svg` (binding over `harvest-media::svg`);
+- code/data: `ast`, `block`, `deccara` (binding over `harvest-tui::deccara`), `diff`, `fd`, `glob`, `glob_util`, `grep`, `highlight` (binding over `harvest-tui::highlight`), `html` (binding over `harvest-media::html`), `keys`, `pdf`, `summary`, `text` (binding over `harvest-tui::text`), `tokens` (binding over `harvest-tokenizer`), `vectors`, `workspace`;
 - isolation/task support: `iso`, `task`, plus N-API boundary/conversion helpers (`js`, crate-private `utils`, test-only `testing`);
 - language metadata re-exported from `pi_ast::language`.
 

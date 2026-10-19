@@ -1,12 +1,13 @@
 use std::{
 	ffi::OsString,
+	fmt,
 	path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Settings {
 	pub model:     String,
 	pub base_url:  String,
@@ -14,7 +15,7 @@ pub struct Settings {
 	pub max_steps: u32,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Overrides {
 	pub model:     Option<String>,
 	pub base_url:  Option<String>,
@@ -22,7 +23,7 @@ pub struct Overrides {
 	pub max_steps: Option<u32>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Environment {
 	pub model:     Option<String>,
 	pub base_url:  Option<String>,
@@ -30,12 +31,42 @@ pub struct Environment {
 	pub max_steps: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Deserialize, Default)]
 struct FileSettings {
 	model:     Option<String>,
 	base_url:  Option<String>,
 	api_key:   Option<String>,
 	max_steps: Option<u32>,
+}
+
+impl fmt::Debug for Settings {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		formatter
+			.debug_struct("Settings")
+			.field("model", &self.model)
+			.field("max_steps", &self.max_steps)
+			.finish_non_exhaustive()
+	}
+}
+
+impl fmt::Debug for Overrides {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		formatter
+			.debug_struct("Overrides")
+			.field("model", &self.model)
+			.field("max_steps", &self.max_steps)
+			.finish_non_exhaustive()
+	}
+}
+
+impl fmt::Debug for Environment {
+	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+		formatter
+			.debug_struct("Environment")
+			.field("model", &self.model)
+			.field("max_steps", &self.max_steps)
+			.finish_non_exhaustive()
+	}
 }
 
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
@@ -127,13 +158,21 @@ fn read_file(root: &Path) -> Result<FileSettings> {
 		return Ok(FileSettings::default());
 	};
 	let text = std::str::from_utf8(&bytes).context("configuration is not UTF-8")?;
-	toml::from_str(text).context("failed to parse .omp/config.toml")
+	// TOML diagnostics include the source line and can expose an unterminated
+	// API key, URL credentials or a nearby secret. Do not retain their chain.
+	toml::from_str(text).map_err(|error: toml::de::Error| {
+		if let Some(span) = error.span() {
+			anyhow::anyhow!("failed to parse .omp/config.toml at byte {}", span.start)
+		} else {
+			anyhow::anyhow!("failed to parse .omp/config.toml")
+		}
+	})
 }
 
 fn parse_steps(value: &str) -> Result<u32> {
 	value
 		.parse::<u32>()
-		.with_context(|| format!("OMP_MAX_STEPS is not a whole number: {value}"))
+		.context("OMP_MAX_STEPS is not a whole number")
 		.and_then(|steps| {
 			if steps == 0 {
 				bail!("OMP_MAX_STEPS must be at least 1");

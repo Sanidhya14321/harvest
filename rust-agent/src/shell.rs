@@ -55,6 +55,18 @@ fn place_shortcut(executable: &Path) -> Result<()> {
 	let parent = executable
 		.parent()
 		.context("the omp executable has no parent directory")?;
+	// ZIP/binstall installations carry both real binaries. Do not create a
+	// wrapper over the already installed executable or over this invocation.
+	#[cfg(windows)]
+	{
+		let native_alias = parent.join("harvest.exe");
+		if same_binary(&native_alias, executable) {
+			return Ok(());
+		}
+		if native_alias.symlink_metadata().is_ok() {
+			bail!("refusing to replace {}", native_alias.display());
+		}
+	}
 	let shortcut = parent.join(shortcut_name());
 	if same_shortcut(&shortcut, executable) {
 		return Ok(());
@@ -71,11 +83,44 @@ fn same_shortcut(shortcut: &Path, executable: &Path) -> bool {
 	}
 	#[cfg(unix)]
 	{
-		fs::read_link(shortcut).ok().as_deref() == Some(executable)
+		same_binary(shortcut, executable)
 	}
 	#[cfg(windows)]
 	{
 		fs::read_to_string(shortcut).unwrap_or_default() == shortcut_body(executable)
+	}
+}
+
+fn same_binary(alias: &Path, executable: &Path) -> bool {
+	if alias.symlink_metadata().is_err() {
+		return false;
+	}
+	if let (Ok(alias), Ok(executable)) = (fs::canonicalize(alias), fs::canonicalize(executable))
+		&& alias == executable
+		&& executable.is_file()
+	{
+		return true;
+	}
+
+	let Some(parent) = executable.parent() else {
+		return false;
+	};
+	let Ok(fs) = harvest_runtime::JailedFs::open(parent) else {
+		return false;
+	};
+	let Some(source) = executable.file_name() else {
+		return false;
+	};
+	let Some(alias) = alias.file_name() else {
+		return false;
+	};
+	const BINARY_LIMIT: u64 = 256 * 1024 * 1024;
+	match (
+		fs.hash_file(Path::new(source), BINARY_LIMIT),
+		fs.hash_file(Path::new(alias), BINARY_LIMIT),
+	) {
+		(Ok(left), Ok(right)) => left == right,
+		_ => false,
 	}
 }
 
@@ -182,5 +227,50 @@ mod tests {
 		};
 		let error = install("tcsh", &layout, "script").unwrap_err();
 		assert!(error.to_string().contains("unsupported"), "{error}");
+	}
+
+	#[test]
+	fn identical_installed_aliases_accept_completions_from_either_entrypoint() {
+		let root = tempfile::tempdir().unwrap();
+		let bin = root.path().join("bin");
+		fs::create_dir(&bin).unwrap();
+		let omp = bin.join(if cfg!(windows) { "omp.exe" } else { "omp" });
+		let harvest = bin.join(if cfg!(windows) {
+			"harvest.exe"
+		} else {
+			"harvest"
+		});
+		fs::write(&omp, b"same installed executable").unwrap();
+		fs::copy(&omp, &harvest).unwrap();
+		for executable in [omp, harvest.clone()] {
+			let layout = Layout {
+				home: root.path().join("home"),
+				data: root.path().join("data"),
+				state: root.path().join("state"),
+				executable,
+			};
+			let path = install("bash", &layout, "completions").unwrap();
+			assert_eq!(fs::read(path).unwrap(), b"completions");
+			assert_eq!(fs::read(&harvest).unwrap(), b"same installed executable");
+		}
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn relative_package_manager_alias_is_not_replaced_or_rejected() {
+		let root = tempfile::tempdir().unwrap();
+		let bin = root.path().join("bin");
+		fs::create_dir(&bin).unwrap();
+		let executable = bin.join("omp");
+		fs::write(&executable, "installed").unwrap();
+		std::os::unix::fs::symlink("omp", bin.join("harvest")).unwrap();
+		let layout = Layout {
+			home: root.path().join("home"),
+			data: root.path().join("data"),
+			state: root.path().join("state"),
+			executable,
+		};
+		assert_eq!(fs::read(install("bash", &layout, "complete").unwrap()).unwrap(), b"complete");
+		assert_eq!(fs::read_link(bin.join("harvest")).unwrap(), std::path::Path::new("omp"));
 	}
 }

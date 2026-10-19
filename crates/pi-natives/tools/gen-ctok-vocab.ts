@@ -1,5 +1,5 @@
 /**
- * Regenerates compact ctok vocabulary data for `src/utok/claude/`
+ * Regenerates compact ctok vocabulary data for `../../harvest-tokenizer/src/utok/claude/`
  * (`tools/cache/ctok_*.bin`).
  *
  * Source of truth is the measured vocabulary of sanderland/ctok (MIT), pinned
@@ -8,11 +8,11 @@
  * glued contraction spellings, and emits the version-2 front-coded binary
  * format below — cutting ~4.7 MB of upstream JSON to ~254 KB of embedded
  * data. If the pin moves, also regenerate
- * `src/utok/claude/testdata/fixtures.json` against the same ctok release
- * (`uv run --with ctok …`; see the fixture doc in `src/utok/claude/mod.rs`).
+ * `../../harvest-tokenizer/src/utok/claude/testdata/fixtures.json` against the same ctok release
+ * (`uv run --with ctok …`; see the fixture doc in `../../harvest-tokenizer/src/utok/claude/mod.rs`).
  *
  * Format (little-endian; parsed by `VocabCore::parse` in
- * `src/utok/claude/engine.rs`):
+ * `../../harvest-tokenizer/src/utok/claude/engine.rs`):
  *
  *   magic            b"CTOK"
  *   version          u8 = 2

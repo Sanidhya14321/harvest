@@ -256,6 +256,24 @@ export declare class NativeOAuthCallback {
   dispose(): Promise<undefined>
 }
 
+export declare class NativeStdinBuffer {
+  constructor(options?: NativeStdinBufferOptions | undefined | null)
+  get chunkBytes(): number
+  process(bytes: Buffer, kittyActive: boolean, endOfRead: boolean): Array<string | NativePasteEvent>
+  tick(kittyActive: boolean): Array<string | NativePasteEvent>
+  delay(): number | null
+  flush(kittyActive: boolean): Array<string>
+  clear(): void
+  getBuffer(): string
+}
+
+export declare class NativeStdoutStallWatchdog {
+  constructor(armBytes?: number | undefined | null, clearBytes?: number | undefined | null, stallMs?: number | undefined | null)
+  get armed(): boolean
+  sample(pending: number, nowMs: number): boolean
+  reset(): void
+}
+
 /**
  * Long-lived cross-platform power assertion.
  *
@@ -370,44 +388,30 @@ export declare class Shell {
   liveBackgroundJobCount(): Promise<number>
 }
 
-/**
- * Dedicated writer thread for one terminal fd.
- *
- * Constructed by the TUI's `ProcessTerminal` around stdout. The fd is
- * `dup(2)`'d at construction and closed on drop, so later manipulation of the
- * original descriptor does not affect the pump.
- */
+/** Dedicated output pump owning a duplicate of the supplied Unix descriptor. */
 export declare class TtyWriter {
   /**
-   * Start a pump thread for `fd` (typically 1). Fails on non-Unix hosts and
-   * when the descriptor cannot be duplicated.
+   * Start an output thread. Descriptor duplication does not make it
+   * inheritable by child processes; the thread owns and closes the duplicate.
    */
-  constructor(fd: number)
+  constructor(fd: number, maxQueuedBytes?: number | undefined | null)
   /**
-   * Enqueue terminal output; never blocks. Returns the total bytes now
-   * pending (including this chunk).
-   *
-   * Reads the JS string as UTF-16 through the thread's scratch arena and
-   * transcodes it with `xutf` straight into the shared back buffer, so a
-   * warm writer costs no per-call heap allocation.
+   * Enqueue terminal output without waiting for the terminal. Queue overflow
+   * rejects the whole frame. Warm UTF-16 transcoding uses the scratch arena.
    */
   write(data: string): number
   /** Bytes accepted but not yet written to the terminal. */
   pending(): number
-  /** True once a write failed (dead PTY); queued output has been dropped. */
+  /** A failed backend has discarded its remaining queued output. */
   get dead(): boolean
   /**
-   * Block the calling thread until the queue drains, the writer dies, or
-   * `timeout_ms` elapses. Returns true when fully drained. Exit paths only.
+   * Wait for an empty queue; `dead` distinguishes discarded output from
+   * delivery.
    */
   flushSync(timeoutMs: number): boolean
   /**
-   * Flush (bounded by `flush_timeout_ms`), stop the pump thread, and join it.
-   *
-   * A pump stuck in a blocked `write(2)` (stalled-but-alive PTY consumer)
-   * cannot be joined without freezing the caller: when the bounded flush
-   * times out the thread is detached instead and its dup'd fd is leaked —
-   * closing it under a blocked write would race kernel fd reuse.
+   * Stop accepting frames and flush within the deadline. A blocked operation
+   * detaches; its descriptor closes after that operation returns.
    */
   stop(flushTimeoutMs: number): void
 }
@@ -655,6 +659,8 @@ export declare function __ompInstallTokioRuntime(): void
  * `package.json#version`).
  */
 export declare function __piNativesV0_1_0(): void
+
+export declare function analyzeDeccaraLine(line: string, width: number): NativeBgFillAnalysis | null
 
 /**
  * Apply ast-grep rewrite rules to matching files; honors `dryRun` and returns
@@ -971,6 +977,12 @@ export interface ClipboardImage {
   mimeType: string
 }
 
+/**
+ * Return UTF-16 end offsets so JavaScript slices preserve original code units,
+ * including isolated surrogates that the terminal itself encodes as U+FFFD.
+ */
+export declare function conptyChunkEnds(data: string, maxChunkBytes?: number | undefined | null): Array<number>
+
 /** A context line (before or after a match). */
 export interface ContextLine {
   /** 1-indexed line number in the source file. */
@@ -1016,6 +1028,15 @@ export declare function cosineSimilarityPairs(vectors: Float64Array, count: numb
  * counts, or the matching family encoding for Qwen/DeepSeek/Kimi/GLM.
  */
 export declare function countTokens(input: string | string[], encoding?: Encoding | undefined | null): number
+
+/** Decode the keypad text fast path before matching navigation bindings. */
+export declare function decodeKittyKeypadText(data: string): string | null
+
+/** Decode text-producing Kitty CSI-u or xterm modifyOtherKeys input. */
+export declare function decodePrintableKey(data: string): string | null
+
+/** Decode tmux-reencoded paste control bytes before editor sanitization. */
+export declare function decodeReencodedPasteControls(data: string): string
 
 /**
  * Decode one complete SIXEL control string into a PNG.
@@ -1425,6 +1446,8 @@ export interface EnclosingBoundaryOptions {
   ranges: Array<LineRange>
 }
 
+export declare function encodeDeccaraRectangle(top: number, left: number, bottom: number, right: number, sgr: string): string
+
 /**
  * Encode image bytes into a SIXEL escape sequence for terminal rendering.
  *
@@ -1487,6 +1510,9 @@ export declare function executeShell(options: ShellExecuteOptions, onChunk?: ((e
 
 /** Locate `<SM:EDIT path="…">` payloads the model emitted as plain text. */
 export declare function extractInlineSloppyRegions(text: string): Array<InlineSloppyRegion>
+
+/** Extract text for insertion without replaying terminal control sequences. */
+export declare function extractPrintableText(data: string): string | null
 
 /**
  * Extract the before/after slices around an overlay region.
@@ -2086,25 +2112,18 @@ export interface Match {
 }
 
 /**
- * Match input data against a key identifier string.
- *
- * Returns true when the bytes represent the specified key with modifiers.
+ * Match editor input in one bridge call, including keypad and Backspace
+ * policy.
  */
+export declare function matchesInputKey(data: string, keyId: string, kittyProtocolActive: boolean, rawBackspaceIsCtrl: boolean): boolean
+
+/** Match terminal input against a normalized key identifier. */
 export declare function matchesKey(data: string, keyId: string, kittyProtocolActive: boolean): boolean
 
-/**
- * Match Kitty protocol input against a codepoint and modifier mask.
- *
- * Returns true when the parsed sequence matches the expected codepoint (or
- * base layout key) and modifier bits.
- */
+/** Match Kitty input against a codepoint and modifier mask. */
 export declare function matchesKittySequence(data: string, expectedCodepoint: number, expectedModifier: number): boolean
 
-/**
- * Check if input matches a legacy escape sequence for the given key name.
- *
- * Returns true only when the byte sequence maps to the exact key identifier.
- */
+/** Match an exact legacy escape sequence against a key name. */
 export declare function matchesLegacySequence(data: string, keyName: string): boolean
 
 /** N-API opt-in handle for the minimizer. */
@@ -2199,10 +2218,47 @@ export interface MinimizerResult {
  */
 export declare function mmrRerankIndices(contents: Array<string>, scores: Float64Array, lambdaParam: number, topK: number): Uint32Array
 
+export interface NativeBgFillAnalysis {
+  cut: number
+  leftCol: number
+  bg: string
+}
+
+export interface NativeDeccaraCuts {
+  /**
+   * UTF-16 cutoffs; -1 means preserve the original row. Empty means no
+   * changes.
+   */
+  cuts: Array<number>
+  sequence: string
+}
+
 /** Construction options for [`NativeOAuthCallback`]. */
 export interface NativeOAuthCallbackOptions {
   /** Custom URL scheme to register. */
   scheme: string
+}
+
+export interface NativePasteEvent {
+  content: string
+  enter?: string
+}
+
+export interface NativeSgrMouseEvent {
+  button: number
+  col: number
+  row: number
+  release: boolean
+  wheel?: number
+  motion: boolean
+  leftClick: boolean
+}
+
+export interface NativeStdinBufferOptions {
+  timeout?: number
+  partialHoldTimeout?: number
+  pasteTimeout?: number
+  pasteByteLimit?: number
 }
 
 /**
@@ -2242,19 +2298,16 @@ export interface ParsedKittyResult {
   eventType?: KeyEventType
 }
 
-/**
- * Parse terminal input and return a normalized key identifier.
- *
- * Returns a key id like "escape" or "ctrl+c", or None if unrecognized.
- */
+/** Normalize editor input in one bridge call with explicit terminal facts. */
+export declare function parseInputKey(data: string, kittyProtocolActive: boolean, rawBackspaceIsCtrl: boolean): string | null
+
+/** Parse terminal input into a normalized key identifier. */
 export declare function parseKey(data: string, kittyProtocolActive: boolean): string | null
 
-/**
- * Parse a Kitty keyboard protocol sequence.
- *
- * Returns a structured parse result when the input is a valid Kitty sequence.
- */
+/** Decode a complete Kitty keyboard protocol sequence. */
 export declare function parseKittySequence(data: string): ParsedKittyResult | null
+
+export declare function parseSgrMouse(data: string): NativeSgrMouseEvent | null
 
 /** One hunk of a unified diff, matching jsdiff `structuredPatch` hunks. */
 export interface PatchHunk {
@@ -2298,6 +2351,8 @@ export interface PdfMarkdownResult {
  * be parsed or converted.
  */
 export declare function pdfToMarkdown(input: Uint8Array): Promise<PdfMarkdownResult>
+
+export declare function planDeccaraCuts(lines: string[], width: number, firstScreenRow?: number | undefined | null): NativeDeccaraCuts
 
 export interface PointerOptions {
   button?: string

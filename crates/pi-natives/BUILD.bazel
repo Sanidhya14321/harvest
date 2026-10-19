@@ -52,11 +52,7 @@ rust_shared_library(
     srcs = glob(["src/**/*.rs"]),
     aliases = aliases(),
     compile_data = glob([
-        "src/syntaxes/*.sublime-syntax",
         "src/fonts/*",
-        "data/*.bin.zst",
-        "src/utok/claude/testdata/*.json",
-        "fixtures/*.json",
     ]) + select({
         "@platforms//os:macos": [":oauth_callback_darwin_helper"],
         "//conditions:default": [":oauth_callback_relay"],
@@ -102,6 +98,9 @@ rust_shared_library(
     version = "17.1.5",
     deps = all_crate_deps(normal = True) + [
         "//crates/harvest-brain",
+        "//crates/harvest-tui",
+        "//crates/harvest-media",
+        "//crates/harvest-tokenizer",
         "//crates/pi-ast",
         "//crates/pi-diff",
         "//crates/pi-edit",

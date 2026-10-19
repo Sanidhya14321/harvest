@@ -40,6 +40,13 @@ function buildFullPaint(lines: number, lineLength: number): string {
 
 describe("issue #2034: chunk large terminal writes on Windows ConPTY", () => {
 	describe("chunkForConPTY()", () => {
+		it("preserves original surrogate code units while respecting encoded scalar boundaries", () => {
+			const data = "\ud800字\udc00🙂\nnext";
+			const chunks = chunkForConPTY(data, 2);
+			expect(chunks).toEqual(["\ud800", "字", "\udc00", "🙂", "\n", "ne", "xt"]);
+			expect(Buffer.concat(chunks.map(chunk => Buffer.from(chunk)))).toEqual(Buffer.from(data));
+		});
+
 		it("returns the original buffer untouched when its UTF-8 byte length is under the chunk size", () => {
 			const data = "small payload";
 			expect(chunkForConPTY(data, 1024)).toEqual([data]);

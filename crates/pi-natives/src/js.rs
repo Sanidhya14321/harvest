@@ -163,6 +163,13 @@ impl Deref for Utf8 {
 /// that does not fit is measured and read into an owned spill buffer.
 #[inline]
 pub fn utf16(value: JsString<'_>) -> Result<Utf16> {
+	utf16_bounded(value, usize::MAX)
+}
+
+/// Read UTF-16 while rejecting oversized input before allocating a spill
+/// buffer.
+#[inline]
+pub fn utf16_bounded(value: JsString<'_>, maximum: usize) -> Result<Utf16> {
 	let raw = value.value();
 	ARENA.with(|arena| {
 		let (start, avail_bytes) = arena.tail(2);
@@ -179,6 +186,9 @@ pub fn utf16(value: JsString<'_>) -> Result<Utf16> {
 			};
 			napi::check_status!(status, "Failed to read JavaScript string")?;
 			if written < avail - 1 {
+				if written > maximum {
+					return Err(Error::from_reason("JavaScript string exceeds the supported limit"));
+				}
 				arena.commit(start, written * 2);
 				return Ok(Utf16(TextRepr::Scratch { ptr: NonNull::new(ptr).unwrap(), len: written }));
 			}
@@ -190,6 +200,9 @@ pub fn utf16(value: JsString<'_>) -> Result<Utf16> {
 			sys::napi_get_value_string_utf16(raw.env, raw.value, ptr::null_mut(), 0, &mut len)
 		};
 		napi::check_status!(status, "Failed to measure JavaScript string")?;
+		if len > maximum {
+			return Err(Error::from_reason("JavaScript string exceeds the supported limit"));
+		}
 		let mut buf: Vec<u16> = Vec::with_capacity(len + 1);
 		let mut written = 0;
 		// SAFETY: `buf` holds the measured length plus the NUL slot.

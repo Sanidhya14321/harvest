@@ -86,10 +86,25 @@
     {
       "id": "command:completions",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/cli.rs",
+          "rust-agent/src/shell.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/cli.rs",
+          "rust-agent/src/shell.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/commands/"
+        ],
+        "removable": false
       }
     },
     {
@@ -1547,14 +1562,16 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/durable_session.rs",
-          "rust-agent/src/session_format.rs"
+          "rust-agent/src/session_format.rs",
+          "rust-agent/src/session_context.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
           "rust-agent/tests/agent_session.rs",
-          "rust-agent/tests/session_format.rs"
+          "rust-agent/tests/session_format.rs",
+          "rust-agent/tests/session_context.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -1628,10 +1645,62 @@
     {
       "id": "surface:terminal-input-resize-restoration",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "crates/harvest-tui/src/keys.rs",
+          "crates/harvest-tui/src/keys/text.rs",
+          "crates/harvest-tui/src/paste.rs",
+          "crates/harvest-tui/src/input.rs",
+          "crates/harvest-tui/src/output.rs",
+          "crates/harvest-tui/src/writer.rs",
+          "crates/harvest-tui/src/text.rs",
+          "crates/harvest-tui/src/deccara.rs",
+          "crates/harvest-tui/src/highlight.rs",
+          "crates/harvest-tui/src/mouse.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-tui/src/keys.rs",
+          "crates/harvest-tui/src/keys/text.rs",
+          "crates/harvest-tui/src/paste.rs",
+          "packages/tui/test/keys.test.ts",
+          "packages/tui/test/bracketed-paste.test.ts",
+          "crates/harvest-tui/src/input.rs",
+          "packages/tui/test/stdin-buffer.test.ts",
+          "crates/harvest-tui/src/output.rs",
+          "packages/tui/test/issue-2034-repro.test.ts",
+          "packages/tui/test/stdout-stall-watchdog.test.ts",
+          "packages/tui/test/process-terminal-render.test.ts",
+          "crates/harvest-tui/src/writer.rs",
+          "packages/natives/test/tty-writer.test.ts",
+          "packages/tui/test/terminal-oversized-frame.test.ts",
+          "crates/harvest-tui/src/text.rs",
+          "packages/tui/test/visible-width.test.ts",
+          "packages/tui/test/wrap-ansi.test.ts",
+          "packages/tui/test/truncate-to-width.test.ts",
+          "packages/tui/test/text-utils.test.ts",
+          "crates/harvest-tui/src/deccara.rs",
+          "packages/tui/test/deccara.test.ts",
+          "crates/harvest-tui/src/highlight.rs",
+          "packages/coding-agent/test/modes/theme/highlight-stream.test.ts",
+          "packages/coding-agent/test/theme-highlight-diff-parity.test.ts",
+          "crates/harvest-tui/src/mouse.rs",
+          "packages/tui/test/mouse.test.ts"
+        ]
+      },
+      "installation": "experimental-rust-sdk",
+      "legacy": {
+        "paths": [
+          "packages/tui/src/keys.ts",
+          "packages/tui/src/stdin-buffer.ts",
+          "packages/tui/src/terminal.ts",
+          "packages/tui/src/utils.ts",
+          "packages/tui/src/deccara.ts",
+          "packages/tui/src/mouse.ts"
+        ],
+        "removable": false
       }
     },
     {
@@ -1639,13 +1708,16 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/agent_session.rs"
+          "rust-agent/src/agent_session.rs",
+          "crates/harvest-tokenizer/src/",
+          "rust-agent/src/lib.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/tests/agent_session.rs"
+          "rust-agent/tests/agent_session.rs",
+          "crates/harvest-tokenizer/src/utok/tests/"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -1758,10 +1830,31 @@
     {
       "id": "surface:media-local-inference",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "crates/harvest-media/src/html.rs",
+          "crates/harvest-media/src/svg.rs",
+          "rust-agent/src/lib.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-media/src/html.rs",
+          "crates/harvest-media/src/svg.rs",
+          "packages/natives/test/native.test.ts",
+          "packages/coding-agent/test/tools/fetch-binary-dispatch.test.ts",
+          "packages/coding-agent/test/git-tui-sidebar.test.ts"
+        ]
+      },
+      "installation": "experimental-rust-sdk",
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/utils/image-loading.ts",
+          "packages/coding-agent/src/tools/fetch.ts",
+          "packages/coding-agent/src/cli/git-tui/state.ts"
+        ],
+        "removable": false
       }
     },
     {
@@ -1776,19 +1869,61 @@
     {
       "id": "surface:codegen",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "xtask/src/clippy_config.rs",
+          "xtask/src/theme_index.rs",
+          "xtask/src/emit_extensions.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "xtask/src/clippy_config.rs",
+          "xtask/src/theme_index.rs",
+          "xtask/src/emit_extensions.rs"
+        ]
+      },
+      "installation": "native-xtask",
+      "legacy": {
+        "paths": [
+          "packages/catalog/scripts/generate-models.ts",
+          "packages/coding-agent/scripts/generate-share-viewer.ts",
+          "scripts/gen-nix-bun.ts"
+        ],
+        "removable": false
       }
     },
     {
       "id": "surface:release-installers",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "xtask/src/artifacts.rs",
+          "xtask/src/packaging.rs",
+          "rust-agent/install.sh",
+          "rust-agent/install.ps1",
+          ".github/workflows/rust-release.yml",
+          "xtask/src/elf.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "xtask/tests/artifacts_cli.rs",
+          "rust-agent/tests/install.sh",
+          "rust-agent/tests/install.ps1",
+          "xtask/src/elf.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "paths": [
+          "scripts/install.sh",
+          "scripts/install.ps1",
+          ".github/workflows/release.yml"
+        ],
+        "removable": false
       }
     },
     {
