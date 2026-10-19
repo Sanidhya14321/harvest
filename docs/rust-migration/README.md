@@ -7,6 +7,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask theme-index [--check]` owns bundled theme registry generation,
+  including release regeneration and Rust CI drift checks. It fixes the stale
+  defaults path and preserves all 98 current exported names and palette values.
+  Installed no-runtime generator probes cover identifier collisions, reserved
+  names, prototype keys, deleted assets and read-only stale checks; 67 xtask
+  tests, strict Clippy, the package gate and 32 theme/startup/export tests pass.
+  The old generator is removed; its generated TypeScript registry remains until
+  the frontend consumers migrate.
+
 - `cargo xtask fix-elf-verdef --workspace ROOT FILE...` repairs stale GNU
   version-definition pointers through bounded, jailed, atomic streaming writes.
   Invalid metadata, reader failures and unwinds leave the original intact;

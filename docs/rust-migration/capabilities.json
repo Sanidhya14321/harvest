@@ -1828,13 +1828,15 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "xtask/src/clippy_config.rs"
+          "xtask/src/clippy_config.rs",
+          "xtask/src/theme_index.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "xtask/src/clippy_config.rs"
+          "xtask/src/clippy_config.rs",
+          "xtask/src/theme_index.rs"
         ]
       },
       "installation": "native-xtask",
@@ -1842,8 +1844,7 @@
         "paths": [
           "packages/catalog/scripts/generate-models.ts",
           "packages/coding-agent/scripts/generate-share-viewer.ts",
-          "scripts/gen-nix-bun.ts",
-          "scripts/sync-themes.ts"
+          "scripts/gen-nix-bun.ts"
         ],
         "removable": false
       }

@@ -28,16 +28,9 @@ struct Arguments {
 }
 
 pub fn execute(arguments: Vec<String>) -> Result<()> {
-	let args =
-		match Arguments::try_parse_from(std::iter::once("clippy-config".to_owned()).chain(arguments))
-		{
-			Ok(args) => args,
-			Err(help) if !help.use_stderr() => {
-				help.print()?;
-				return Ok(());
-			},
-			Err(error) => return Err(error.into()),
-		};
+	let Some(args) = crate::cli::arguments::<Arguments>("clippy-config", arguments)? else {
+		return Ok(());
+	};
 	if update(&args.workspace, args.check)? {
 		println!("Wrote {OUTPUT}.");
 	} else {
@@ -50,15 +43,13 @@ fn update(workspace: &Path, check: bool) -> Result<bool> {
 	let fs = JailedFs::open(workspace)?;
 	let manifest = fs.read(Path::new("Cargo.toml"), MAX_FILE_BYTES)?;
 	let rendered = render(std::str::from_utf8(&manifest).context("Cargo.toml is not UTF-8")?)?;
-	let current = fs.read_optional(Path::new(OUTPUT), MAX_FILE_BYTES)?;
-	if current.as_deref() == Some(rendered.as_bytes()) {
-		return Ok(false);
-	}
-	if check {
-		bail!("{OUTPUT} is stale; run cargo xtask clippy-config and commit the result");
-	}
-	fs.atomic_write(Path::new(OUTPUT), rendered.as_bytes())?;
-	Ok(true)
+	crate::generated::publish(
+		&fs,
+		Path::new(OUTPUT),
+		rendered.as_bytes(),
+		check,
+		"cargo xtask clippy-config",
+	)
 }
 
 fn render(manifest: &str) -> Result<String> {

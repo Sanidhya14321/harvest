@@ -370,6 +370,7 @@ async function cmdRelease(versionOrBump: string): Promise<void> {
 	// it here (like the lockfiles) so the bazel clippy policy can never drift.
 	// The release_gate CI job runs the matching `--check`.
 	await $`cargo xtask clippy-config`;
+	await $`cargo xtask theme-index`;
 	console.log();
 
 	// 5. Update changelogs

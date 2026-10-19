@@ -29,6 +29,7 @@ jobs:
       - run: cargo fmt -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp -p xtask -- --check
       - run: cargo clippy --locked -p harvest-runtime -p harvest-brain -p harvest-tui -p harvest-omp -p xtask --all-targets --all-features -- -D warnings
       - run: cargo xtask clippy-config --check
+      - run: cargo xtask theme-index --check
       - run: cargo xtask migration
       - run: cargo xtask capabilities
   test:

@@ -26,15 +26,8 @@ struct Arguments {
 }
 
 pub fn execute(arguments: Vec<String>) -> Result<()> {
-	let args = match Arguments::try_parse_from(
-		std::iter::once("fix-elf-verdef".to_owned()).chain(arguments),
-	) {
-		Ok(args) => args,
-		Err(help) if !help.use_stderr() => {
-			help.print()?;
-			return Ok(());
-		},
-		Err(error) => return Err(error.into()),
+	let Some(args) = crate::cli::arguments::<Arguments>("fix-elf-verdef", arguments)? else {
+		return Ok(());
 	};
 	let fs = JailedFs::open(&args.workspace)?;
 	for file in args.files {

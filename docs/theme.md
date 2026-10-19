@@ -15,6 +15,16 @@ The theme system drives:
 
 Primary implementation: `src/modes/theme/theme.ts`.
 
+## Updating bundled themes
+
+After adding or removing JSON assets in `packages/coding-agent/src/modes/theme/defaults`,
+run `cargo xtask theme-index` (or `bun run gen:themes`) and commit the generated
+`index.ts`. Rust CI runs `cargo xtask theme-index --check`; this reports stale
+registries without rewriting them. Release regeneration uses the same command.
+The generator preserves filenames as public theme names and assigns independent
+private bindings so hyphen/underscore names cannot collide. The registry remains
+TypeScript while its current frontend consumers migrate.
+
 ## Theme JSON shape
 
 Theme files are JSON objects validated against the runtime schema in `theme.ts` (`themeJsonSchema`) and mirrored by `src/modes/theme/theme-schema.json`.
