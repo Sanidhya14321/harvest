@@ -40,7 +40,6 @@ import {
 	generateNpmPackages,
 	LEAF_TARGETS,
 } from "../packages/natives/scripts/gen-npm-packages.ts";
-import { fixEmitExtensions } from "./fix-emit-extensions.ts";
 
 export interface PublishPackage {
 	dir: string;
@@ -257,9 +256,13 @@ async function preparePackage(pkg: PublishPackage): Promise<PackageManifest> {
 	// Both emits run under `moduleResolution: "Bundler"`, so relative
 	// specifiers land extensionless — unresolvable for a `nodenext` consumer
 	// (types) and for Node ESM at runtime (js). Rewrite them to explicit `.js`.
-	await fixEmitExtensions(path.join(pkgDir, "dist/types"), ".d.ts");
+	await $`cargo run --quiet --locked --package xtask -- emit-extensions --directory ${path.join(pkgDir, "dist/types")}`.cwd(
+		repoRoot,
+	);
 	if (pkg.publishJs) {
-		await fixEmitExtensions(path.join(pkgDir, "dist/js"), ".js");
+		await $`cargo run --quiet --locked --package xtask -- emit-extensions --directory ${path.join(pkgDir, "dist/js")} --kind js`.cwd(
+			repoRoot,
+		);
 	}
 	return rewriteManifest(pkg, !isDryRun);
 }

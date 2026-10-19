@@ -73,6 +73,17 @@ because a Rust command or tool has the same name.
   narrow overhead evidence, not an end-to-end performance claim. Catalog
   selection, message/frame accounting and compaction parity remain pending.
 
+- `cargo xtask emit-extensions --directory DIR [--kind types|js] [--check]`
+  repairs ESM specifiers in emitted package output. The retained publisher
+  invokes Rust for both declaration and runtime output; the old TS helper is
+  deleted. All 73 xtask tests, strict Clippy, root tools gate and six publisher
+  tests pass. Installed Linux tooling runs without Bun/Node on PATH and matches
+  22 fixture rewrites. Real tsgo output matches all 26 omptype files and 52
+  rewrites, including paths with spaces; Node ESM loads the repaired runtime
+  graph and correctly accepts/rejects schema inputs. Traversal/file/plan bounds,
+  lexical escapes, invalid UTF-8, external symlinks and read-only drift checks
+  have Rust contracts. The publisher and overall release cutover remain pending.
+
 - `cargo xtask theme-index [--check]` owns bundled theme registry generation,
   including release regeneration and Rust CI drift checks. It fixes the stale
   defaults path and preserves all 98 current exported names and palette values.

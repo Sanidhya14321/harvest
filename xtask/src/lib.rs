@@ -7,6 +7,7 @@ mod cli;
 pub mod clippy_config;
 pub mod development;
 pub mod elf;
+pub mod emit_extensions;
 mod generated;
 pub mod migration;
 pub mod packaging;

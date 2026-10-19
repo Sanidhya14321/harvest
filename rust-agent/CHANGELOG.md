@@ -7,6 +7,8 @@
 
 ### Added
 
+- Repair published ESM specifiers with `cargo xtask emit-extensions`, including read-only drift checks.
+
 - Rust SDK decodes SGR mouse input through `harvest_omp::tui::mouse`.
 
 - Rust SDK exposes shared syntax highlighting and incremental parser state through `harvest_omp::tui::highlight`.

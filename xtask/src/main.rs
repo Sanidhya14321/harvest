@@ -28,6 +28,7 @@ fn execute() -> Result<()> {
 		"checksums" => xtask::checksums::execute(selection),
 		"clippy-config" => xtask::clippy_config::execute(selection),
 		"fix-elf-verdef" => xtask::elf::execute(selection),
+		"emit-extensions" => xtask::emit_extensions::execute(selection),
 		"theme-index" => xtask::theme_index::execute(selection),
 		"release-notes" => xtask::release_notes::execute(selection),
 		"version" => xtask::version::execute(selection),
@@ -74,13 +75,13 @@ fn execute() -> Result<()> {
 		"help" | "--help" | "-h" => {
 			println!(
 				"cargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums OUTPUT \
-				 ASSET...\ncargo xtask theme-index --help\ncargo xtask clippy-config --help\ncargo \
-				 xtask fix-elf-verdef --help\ncargo xtask release-notes --help\ncargo xtask version \
-				 [--set VERSION --expect CURRENT]\ncargo xtask check [Cargo package selectors]\ncargo \
-				 xtask test [Cargo package and target selectors]\ncargo xtask capabilities \
-				 [--require-complete]\nTests require cargo-nextest and include doctests.\ncargo xtask \
-				 package <homebrew|winget> --help\ncargo xtask secrets --help\ncargo xtask migration \
-				 [--require-complete]"
+				 ASSET...\ncargo xtask emit-extensions --help\ncargo xtask theme-index --help\ncargo \
+				 xtask clippy-config --help\ncargo xtask fix-elf-verdef --help\ncargo xtask \
+				 release-notes --help\ncargo xtask version [--set VERSION --expect CURRENT]\ncargo \
+				 xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and target \
+				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
+				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
+				 --help\ncargo xtask secrets --help\ncargo xtask migration [--require-complete]"
 			);
 			Ok(())
 		},

@@ -1851,14 +1851,16 @@
         "status": "partial",
         "paths": [
           "xtask/src/clippy_config.rs",
-          "xtask/src/theme_index.rs"
+          "xtask/src/theme_index.rs",
+          "xtask/src/emit_extensions.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
           "xtask/src/clippy_config.rs",
-          "xtask/src/theme_index.rs"
+          "xtask/src/theme_index.rs",
+          "xtask/src/emit_extensions.rs"
         ]
       },
       "installation": "native-xtask",
