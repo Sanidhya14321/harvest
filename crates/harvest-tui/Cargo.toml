@@ -11,3 +11,5 @@ workspace = true
 
 [dependencies]
 phf.workspace = true
+smallvec.workspace = true
+xutf.workspace = true

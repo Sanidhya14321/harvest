@@ -3823,6 +3823,8 @@ name = "harvest-tui"
 version = "0.1.0"
 dependencies = [
  "phf 0.13.1",
+ "smallvec",
+ "xutf",
 ]
 
 [[package]]

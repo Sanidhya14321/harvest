@@ -7,6 +7,18 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-tui::text` now owns ANSI-aware width, wrapping, truncation and
+  column/overlay slicing. The Rust SDK calls it directly; N-API retains a thin
+  UTF-16 adapter and its existing output convention. Unchanged truncation
+  borrows its input; huge column ranges reserve against existing text instead
+  of requesting gigabytes. All 317 shared Rust tests/doctests, the 81-test
+  Bazel TUI harness, strict Clippy, both package gates and 119 focused TUI/
+  fallback contracts pass. Installed core and rebuilt-addon probes each match
+  3,074 legacy operations, including malformed UTF-16 and terminal sequences.
+  Warmed CPU-affined 18,000-operation probes overlap (old 16.98/18.81 ms,
+  shared engine 17.39/17.13 ms); no whole-app speedup is claimed. Widget layout,
+  renderer lifecycle, restoration and installed terminal parity remain pending.
+
 - `harvest-tokenizer` extracts the existing offline counting engine, embedded
   vocabularies and reference tests from N-API. The Rust SDK exports it directly;
   the legacy addon delegates to the same library. All eight vocabulary blobs
