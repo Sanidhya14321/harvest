@@ -29,6 +29,7 @@ export const LiveWebRtcPeer = nativeBindings.LiveWebRtcPeer;
 export const MacAppearanceObserver = nativeBindings.MacAppearanceObserver;
 export const NativeMarkdownBrain = nativeBindings.NativeMarkdownBrain;
 export const NativeOAuthCallback = nativeBindings.NativeOAuthCallback;
+export const NativeStdinBuffer = nativeBindings.NativeStdinBuffer;
 export const PowerAssertion = nativeBindings.PowerAssertion;
 export const Process = nativeBindings.Process;
 export const PtySession = nativeBindings.PtySession;

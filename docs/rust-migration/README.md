@@ -7,6 +7,14 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- The Rust SDK and legacy TUI now share bounded terminal input framing, paste
+  recovery and Escape deadlines through `harvest-tui::input`. The TS adapter
+  schedules host timers and delivers events. Shared Rust tests, legacy framing
+  and editor suites cover fragmented protocols, same-read paste/Enter delivery,
+  watchdogs and discarded OSC tails. Terminal lifecycle, renderer, resize,
+  restoration and native interactive installation still require implementation
+  and verification; terminal capability parity remains unverified.
+
 - Native distribution uses one eight-target registry for release/CI matrices,
   package names, Homebrew bindings and both WinGet architectures. ZIPs include
   both real aliases, deterministic metadata and legal notices; validation checks

@@ -256,6 +256,17 @@ export declare class NativeOAuthCallback {
   dispose(): Promise<undefined>
 }
 
+export declare class NativeStdinBuffer {
+  constructor(options?: NativeStdinBufferOptions | undefined | null)
+  get chunkBytes(): number
+  process(bytes: Buffer, kittyActive: boolean, endOfRead: boolean): Array<string | NativePasteEvent>
+  tick(kittyActive: boolean): Array<string | NativePasteEvent>
+  delay(): number | null
+  flush(kittyActive: boolean): Array<string>
+  clear(): void
+  getBuffer(): string
+}
+
 /**
  * Long-lived cross-platform power assertion.
  *
@@ -2208,6 +2219,18 @@ export declare function mmrRerankIndices(contents: Array<string>, scores: Float6
 export interface NativeOAuthCallbackOptions {
   /** Custom URL scheme to register. */
   scheme: string
+}
+
+export interface NativePasteEvent {
+  content: string
+  enter?: string
+}
+
+export interface NativeStdinBufferOptions {
+  timeout?: number
+  partialHoldTimeout?: number
+  pasteTimeout?: number
+  pasteByteLimit?: number
 }
 
 /**

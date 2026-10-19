@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { NativeStdinBuffer } from "@harvest/pi-natives";
 import { setKittyProtocolActive } from "@harvest/pi-tui/keys";
 import { StdinBuffer } from "@harvest/pi-tui/stdin-buffer";
 
@@ -48,6 +49,24 @@ describe("StdinBuffer", () => {
 			await Bun.sleep(2);
 		}
 	}
+
+	it("keeps same-read submit attached when the paste ends at a native transport boundary", () => {
+		const chunkBytes = new NativeStdinBuffer().chunkBytes;
+		const start = "\x1b[200~";
+		const end = "\x1b[201~";
+		const content = "x".repeat(chunkBytes - start.length - end.length);
+		const pastes: [string, string | undefined][] = [];
+		buffer.on("paste", (text, enter) => pastes.push([text, enter]));
+		processInput(`${start}${content}${end}\x1b[13;1u`);
+		expect(pastes).toEqual([[content, "\x1b[13;1u"]]);
+		expect(emittedSequences).toEqual([]);
+	});
+
+	it("rejects invalid timer options instead of wrapping host timer deadlines", () => {
+		for (const timeout of [-1, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 32]) {
+			expect(() => new StdinBuffer({ timeout })).toThrow("finite timer range");
+		}
+	});
 
 	describe("Regular Characters", () => {
 		it("should handle unicode characters", () => {

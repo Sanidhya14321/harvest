@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Terminal input framing and paste recovery use the shared Rust engine.
+
 - Keyboard text and tmux paste decoding use the shared Rust terminal protocol library.
 
 ## [0.1.0] - 2026-10-08

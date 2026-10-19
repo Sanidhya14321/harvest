@@ -1,6 +1,6 @@
 # Harvest terminal protocols
 
-`harvest-tui` owns reusable byte-level keyboard parsing and paste normalization.
+`harvest-tui` owns reusable byte-level keyboard parsing, bounded terminal framing and paste normalization.
 It has no JavaScript runtime, terminal ownership, process-global protocol switch,
 or dependency on the agent execution loop. The Rust SDK exposes it as
 `harvest_omp::tui`; the existing TUI reaches the same implementation through
@@ -32,8 +32,28 @@ Run contracts with `cargo xtask test -p harvest-tui`, including the public API
 doctest, or `bazel test //crates/harvest-tui:input_test` for the hermetic unit
 harness. Existing TUI key/editor/paste tests continue exercising the N-API path.
 
+`input::InputBuffer` frames split CSI/SS3/mouse/string sequences and bracketed
+pastes, groups raw multiline input, and recovers from lost paste/string
+terminators. Its limits count bytes. A host supplies a monotonic `Duration`,
+calls `tick` at `next_delay`, and grants a second timer turn for Escape expiry so
+already queued I/O can complete a sequence. Split reads above `MAX_INPUT_CHUNK`
+with `end_of_read=false` except on the last chunk; this keeps same-read paste
+and Enter delivery atomic. An oversized call fails before changing state.
+`clear` releases buffered payloads and deadlines; diagnostics omit payloads.
+
+The TypeScript `StdinBuffer` now only schedules host timers, converts its legacy
+text input convention, and emits events from this engine. Existing framing,
+watchdog, malformed-stream and editor contracts exercise that native bridge.
 This library is an input foundation. The existing TypeScript terminal still
-owns fragmented-input timers, paste framing, lifecycle, renderer, focus and
-resize behavior. A native interactive terminal must verify those contracts
+owns terminal lifecycle, renderer, focus and resize behavior. A native interactive terminal must verify those contracts
 before the legacy implementation can be removed. No terminal backend has been
 selected by extracting these protocol primitives.
+
+A local warm microbenchmark (nine alternating samples after three warmups,
+60,000 mixed printable/key/mouse/OSC/paste reads per sample, equal 440,000
+payload bytes) measured the old Bun 1.3.10 framer at a median 8.44 ms and the
+N-API adapter at 75.57 ms. The optimized pure Rust engine measured 8.93 ms
+with a monotonic clock and deadline query on each feed. These isolate the
+compatibility bridge cost: the legacy path is slower, and this is not an
+end-to-end terminal performance improvement or a shipping performance gate.
+The Rust application can use the engine directly without crossing N-API.

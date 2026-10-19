@@ -50,6 +50,7 @@ pub mod pdf;
 pub mod sixel;
 pub mod snapcompact;
 pub mod spelling;
+pub mod stdin;
 pub mod svg;
 pub mod utok;
 pub mod vcs;
