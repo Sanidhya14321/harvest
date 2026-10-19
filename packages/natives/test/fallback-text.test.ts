@@ -3,6 +3,7 @@ import { Ellipsis, type SliceResult } from "../native/index.js";
 import { createFallbackBindings } from "../native/loader-state.js";
 
 interface FallbackTextBindings {
+	visibleWidth(text: string, tabWidth: number): number;
 	truncateToWidth(text: string, width: number, ellipsis: Ellipsis, pad: boolean, tabWidth: number): string;
 	sliceWithWidth(text: string, start: number, length: number, strict: boolean, tabWidth: number): SliceResult;
 }
@@ -34,7 +35,8 @@ describe("JavaScript terminal text fallback", () => {
 		const result = textBindings.truncateToWidth(`${graphic}abcdef`, 4, Ellipsis.Omit, false, 3);
 
 		expect(result).toBe(`${graphic}abcd`);
-		expect(Bun.stringWidth(result, { countAnsiEscapeCodes: false })).toBe(4);
+		// The fallback width API accounts for APC; raw Bun.stringWidth does not.
+		expect(textBindings.visibleWidth(result, 3)).toBe(4);
 	});
 
 	it("keeps a BEL-terminated cursor marker intact under clipping", () => {
