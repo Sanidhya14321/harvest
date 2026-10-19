@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- Keep terminal alignment correct while streamed text contains an incomplete UTF-16 surrogate.
+
 - Terminal output stays bounded during stalled writes and releases detached terminal descriptors when output resumes.
 
 ## [0.1.0] - 2026-10-08

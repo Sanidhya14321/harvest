@@ -342,6 +342,7 @@ export function visibleWidth(str: string): number {
 	let compatibilityJamoCount = 0;
 	let fillerCount = 0;
 	let hasEsc = false;
+	let hasUnpairedSurrogate = false;
 	for (let i = 0; i < str.length; i++) {
 		const code = str.charCodeAt(i);
 		if (code === 0x09) {
@@ -351,16 +352,25 @@ export function visibleWidth(str: string): number {
 		} else if (code >= 0x3131 && code <= 0x318e) {
 			compatibilityJamoCount++;
 			if (code === HANGUL_FILLER_CODE_POINT) fillerCount++;
+		} else if (code >= 0xd800 && code <= 0xdbff) {
+			const next = str.charCodeAt(i + 1);
+			if (next >= 0xdc00 && next <= 0xdfff) i++;
+			else hasUnpairedSurrogate = true;
+		} else if (code >= 0xdc00 && code <= 0xdfff) {
+			hasUnpairedSurrogate = true;
 		}
 	}
 
-	const measurable = hasEsc && str.includes(APC_PREFIX) ? str.replace(APC_SPAN_REGEX, "") : str;
+	// Terminal UTF-8 encoding replaces unpaired surrogates with U+FFFD. Bun's
+	// width primitive otherwise prices them as zero cells, unlike that output.
+	const widthText = hasUnpairedSurrogate ? str.toWellFormed() : str;
+	const measurable = hasEsc && widthText.includes(APC_PREFIX) ? widthText.replace(APC_SPAN_REGEX, "") : widthText;
 	let width = Bun.stringWidth(measurable, STRING_WIDTH_OPTS);
 	if (tabCount > 0) width += tabCount * DEFAULT_TAB_WIDTH;
 
-	if (hasEsc && str.includes(OSC66_PREFIX)) {
+	if (hasEsc && widthText.includes(OSC66_PREFIX)) {
 		OSC66_SPAN_REGEX.lastIndex = 0;
-		for (let m = OSC66_SPAN_REGEX.exec(str); m !== null; m = OSC66_SPAN_REGEX.exec(str)) {
+		for (let m = OSC66_SPAN_REGEX.exec(widthText); m !== null; m = OSC66_SPAN_REGEX.exec(widthText)) {
 			let scale = 1;
 			let explicit: number | undefined;
 			for (const part of m[1].split(":")) {

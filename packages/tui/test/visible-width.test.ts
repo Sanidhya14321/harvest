@@ -22,6 +22,8 @@ import {
 	visibleWidth,
 } from "@harvest/pi-tui/utils";
 
+import { VirtualTerminal } from "./virtual-terminal";
+
 const ESC = "\x1b";
 const ST = "\x1b\\";
 const BEL = "\x07";
@@ -76,6 +78,17 @@ describe("visibleWidth — parity with the native width engine", () => {
 			expect(visibleWidth(input)).toBe(nativeVisibleWidth(input, TAB));
 		});
 	}
+
+	it("matches terminal UTF-8 replacement cells while a streamed surrogate is incomplete", () => {
+		for (const input of ["a\ud800", "\udc00"]) {
+			const terminal = new VirtualTerminal(20, 2);
+			terminal.write(input);
+			expect(visibleWidth(input)).toBe(terminal.getCursor().col);
+			expect(visibleWidth(input)).toBe(nativeVisibleWidth(input, TAB));
+		}
+		const scaled = `${ESC}]66;s=2;\ud800${ST}`;
+		expect(visibleWidth(scaled)).toBe(nativeVisibleWidth(scaled, TAB));
+	});
 
 	it("strips ANSI (styled text measures as its plain content)", () => {
 		expect(visibleWidth(`${ESC}[31mhello${ESC}[0m`)).toBe(5);
