@@ -1,4 +1,5 @@
 use std::{
+	borrow::Cow,
 	io,
 	os::windows::io::{FromRawHandle, OwnedHandle},
 	ptr,
@@ -15,7 +16,7 @@ pub struct PlatformFileLock {
 }
 
 pub fn try_acquire(path: &str) -> io::Result<Option<PlatformFileLock>> {
-	let name = super::memory_lock_name(path);
+	let name = super::memory_lock_name(&path_identity(path));
 	let wide_name: Vec<u16> = format!(r"Global\{name}")
 		.encode_utf16()
 		.chain(std::iter::once(0))
@@ -44,6 +45,27 @@ pub fn try_acquire(path: &str) -> io::Result<Option<PlatformFileLock>> {
 	Ok(Some(PlatformFileLock { handle: Some(handle) }))
 }
 
+// Rust canonical paths use verbatim prefixes while JS hosts can return ordinary
+// drive/UNC paths. Their spelling must not create independent kernel owners.
+fn path_identity(path: &str) -> Cow<'_, str> {
+	let Some(rest) = path.strip_prefix(r"\\?\") else {
+		return Cow::Borrowed(path);
+	};
+	if rest
+		.get(..4)
+		.is_some_and(|prefix| prefix.eq_ignore_ascii_case(r"UNC\"))
+	{
+		return Cow::Owned(format!(r"\\{}", &rest[4..]));
+	}
+	if rest.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+		&& rest.as_bytes().get(1) == Some(&b':')
+		&& rest.as_bytes().get(2) == Some(&b'\\')
+	{
+		return Cow::Borrowed(rest);
+	}
+	Cow::Borrowed(path)
+}
+
 impl PlatformFileLock {
 	#[allow(clippy::unnecessary_wraps, reason = "uniform cross-platform interface")]
 	pub fn release(&mut self) -> io::Result<()> {
@@ -60,6 +82,38 @@ mod tests {
 	};
 
 	use super::try_acquire;
+
+	#[test]
+	fn canonical_and_ordinary_windows_paths_cannot_create_separate_owners() {
+		let nonce = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.expect("clock")
+			.as_nanos();
+		for plain in [
+			format!(r"c:\harvest-{}-{nonce}\session.lock", std::process::id()),
+			format!(r"\\server\share\harvest-{}-{nonce}\session.lock", std::process::id()),
+		] {
+			let extended = if let Some(rest) = plain.strip_prefix(r"\\") {
+				format!(r"\\?\UNC\{rest}")
+			} else {
+				format!(r"\\?\{plain}")
+			};
+			let mut legacy = try_acquire(&plain)
+				.expect("legacy owner")
+				.expect("exclusive");
+			assert!(
+				try_acquire(&extended)
+					.expect("canonical contender")
+					.is_none()
+			);
+			legacy.release().expect("handoff");
+			let owner = try_acquire(&extended)
+				.expect("canonical owner")
+				.expect("exclusive");
+			assert!(try_acquire(&plain).expect("legacy contender").is_none());
+			drop(owner);
+		}
+	}
 
 	#[test]
 	fn releases_from_a_different_worker_thread() {

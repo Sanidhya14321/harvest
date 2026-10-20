@@ -1,0 +1,3 @@
+{"type":"session","id":"legacy"}
+{"type":"message","message":{"role":"hookMessage","content":"remember","providerPayload":{"signed":"opaque\u0061","n":1844674407370955161999}}}
+{"type":"compaction","firstKeptEntryIndex":1,"summary":"kept"}

@@ -2,7 +2,11 @@ import { describe, expect, it } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
-import { Shell, executeShell, listWorkspace, glob, grep, search, astGrep, astEdit, FileType } from "../native/index.js";
+import type * as Native from "../native/index.js";
+import { createFallbackBindings } from "../native/loader-state.js";
+
+const { Shell, executeShell, listWorkspace, glob, grep, search, astGrep, astEdit, FileType } =
+	createFallbackBindings() as unknown as typeof Native;
 
 describe("Native Fallback Features", () => {
 	it("executes commands and tracks working directory in FallbackShell", async () => {
@@ -119,11 +123,11 @@ describe("Native Fallback Features", () => {
 		expect(Array.isArray(searchRes.matches)).toBe(true);
 		expect(searchRes.matchCount).toBe(0);
 
-		const astGrepRes = await astGrep({ pattern: "x" } as any);
+		const astGrepRes = await astGrep({ path: ".", patterns: ["x"], lang: "typescript" });
 		expect(Array.isArray(astGrepRes.matches)).toBe(true);
 		expect(astGrepRes.totalMatches).toBe(0);
 
-		const astEditRes = await astEdit({ pattern: "x", rewrite: "y" } as any);
+		const astEditRes = await astEdit({ path: ".", rewrites: { x: "y" }, lang: "typescript" });
 		expect(Array.isArray(astEditRes.changes)).toBe(true);
 		expect(Array.isArray(astEditRes.fileChanges)).toBe(true);
 		expect(astEditRes.totalReplacements).toBe(0);

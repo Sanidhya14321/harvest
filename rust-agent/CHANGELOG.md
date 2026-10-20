@@ -7,6 +7,8 @@
 
 ### Added
 
+- Experimental asynchronous sessions, JSONL RPC and safe read-only terminal replay preserve current session context and provider usage.
+
 - Rust SDK converts HTML to Markdown and rasterizes SVG previews through `harvest_omp::media`.
 
 - Repair published ESM specifiers with `cargo xtask emit-extensions`, including read-only drift checks.

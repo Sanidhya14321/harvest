@@ -63,7 +63,7 @@ path = "src/bin/harvest.rs"
 [features]
 default = ["full"]
 core = []
-full = ["core", "dep:pi-shell", "dep:tokio", "dep:flume"]
+full = ["core", "dep:pi-shell", "dep:flume"]
 
 [dependencies]
 anyhow.workspace = true
@@ -83,7 +83,10 @@ pi-shell = { path = "../crates/pi-shell", optional = true }
 regex.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
-tokio = { workspace = true, optional = true }
+tokio.workspace = true
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }
+harvest-protocol = { path = "../crates/harvest-protocol" }
+harvest-terminal = { path = "../crates/harvest-terminal" }
 toml.workspace = true
 ureq = { version = "2.12.1", default-features = false, features = [
   "json",

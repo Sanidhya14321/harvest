@@ -30,6 +30,8 @@ rust_library(
         ":build_script",
         "//crates/harvest-brain",
         "//crates/harvest-runtime",
+        "//crates/harvest-protocol",
+        "//crates/harvest-terminal",
         "//crates/harvest-tui",
         "//crates/harvest-media",
         "//crates/harvest-tokenizer",

@@ -2,8 +2,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use harvest_runtime::{ContentDigest, JailedFs, RootLock, content_hash};
-use serde_json::{Value, json};
+use harvest_runtime::{ContentDigest, JailedFs, content_hash, file_lock::FileLock};
+use serde_json::{Value, json, value::RawValue};
 
 use crate::{
 	chat::{ChatMessage, FunctionCall, ToolCall},
@@ -11,28 +11,27 @@ use crate::{
 };
 
 /// Mutation and snapshot commands share the same cooperating-writer lease.
-pub(crate) fn lock_session(fs: &JailedFs, path: &Path) -> Result<RootLock> {
-	let mut lock = fs.relative(path)?.into_os_string();
-	lock.push(".rust-owner.lock");
-	fs.lock(Path::new(&lock))
+pub(crate) fn lock_session(fs: &JailedFs, path: &Path) -> Result<FileLock> {
+	fs.resource_lock(path)
 }
 
 pub struct DurableSession {
-	fs:         JailedFs,
-	path:       PathBuf,
-	_ownership: RootLock,
-	length:     usize,
-	digest:     ContentDigest,
-	id:         String,
-	leaf:       Option<String>,
-	messages:   Vec<ChatMessage>,
+	fs:              JailedFs,
+	path:            PathBuf,
+	_ownership:      FileLock,
+	length:          usize,
+	digest:          ContentDigest,
+	id:              String,
+	leaf:            Option<String>,
+	messages:        Vec<ChatMessage>,
+	stored_messages: Vec<Box<RawValue>>,
 }
 
 impl DurableSession {
 	/// Opens a current v3 log or creates one. Imports must use a separate file.
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
 		let fs = JailedFs::open(root)?;
-		let path = fs.relative(path)?;
+		let path = fs.resource_path(path)?;
 		let ownership = lock_session(&fs, &path)?;
 		let mut bytes = fs.read_optional(&path, SESSION_LIMIT)?.unwrap_or_default();
 		if bytes.is_empty() {
@@ -66,6 +65,14 @@ impl DurableSession {
 				.and_then(|entry| entry.get("id"))
 				.and_then(|raw| serde_json::from_str(raw.get()).ok())
 		});
+		let stored_messages = match &leaf {
+			Some(leaf) => document
+				.branch(leaf)?
+				.iter()
+				.filter_map(|entry| entry.get("message").cloned())
+				.collect(),
+			None => Vec::new(),
+		};
 		let messages = match &leaf {
 			Some(leaf) => crate::session_context::rebuild(&document.branch(leaf)?)?,
 			None => Vec::new(),
@@ -73,7 +80,17 @@ impl DurableSession {
 		validate_pairs(&messages, true)?;
 		let mut digest = ContentDigest::default();
 		digest.update(&bytes);
-		Ok(Self { fs, path, _ownership: ownership, length: bytes.len(), digest, id, leaf, messages })
+		Ok(Self {
+			fs,
+			path,
+			_ownership: ownership,
+			length: bytes.len(),
+			digest,
+			id,
+			leaf,
+			messages,
+			stored_messages,
+		})
 	}
 
 	pub fn id(&self) -> &str {
@@ -82,6 +99,10 @@ impl DurableSession {
 
 	pub fn messages(&self) -> &[ChatMessage] {
 		&self.messages
+	}
+
+	pub fn stored_messages(&self) -> &[Box<RawValue>] {
+		&self.stored_messages
 	}
 
 	pub fn leaf(&self) -> Option<&str> {
@@ -103,6 +124,25 @@ impl DurableSession {
 		model: &str,
 		usage: Option<&crate::usage::UsageReport>,
 	) -> Result<String> {
+		Ok(self
+			.commit_with_usage_receipt(message, model, usage)?
+			.entry_id)
+	}
+
+	pub fn commit_with_receipt(
+		&mut self,
+		message: &ChatMessage,
+		model: &str,
+	) -> Result<CommitReceipt> {
+		self.commit_with_usage_receipt(message, model, None)
+	}
+
+	pub fn commit_with_usage_receipt(
+		&mut self,
+		message: &ChatMessage,
+		model: &str,
+		usage: Option<&crate::usage::UsageReport>,
+	) -> Result<CommitReceipt> {
 		validate_pairs(self.messages.iter().chain(std::iter::once(message)), false)?;
 		let timestamp = chrono::Utc::now();
 		let mut stored = stored_message(message, model, timestamp.timestamp_millis())?;
@@ -142,6 +182,7 @@ impl DurableSession {
 			raw_message.insert("providerUsage".into(), usage.raw.clone());
 			raw_row.insert("message".into(), serde_json::value::to_raw_value(&raw_message)?);
 		}
+		let stored_message = raw_row["message"].clone();
 		let mut bytes = serde_json::to_vec(&raw_row)?;
 		if bytes.len() > harvest_runtime::MAX_EVENT_BYTES {
 			bail!("session event exceeds frame limit");
@@ -154,8 +195,15 @@ impl DurableSession {
 		self.digest.update(&bytes);
 		self.leaf = Some(id.clone());
 		self.messages.push(message.clone());
-		Ok(id)
+		self.stored_messages.push(stored_message.clone());
+		Ok(CommitReceipt { entry_id: id, message: stored_message })
 	}
+}
+
+#[derive(Debug)]
+pub struct CommitReceipt {
+	pub entry_id: String,
+	pub message:  Box<RawValue>,
 }
 
 pub(crate) fn replay(raw: &serde_json::value::RawValue) -> Result<ChatMessage> {
@@ -230,7 +278,7 @@ pub(crate) fn replay(raw: &serde_json::value::RawValue) -> Result<ChatMessage> {
 	})
 }
 
-fn stored_message(message: &ChatMessage, model: &str, timestamp: i64) -> Result<Value> {
+pub(crate) fn stored_message(message: &ChatMessage, model: &str, timestamp: i64) -> Result<Value> {
 	let mut blocks = Vec::new();
 	if let Some(text) = &message.content {
 		blocks.push(json!({"type":"text", "text":text}));

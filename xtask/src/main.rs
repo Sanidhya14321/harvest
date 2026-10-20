@@ -25,6 +25,12 @@ fn execute() -> Result<()> {
 	let selection: Vec<String> = arguments.collect();
 	match task.as_str() {
 		"dev" => xtask::development::execute(selection),
+		"path-versions" => xtask::versions::execute(selection),
+		"npm-versions" => xtask::npm_versions::execute(selection),
+		"registry" => xtask::registry::execute(selection),
+		"source-audit" => xtask::source_audit::execute(selection),
+		"terminal-wasm" => xtask::terminal_wasm::execute(selection),
+		"web-replay" => xtask::web_replay::execute(selection),
 		"checksums" => xtask::checksums::execute(selection),
 		"clippy-config" => xtask::clippy_config::execute(selection),
 		"fix-elf-verdef" => xtask::elf::execute(selection),
@@ -64,7 +70,7 @@ fn execute() -> Result<()> {
 			if selection
 				.iter()
 				.any(|argument| argument == "--require-complete")
-				&& progress.verified != progress.total
+				&& progress.verified != progress.retained
 			{
 				bail!(
 					"distribution cutover blocked: legacy capabilities still lack verified Rust parity"
@@ -74,13 +80,16 @@ fn execute() -> Result<()> {
 		},
 		"help" | "--help" | "-h" => {
 			println!(
-				"cargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums OUTPUT \
-				 ASSET...\ncargo xtask emit-extensions --help\ncargo xtask theme-index --help\ncargo \
-				 xtask clippy-config --help\ncargo xtask fix-elf-verdef --help\ncargo xtask \
-				 release-notes --help\ncargo xtask version [--set VERSION --expect CURRENT]\ncargo \
-				 xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and target \
-				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
-				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
+				"cargo xtask npm-versions [--check] [--release VERSION|--workspace]\ncargo xtask \
+				 path-versions [VERSION] [--check]\ncargo xtask registry --help\ncargo xtask \
+				 source-audit --help\ncargo xtask terminal-wasm [--check]\ncargo xtask web-replay \
+				 --help\ncargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums \
+				 OUTPUT ASSET...\ncargo xtask emit-extensions --help\ncargo xtask theme-index \
+				 --help\ncargo xtask clippy-config --help\ncargo xtask fix-elf-verdef --help\ncargo \
+				 xtask release-notes --help\ncargo xtask version [--set VERSION --expect \
+				 CURRENT]\ncargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo \
+				 package and target selectors]\ncargo xtask capabilities [--require-complete]\nTests \
+				 require cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
 				 --help\ncargo xtask secrets --help\ncargo xtask migration [--require-complete]"
 			);
 			Ok(())

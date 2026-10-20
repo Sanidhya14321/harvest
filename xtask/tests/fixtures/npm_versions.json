@@ -1,0 +1,61 @@
+{
+  "provenance": "Captured by executing scripts/sync-versions.ts before deletion; compare computed manifest transformations.",
+  "inputs": {
+    "packages/core/package.json": {
+      "name": "@harvest/core",
+      "version": "0.1.0",
+      "exports": {
+        ".": "./index.js"
+      }
+    },
+    "packages/app/package.json": {
+      "name": "@harvest/app",
+      "version": "0.1.0",
+      "dependencies": {
+        "@harvest/core": "^0.0.1",
+        "external": "^9"
+      },
+      "devDependencies": {
+        "@harvest/core": "0.0.1"
+      }
+    },
+    "packages/viewer/package.json": {
+      "name": "@harvest/viewer",
+      "private": true,
+      "version": "0.1.0",
+      "dependencies": {
+        "@harvest/core": "catalog:",
+        "@harvest/app": "workspace:*"
+      }
+    }
+  },
+  "outputs": {
+    "packages/core/package.json": {
+      "name": "@harvest/core",
+      "version": "0.1.0",
+      "exports": {
+        ".": "./index.js"
+      }
+    },
+    "packages/app/package.json": {
+      "name": "@harvest/app",
+      "version": "0.1.0",
+      "dependencies": {
+        "@harvest/core": "^0.1.0",
+        "external": "^9"
+      },
+      "devDependencies": {
+        "@harvest/core": "^0.1.0"
+      }
+    },
+    "packages/viewer/package.json": {
+      "name": "@harvest/viewer",
+      "private": true,
+      "version": "0.1.0",
+      "dependencies": {
+        "@harvest/core": "^0.1.0",
+        "@harvest/app": "^0.1.0"
+      }
+    }
+  }
+}

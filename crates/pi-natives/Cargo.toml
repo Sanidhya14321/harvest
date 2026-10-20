@@ -22,6 +22,8 @@ default = []
 wayland-pipewire = ["dep:pipewire"]
 
 [dependencies]
+harvest-runtime = { path = "../harvest-runtime" }
+harvest-terminal = { path = "../harvest-terminal" }
 harvest-brain = { path = "../harvest-brain" }
 harvest-tui = { path = "../harvest-tui" }
 harvest-media = { path = "../harvest-media" }

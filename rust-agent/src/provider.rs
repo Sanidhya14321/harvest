@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::fmt;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -109,24 +109,19 @@ impl HttpModel {
 		self
 	}
 
-	fn request(&self, request: CompletionRequest<'_>, streaming: bool) -> Result<ureq::Response> {
-		let agent = ureq::AgentBuilder::new()
-			.timeout(Duration::from_secs(60))
-			.build();
-		let mut call = agent.post(&endpoint(&self.settings.base_url));
-		if streaming {
-			call = call.set("Accept", "text/event-stream");
-		}
-		if !self.settings.api_key.is_empty() {
-			call = call.set("Authorization", &format!("Bearer {}", self.settings.api_key));
-		}
-		call.send_json(request).map_err(|error| {
-			match error {
-				ureq::Error::Status(code, _) => ProviderRequestError::Status(code),
-				ureq::Error::Transport(transport) => ProviderRequestError::Transport(transport.kind()),
-			}
-			.into()
-		})
+	fn request(
+		&self,
+		request: CompletionRequest<'_>,
+		streaming: bool,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<crate::transport::Response> {
+		crate::transport::Response::open(
+			endpoint(&self.settings.base_url),
+			self.settings.api_key.clone(),
+			serde_json::to_vec(&request)?,
+			streaming,
+			cancellation,
+		)
 	}
 }
 
@@ -179,9 +174,9 @@ impl Model for HttpModel {
 			stream: false,
 			stream_options: None,
 		};
-		let response = self.request(request, false)?;
-		let bytes =
-			harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
+		let response =
+			self.request(request, false, &harvest_runtime::cancel::CancelToken::default())?;
+		let bytes = harvest_runtime::read_bounded(response, harvest_runtime::MAX_HTTP_BYTES)?;
 		let parsed: CompletionResponse =
 			serde_json::from_slice(&bytes).context("model response was not valid JSON")?;
 		parsed.into_response()
@@ -218,17 +213,12 @@ impl Model for HttpModel {
 					.then_some(StreamOptions { include_usage: true }),
 			},
 			true,
+			cancellation,
 		)?;
-		if response.header("Content-Type").is_some_and(|value| {
-			value
-				.split(';')
-				.next()
-				.is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
-		}) {
-			crate::streaming::decode_response(response.into_reader(), cancellation, on_text)
+		if response.sse {
+			crate::streaming::decode_response(response, cancellation, on_text)
 		} else {
-			let bytes =
-				harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
+			let bytes = harvest_runtime::read_bounded(response, harvest_runtime::MAX_HTTP_BYTES)?;
 			let response: CompletionResponse = serde_json::from_slice(&bytes)?;
 			let response = response.into_response()?;
 			cancellation.heartbeat()?;

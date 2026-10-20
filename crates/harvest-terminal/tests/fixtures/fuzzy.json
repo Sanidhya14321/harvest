@@ -1,0 +1,242 @@
+[
+  {
+    "query": "",
+    "text": "",
+    "matches": true,
+    "score": 0
+  },
+  {
+    "query": "!!!",
+    "text": "alpha",
+    "matches": true,
+    "score": 0
+  },
+  {
+    "query": "alpha",
+    "text": "!!!",
+    "matches": false,
+    "score": 0
+  },
+  {
+    "query": "gpt4",
+    "text": "openai/gpt-4o",
+    "matches": true,
+    "score": -1348.8700000000001
+  },
+  {
+    "query": "openai",
+    "text": "openai",
+    "matches": true,
+    "score": -2400
+  },
+  {
+    "query": "image provider",
+    "text": "image provider",
+    "matches": true,
+    "score": -2599.94
+  },
+  {
+    "query": "image",
+    "text": "images image provider",
+    "matches": true,
+    "score": -1399.93
+  },
+  {
+    "query": "image",
+    "text": "reimage image provider",
+    "matches": true,
+    "score": -2399.77
+  },
+  {
+    "query": "im",
+    "text": "reim image",
+    "matches": true,
+    "score": -168.45
+  },
+  {
+    "query": "imageprovider",
+    "text": "reimageprovider image provider",
+    "matches": true,
+    "score": -1339.6999999999998
+  },
+  {
+    "query": "imageprovider",
+    "text": "imageproviders image provider",
+    "matches": true,
+    "score": -1369.5
+  },
+  {
+    "query": "images",
+    "text": "image",
+    "matches": true,
+    "score": -149
+  },
+  {
+    "query": "images",
+    "text": "ima",
+    "matches": false,
+    "score": 0
+  },
+  {
+    "query": "mage",
+    "text": "image",
+    "matches": true,
+    "score": -19
+  },
+  {
+    "query": "abc",
+    "text": "aXXXbXXXc",
+    "matches": true,
+    "score": -148
+  },
+  {
+    "query": "abc",
+    "text": "aXbXc",
+    "matches": true,
+    "score": -148
+  },
+  {
+    "query": "ip",
+    "text": "image provider",
+    "matches": true,
+    "score": -26
+  },
+  {
+    "query": "ip",
+    "text": "image alpha beta gamma provider",
+    "matches": false,
+    "score": 0
+  },
+  {
+    "query": "oa",
+    "text": "HTTPServer openAI",
+    "matches": true,
+    "score": -25.88
+  },
+  {
+    "query": "http",
+    "text": "HTTPServer",
+    "matches": true,
+    "score": -2400
+  },
+  {
+    "query": "server",
+    "text": "HTTPServer",
+    "matches": true,
+    "score": -2399.8599999999997
+  },
+  {
+    "query": "4o",
+    "text": "o4",
+    "matches": true,
+    "score": -195
+  },
+  {
+    "query": "x4y",
+    "text": "4xy",
+    "matches": true,
+    "score": -195
+  },
+  {
+    "query": "gpt 4",
+    "text": "gpt-4",
+    "matches": true,
+    "score": -2599.96
+  },
+  {
+    "query": "4",
+    "text": "GPT4",
+    "matches": true,
+    "score": -17
+  },
+  {
+    "query": "工具",
+    "text": "搜索工具 提供者",
+    "matches": true,
+    "score": -18
+  },
+  {
+    "query": "搜索",
+    "text": "搜索工具",
+    "matches": true,
+    "score": -1369
+  },
+  {
+    "query": "é",
+    "text": "café",
+    "matches": true,
+    "score": -17
+  },
+  {
+    "query": "İ",
+    "text": "İstanbul",
+    "matches": true,
+    "score": -1366.5
+  },
+  {
+    "query": "ΟΣ",
+    "text": "ΟΣ",
+    "matches": true,
+    "score": -2400
+  },
+  {
+    "query": "𐐀",
+    "text": "𐐀𐐁 𐐀",
+    "matches": true,
+    "score": -1399.95
+  },
+  {
+    "query": "1",
+    "text": "𝟙1",
+    "matches": true,
+    "score": -18
+  },
+  {
+    "query": "alpha",
+    "text": "�alpha",
+    "matches": true,
+    "score": -2400
+  },
+  {
+    "query": "a",
+    "text": "a\u0000b",
+    "matches": true,
+    "score": -2400
+  },
+  {
+    "query": "beta",
+    "text": "alpha beta",
+    "matches": true,
+    "score": -2399.83
+  },
+  {
+    "query": "alpha beta",
+    "text": "beta alpha",
+    "matches": true,
+    "score": -399.95
+  },
+  {
+    "query": "src",
+    "text": "src/components/Markdown.ts",
+    "matches": true,
+    "score": -2400
+  },
+  {
+    "query": "abcdef",
+    "text": "ace",
+    "matches": false,
+    "score": 0
+  },
+  {
+    "query": "4o",
+    "text": "gpt4o",
+    "matches": true,
+    "score": -17
+  },
+  {
+    "query": "xy",
+    "text": "x foo y",
+    "matches": true,
+    "score": -149
+  }
+]

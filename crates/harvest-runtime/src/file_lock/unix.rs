@@ -17,6 +17,10 @@ pub fn try_acquire(path: &str) -> io::Result<Option<PlatformFileLock>> {
 		.truncate(false)
 		.mode(0o600)
 		.open(path)?;
+	try_acquire_file(file)
+}
+
+pub fn try_acquire_file(file: File) -> io::Result<Option<PlatformFileLock>> {
 	// SAFETY: `file` owns a live descriptor for the duration of this call. The
 	// non-blocking operation only changes the advisory lock attached to that open
 	// file description.

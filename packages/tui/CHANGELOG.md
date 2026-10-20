@@ -57,6 +57,8 @@
 
 ### Added
 
+- Selector search can use the shared Rust matcher through native or self-contained WASM bindings.
+
 - Added Markdown hyperlink target resolution while preserving the displayed URL text.
 
 ## [18.1.6] - 2026-09-03

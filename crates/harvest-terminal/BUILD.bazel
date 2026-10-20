@@ -1,0 +1,45 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+exports_files(["Cargo.toml"])
+
+rust_library(
+    name = "harvest-terminal",
+    srcs = glob(["src/**/*.rs"]),
+    aliases = aliases(),
+    crate_name = "harvest_terminal",
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    version = "0.1.0",
+    deps = all_crate_deps(normal = True) + ["//crates/harvest-protocol", "//crates/harvest-tui"],
+)
+
+rust_test(
+    name = "contracts_test",
+    srcs = ["tests/contracts.rs"],
+    compile_data = glob(["tests/fixtures/*.json"]),
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro_dev = True),
+    deps = all_crate_deps(normal = True, normal_dev = True) + [":harvest-terminal"],
+)
+
+rust_test(
+    name = "input_test",
+    srcs = ["tests/input.rs"],
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro_dev = True),
+    deps = all_crate_deps(normal = True, normal_dev = True) + [":harvest-terminal"],
+)
+
+[
+    rust_test(
+        name = suite + "_test",
+        srcs = ["tests/" + suite + ".rs"],
+        compile_data = ["tests/fixtures/replay.jsonl"] if suite == "replay" else [],
+        edition = "2024",
+        proc_macro_deps = all_crate_deps(proc_macro_dev = True),
+        deps = all_crate_deps(normal = True, normal_dev = True) + [":harvest-terminal", "//crates/harvest-protocol"],
+    )
+    for suite in ["frame", "replay", "text"]
+]

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Static dashboard assets stay within their configured directory, serve WASM correctly, and return 404 for missing files.
+
 ## [0.1.0] - 2026-10-08
 
 ### Fixed

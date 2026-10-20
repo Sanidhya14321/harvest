@@ -29,9 +29,9 @@ pub mod block;
 pub mod brain;
 pub mod clipboard;
 pub mod crash_handler;
+pub mod deccara;
 pub mod desktop;
 pub mod devicecheck;
-pub mod deccara;
 pub mod diff;
 pub mod edit;
 pub mod fd;
@@ -63,6 +63,7 @@ pub use pi_ast::language;
 pub mod power;
 
 pub mod iso;
+mod portable_terminal;
 pub mod prof;
 pub mod ps;
 pub mod pty;

@@ -4,6 +4,10 @@ Prepared on **2026-10-20**, for the user to give to another developer or coding 
 
 ## Read this first
 
+Branch consolidation is documented in [BRANCH-INTEGRATION.md](BRANCH-INTEGRATION.md).
+Keep `ts-to-rust` as the development branch even when it temporarily matches
+`main`; integration here does not authorize publishing directly to `main`.
+
 Continue the existing migration on branch **`ts-to-rust`**. The implementation
 checkpoint before this handoff is **`6253f50`** (`mid process`). Preserve existing
 commits and user changes; do not reset the branch or restart the implementation.

@@ -447,7 +447,6 @@ mod tests {
 	}
 
 	#[test]
-	#[test]
 	fn resolve_logs_dir_defaults_under_dot_harvest() {
 		let dir = resolve_logs_dir(Path::new("/tmp/pi-natives-test-home"), None, None);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest/logs"));

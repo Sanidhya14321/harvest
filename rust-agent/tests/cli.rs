@@ -30,7 +30,7 @@ fn omp() -> Command {
 			command.env("PATH", "/nonexistent");
 			command
 		},
-		None => or_abort(Command::cargo_bin("omp")),
+		None => Command::new(env!("CARGO_BIN_EXE_omp")),
 	};
 	let _configured: &mut Command = command.env("OMP_SKIP_INTEGRATIONS", "1");
 	command

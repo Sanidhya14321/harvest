@@ -17,3 +17,21 @@ pub mod secrets;
 pub mod testing;
 pub mod theme_index;
 pub mod version;
+
+pub mod npm_versions;
+
+pub mod registry;
+
+pub mod verification;
+
+pub mod baseline;
+
+pub mod terminal_wasm;
+
+pub mod web_replay;
+
+pub mod source_audit;
+
+mod browser_check;
+
+pub mod versions;

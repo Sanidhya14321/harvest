@@ -1,0 +1,239 @@
+[
+  {
+    "method": "visibleWidth",
+    "args": [
+      "plain",
+      3
+    ],
+    "expected": 5
+  },
+  {
+    "method": "visibleWidth",
+    "args": [
+      "a\t界",
+      4
+    ],
+    "expected": 7
+  },
+  {
+    "method": "visibleWidth",
+    "args": [
+      "⚠️👨‍👩‍👧‍👦",
+      3
+    ],
+    "expected": 4
+  },
+  {
+    "method": "visibleWidth",
+    "args": [
+      "\u001b]66;s=2;Hi\u001b\\",
+      3
+    ],
+    "expected": 4
+  },
+  {
+    "method": "wrapTextWithAnsi",
+    "args": [
+      "\u001b[31mhello world\u001b[0m",
+      6,
+      3
+    ],
+    "expected": [
+      "\u001b[31mhello",
+      "\u001b[31mworld\u001b[0m"
+    ]
+  },
+  {
+    "method": "wrapTextWithAnsi",
+    "args": [
+      "longword界🙂tail",
+      5,
+      3
+    ],
+    "expected": [
+      "longw",
+      "ord界",
+      "🙂tai",
+      "l"
+    ]
+  },
+  {
+    "method": "wrapTextWithAnsi",
+    "args": [
+      "a\tb\nc",
+      5,
+      3
+    ],
+    "expected": [
+      "a\tb",
+      "c"
+    ]
+  },
+  {
+    "method": "wrapTextWithAnsi",
+    "args": [
+      "",
+      0,
+      3
+    ],
+    "expected": [
+      ""
+    ]
+  },
+  {
+    "method": "truncateToWidth",
+    "args": [
+      "\u001b[31m界🙂x\u001b[0m",
+      4,
+      0,
+      false,
+      3
+    ],
+    "expected": "\u001b[31m界\u001b[0m…"
+  },
+  {
+    "method": "truncateToWidth",
+    "args": [
+      "界",
+      4,
+      2,
+      true,
+      3
+    ],
+    "expected": "界  "
+  },
+  {
+    "method": "truncateToWidth",
+    "args": [
+      "abcdef",
+      2,
+      1,
+      false,
+      3
+    ],
+    "expected": ".."
+  },
+  {
+    "method": "truncateToWidth",
+    "args": [
+      "\ud800x",
+      8,
+      0,
+      false,
+      3
+    ],
+    "expected": "\ud800x"
+  },
+  {
+    "method": "truncateToWidth",
+    "args": [
+      "\u001b]66;s=2;Hi\u001b\\",
+      3,
+      0,
+      false,
+      3
+    ],
+    "expected": "Hi…"
+  },
+  {
+    "method": "truncateToWidth",
+    "args": [
+      "\u001b_Ga=T,f=100;YWJjZA==\u001b\\abcdef",
+      4,
+      2,
+      false,
+      3
+    ],
+    "expected": "\u001b_Ga=T,f=100;YWJjZA==\u001b\\abcd"
+  },
+  {
+    "method": "sliceWithWidth",
+    "args": [
+      "a界🙂b",
+      1,
+      3,
+      true,
+      3
+    ],
+    "expected": {
+      "text": "界",
+      "width": 2
+    }
+  },
+  {
+    "method": "sliceWithWidth",
+    "args": [
+      "\u001b[31mabcdef\u001b[0m",
+      2,
+      2,
+      true,
+      3
+    ],
+    "expected": {
+      "text": "\u001b[31mcd\u001b[0m",
+      "width": 2
+    }
+  },
+  {
+    "method": "sliceWithWidth",
+    "args": [
+      "\u001b]66;s=2;🙂x\u001b\\",
+      4,
+      2,
+      true,
+      3
+    ],
+    "expected": {
+      "text": "x",
+      "width": 1
+    }
+  },
+  {
+    "method": "sliceWithWidth",
+    "args": [
+      "abc",
+      0,
+      0,
+      false,
+      3
+    ],
+    "expected": {
+      "text": "",
+      "width": 0
+    }
+  },
+  {
+    "method": "extractSegments",
+    "args": [
+      "\u001b[31ma界b\u001b[0m",
+      1,
+      3,
+      1,
+      true,
+      3
+    ],
+    "expected": {
+      "before": "\u001b[31ma",
+      "beforeWidth": 1,
+      "after": "\u001b[31mb",
+      "afterWidth": 1
+    }
+  },
+  {
+    "method": "extractSegments",
+    "args": [
+      "a\t界🙂b",
+      2,
+      5,
+      4,
+      false,
+      4
+    ],
+    "expected": {
+      "before": "a\t",
+      "beforeWidth": 5,
+      "after": "界🙂",
+      "afterWidth": 4
+    }
+  }
+]

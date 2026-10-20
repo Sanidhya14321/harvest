@@ -4,6 +4,10 @@
 # because an ignored file stayed behind) is a hard error that fails the whole
 # workspace, not a skipped entry.
 members = [
+   "crates/harvest-protocol",
+   "crates/harvest-terminal",
+   "crates/harvest-terminal-wasm",
+   "crates/harvest-web",
    "crates/harvest-runtime",
    "crates/harvest-brain",
    "crates/harvest-tui",

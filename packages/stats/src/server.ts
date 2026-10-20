@@ -325,17 +325,23 @@ export async function handleApi(req: Request): Promise<Response> {
 /**
  * Handle static file requests.
  */
-async function handleStatic(requestPath: string): Promise<Response> {
-	const staticDir = await getEmbeddedClientDir();
+export async function handleStatic(requestPath: string, directory?: string): Promise<Response> {
+	const staticDir = path.resolve(directory ?? (await getEmbeddedClientDir()));
 	const filePath = requestPath === "/" ? "/index.html" : requestPath;
 	const fullPath = path.join(staticDir, filePath);
+	if (!fullPath.startsWith(`${staticDir}${path.sep}`)) return new Response("Not Found", { status: 404 });
 
 	const file = Bun.file(fullPath);
 	if (await file.exists()) {
-		return new Response(file);
+		return new Response(file, {
+			headers: path.extname(filePath).toLowerCase() === ".wasm" ? { "Content-Type": "application/wasm" } : undefined,
+		});
 	}
 
-	// SPA fallback
+	// Missing assets must remain failures rather than returning HTML to module/WASM loaders.
+	if (path.extname(filePath)) return new Response("Not Found", { status: 404 });
+
+	// Extensionless application routes may still enter the SPA.
 	const index = Bun.file(path.join(staticDir, "index.html"));
 	if (await index.exists()) {
 		return new Response(index);

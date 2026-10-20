@@ -47,6 +47,7 @@ export function startLocalRelay(port = 0): LocalRelay {
 	const rooms = new Map<string, Room>();
 
 	const server = Bun.serve({
+		hostname: "127.0.0.1",
 		port,
 		fetch(req, srv): Response | undefined {
 			const url = new URL(req.url);

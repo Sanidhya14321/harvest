@@ -12,7 +12,7 @@ rust_library(
     edition = "2024",
     version = "0.1.0",
     proc_macro_deps = all_crate_deps(proc_macro = True),
-    deps = all_crate_deps(normal = True),
+    deps = all_crate_deps(normal = True) + ["//crates/harvest-protocol"],
 )
 
 [
