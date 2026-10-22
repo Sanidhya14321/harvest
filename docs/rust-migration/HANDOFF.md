@@ -30,6 +30,11 @@ Completed **`tooling:version-wrapper`**: removed the unused Bun launcher for
 version synchronization. Release consumers already invoke `cargo xtask npm-versions`;
 native release/check contracts run without Bun/Node on PATH.
 
+Completed **`control:inert-data`**: source/task final gates now consistently
+accept explicitly reviewed, fully verified retained data on the existing exact
+allowlist. `verified_inert` is separate from removals; no actual source row was
+advanced by this accounting repair.
+
 Completed **`media:sixel`**: ordinary Rust/SDK and temporary N-API consumers now
 share one bounded engine. The Git-reconstructed baseline, native Rust consumer,
 rebuilt addon and host contracts pass. Its larger media capability stays partial.

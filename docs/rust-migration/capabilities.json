@@ -5513,6 +5513,29 @@
         ]
       },
       {
+        "id": "control:inert-data",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/INERT-DATA.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 111 contracts plus doctests passed",
+          "Strict Clippy passed for xtask all targets/features",
+          "Migration and task tests accept only fully verified retained data on the existing eight-path allowlist; unverified data and mislabeled executable workers cannot complete",
+          "No actual source-ledger row or immutable baseline was changed; retained-inert progress remains separate from Rust source removals"
+        ]
+      },
+      {
         "id": "control:artifact-size",
         "kind": "control",
         "state": "blocked",

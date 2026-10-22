@@ -56,6 +56,12 @@ steps; deletion conditions; exact verification commands and expected behavior;
 recovery; and required evidence. Do not make a card ready with unresolved product
 or architectural choices. New discoveries become explicit prerequisite tasks.
 
+Reviewed retained inert inputs are reported as `verified_inert`, separately from
+`verified_removed`. The exact source-audit allowlist, full contract/Rust consumer
+review and both behavioral/installed evidence are required. Labeling an arbitrary
+executable fixture as data cannot complete a task. This exception does not migrate
+any current consumer or turn a retained source into a Rust replacement.
+
 ## Implement one behavior slice
 
 1. Review the legacy contract and every connection: imports, native bindings,

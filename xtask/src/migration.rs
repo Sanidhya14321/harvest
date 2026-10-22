@@ -21,7 +21,7 @@ pub struct Ledger {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Entry {
+pub(crate) struct Entry {
 	path: String,
 	#[serde(default)]
 	task_id: Option<String>,
@@ -37,6 +37,27 @@ struct Entry {
 	rust_destination: Option<String>,
 	verification_requirements: Option<String>,
 	retirement_reason: Option<String>,
+}
+
+impl Entry {
+	pub(crate) fn verified_inert(&self) -> bool {
+		self.disposition == "fixture"
+			&& self.implementation == "complete"
+			&& self.behavioral_verification == "verified"
+			&& self.installed_verification == "verified"
+			&& self.legacy_removal == "retained"
+			&& crate::source_audit::reviewed_inert_input(&self.path)
+			&& [
+				self.contract.as_deref(),
+				self.consumers.as_deref(),
+				self.persisted_formats.as_deref(),
+				self.external_dependencies.as_deref(),
+				self.rust_destination.as_deref(),
+				self.verification_requirements.as_deref(),
+			]
+			.into_iter()
+			.all(documented)
+	}
 }
 
 fn baseline_source(path: &str) -> bool {
@@ -165,6 +186,9 @@ pub fn inspect(baseline: &Baseline, ledger: &Ledger, tracked: &[String]) -> Resu
 		if removed && !complete {
 			bail!("source removed without verified replacement or retirement: {}", entry.path);
 		}
+		if complete && !removed && entry.disposition == "fixture" && !entry.verified_inert() {
+			bail!("retained fixture is not a reviewed inert input: {}", entry.path);
+		}
 		if complete && removed {
 			completed += 1;
 		}
@@ -231,11 +255,17 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 	validate_baseline(&baseline, &original)?;
 	let tracked = git_paths(root, None)?;
 	let completed = inspect(&baseline, &ledger, &tracked)?;
+	let retained_inert = ledger
+		.entries
+		.iter()
+		.filter(|entry| entry.verified_inert())
+		.count();
 	println!("{completed}/{} source entries migrated and verified", ledger.entries.len());
+	println!("{retained_inert} reviewed inert inputs retained (separate from replacements)");
 	if arguments
 		.iter()
 		.any(|argument| argument == "--require-complete")
-		&& completed != ledger.entries.len()
+		&& completed + retained_inert != ledger.entries.len()
 	{
 		bail!("source migration incomplete; distribution cutover blocked");
 	}
@@ -284,6 +314,49 @@ mod tests {
 		entry["installed_verification"] = json!("verified");
 		entry["retirement_reason"] = serde_json::Value::Null;
 		assert!(inspect(&baseline, &ledger(&entry)?, &[]).is_err());
+		Ok(())
+	}
+	#[test]
+	fn reviewed_inert_data_completes_separately_without_exempting_executable_fixtures() -> Result<()>
+	{
+		let path =
+			"packages/coding-agent/test/fixtures/security/seeded-repository/src/safe-lookalike.ts";
+		let baseline: Baseline =
+			serde_json::from_value(json!({"version":1,"commit":"a".repeat(40),"paths":[path]}))?;
+		let mut row = json!({"path":path,"disposition":"fixture","implementation":"complete",
+			"behavioral_verification":"verified","installed_verification":"verified","legacy_removal":"retained",
+			"contract":"Scanner reads these bytes without executing them", "consumers":"Rust scanner fixture loader",
+			"persisted_formats":"Inert source input", "external_dependencies":"none", "rust_destination":"Rust scanner contracts",
+			"verification_requirements":"Native scanner consumes the input as data without a language runtime"});
+		let ledger = |value: &serde_json::Value| -> Result<Ledger> {
+			Ok(serde_json::from_value(json!({"version":1,"entries":[value]}))?)
+		};
+		let approved = ledger(&row)?;
+		assert_eq!(
+			inspect(&baseline, &approved, &[path.into()])?,
+			0,
+			"retained data is not a removed source"
+		);
+		assert_eq!(
+			approved
+				.entries
+				.iter()
+				.filter(|entry| entry.verified_inert())
+				.count(),
+			1
+		);
+		row["installed_verification"] = json!("unverified");
+		assert!(!ledger(&row)?.entries[0].verified_inert());
+		row["installed_verification"] = json!("verified");
+		row["rust_destination"] = serde_json::Value::Null;
+		assert!(inspect(&baseline, &ledger(&row)?, &[path.into()]).is_err());
+		row["rust_destination"] = json!("Rust scanner contracts");
+		let executable =
+			"packages/coding-agent/test/fixtures/security/seeded-repository/src/worker.ts";
+		row["path"] = json!(executable);
+		let other: Baseline =
+			serde_json::from_value(json!({"version":1,"commit":"a".repeat(40),"paths":[executable]}))?;
+		assert!(inspect(&other, &ledger(&row)?, &[executable.into()]).is_err());
 		Ok(())
 	}
 	#[test]

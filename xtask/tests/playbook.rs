@@ -229,3 +229,29 @@ fn native_replacement_retirement_cannot_remove_unrelated_retained_behavior() -> 
 	assert!(xtask::capabilities::inspect(&data).is_err());
 	Ok(())
 }
+
+#[test]
+fn verified_inert_inputs_have_a_separate_state_and_cannot_disguise_workers() -> Result<()> {
+	let mut data = manifest();
+	for task in data["execution"]["tasks"].as_array_mut().unwrap() {
+		task["state"] = json!("done");
+		task["review"] = json!("reviewed");
+		task["evidence"] = json!(["native-fixture-consumer-contract"]);
+	}
+	let mut sources = ledger();
+	let row = &mut sources["entries"][0];
+	*row = json!({"path":"packages/coding-agent/test/fixtures/security/seeded-repository/src/safe-lookalike.ts",
+		"task_id":"port","disposition":"fixture","implementation":"complete","behavioral_verification":"verified",
+		"installed_verification":"verified","legacy_removal":"retained","contract":"Inert scanner input",
+		"consumers":"Rust scanner", "persisted_formats":"Source data", "external_dependencies":"none",
+		"rust_destination":"Rust scanner test", "verification_requirements":"Native read-only scan"});
+	let status = xtask::playbook::inspect(&data, &sources)?;
+	assert_eq!(status.sources.get("verified_inert"), Some(&1));
+	assert!(!status.sources.contains_key("verified_removed"));
+	sources["entries"][0]["installed_verification"] = json!("unverified");
+	assert!(xtask::playbook::inspect(&data, &sources).is_err());
+	sources["entries"][0]["installed_verification"] = json!("verified");
+	sources["entries"][0]["path"] = json!("fixtures/executable-worker.ts");
+	assert!(xtask::playbook::inspect(&data, &sources).is_err());
+	Ok(())
+}

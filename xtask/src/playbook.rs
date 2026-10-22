@@ -149,14 +149,19 @@ pub fn inspect(manifest: &Value, ledger: &Value) -> Result<Status> {
 			.as_str()
 			.and_then(|id| tasks.get(id))
 			.with_context(|| format!("source has no known migration task: {path}"))?;
-		let done = row["implementation"] == "complete"
+		let removed = row["implementation"] == "complete"
 			&& row["behavioral_verification"] == "verified"
 			&& row["installed_verification"] == "verified"
 			&& row["legacy_removal"] == "removed";
+		let retained_inert = row["disposition"] == "fixture"
+			&& serde_json::from_value::<crate::migration::Entry>(row.clone())?.verified_inert();
+		let done = removed || retained_inert;
 		if owner.kind == "migration" && owner.state == "done" && !done {
 			bail!("completed migration task {} still owns unfinished source {path}", owner.id);
 		}
-		let state = if done {
+		let state = if retained_inert {
+			"verified_inert"
+		} else if removed {
 			"verified_removed"
 		} else if row["disposition"] == "review-required" {
 			"review_required"

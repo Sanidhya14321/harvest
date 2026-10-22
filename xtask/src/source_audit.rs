@@ -155,14 +155,9 @@ fn language(path: &Path) -> &'static str {
 	}
 }
 
-fn role(path: &str, language: &str) -> Role {
-	let parts: Vec<_> = path.split('/').collect();
-	if parts.contains(&"vendor") || parts.contains(&"third_party") {
-		return Role::Vendored;
-	}
-	// Most fixture directories contain executable worker/server harnesses.
-	// Only these reviewed security-scanner source inputs are language data.
-	if path
+/// Exact reviewed scanner inputs; executable fixture harnesses are not exempt.
+pub(crate) fn reviewed_inert_input(path: &str) -> bool {
+	path
 		.strip_prefix("packages/coding-agent/test/fixtures/security/seeded-repository/src/")
 		.is_some_and(|name| {
 			matches!(
@@ -176,7 +171,15 @@ fn role(path: &str, language: &str) -> Role {
 					| "ssrf.ts"
 					| "unsafe-deserialization.ts"
 			)
-		}) {
+		})
+}
+
+fn role(path: &str, language: &str) -> Role {
+	let parts: Vec<_> = path.split('/').collect();
+	if parts.contains(&"vendor") || parts.contains(&"third_party") {
+		return Role::Vendored;
+	}
+	if reviewed_inert_input(path) {
 		return Role::LanguageFixture;
 	}
 	if matches!(
