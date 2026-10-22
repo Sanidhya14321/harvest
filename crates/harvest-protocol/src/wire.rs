@@ -473,3 +473,185 @@ mod agent_event_tests {
 		assert_eq!(decoded, event);
 	}
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Participant {
+	pub name:      String,
+	pub role:      String,
+	pub read_only: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextUsage {
+	pub tokens:         Option<u64>,
+	pub context_window: Option<u64>,
+	pub percent:        Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WireModelSnapshot {
+	pub id:             String,
+	pub name:           String,
+	pub provider:       String,
+	pub context_window: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionState {
+	pub is_streaming:         bool,
+	pub queued_message_count: u64,
+	pub session_name:         Option<String>,
+	pub cwd:                  String,
+	pub model:                Option<WireModelSnapshot>,
+	pub thinking_level:       Option<String>,
+	pub context_usage:        Option<ContextUsage>,
+	pub participants:         Vec<Participant>,
+	pub is_aborting:          Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSnapshot {
+	pub id:               String,
+	pub display_name:     String,
+	pub kind:             String,
+	pub parent_id:        Option<String>,
+	pub status:           String,
+	pub has_session_file: bool,
+	pub created_at:       i64,
+	pub last_activity:    i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CollabUiSelectItem {
+	Text(String),
+	Item { label: String, description: Option<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CollabUiResponseValue {
+	Text(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CollabUiRequestDraft {
+	Select {
+		title:            String,
+		options:          Vec<CollabUiSelectItem>,
+		initial_index:    Option<u64>,
+		selection_marker: Option<String>,
+		checked_indices:  Option<Vec<u64>>,
+		markable_count:   Option<u64>,
+		help_text:        Option<String>,
+	},
+	Editor {
+		title:   String,
+		prefill: Option<String>,
+	},
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollabUiRequest {
+	#[serde(flatten)]
+	pub draft:  CollabUiRequestDraft,
+	pub req_id: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "t", rename_all = "kebab-case")]
+pub enum GuestFrame {
+	Hello {
+		proto:       u64,
+		name:        String,
+		#[serde(rename = "writeToken")]
+		write_token: Option<String>,
+	},
+	Prompt {
+		text:   String,
+		images: Option<Vec<ImageContent>>,
+	},
+	UiResponse {
+		#[serde(rename = "reqId")]
+		req_id: u64,
+		value:  Option<String>,
+	},
+	Abort,
+	AgentCmd {
+		cmd:      String,
+		#[serde(rename = "agentId")]
+		agent_id: String,
+		text:     Option<String>,
+	},
+	FetchTranscript {
+		#[serde(rename = "reqId")]
+		req_id:    u64,
+		#[serde(rename = "agentId")]
+		agent_id:  String,
+		#[serde(rename = "fromByte")]
+		from_byte: u64,
+	},
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "t", rename_all = "kebab-case")]
+pub enum HostFrame {
+	Welcome {
+		proto:       u64,
+		header:      SessionHeader,
+		state:       SessionState,
+		agents:      Vec<AgentSnapshot>,
+		#[serde(rename = "entryCount")]
+		entry_count: u64,
+		read_only:   Option<bool>,
+	},
+	SnapshotChunk {
+		entries: Vec<SessionEntry>,
+		#[serde(rename = "final")]
+		final_:  bool,
+	},
+	Entry {
+		entry: SessionEntry,
+	},
+	Event {
+		event: AgentEvent,
+	},
+	State {
+		state: SessionState,
+	},
+	Bus {
+		channel: String,
+		data:    serde_json::Value,
+	},
+	Agents {
+		agents: Vec<AgentSnapshot>,
+	},
+	UiRequest {
+		request: CollabUiRequest,
+	},
+	UiRequestEnd {
+		#[serde(rename = "reqId")]
+		req_id: u64,
+	},
+	Transcript {
+		#[serde(rename = "reqId")]
+		req_id:   u64,
+		text:     String,
+		#[serde(rename = "newSize")]
+		new_size: u64,
+		error:    Option<String>,
+	},
+	Bye {
+		reason: String,
+	},
+	Error {
+		message: String,
+	},
+}
