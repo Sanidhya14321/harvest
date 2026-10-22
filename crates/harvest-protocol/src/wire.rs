@@ -277,3 +277,101 @@ mod wire_message_tests {
 		assert_eq!(decoded, msg);
 	}
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionHeader {
+	#[serde(rename = "type")]
+	pub kind:      String,
+	pub id:        String,
+	pub title:     Option<String>,
+	pub timestamp: String,
+	pub cwd:       String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryBase {
+	pub id:        String,
+	pub parent_id: Option<String>,
+	pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageEntry {
+	#[serde(flatten)]
+	pub base:    EntryBase,
+	pub message: WireMessage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomMessageEntry {
+	#[serde(flatten)]
+	pub base:        EntryBase,
+	#[serde(rename = "customType")]
+	pub custom_type: String,
+	pub content:     WireContent,
+	pub details:     Option<serde_json::Value>,
+	pub display:     bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionEntry {
+	#[serde(flatten)]
+	pub base:                EntryBase,
+	pub summary:             String,
+	#[serde(rename = "shortSummary")]
+	pub short_summary:       Option<String>,
+	#[serde(rename = "firstKeptEntryId")]
+	pub first_kept_entry_id: String,
+	#[serde(rename = "tokensBefore")]
+	pub tokens_before:       u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchSummaryEntry {
+	#[serde(flatten)]
+	pub base:    EntryBase,
+	#[serde(rename = "fromId")]
+	pub from_id: String,
+	pub summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelChangeEntry {
+	#[serde(flatten)]
+	pub base:  EntryBase,
+	pub model: String,
+	pub role:  Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThinkingLevelChangeEntry {
+	#[serde(flatten)]
+	pub base:           EntryBase,
+	#[serde(rename = "thinkingLevel")]
+	pub thinking_level: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SessionEntry {
+	#[serde(rename = "message")]
+	Message(MessageEntry),
+	#[serde(rename = "custom_message")]
+	CustomMessage(CustomMessageEntry),
+	#[serde(rename = "compaction")]
+	Compaction(CompactionEntry),
+	#[serde(rename = "branch_summary")]
+	BranchSummary(BranchSummaryEntry),
+	#[serde(rename = "model_change")]
+	ModelChange(ModelChangeEntry),
+	#[serde(rename = "thinking_level_change")]
+	ThinkingLevelChange(ThinkingLevelChangeEntry),
+}
