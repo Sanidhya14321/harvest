@@ -47,6 +47,10 @@ Completed **`control:oauth-fixtures`**: 19 refresh-race assertions and the AI
 TypeScript check pass. Fixtures use the existing refresh hook before seeding;
 production logic and all original CAS/disable assertions remain intact.
 
+Completed **`control:legacy-workspace`**: all 49 workspace chunks and seven
+planner/watchdog contracts pass. All 414 AI test files remain covered exactly
+once. Keep prior failed transition receipts as failed historical evidence.
+
 Current foundation repair: **`control:portability`**. Linux runtime/memory/tooling
 contracts, strict Clippy and tokenizer rustdoc pass. Push the repair and inspect
 Windows/macOS CI results before marking it done. `control:coverage` remains

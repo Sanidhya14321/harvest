@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { describeChunkFailure } from "./ci-test-ts.ts";
+import * as path from "node:path";
+import { describeChunkFailure, workspaceTestCommands } from "./ci-test-ts.ts";
 
 // The two ways a chunk reaches SIGKILL are indistinguishable by exit code, so
 // these drive real subprocesses to produce a genuine 137 rather than asserting
@@ -70,4 +71,23 @@ describe("describeChunkFailure", () => {
 			else Bun.env.OMP_TEST_CHUNK_TIMEOUT = previous;
 		}
 	});
+});
+
+test("bounded AI processes cover every test exactly once without parallel file VMs", async () => {
+	const commands = await workspaceTestCommands("packages/ai", 8);
+	const expected = await Array.fromAsync(
+		new Bun.Glob("**/*{.test,.spec,_test,_spec}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}").scan({
+			cwd: path.join(import.meta.dir, "../packages/ai"),
+		}),
+	);
+	const actual = commands.flatMap(command =>
+		command.command.filter(argument => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(argument)),
+	);
+	expect(actual.toSorted()).toEqual(expected.map(file => file.replaceAll("\\", "/")).toSorted());
+	expect(new Set(actual).size).toBe(actual.length);
+	expect(commands.length).toBeGreaterThan(1);
+	for (const command of commands) {
+		expect(command.parallel).toBe(1);
+		expect(command.command.filter(argument => argument.endsWith(".test.ts")).length).toBeLessThanOrEqual(10);
+	}
 });

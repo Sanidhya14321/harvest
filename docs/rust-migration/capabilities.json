@@ -5513,6 +5513,27 @@
         ]
       },
       {
+        "id": "control:legacy-workspace",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-WORKSPACE.md",
+        "capabilities": [],
+        "checks": [
+          "transition-workspace",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Seven planner/watchdog contracts pass, independently checking complete nonduplicated AI file coverage",
+          "All 49 workspace chunks pass with no removed tests or raised thresholds",
+          "Utils keeps one file VM; all 414 AI test files are covered in 42 fresh process chunks"
+        ]
+      },
+      {
         "id": "control:oauth-fixtures",
         "kind": "control",
         "state": "done",
