@@ -441,6 +441,9 @@ impl Mirror {
 	}
 
 	fn serve(&self, mut socket: TcpStream) -> Result<()> {
+		// macOS/Windows can inherit the listener's nonblocking mode. This
+		// bounded request reader expects to wait for headers, not WouldBlock.
+		socket.set_nonblocking(false)?;
 		socket.set_read_timeout(Some(Duration::from_secs(5)))?;
 		socket.set_write_timeout(Some(Duration::from_secs(30)))?;
 		let mut request = Vec::new();
@@ -822,4 +825,48 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 	staged.atomic_write(Path::new("receipt.json"), &serde_json::to_vec_pretty(&receipt)?)?;
 	println!("Registry closure verified; receipt: {}", output.join("receipt.json").display());
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn accepted_nonblocking_socket_waits_for_fragmented_registry_headers() -> Result<()> {
+		let root = tempfile::tempdir()?;
+		let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+		let mut client = TcpStream::connect(listener.local_addr()?)?;
+		client.set_read_timeout(Some(Duration::from_secs(5)))?;
+		let (socket, _) = listener.accept()?;
+		// Force the inherited mode on every platform, including Linux where
+		// accept normally clears it. No request bytes have been sent yet.
+		socket.set_nonblocking(true)?;
+		let mirror = Mirror {
+			fs:          Arc::new(JailedFs::open(root.path())?),
+			first_party: BTreeSet::new(),
+			client:      Client::builder().build()?,
+			offline:     true,
+			url:         format!("http://{}", listener.local_addr()?),
+			cache:       Mutex::new(BTreeMap::new()),
+			seed:        None,
+		};
+		let worker = thread::spawn(move || mirror.serve(socket));
+		thread::sleep(Duration::from_millis(50));
+		client.write_all(b"GET /index/config.json HTTP/1.1\r\nHost: localhost\r\n")?;
+		thread::sleep(Duration::from_millis(50));
+		client.write_all(b"\r\n")?;
+		let mut response = String::new();
+		client.read_to_string(&mut response)?;
+		worker.join().expect("registry worker panicked")?;
+		let (headers, body) = response
+			.split_once("\r\n\r\n")
+			.context("missing HTTP headers")?;
+		assert!(headers.starts_with("HTTP/1.1 200 OK\r\n"));
+		let body: serde_json::Value = serde_json::from_str(body)?;
+		assert_eq!(
+			body["dl"],
+			format!("http://{}/api/v1/crates/{{crate}}/{{version}}/download", listener.local_addr()?)
+		);
+		Ok(())
+	}
 }

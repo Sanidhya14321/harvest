@@ -48,3 +48,13 @@ accepted fixture streams to blocking mode before applying the existing bounded
 read timeout. Preserve the 10-second accept deadline, request limits and all
 assertions. Rerun the five provider-usage tests and Windows CI; this task remains
 in progress until that result is available.
+
+CI `39782981204`, macOS core job `119855069108`, passes all 450 debug
+contracts and 449/450 release contracts. The cached-upstream registry check
+receives an empty HTTP response for config.json. The loopback mirror accepts
+from a nonblocking listener but immediately performs blocking-style reads.
+Add a portable regression forcing an accepted socket to nonblocking and delaying
+fragmented headers, then normalize that socket before applying bounded timeouts.
+Keep offline/cache/checksum and path limits unchanged; rerun the five registry
+integration contracts and all xtask tests. Preserve this task's platform blocker
+until the updated macOS and Windows CI results exist.

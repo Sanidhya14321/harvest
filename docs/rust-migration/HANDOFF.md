@@ -50,10 +50,13 @@ runner bounds VM/process lifetimes without dropping test files. The earlier
 full-transition failure is retained as a failed receipt, not reclassified as a
 passing transition. Other legacy buckets/release evidence remain separate.
 
-`control:portability` now awaits Windows release-profile CI for the accepted
-socket blocking-mode follow-up. Five local provider-usage contracts pass;
-Linux/ARM/macOS contracts and the earlier Windows debug contracts passed CI.
-Keep the task blocked until the new Windows variants pass.
+`control:portability` awaits updated Windows/macOS CI. Five local provider-usage
+contracts pass. The registry mirror now also explicitly restores accepted socket
+blocking mode: a forced-nonblocking/delayed-header regression fails before the fix
+and passes afterward, along with all five existing offline/cache/checksum registry
+contracts. Timeouts and limits remain unchanged. The newer macOS release failure
+is captured in `tasks/PORTABILITY.md`; keep this task blocked until platform CI
+passes.
 
 Completed **`control:terminal-fixtures`**: all 38 terminal/SIXEL host contracts
 pass headlessly with an explicit fixture color mode, without a global FORCE_COLOR
