@@ -5945,7 +5945,7 @@
       {
         "id": "review:storage",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "storage",
         "depends_on": [
@@ -5960,13 +5960,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed storage/session sources; 86 ledger rows owned by migrate:storage.",
+          "Implementation contract recorded; migrate:storage made ready."
+        ]
       },
       {
         "id": "migrate:storage",
         "kind": "migration",
-        "state": "planned",
-        "review": "pending",
+        "state": "ready",
+        "review": "reviewed",
         "work_unit": "storage",
         "depends_on": [
           "review:storage",

@@ -52,3 +52,29 @@ moves. Complete migration only after behavioral and installed verification,
 eligible deletions, dependency cleanup and source/capability gate updates.
 Recovery is a scoped revert of the leaf change, preserving existing data and
 unrelated work. Evidence belongs to the task and CI artifacts, not private caches.
+
+## migrate:storage implementation contract
+
+**Goal:** Complete Rust session lifecycle, storage and recovery while retaining lossless codec behavior.
+
+**Prerequisites:** `review:storage` (done).
+
+**Inputs:** `crates/harvest-runtime`, `rust-agent` durable session, `packages/coding-agent/src/session`.
+
+**Destination:** Existing Rust runtime/session crates; TS session consumers moved incrementally.
+
+**Implementation steps:**
+1. Inventory session APIs and persisted formats.
+2. Complete steering/follow-ups/retries/compaction/branch handling/resume/recovery.
+3. Switch consumers to Rust session engine.
+4. Remove TS session sources after last consumer moves.
+
+**Verification:**
+- `cargo fmt --check` for affected crates
+- strict Clippy
+- `cargo xtask test -p harvest-runtime`
+- `cargo xtask playbook check`
+
+**Recovery:** Revert leaf commit; TS session remains authoritative.
+
+**Completion evidence:** Rust tests, consumer switch-over, deleted TS sources, updated ledger rows.
