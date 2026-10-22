@@ -22,6 +22,10 @@ cargo xtask playbook status --json
 cargo xtask playbook next --json
 ```
 
+Completed **`tooling:spoofed-versions`**: the root maintenance command now calls
+Rust; its TS entrypoint is removed. Native CLI parity, failure and jailed update
+contracts pass. Live upstream freshness remains separate from offline fixtures.
+
 Next bounded implementation: **`media:sixel`**, with reviewed instructions.
 Its card is `tasks/SIXEL.md`. Baseline fixtures must come from Git and a rebuilt
 addon; archived machine-local cache paths are optional historical evidence.

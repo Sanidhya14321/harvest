@@ -42,6 +42,7 @@ fn execute() -> Result<()> {
 		"migration" => xtask::migration::execute(selection),
 		"playbook" => xtask::playbook::execute(selection),
 		"acceptance" => xtask::acceptance::execute(selection),
+		"spoofed-versions" => xtask::spoofed_versions::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
 		"test" => {
 			let doctest_selection = xtask::testing::doctest_selection(&selection)?;

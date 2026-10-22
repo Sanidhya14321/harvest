@@ -5485,6 +5485,32 @@
         ]
       },
       {
+        "id": "tooling:spoofed-versions",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/SPOOFED-VERSIONS.md",
+        "capabilities": [
+          "surface:codegen"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 109 contracts passed plus doctests",
+          "cargo clippy --locked -p xtask --all-targets --all-features -- -D warnings: pass",
+          "xtask/tests/spoofed_versions.rs: compiled native CLI executes with empty runtime PATH against legacy oracle; source preservation and symlink refusal",
+          "xtask/src/spoofed_versions.rs: real loopback HTTP headers, bounded response and failed-status contracts",
+          "Live upstream freshness is not certified by captured metadata."
+        ]
+      },
+      {
         "id": "media:sixel",
         "kind": "migration",
         "state": "ready",

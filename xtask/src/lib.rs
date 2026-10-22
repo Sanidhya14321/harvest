@@ -36,4 +36,5 @@ mod browser_check;
 
 pub mod acceptance;
 pub mod playbook;
+pub mod spoofed_versions;
 pub mod versions;
