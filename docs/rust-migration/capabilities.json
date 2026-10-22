@@ -5864,7 +5864,7 @@
       {
         "id": "review:protocol",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "protocol",
         "depends_on": [
@@ -5875,13 +5875,17 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed packages/wire/src/index.ts and packages/wire/test/constants.test.ts as the protocol wire surface; 2 ledger rows already owned by migrate:protocol.",
+          "Confirmed crates/harvest-protocol owns portable session records and display projection; packages/wire is the sole TS wire consumer surface.",
+          "Split review output recorded in docs/rust-migration/tasks/protocol.md; migrate:protocol made ready with reviewed implementation contract."
+        ]
       },
       {
         "id": "migrate:protocol",
         "kind": "migration",
-        "state": "planned",
-        "review": "pending",
+        "state": "ready",
+        "review": "reviewed",
         "work_unit": "protocol",
         "depends_on": [
           "review:protocol"

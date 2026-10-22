@@ -51,3 +51,39 @@ moves. Complete migration only after behavioral and installed verification,
 eligible deletions, dependency cleanup and source/capability gate updates.
 Recovery is a scoped revert of the leaf change, preserving existing data and
 unrelated work. Evidence belongs to the task and CI artifacts, not private caches.
+
+## migrate:protocol implementation contract
+
+**Goal:** Replace the TypeScript `packages/wire` wire-type surface with Rust-owned
+types in `crates/harvest-protocol` (or a dedicated wire crate) while preserving
+the collab protocol constants and JSON shapes consumed by host, guest and relay
+clients.
+
+**Prerequisites:** `review:protocol` (done).
+
+**Inputs:** `packages/wire/src/index.ts`, `packages/wire/test/constants.test.ts`,
+`crates/harvest-protocol/src/*`, collab protocol consumers in `packages/coding-agent`
+and `packages/collab-web`.
+
+**Destination:** `crates/harvest-protocol` (Rust structs/serde) plus generated or
+hand-written bindings only where an external TS consumer remains during transition.
+
+**Connections:** collab host/guest/relay, browser clients, SDK exports, tests.
+
+**Implementation steps:**
+1. Enumerate all exported wire types/constants and map each to a Rust serde type.
+2. Add Rust tests for constant values and round-trip JSON.
+3. Switch consumers to Rust-owned definitions or generated bindings.
+4. Remove `packages/wire` source after last consumer moves and update ledger rows.
+
+**Verification:**
+- `cargo fmt -p harvest-protocol -- --check`
+- `cargo clippy --locked -p harvest-protocol --all-targets --all-features -- -D warnings`
+- `cargo xtask test -p harvest-protocol`
+- `cargo xtask playbook check`
+
+**Recovery:** Revert the leaf commit; TS wire package remains the source of truth
+until migration completes.
+
+**Completion evidence:** Rust tests, consumer switch-over, deleted TS source, updated
+ledger rows.
