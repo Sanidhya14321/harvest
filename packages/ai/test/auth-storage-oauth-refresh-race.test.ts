@@ -5,6 +5,7 @@ import * as path from "node:path";
 import {
 	type AuthCredentialStore,
 	AuthStorage,
+	type AuthStorageOptions,
 	type CredentialDisabledEvent,
 	SqliteAuthCredentialStore,
 	type StoredAuthCredential,
@@ -24,15 +25,21 @@ describe("AuthStorage OAuth refresh race", () => {
 	let authStorage: AuthStorage | null = null;
 	let events: CredentialDisabledEvent[] = [];
 
-	beforeEach(async () => {
-		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-ai-auth-oauth-race-"));
-		store = await SqliteAuthCredentialStore.open(path.join(tempDir, "agent.db"));
-		events = [];
-		authStorage = new AuthStorage(store, {
+	function createAuthStorage(refreshOAuthCredential?: AuthStorageOptions["refreshOAuthCredential"]): AuthStorage {
+		if (!store) throw new Error("test store is not initialized");
+		return new AuthStorage(store, {
+			refreshOAuthCredential,
 			onCredentialDisabled: event => {
 				events.push(event);
 			},
 		});
+	}
+
+	beforeEach(async () => {
+		tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-ai-auth-oauth-race-"));
+		store = await SqliteAuthCredentialStore.open(path.join(tempDir, "agent.db"));
+		events = [];
+		authStorage = createAuthStorage();
 	});
 
 	afterEach(async () => {
@@ -50,6 +57,15 @@ describe("AuthStorage OAuth refresh race", () => {
 
 	test("does not disable a credential another process already rotated", async () => {
 		if (!authStorage || !store) throw new Error("test setup failed");
+
+		authStorage = createAuthStorage(async (_provider, _credentialId, credential) => {
+			if (credential?.refresh === "stale-refresh") {
+				throw new Error(
+					'HTTP 400 invalid_grant {"error":"invalid_grant","error_description":"Refresh token not found or invalid"}',
+				);
+			}
+			return credential;
+		});
 
 		// Seed the shared DB with one expired OAuth credential; this simulates the
 		// state two cooperating omp processes both load from the persisted row.
@@ -73,18 +89,6 @@ describe("AuthStorage OAuth refresh race", () => {
 			access: "fresh-access-from-peer",
 			refresh: "fresh-refresh-from-peer",
 			expires: Date.now() + 60 * 60_000,
-		});
-
-		// Mock mirrors Anthropic: only the stale refresh token is rejected, because
-		// real rotation invalidates the previous refresh token on use.
-		vi.spyOn(oauthUtils, "getOAuthApiKey").mockImplementation(async (provider, creds) => {
-			const credential = creds[provider];
-			if (credential?.refresh === "stale-refresh") {
-				throw new Error(
-					'HTTP 400 invalid_grant {"error":"invalid_grant","error_description":"Refresh token not found or invalid"}',
-				);
-			}
-			return { newCredentials: credential!, apiKey: credential!.access };
 		});
 
 		await withEnv(SUPPRESS_ANTHROPIC_ENV, async () => {
@@ -111,6 +115,15 @@ describe("AuthStorage OAuth refresh race", () => {
 	test("does not disable when peer rotates between pre-check and CAS disable", async () => {
 		if (!authStorage || !store) throw new Error("test setup failed");
 
+		authStorage = createAuthStorage(async (_provider, _credentialId, credential) => {
+			if (credential?.refresh === "stale-refresh") {
+				throw new Error(
+					'HTTP 400 invalid_grant {"error":"invalid_grant","error_description":"Refresh token not found or invalid"}',
+				);
+			}
+			return credential;
+		});
+
 		await authStorage.set("anthropic", [
 			{
 				type: "oauth",
@@ -127,15 +140,6 @@ describe("AuthStorage OAuth refresh race", () => {
 		// refresh token to our snapshot will therefore see the SAME stale token
 		// and fall through to the disable. We then race a peer rotation into the
 		// window between the pre-check and the CAS, which the CAS must detect.
-		vi.spyOn(oauthUtils, "getOAuthApiKey").mockImplementation(async (provider, creds) => {
-			const credential = creds[provider];
-			if (credential?.refresh === "stale-refresh") {
-				throw new Error(
-					'HTTP 400 invalid_grant {"error":"invalid_grant","error_description":"Refresh token not found or invalid"}',
-				);
-			}
-			return { newCredentials: credential!, apiKey: credential!.access };
-		});
 
 		const sharedStore = store;
 		const originalTryDisable = sharedStore.tryDisableAuthCredentialIfMatches.bind(sharedStore);
@@ -177,6 +181,10 @@ describe("AuthStorage OAuth refresh race", () => {
 	test("still disables when the failure is real (no concurrent rotation)", async () => {
 		if (!authStorage) throw new Error("test setup failed");
 
+		authStorage = createAuthStorage(async () => {
+			throw new Error('invalid_grant {"error":"invalid_grant"}');
+		});
+
 		// Single-process scenario: refresh genuinely fails and no peer updated the
 		// row. The credential should still be soft-deleted.
 		await authStorage.set("anthropic", [
@@ -187,10 +195,6 @@ describe("AuthStorage OAuth refresh race", () => {
 				expires: Date.now() - 60_000,
 			},
 		]);
-
-		vi.spyOn(oauthUtils, "getOAuthApiKey").mockImplementation(async () => {
-			throw new Error('invalid_grant {"error":"invalid_grant"}');
-		});
 
 		await withEnv(SUPPRESS_ANTHROPIC_ENV, async () => {
 			const apiKey = await authStorage!.getApiKey("anthropic", "session-real-failure");

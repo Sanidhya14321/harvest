@@ -43,6 +43,10 @@ Completed **`control:terminal-reproducibility`**: generated payloads match betwe
 two checkouts and different Cargo homes. They remain transitional JS artifacts
 owned by the native UI migration, not approved final-product glue.
 
+Completed **`control:oauth-fixtures`**: 19 refresh-race assertions and the AI
+TypeScript check pass. Fixtures use the existing refresh hook before seeding;
+production logic and all original CAS/disable assertions remain intact.
+
 Current foundation repair: **`control:portability`**. Linux runtime/memory/tooling
 contracts, strict Clippy and tokenizer rustdoc pass. Push the repair and inspect
 Windows/macOS CI results before marking it done. `control:coverage` remains

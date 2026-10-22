@@ -5513,6 +5513,27 @@
         ]
       },
       {
+        "id": "control:oauth-fixtures",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/OAUTH-FIXTURES.md",
+        "capabilities": [],
+        "checks": [
+          "transition-workspace",
+          "playbook-check"
+        ],
+        "evidence": [
+          "19 OAuth refresh-race contracts pass with all original CAS/disable/persistence assertions",
+          "AI TypeScript check, targeted repository formatter and linter pass",
+          "All eight workspace package suites pass via 49 bounded chunks; credential-dependent cases retain their existing skips"
+        ]
+      },
+      {
         "id": "control:inert-data",
         "kind": "control",
         "state": "done",
