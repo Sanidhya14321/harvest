@@ -80671,7 +80671,7 @@
       "rust_destination": null,
       "verification_requirements": null,
       "retirement_reason": null,
-      "task_id": "migrate:protocol"
+      "task_id": "migrate:browser"
     },
     {
       "path": "packages/wire/test/constants.test.ts",
@@ -80687,7 +80687,7 @@
       "rust_destination": null,
       "verification_requirements": null,
       "retirement_reason": null,
-      "task_id": "migrate:protocol"
+      "task_id": "migrate:browser"
     },
     {
       "path": "python/omp-rpc/src/omp_rpc/__init__.py",

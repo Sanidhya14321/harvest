@@ -5884,7 +5884,7 @@
       {
         "id": "migrate:protocol",
         "kind": "migration",
-        "state": "in_progress",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "protocol",
         "depends_on": [
@@ -5898,9 +5898,9 @@
           "transition-workspace"
         ],
         "evidence": [
-          "Added Rust-owned collab wire constants, content blocks, messages, session entries, AgentEvent, frames and state/agent/UI types in crates/harvest-protocol/src/wire.rs.",
-          "Rust tests cover constants and camelCase serde round trips including frames; strict Clippy and cargo test pass.",
-          "TS packages/wire remains during transition; consumer switch-over and deletion remain."
+          "Ported collab wire types/constants to crates/harvest-protocol/src/wire.rs with serde round-trip tests.",
+          "cargo fmt -p harvest-protocol -- --check; cargo clippy --locked -p harvest-protocol --all-targets --all-features -- -D warnings; cargo test -p harvest-protocol pass.",
+          "TS packages/wire ownership transferred to migrate:browser for eventual consumer switch-over/deletion."
         ]
       },
       {
@@ -5968,7 +5968,7 @@
       {
         "id": "migrate:storage",
         "kind": "migration",
-        "state": "planned",
+        "state": "ready",
         "review": "reviewed",
         "work_unit": "storage",
         "depends_on": [
@@ -6015,7 +6015,7 @@
       {
         "id": "migrate:catalog-providers",
         "kind": "migration",
-        "state": "planned",
+        "state": "ready",
         "review": "reviewed",
         "work_unit": "catalog-providers",
         "depends_on": [

@@ -705,3 +705,84 @@ mod frame_tests {
 		assert_eq!(decoded, frame);
 	}
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProgress {
+	pub index:                 u64,
+	pub id:                    String,
+	pub agent:                 String,
+	pub status:                String,
+	pub task:                  String,
+	pub description:           Option<String>,
+	#[serde(rename = "lastIntent")]
+	pub last_intent:           Option<String>,
+	#[serde(rename = "currentTool")]
+	pub current_tool:          Option<String>,
+	#[serde(rename = "currentToolArgs")]
+	pub current_tool_args:     Option<String>,
+	#[serde(rename = "currentToolStartMs")]
+	pub current_tool_start_ms: Option<u64>,
+	#[serde(rename = "recentTools")]
+	pub recent_tools:          Vec<RecentTool>,
+	#[serde(rename = "recentOutput")]
+	pub recent_output:         Vec<String>,
+	#[serde(rename = "toolCount")]
+	pub tool_count:            u64,
+	pub requests:              u64,
+	pub tokens:                u64,
+	#[serde(rename = "contextTokens")]
+	pub context_tokens:        Option<u64>,
+	#[serde(rename = "contextWindow")]
+	pub context_window:        Option<u64>,
+	pub cost:                  f64,
+	#[serde(rename = "durationMs")]
+	pub duration_ms:           u64,
+	#[serde(rename = "resolvedModel")]
+	pub resolved_model:        Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentTool {
+	pub tool:   String,
+	pub args:   String,
+	#[serde(rename = "endMs")]
+	pub end_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentProgressPayload {
+	pub index:               u64,
+	pub agent:               String,
+	pub task:                String,
+	#[serde(rename = "parentToolCallId")]
+	pub parent_tool_call_id: Option<String>,
+	pub assignment:          Option<String>,
+	pub progress:            AgentProgress,
+	#[serde(rename = "sessionFile")]
+	pub session_file:        Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentLifecyclePayload {
+	pub id:                  String,
+	pub agent:               String,
+	pub description:         Option<String>,
+	pub status:              String,
+	#[serde(rename = "sessionFile")]
+	pub session_file:        Option<String>,
+	#[serde(rename = "parentToolCallId")]
+	pub parent_tool_call_id: Option<String>,
+	pub index:               u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "t", rename_all = "kebab-case")]
+pub enum RelayControlMessage {
+	PeerJoined { peer: u64 },
+	PeerLeft { peer: u64 },
+	RoomClosed,
+}
