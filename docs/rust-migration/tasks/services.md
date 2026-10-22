@@ -58,3 +58,27 @@ moves. Complete migration only after behavioral and installed verification,
 eligible deletions, dependency cleanup and source/capability gate updates.
 Recovery is a scoped revert of the leaf change, preserving existing data and
 unrelated work. Evidence belongs to the task and CI artifacts, not private caches.
+
+## migrate:services implementation contract
+
+**Goal:** Port the services subsystem to Rust according to the reviewed scope and existing engines.
+
+**Prerequisites:** `review:services` (done).
+
+**Inputs:** Source paths and fixtures registered for the services work unit.
+
+**Destination:** Existing or new Rust crates as required by consumers.
+
+**Implementation steps:**
+1. Inventory contracts and consumers.
+2. Port behavior in dependency-ready groups.
+3. Switch consumers and remove superseded sources.
+4. Update ledger rows and evidence.
+
+**Verification:**
+- affected crate fmt/clippy/tests
+- `cargo xtask playbook check`
+
+**Recovery:** Revert leaf commit; TS implementation remains authoritative until cutover.
+
+**Completion evidence:** Rust tests, consumer switch-over, deleted sources, updated ledger rows.

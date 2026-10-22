@@ -5968,7 +5968,7 @@
       {
         "id": "migrate:storage",
         "kind": "migration",
-        "state": "ready",
+        "state": "planned",
         "review": "reviewed",
         "work_unit": "storage",
         "depends_on": [
@@ -6015,7 +6015,7 @@
       {
         "id": "migrate:catalog-providers",
         "kind": "migration",
-        "state": "ready",
+        "state": "planned",
         "review": "reviewed",
         "work_unit": "catalog-providers",
         "depends_on": [
@@ -6038,7 +6038,7 @@
       {
         "id": "review:memory",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "memory",
         "depends_on": [
@@ -6054,13 +6054,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed memory sources; ledger rows owned by migrate:memory.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:memory",
         "kind": "migration",
         "state": "planned",
-        "review": "pending",
+        "review": "reviewed",
         "work_unit": "memory",
         "depends_on": [
           "review:memory",
@@ -6083,7 +6086,7 @@
       {
         "id": "review:plugins",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "plugins",
         "depends_on": [
@@ -6096,13 +6099,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed plugins sources; ledger rows owned by migrate:plugins.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:plugins",
         "kind": "migration",
         "state": "planned",
-        "review": "pending",
+        "review": "reviewed",
         "work_unit": "plugins",
         "depends_on": [
           "review:plugins",
@@ -6124,7 +6130,7 @@
       {
         "id": "review:application",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "application",
         "depends_on": [
@@ -6299,13 +6305,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed application sources; ledger rows owned by migrate:application.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:application",
         "kind": "migration",
         "state": "planned",
-        "review": "pending",
+        "review": "reviewed",
         "work_unit": "application",
         "depends_on": [
           "review:application",
@@ -6494,7 +6503,7 @@
       {
         "id": "review:terminal",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "terminal",
         "depends_on": [
@@ -6513,13 +6522,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed terminal sources; ledger rows owned by migrate:terminal.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:terminal",
         "kind": "migration",
         "state": "planned",
-        "review": "pending",
+        "review": "reviewed",
         "work_unit": "terminal",
         "depends_on": [
           "review:terminal",
@@ -6549,7 +6561,7 @@
       {
         "id": "review:services",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "services",
         "depends_on": [
@@ -6569,13 +6581,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed services sources; ledger rows owned by migrate:services.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:services",
         "kind": "migration",
         "state": "planned",
-        "review": "pending",
+        "review": "reviewed",
         "work_unit": "services",
         "depends_on": [
           "review:services",
@@ -6605,7 +6620,7 @@
       {
         "id": "review:browser",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "browser",
         "depends_on": [
@@ -6624,13 +6639,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed browser sources; ledger rows owned by migrate:browser.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:browser",
         "kind": "migration",
         "state": "planned",
-        "review": "pending",
+        "review": "reviewed",
         "work_unit": "browser",
         "depends_on": [
           "review:browser",
@@ -6660,7 +6678,7 @@
       {
         "id": "review:media",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "media",
         "depends_on": [
@@ -6673,13 +6691,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed media sources; ledger rows owned by migrate:media.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:media",
         "kind": "migration",
         "state": "planned",
-        "review": "pending",
+        "review": "reviewed",
         "work_unit": "media",
         "depends_on": [
           "review:media",
@@ -6700,7 +6721,7 @@
       {
         "id": "review:tooling",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "tooling",
         "depends_on": [
@@ -6718,13 +6739,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed tooling sources; ledger rows owned by migrate:tooling.",
+          "Implementation contract recorded; migration task made ready."
+        ]
       },
       {
         "id": "migrate:tooling",
         "kind": "migration",
-        "state": "planned",
-        "review": "pending",
+        "state": "ready",
+        "review": "reviewed",
         "work_unit": "tooling",
         "depends_on": [
           "review:tooling"
