@@ -40,3 +40,4 @@ pub mod spoofed_versions;
 pub mod versions;
 
 pub mod homebrew_tap;
+pub mod host_detect;

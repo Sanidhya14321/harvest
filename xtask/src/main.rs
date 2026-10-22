@@ -60,6 +60,7 @@ fn execute() -> Result<()> {
 			cargo(&check)
 		},
 		"capabilities" => xtask::capabilities::execute(selection),
+		"host-detect" => xtask::host_detect::execute(),
 		"help" | "--help" | "-h" => {
 			println!(
 				"cargo xtask tap-update --formula FILE --tap CHECKOUT --tag TAG\ncargo xtask \

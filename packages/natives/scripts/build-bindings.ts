@@ -14,7 +14,7 @@ import * as fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import { $ } from "bun";
-import { detectHostAvx2Support, resolveLocalHostAddon } from "../../../scripts/host-detect";
+import { spawnSync } from "node:child_process";
 import { generateEnumExports } from "./gen-enums";
 
 // pcre2-sys prefers a system libpcre2 when pkg-config finds one. Keep the
@@ -59,11 +59,12 @@ const rustDir = path.join(repoRoot, "crates/pi-natives");
 const nativeDir = path.join(import.meta.dir, "../native");
 const packageJsonPath = path.join(import.meta.dir, "../package.json");
 
-const localAddon = resolveLocalHostAddon({
-	platform: process.platform,
-	arch: process.arch,
-	avx2: detectHostAvx2Support(),
+const hostDetect = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-detect"], {
+	cwd: repoRoot,
+	encoding: "utf8",
 });
+if (hostDetect.status !== 0) throw new Error(hostDetect.stderr || "host-detect failed");
+const localAddon = JSON.parse(hostDetect.stdout.trim()) as { filename: string; x64Variant: "modern" | "baseline" | null };
 const effectiveVariant = localAddon.x64Variant;
 const variantSuffix = effectiveVariant ? `-${effectiveVariant}` : "";
 

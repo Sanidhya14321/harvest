@@ -38,7 +38,7 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { detectHostAvx2Support, resolveLocalHostAddon } from "./host-detect";
+import { spawnSync } from "node:child_process";
 
 const repoRoot = path.join(import.meta.dir, "..");
 
@@ -234,7 +234,10 @@ async function buildLocalHostAddon(host: HostInfo, destDir: string): Promise<voi
 	const exitCode = await proc.exited;
 	if (exitCode !== 0) process.exit(exitCode || 1);
 
-	const filename = resolveLocalHostAddon(host).filename;
+	const hostDetect = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-detect"], { cwd: repoRoot, encoding: "utf8" });
+	if (hostDetect.status !== 0) throw new Error(hostDetect.stderr || "host-detect failed");
+	const detected = JSON.parse(hostDetect.stdout.trim()) as { filename: string };
+	const filename = detected.filename;
 	const builtPath = path.join(repoRoot, "packages/natives/native", filename);
 	if (path.dirname(builtPath) !== destDir) {
 		await fs.mkdir(destDir, { recursive: true });
@@ -245,7 +248,8 @@ async function buildLocalHostAddon(host: HostInfo, destDir: string): Promise<voi
 
 async function main(): Promise<void> {
 	const options = parseCliArgs(process.argv.slice(2));
-	const host: HostInfo = { platform: process.platform, arch: process.arch, avx2: detectHostAvx2Support() };
+	const hostDetect2 = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-detect"], { cwd: repoRoot, encoding: "utf8" });
+	const host = { platform: process.platform, arch: process.arch, avx2: hostDetect2.status === 0 ? JSON.parse(hostDetect2.stdout.trim()).avx2 : false };
 	const destDir = options.dest ? path.resolve(options.dest) : path.join(repoRoot, "packages/natives/native");
 
 	const backend = Bun.env.OMP_NATIVE_BUILD_BACKEND?.trim();
