@@ -9,6 +9,7 @@ pub mod development;
 pub mod elf;
 pub mod emit_extensions;
 mod generated;
+pub mod gen_nix;
 pub mod migration;
 pub mod packaging;
 mod process;
