@@ -53,3 +53,27 @@ moves. Complete migration only after behavioral and installed verification,
 eligible deletions, dependency cleanup and source/capability gate updates.
 Recovery is a scoped revert of the leaf change, preserving existing data and
 unrelated work. Evidence belongs to the task and CI artifacts, not private caches.
+
+## migrate:catalog-providers implementation contract
+
+**Goal:** Port catalog generation and KDL policy resolution and provider behavior to Rust while preserving KDL as policy source.
+
+**Prerequisites:** `review:catalog-providers` (done).
+
+**Inputs:** `packages/catalog`, `packages/ai`, `rust-agent` provider/transport.
+
+**Destination:** Rust catalog/provider crates and engines.
+
+**Implementation steps:**
+1. Inventory provider contracts and fixtures.
+2. Port catalog generation and KDL resolution.
+3. Port providers individually with streaming/tool-call/retry/cancellation.
+4. Switch consumers and remove TS sources.
+
+**Verification:**
+- affected crate fmt/clippy/tests
+- `cargo xtask playbook check`
+
+**Recovery:** Revert leaf commit; TS catalog remains authoritative.
+
+**Completion evidence:** Rust tests, consumer switch-over, deleted TS sources, updated ledger rows.

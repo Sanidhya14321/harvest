@@ -5992,7 +5992,7 @@
       {
         "id": "review:catalog-providers",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "catalog-providers",
         "depends_on": [
@@ -6007,13 +6007,16 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed catalog/provider sources; 850 ledger rows owned by migrate:catalog-providers.",
+          "Implementation contract recorded; migrate:catalog-providers made ready."
+        ]
       },
       {
         "id": "migrate:catalog-providers",
         "kind": "migration",
-        "state": "planned",
-        "review": "pending",
+        "state": "ready",
+        "review": "reviewed",
         "work_unit": "catalog-providers",
         "depends_on": [
           "review:catalog-providers",
