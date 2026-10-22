@@ -5905,7 +5905,7 @@
       {
         "id": "review:primitives",
         "kind": "review",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "primitives",
         "depends_on": [
@@ -5916,13 +5916,17 @@
         "checks": [
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed native engine crates and packages/natives; 77 ledger rows are owned by migrate:primitives.",
+          "Confirmed ordinary Rust engines already exist; transitional adapters remain tracked.",
+          "Implementation contract recorded in docs/rust-migration/tasks/primitives.md; migrate:primitives made ready."
+        ]
       },
       {
         "id": "migrate:primitives",
         "kind": "migration",
-        "state": "planned",
-        "review": "pending",
+        "state": "ready",
+        "review": "reviewed",
         "work_unit": "primitives",
         "depends_on": [
           "review:primitives"

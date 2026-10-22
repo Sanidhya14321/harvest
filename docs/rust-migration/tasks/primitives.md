@@ -65,3 +65,29 @@ moves. Complete migration only after behavioral and installed verification,
 eligible deletions, dependency cleanup and source/capability gate updates.
 Recovery is a scoped revert of the leaf change, preserving existing data and
 unrelated work. Evidence belongs to the task and CI artifacts, not private caches.
+
+## migrate:primitives implementation contract
+
+**Goal:** Keep ordinary Rust engines as the source of truth for terminal/text/edit/AST/VCS/walker/shell behavior and remove transitional adapters only after consumers move.
+
+**Prerequisites:** `review:primitives` (done).
+
+**Inputs:** Native engine crates listed above, `packages/natives`, and their tests.
+
+**Destination:** Existing Rust crates; no new engine without a named consumer.
+
+**Implementation steps:**
+1. Inventory exported native functions and Rust APIs.
+2. Identify remaining TS/N-API adapters and their consumers.
+3. Switch consumers to Rust APIs or generated bindings.
+4. Delete adapters and unused dependencies after last consumer moves.
+
+**Verification:**
+- `cargo fmt --check` for affected crates
+- `cargo clippy --locked -p <crate> --all-targets --all-features -- -D warnings`
+- `cargo xtask test -p <crate>`
+- `cargo xtask playbook check`
+
+**Recovery:** Revert the leaf commit; adapters remain until migration completes.
+
+**Completion evidence:** Rust tests, consumer switch-over, deleted adapters, updated ledger rows.
