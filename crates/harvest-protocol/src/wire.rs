@@ -375,3 +375,101 @@ pub enum SessionEntry {
 	#[serde(rename = "thinking_level_change")]
 	ThinkingLevelChange(ThinkingLevelChangeEntry),
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentEvent {
+	AgentStart,
+	AgentEnd,
+	TurnStart,
+	TurnEnd,
+	MessageStart {
+		message: WireMessage,
+	},
+	MessageUpdate {
+		message: WireMessage,
+	},
+	MessageEnd {
+		message: WireMessage,
+	},
+	ToolExecutionStart {
+		#[serde(rename = "toolCallId")]
+		tool_call_id: String,
+		#[serde(rename = "toolName")]
+		tool_name:    String,
+		args:         serde_json::Value,
+		intent:       Option<String>,
+	},
+	ToolExecutionUpdate {
+		#[serde(rename = "toolCallId")]
+		tool_call_id:   String,
+		#[serde(rename = "toolName")]
+		tool_name:      String,
+		args:           serde_json::Value,
+		partial_result: serde_json::Value,
+	},
+	ToolExecutionEnd {
+		#[serde(rename = "toolCallId")]
+		tool_call_id: String,
+		#[serde(rename = "toolName")]
+		tool_name:    String,
+		result:       serde_json::Value,
+		#[serde(rename = "isError")]
+		is_error:     Option<bool>,
+	},
+	Notice {
+		level:   String,
+		message: String,
+		source:  Option<String>,
+	},
+	AutoCompactionStart {
+		reason: String,
+		action: String,
+	},
+	AutoCompactionEnd {
+		aborted:       bool,
+		#[serde(rename = "willRetry")]
+		will_retry:    bool,
+		#[serde(rename = "errorMessage")]
+		error_message: Option<String>,
+		skipped:       Option<bool>,
+	},
+	AutoRetryStart {
+		attempt:       u64,
+		#[serde(rename = "maxAttempts")]
+		max_attempts:  u64,
+		#[serde(rename = "delayMs")]
+		delay_ms:      u64,
+		#[serde(rename = "errorMessage")]
+		error_message: String,
+	},
+	AutoRetryEnd {
+		success:     bool,
+		attempt:     u64,
+		#[serde(rename = "finalError")]
+		final_error: Option<String>,
+	},
+	ThinkingLevelChanged {
+		#[serde(rename = "thinkingLevel")]
+		thinking_level: Option<Option<String>>,
+	},
+}
+
+#[cfg(test)]
+mod agent_event_tests {
+	use super::*;
+
+	#[test]
+	fn tool_execution_start_round_trips() {
+		let event = AgentEvent::ToolExecutionStart {
+			tool_call_id: "c".into(),
+			tool_name:    "bash".into(),
+			args:         serde_json::json!({"a":1}),
+			intent:       None,
+		};
+		let json = serde_json::to_string(&event).unwrap();
+		assert!(json.contains("tool_execution_start"));
+		let decoded: AgentEvent = serde_json::from_str(&json).unwrap();
+		assert_eq!(decoded, event);
+	}
+}
