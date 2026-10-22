@@ -1,0 +1,87 @@
+{
+  "provenance": "Captured from the pre-extraction addon and independently verified against the Git-reconstructed d811cb2 SIXEL engine (blob 9444595f14d91f18293999ad6f1dbac1f59ded60), freshly compiled with the workspace lockfile; N-API ownership and error wrappers mechanically replaced by ordinary Rust equivalents for the baseline consumer.",
+  "encode": [
+    {
+      "input": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+      "width": 1,
+      "height": 1,
+      "output": "\u001bP9;1;0q\"1;1;1;1#0;2;100;0;0#0@$-\u001b\\"
+    },
+    {
+      "input": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+      "width": 2,
+      "height": 3,
+      "output": "\u001bP9;1;0q\"1;1;2;3#0;2;100;0;0#0FF$-\u001b\\"
+    },
+    {
+      "input": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+      "width": 3,
+      "height": 6,
+      "output": "\u001bP9;1;0q\"1;1;3;6#0;2;100;0;0#0~~~$-\u001b\\"
+    },
+    {
+      "input": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD50ooor8MP9Uz/2Q==",
+      "width": 2,
+      "height": 2,
+      "output": "\u001bP9;1;0q\"1;1;2;2#0;2;99;0;0#0BB$-\u001b\\"
+    },
+    {
+      "input": "UklGRkAAAABXRUJQVlA4IDQAAAAwAgCdASoBAAEAAMASJaACdLoB+AH4AARoAAD++iGX/3easNN39a3/9aOfron+tHP/WVgA",
+      "width": 1,
+      "height": 1,
+      "output": "\u001bP9;1;0q\"1;1;1;1#0;2;100;0;0#0@$-\u001b\\"
+    },
+    {
+      "input": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+      "width": 0,
+      "height": 1,
+      "error": "Target SIXEL dimensions must be greater than zero"
+    },
+    {
+      "input": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+      "width": 1,
+      "height": 0,
+      "error": "Target SIXEL dimensions must be greater than zero"
+    },
+    {
+      "input": "YmFk",
+      "width": 1,
+      "height": 1,
+      "error": "Failed to decode image: The image format could not be determined"
+    }
+  ],
+  "decode": [
+    {
+      "input": "G1AxOzFxIjE7MTszOzYjMTsyOzEwMDswOzAjMSEzfhtc",
+      "output": "iVBORw0KGgoAAAANSUhEUgAAAAMAAAAGCAYAAAAG5SQMAAAAUElEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a8aDAAQXAFAcAUAwRUABFcAEFwBwD8CmXUCDcu83R4AAAAASUVORK5CYII="
+    },
+    {
+      "input": "kDE7MXEiMTsxOzI7NiMyOzI7MDsxMDA7MCMyITJ+nA==",
+      "output": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAAGCAYAAADpJ08yAAAAQUlEQVR4AQE2AMn/AAD/AP8A/wD/AAD/AP8A/wD/AAD/AP8A/wD/AAD/AP8A/wD/AAD/AP8A/wD/AAD/AP8A/wD/edgX6aho3U8AAAAASUVORK5CYII="
+    },
+    {
+      "input": "G1BxIzA7MjswOzA7MH4bXA==",
+      "output": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAGCAYAAAACEPQxAAAAKUlEQVR4AQEeAOH/AAAAAP8AAAAA/wAAAAD/AAAAAP8AAAAA/wAAAAD/UM0F+3Yke8kAAAAASUVORK5CYII="
+    },
+    {
+      "input": "G1BxIjE7MTs5MDAwOzF+G1w=",
+      "error": "SIXEL image dimensions exceed the decode limit"
+    },
+    {
+      "input": "G1BxITk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OX4bXA==",
+      "error": "SIXEL image dimensions exceed the decode limit"
+    },
+    {
+      "input": "YmFk",
+      "error": "SIXEL data is missing a DCS introducer"
+    },
+    {
+      "input": "G1AbXA==",
+      "error": "SIXEL data is missing its q introducer"
+    },
+    {
+      "input": "G1Bxfi0kfhtc",
+      "output": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAMCAYAAACji9dXAAAAR0lEQVR4AQE8AMP/AAAAAP8AAAAA/wAAAAD/AAAAAP8AAAAA/wAAAAD/AAAAAP8AAAAA/wAAAAD/AAAAAP8AAAAA/wAAAAD/VPUL9Ze+7nwAAAAASUVORK5CYII="
+    }
+  ]
+}

@@ -3982,8 +3982,10 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "html-to-markdown-rs",
+ "icy_sixel",
  "image",
  "resvg",
+ "serde_json",
  "tempfile",
  "zune-jpeg",
 ]
@@ -7161,7 +7163,6 @@ dependencies = [
  "harvest-tokenizer",
  "harvest-tui",
  "heapless 0.9.3",
- "icy_sixel",
  "ignore",
  "image",
  "inferno",

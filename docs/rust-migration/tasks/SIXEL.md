@@ -30,6 +30,26 @@ its non-exhaustive allocation limit alone does not protect every decoder.
    N-API, but keep TS consumer/adaptor sources until their last consumer moves.
 5. Record measurements and limitations; do not claim the full media capability.
 
+## Allocation policy and baseline reconstruction
+
+Source input is capped at 20 MiB, 16 Mi pixels, 16,384 pixels per edge and
+128 MiB decoder allocation. Targets are capped at 4 Mi pixels/8,192 per edge;
+the conservative palette/band work estimate must fit 128 MiB before resizing.
+Normal full-HD targets remain accepted. Encoded SIXEL and decoded PNG outputs
+retain the 20 MiB cap. Oversized targets are deliberately rejected earlier.
+
+The 16-case oracle was independently checked against Git blob
+`9444595f14d91f18293999ad6f1dbac1f59ded60` at `d811cb2`, freshly compiled with
+the workspace lockfile. For a fresh reconstruction, extract that `sixel.rs` into
+an external Rust consumer; remove only the `#[napi]` attributes/imports, replace
+`Uint8Array` inputs/outputs with `Vec<u8>`, map `Error::from_reason` to
+`anyhow::Error::msg` and leave the engine body unchanged. Link the same locked
+image/icy_sixel dependencies and the current `harvest-media` path dependency.
+Compare both engines' complete results/errors for every oracle row, then run
+the compiled consumer with `PATH=/nonexistent`. The captured addon cache is not
+required for that comparison. Do not run hostile allocation cases on the old
+unbounded encoder.
+
 ## Checks, recovery and completion
 
 ```sh

@@ -7,6 +7,7 @@ exports_files(["Cargo.toml"])
 rust_library(
     name = "harvest-media",
     srcs = glob(["src/**/*.rs"]),
+    compile_data = glob(["tests/fixtures/*.json"]),
     aliases = aliases(),
     crate_name = "harvest_media",
     edition = "2024",

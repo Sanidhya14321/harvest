@@ -4047,6 +4047,7 @@
         "paths": [
           "crates/harvest-media/src/html.rs",
           "crates/harvest-media/src/svg.rs",
+          "crates/harvest-media/src/sixel.rs",
           "rust-agent/src/lib.rs"
         ]
       },
@@ -4055,6 +4056,7 @@
         "contract_suites": [
           "crates/harvest-media/src/html.rs",
           "crates/harvest-media/src/svg.rs",
+          "crates/harvest-media/src/sixel.rs",
           "packages/natives/test/native.test.ts",
           "packages/coding-agent/test/tools/fetch-binary-dispatch.test.ts",
           "packages/coding-agent/test/git-tui-sidebar.test.ts"
@@ -5555,7 +5557,7 @@
       {
         "id": "media:sixel",
         "kind": "migration",
-        "state": "ready",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "primitives",
         "depends_on": [
@@ -5571,7 +5573,14 @@
           "transition-native-build",
           "transition-native"
         ],
-        "evidence": []
+        "evidence": [
+          "cargo xtask test -p harvest-media -p harvest-omp -p harvest-terminal -p harvest-terminal-wasm -p xtask: 260 contracts plus media doctest passed",
+          "bun run build:native: rebuilt and installed the shared-engine addon",
+          "43 host contracts passed across terminal graphics, shell SIXEL rendering and portable terminal installation",
+          "16 freshly Git-reconstructed baseline/shared Rust contracts passed with PATH=/nonexistent",
+          "16 rebuilt-addon oracle contracts plus early target-allocation rejection passed",
+          "crates/harvest-media/tests/fixtures/sixel-oracle.json; shared engine bounds and transparent roundtrip contracts"
+        ]
       },
       {
         "id": "review:protocol",
