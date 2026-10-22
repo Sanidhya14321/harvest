@@ -5513,6 +5513,50 @@
         ]
       },
       {
+        "id": "control:artifact-size",
+        "kind": "control",
+        "state": "blocked",
+        "review": "pending",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/ARTIFACT-SIZE.md",
+        "capabilities": [],
+        "checks": [
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "CI 39775015370/job 119811632401: native install/help/version/brain dry-run pass; binary size 121519040 exceeds unchanged 20971520-byte budget"
+        ],
+        "blocker": "Measure the release link map and review bounded native grammar/resource packaging contracts before changing architecture; preserve all retained AST languages and the 20 MiB budget."
+      },
+      {
+        "id": "tooling:version-wrapper",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/VERSION-WRAPPER.md",
+        "capabilities": [
+          "surface:codegen"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 109 contracts and doctests passed",
+          "xtask/tests/npm_versions.rs: native release and workspace-check commands execute with no language runtimes on PATH; existing captured-output, idempotency, invalid-input and symlink refusal contracts pass",
+          "Consumer search: scripts/release.ts already invokes cargo xtask npm-versions; no active repository caller of scripts/sync-versions.ts remains"
+        ]
+      },
+      {
         "id": "control:terminal-reproducibility",
         "kind": "control",
         "state": "done",

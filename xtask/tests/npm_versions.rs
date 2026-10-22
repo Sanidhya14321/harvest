@@ -54,6 +54,7 @@ fn release_cli_updates_catalog_and_explicit_links_without_bumping_private_packag
 	let result = Command::new(env!("CARGO_BIN_EXE_xtask"))
 		.args(["npm-versions", "--release", "0.2.0-canary.1", "--root"])
 		.arg(root.path())
+		.env("PATH", root.path())
 		.output()?;
 	assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
 	let app = read(&root, "packages/app/package.json")?;
@@ -65,6 +66,7 @@ fn release_cli_updates_catalog_and_explicit_links_without_bumping_private_packag
 	let checked = Command::new(env!("CARGO_BIN_EXE_xtask"))
 		.args(["npm-versions", "--check", "--workspace", "--root"])
 		.arg(root.path())
+		.env("PATH", root.path())
 		.output()?;
 	assert!(checked.status.success(), "{}", String::from_utf8_lossy(&checked.stderr));
 	assert_eq!(app["dependencies"]["@harvest/core"], "^0.2.0-canary.1");

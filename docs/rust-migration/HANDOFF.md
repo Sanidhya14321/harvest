@@ -26,6 +26,10 @@ Completed **`tooling:spoofed-versions`**: the root maintenance command now calls
 Rust; its TS entrypoint is removed. Native CLI parity, failure and jailed update
 contracts pass. Live upstream freshness remains separate from offline fixtures.
 
+Completed **`tooling:version-wrapper`**: removed the unused Bun launcher for
+version synchronization. Release consumers already invoke `cargo xtask npm-versions`;
+native release/check contracts run without Bun/Node on PATH.
+
 Completed **`media:sixel`**: ordinary Rust/SDK and temporary N-API consumers now
 share one bounded engine. The Git-reconstructed baseline, native Rust consumer,
 rebuilt addon and host contracts pass. Its larger media capability stays partial.
@@ -38,7 +42,10 @@ Current foundation repair: **`control:portability`**. Linux runtime/memory/tooli
 contracts, strict Clippy and tokenizer rustdoc pass. Push the repair and inspect
 Windows/macOS CI results before marking it done. `control:coverage` remains
 blocked by a measured first-party coverage gap; the 65% floor remains intact.
-See `tasks/COVERAGE.md` before changing coverage scope. Independent reviewed
+See `tasks/COVERAGE.md` before changing coverage scope. Installation now passes
+its help/version/brain checks, then hits the independent binary-size budget
+(121,519,040 > 20,971,520 bytes). `control:artifact-size` records the measured
+blocker and next resource/link-map investigation; do not raise the budget. Independent reviewed
 subsystem-review procedures remain available; split implementation work into
 bounded cards before making it ready.
 
