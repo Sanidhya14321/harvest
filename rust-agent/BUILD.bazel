@@ -29,6 +29,7 @@ rust_library(
     deps = all_crate_deps(normal = True) + [
         ":build_script",
         "//crates/harvest-brain",
+        "//crates/harvest-browser",
         "//crates/harvest-runtime",
         "//crates/harvest-protocol",
         "//crates/harvest-terminal",

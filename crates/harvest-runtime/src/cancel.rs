@@ -91,6 +91,21 @@ impl CancelToken {
 		Self { deadline: timeout.map(|duration| Instant::now() + duration), flag: None }
 	}
 
+	/// Bound a consumer operation without extending its caller's deadline or
+	/// losing the caller's cancellation owner.
+	#[must_use]
+	pub fn child_with_timeout(&self, timeout: Duration) -> Self {
+		let deadline = Instant::now() + timeout;
+		Self {
+			deadline: Some(
+				self
+					.deadline
+					.map_or(deadline, |current| current.min(deadline)),
+			),
+			flag:     self.flag.clone(),
+		}
+	}
+
 	pub fn heartbeat(&self) -> Result<()> {
 		if let Some(flag) = &self.flag
 			&& let Some(reason) = flag.cause()
@@ -165,5 +180,25 @@ impl AbortToken {
 		{
 			flag.abort(reason);
 		}
+	}
+}
+
+#[cfg(test)]
+mod deadline_tests {
+	use super::*;
+
+	#[test]
+	fn child_budgets_preserve_parent_deadlines_and_cancellation() {
+		let parent = CancelToken::with_timeout(Some(Duration::from_millis(100)));
+		let child = parent.child_with_timeout(Duration::from_secs(10));
+		assert_eq!(child.deadline, parent.deadline);
+		let shorter = parent.child_with_timeout(Duration::ZERO);
+		assert!(shorter.deadline < parent.deadline);
+		let mut parent = CancelToken::default();
+		let abort = parent.emplace_abort_token();
+		let child = parent.child_with_timeout(Duration::from_secs(1));
+		abort.abort(AbortReason::User);
+		assert!(child.heartbeat().is_err());
+		assert!(parent.heartbeat().is_err());
 	}
 }

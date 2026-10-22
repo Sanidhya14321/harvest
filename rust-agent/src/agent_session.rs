@@ -44,6 +44,7 @@ pub struct SessionEvent {
 }
 
 pub struct AgentSession {
+	tools:      tools::ToolRuntime,
 	root:       PathBuf,
 	log:        DurableSession,
 	generation: u64,
@@ -53,7 +54,18 @@ pub struct AgentSession {
 impl AgentSession {
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
 		let log = DurableSession::open(root, path, leaf)?;
-		Ok(Self { root: root.canonicalize()?, log, generation: 0, sequence: 0, active: None })
+		Ok(Self {
+			tools: tools::ToolRuntime::default(),
+			root: root.canonicalize()?,
+			log,
+			generation: 0,
+			sequence: 0,
+			active: None,
+		})
+	}
+
+	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
+		self.tools.configure_browser(options);
 	}
 
 	pub fn session_id(&self) -> &str {
@@ -176,7 +188,7 @@ impl AgentSession {
 		for _ in 0..options.max_steps {
 			cancellation.heartbeat()?;
 			let response =
-				model.stream_response(&messages, &chat::specs(), cancellation, &mut |text| {
+				model.stream_response(&messages, &self.tools.specs(), cancellation, &mut |text| {
 					cancellation.heartbeat()?;
 					self.emit(EventKind::TextDelta { text: text.into() }, sink)
 				})?;
@@ -195,11 +207,10 @@ impl AgentSession {
 			}
 			for call in calls {
 				cancellation.heartbeat()?;
-				let output =
-					match tools::invoke_with_cancellation(&self.root, &call, approval, cancellation) {
-						Ok(output) => output,
-						Err(error) => format!("error: {error:#}"),
-					};
+				let output = match self.tools.invoke(&self.root, &call, approval, cancellation) {
+					Ok(output) => output,
+					Err(error) => format!("error: {error:#}"),
+				};
 				let result = chat::tool_result(&call.id, output);
 				self.commit(&result, model, None, sink)?;
 				messages.push(result);

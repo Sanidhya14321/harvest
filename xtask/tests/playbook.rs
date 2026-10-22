@@ -255,3 +255,55 @@ fn verified_inert_inputs_have_a_separate_state_and_cannot_disguise_workers() -> 
 	assert!(xtask::playbook::inspect(&data, &sources).is_err());
 	Ok(())
 }
+
+#[test]
+fn text_wrapped_scripts_and_reviewed_embedded_bundles_cannot_be_inert_assets() -> Result<()> {
+	let root = tempdir()?;
+	let fs = JailedFs::open(root.path())?;
+	let names = [
+		"assets/background.js.txt",
+		"assets/nested.py.txt.in",
+		"packages/stats/src/embedded-client.generated.txt",
+		"packages/coding-agent/src/eval/js/shared/prelude.txt",
+		"packages/coding-agent/src/tools/browser/aria/aria-snapshot.bundle.txt",
+		"packages/coding-agent/src/tools/puppeteer/00_stealth_tampering.txt",
+		"assets/options.html.txt",
+		"assets/LICENSE.txt",
+		"assets/tips.txt",
+	];
+	let mut paths = Vec::new();
+	for name in names {
+		fs.atomic_write(
+			Path::new(name),
+			if name.contains("html") {
+				b"<script src='background.js'></script>"
+			} else {
+				b"fixture payload"
+			},
+		)?;
+		paths.extend_from_slice(name.as_bytes());
+		paths.push(0);
+	}
+	let inventory = xtask::source_audit::inspect_files(&fs, &paths, Path::new("report.json"))?;
+	assert_eq!(inventory.non_rust_executable_files.len(), 6);
+	assert!(
+		inventory
+			.non_rust_executable_files
+			.iter()
+			.all(|path| !path.ends_with("LICENSE.txt") && !path.ends_with("tips.txt"))
+	);
+	assert_eq!(inventory.script_asset_candidates, ["assets/options.html.txt"]);
+	assert_eq!(inventory.files_by_language["javascript"], 5);
+	assert_eq!(inventory.files_by_language["python"], 1);
+	let baseline: xtask::migration::Baseline = serde_json::from_value(
+		json!({"version":1,"commit":"c".repeat(40),"paths":["engine/legacy.ts"]}),
+	)?;
+	let sources: xtask::migration::Ledger = serde_json::from_value(ledger())?;
+	let error = xtask::migration::inspect(&baseline, &sources, &[
+		"engine/legacy.ts".into(),
+		"assets/new.js.txt".into(),
+	])
+	.unwrap_err();
+	assert_eq!(error.to_string(), "missing migration entry: assets/new.js.txt");
+	Ok(())
+}

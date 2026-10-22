@@ -4445,12 +4445,26 @@
       "work_unit": "services",
       "scope": "retained",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "crates/harvest-browser/src/lib.rs",
+          "rust-agent/src/browser_cli.rs",
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/agent_session.rs",
+          "rust-agent/src/session_engine.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-browser/src/lib.rs",
+          "crates/harvest-browser/examples/verify_browser.rs",
+          "crates/harvest-browser/examples/verify_cli.rs",
+          "rust-agent/tests/browser_tools.rs",
+          "rust-agent/examples/verify_browser_tool.rs"
+        ]
       },
-      "installation": "legacy-typescript",
+      "installation": "experimental-rust-cli",
       "legacy": {
         "removable": false
       },
@@ -5021,7 +5035,9 @@
           "packages/browser-relay",
           "python/robomp",
           "packages/coding-agent/src/export",
-          "crates/harvest-web"
+          "crates/harvest-web",
+          "crates/harvest-browser",
+          "packages/coding-agent/src/tools/puppeteer"
         ],
         "depends_on": [
           "protocol",
@@ -5051,7 +5067,8 @@
           "darwin-x64",
           "darwin-arm64",
           "windows-x64",
-          "windows-arm64"
+          "windows-arm64",
+          "harvest-browser"
         ]
       },
       {
@@ -5138,6 +5155,8 @@
           "-p",
           "harvest-runtime",
           "-p",
+          "harvest-browser",
+          "-p",
           "harvest-brain",
           "-p",
           "harvest-protocol",
@@ -5177,6 +5196,8 @@
           "harvest-media",
           "-p",
           "harvest-runtime",
+          "-p",
+          "harvest-browser",
           "-p",
           "harvest-protocol",
           "-p",
@@ -5496,6 +5517,48 @@
           "xtask/tests/playbook.rs",
           "xtask/tests/verification.rs",
           "cargo xtask migration; cargo xtask capabilities; cargo xtask playbook check"
+        ]
+      },
+      {
+        "id": "control:embedded-sources",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/EMBEDDED-SOURCES.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "All 118 xtask contracts plus doctests and strict Clippy pass. Runtime fixture tests classify source-named text wrappers, injected browser payloads and wrapped HTML consistently; unowned executable wrappers fail the migration gate. Nineteen omitted executable containers are appended as pending source rows; the immutable baseline and completed-removal claims are unchanged."
+        ]
+      },
+      {
+        "id": "browser:cdp-core",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/BROWSER-CDP.md",
+        "capabilities": [
+          "surface:native-browser-control"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Native CDP engine and CLI/shared synchronous and asynchronous session consumers implemented. Browser/runtime contracts, 111 core application tests and strict Clippy pass. Real Chrome verifies static-HTML navigation, DOM query, typing/form click, PNG capture, exclusive ownership and persistent cookies. Public Rust SDK verifies final-argument approval and jailed PNG output. A copied native CLI runs structured JSONL actions and profile reopen with language runtimes absent from PATH. This engine leaf does not claim legacy browser removal or full replacement capability parity."
         ]
       },
       {

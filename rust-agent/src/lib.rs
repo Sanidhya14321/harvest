@@ -37,3 +37,9 @@ pub fn execute_cli() -> anyhow::Result<u8> {
 	cli::execute()
 }
 pub mod usage;
+
+/// Dedicated-profile native browser automation, shared by CLI and SDK
+/// consumers.
+pub use harvest_browser as browser;
+
+mod browser_cli;

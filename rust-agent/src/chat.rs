@@ -54,23 +54,35 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	gitignore:      Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	path:           Option<StringProperty>,
+	path:           Option<&'static StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	old:            Option<StringProperty>,
+	old:            Option<&'static StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	new:            Option<StringProperty>,
+	new:            Option<&'static StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	contents:       Option<StringProperty>,
+	contents:       Option<&'static StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	command:        Option<StringProperty>,
+	command:        Option<&'static StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pattern:        Option<StringProperty>,
+	pattern:        Option<&'static StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	action:         Option<&'static StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	tab:            Option<&'static StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	url:            Option<&'static StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	selector:       Option<&'static StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	text:           Option<&'static StringProperty>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 struct StringProperty {
 	#[serde(rename = "type")]
-	kind: &'static str,
+	kind:        &'static str,
+	#[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
+	enum_values: Option<&'static [&'static str]>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -80,7 +92,7 @@ struct BooleanProperty {
 }
 const BOOLEAN: BooleanProperty = BooleanProperty { kind: "boolean" };
 
-const STRING: StringProperty = StringProperty { kind: "string" };
+const STRING: &StringProperty = &StringProperty { kind: "string", enum_values: None };
 
 impl ToolSpec {
 	pub const fn name(self) -> &'static str {
@@ -156,7 +168,41 @@ pub fn specs() -> Vec<ToolSpec> {
 	]
 }
 
+pub(crate) fn browser_spec() -> ToolSpec {
+	spec(
+		"browser",
+		include_str!("prompts/tools/browser.md").trim_end(),
+		ToolProperties {
+			action: Some(&StringProperty {
+				kind:        "string",
+				enum_values: Some(&[
+					"tabs",
+					"open",
+					"navigate",
+					"document",
+					"query",
+					"click",
+					"type",
+					"screenshot",
+					"close",
+				]),
+			}),
+			tab: Some(STRING),
+			url: Some(STRING),
+			selector: Some(STRING),
+			text: Some(STRING),
+			..EMPTY
+		},
+		&["action"],
+	)
+}
+
 const EMPTY: ToolProperties = ToolProperties {
+	action:         None,
+	tab:            None,
+	url:            None,
+	selector:       None,
+	text:           None,
 	case_sensitive: None,
 	gitignore:      None,
 	path:           None,

@@ -128,9 +128,39 @@ pub struct Inventory {
 	pub files:                     Vec<SourceFile>,
 }
 
+/// Reviewed containers whose execution role is established by their consumers.
+/// These are code, never inert text merely because the file suffix says `.txt`.
+pub(crate) fn embedded_script(path: &str) -> bool {
+	matches!(
+		path,
+		"packages/stats/src/embedded-client.generated.txt"
+			| "packages/coding-agent/src/eval/js/shared/prelude.txt"
+			| "packages/coding-agent/src/tools/browser/aria/aria-snapshot.bundle.txt"
+	) || path
+		.strip_prefix("packages/coding-agent/src/tools/puppeteer/")
+		.is_some_and(|name| {
+			name.starts_with(|c: char| c.is_ascii_digit())
+				&& name.contains("_stealth_")
+				&& Path::new(name)
+					.extension()
+					.is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+				&& !name.contains('/')
+		})
+}
+
+fn unwrapped(path: &str) -> &str {
+	[".in", ".tmpl", ".template", ".txt"]
+		.iter()
+		.find_map(|suffix| path.strip_suffix(suffix))
+		.map_or(path, unwrapped)
+}
+
 fn language(path: &Path) -> &'static str {
+	if path.to_str().is_some_and(embedded_script) {
+		return "javascript";
+	}
 	if let Some(stem) = path.to_str().and_then(|path| {
-		[".in", ".tmpl", ".template"]
+		[".in", ".tmpl", ".template", ".txt"]
 			.iter()
 			.find_map(|suffix| path.strip_suffix(suffix))
 	}) {
@@ -184,7 +214,11 @@ fn role(path: &str, language: &str) -> Role {
 	}
 	if matches!(
 		path,
-		"packages/tui/src/fuzzy.js"
+		"packages/stats/src/embedded-client.generated.txt"
+			| "packages/coding-agent/src/tools/browser/aria/aria-snapshot.bundle.txt"
+			| "packages/coding-agent/src/tools/browser/relay/extension-assets/background.js.txt"
+			| "packages/coding-agent/src/tools/browser/relay/extension-assets/options.js.txt"
+			| "packages/tui/src/fuzzy.js"
 			| "packages/tui/src/fuzzy.d.ts"
 			| "packages/tui/wasm/terminal.js"
 			| "packages/tui/wasm/terminal.d.ts"
@@ -295,7 +329,9 @@ pub fn inspect_files(fs: &JailedFs, manifest: &[u8], output: &Path) -> Result<In
 			detected_language
 		};
 		if matches!(
-			path.extension().and_then(|part| part.to_str()),
+			Path::new(unwrapped(&path_string))
+				.extension()
+				.and_then(|part| part.to_str()),
 			Some("html" | "htm" | "xhtml" | "svg")
 		) && script_assets
 			.is_match(std::str::from_utf8(&bytes).context("script asset must be UTF-8")?)

@@ -341,3 +341,73 @@ mod tests {
 		assert!(invalid.to_string().contains("JSON"), "{invalid}");
 	}
 }
+
+/// One host-owned set of stateful tools. Browser options are host
+/// configuration, never model arguments; every browser operation requires
+/// final-argument approval.
+#[derive(Default)]
+pub struct ToolRuntime {
+	browser_options: Option<harvest_browser::Options>,
+	browser:         Option<harvest_browser::Browser>,
+}
+
+impl ToolRuntime {
+	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
+		self.browser = None;
+		self.browser_options = Some(options);
+	}
+
+	pub fn specs(&self) -> Vec<crate::chat::ToolSpec> {
+		let mut specs = crate::chat::specs();
+		if self.browser_options.is_some() {
+			specs.push(crate::chat::browser_spec());
+		}
+		specs
+	}
+
+	pub fn invoke(
+		&mut self,
+		root: &Path,
+		call: &ToolCall,
+		policy: &dyn Approval,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<String> {
+		if call.function.name != "browser" {
+			return invoke_with_cancellation(root, call, policy, cancellation);
+		}
+		cancellation.heartbeat()?;
+		let options = self
+			.browser_options
+			.as_ref()
+			.context("browser tool is not configured by the host")?;
+		if call.function.arguments.len() > 128 * 1024 {
+			bail!("browser arguments exceed frame limit");
+		}
+		if !policy.approve(call)? {
+			bail!("tool browser requires human approval");
+		}
+		cancellation.heartbeat()?;
+		let action: harvest_browser::Action = parse(&call.function.arguments)?;
+		if self.browser.is_none() {
+			self.browser = Some(harvest_browser::Browser::launch(options, cancellation)?);
+		}
+		let result = self
+			.browser
+			.as_mut()
+			.context("browser owner missing")?
+			.perform(action, cancellation)?;
+		// This text-only session codec cannot embed images losslessly yet.
+		// Keep capture bytes in the authorized workspace and return their path.
+		if let Some(data) = result.get("data").and_then(serde_json::Value::as_str) {
+			use base64::Engine;
+			let bytes = base64::engine::general_purpose::STANDARD.decode(data)?;
+			cancellation.heartbeat()?;
+			let hash = harvest_runtime::content_hash(&bytes);
+			let path =
+				std::path::PathBuf::from(".harvest/browser-captures").join(format!("{hash}.png"));
+			JailedFs::open(root)?.atomic_write(&path, &bytes)?;
+			return Ok(serde_json::json!({"mimeType":"image/png","file":path}).to_string());
+		}
+		Ok(bounded(&serde_json::to_string(&result)?))
+	}
+}

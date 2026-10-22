@@ -44,6 +44,7 @@ static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 /// default.
 #[derive(Debug, Clone)]
 pub struct SessionEngineOptions {
+	pub browser:            Option<harvest_browser::Options>,
 	pub command_capacity:   usize,
 	pub event_capacity:     usize,
 	pub follow_up_capacity: usize,
@@ -55,6 +56,7 @@ pub struct SessionEngineOptions {
 impl Default for SessionEngineOptions {
 	fn default() -> Self {
 		Self {
+			browser:            None,
 			command_capacity:   32,
 			event_capacity:     64,
 			follow_up_capacity: 16,
@@ -303,7 +305,11 @@ impl SessionEngine {
 		let driver = tokio::task::spawn_blocking(move || -> Result<Driver> {
 			let root = root.canonicalize()?;
 			let log = DurableSession::open(&root, &path, leaf.as_deref())?;
-			Ok(Driver { root, log, model, approval, options })
+			let mut tools = tools::ToolRuntime::default();
+			if let Some(browser) = &options.browser {
+				tools.configure_browser(browser.clone());
+			}
+			Ok(Driver { tools, root, log, model, approval, options })
 		})
 		.await
 		.context("session opening task failed")??;
@@ -379,6 +385,7 @@ struct Active {
 }
 
 struct Driver {
+	tools:    tools::ToolRuntime,
 	root:     PathBuf,
 	log:      DurableSession,
 	model:    Arc<dyn Model + Send + Sync>,
@@ -470,7 +477,12 @@ impl Owner {
 	async fn run(mut self) -> Result<()> {
 		loop {
 			if self.stopping && self.active.is_none() {
-				drop(self.driver.take()); // Drop the writer lease before acknowledging shutdown.
+				let driver = self.driver.take();
+				// Stateful tools can need bounded native-process shutdown. Reap them
+				// off the async scheduler, then release the writer before Closed.
+				tokio::task::spawn_blocking(move || drop(driver))
+					.await
+					.context("session resource shutdown failed")?;
 				self.emit(None, SessionEngineEventKind::Closed)?;
 				self.closed.send_replace(true);
 				return Ok(());
@@ -756,27 +768,29 @@ impl Driver {
 				.checked_add(1)
 				.context("model turn counter exhausted")?;
 			let mut streamed = 0_usize;
-			let response =
-				self
-					.model
-					.stream_response(&messages, &chat::specs(), cancellation, &mut |text| {
-						streamed = streamed
-							.checked_add(text.len())
-							.context("provider text size overflow")?;
-						if streamed > MAX_HTTP_BYTES {
-							bail!("provider text exceeds response limit");
-						}
-						let mut remaining = text;
-						while !remaining.is_empty() {
-							cancellation.heartbeat()?;
-							let chunk = truncate_bytes(remaining, DELTA_BYTES);
-							events
-								.blocking_send(WorkerPacket::Delta { run, text: chunk.into() })
-								.map_err(|_| anyhow::anyhow!("session event owner closed"))?;
-							remaining = &remaining[chunk.len()..];
-						}
-						Ok(())
-					})?;
+			let response = self.model.stream_response(
+				&messages,
+				&self.tools.specs(),
+				cancellation,
+				&mut |text| {
+					streamed = streamed
+						.checked_add(text.len())
+						.context("provider text size overflow")?;
+					if streamed > MAX_HTTP_BYTES {
+						bail!("provider text exceeds response limit");
+					}
+					let mut remaining = text;
+					while !remaining.is_empty() {
+						cancellation.heartbeat()?;
+						let chunk = truncate_bytes(remaining, DELTA_BYTES);
+						events
+							.blocking_send(WorkerPacket::Delta { run, text: chunk.into() })
+							.map_err(|_| anyhow::anyhow!("session event owner closed"))?;
+						remaining = &remaining[chunk.len()..];
+					}
+					Ok(())
+				},
+			)?;
 			cancellation.heartbeat()?;
 			let usage = response.usage;
 			let response = response.message;
@@ -793,13 +807,10 @@ impl Driver {
 			// Once an assistant tool batch is durable, every call must get a result,
 			// including calls skipped by cancellation. Never strand replay pairs.
 			for call in calls {
-				let output = tools::invoke_with_cancellation(
-					&self.root,
-					&call,
-					self.approval.as_ref(),
-					cancellation,
-				)
-				.unwrap_or_else(|error| format!("error: {error:#}"));
+				let output = self
+					.tools
+					.invoke(&self.root, &call, self.approval.as_ref(), cancellation)
+					.unwrap_or_else(|error| format!("error: {error:#}"));
 				let message = chat::tool_result(&call.id, output);
 				self.commit(run, message.clone(), events)?;
 				messages.push(message);

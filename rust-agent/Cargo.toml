@@ -66,6 +66,8 @@ core = []
 full = ["core", "dep:pi-shell", "dep:flume"]
 
 [dependencies]
+base64.workspace = true
+harvest-browser = { path = "../crates/harvest-browser" }
 anyhow.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap.workspace = true

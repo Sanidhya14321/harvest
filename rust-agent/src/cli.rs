@@ -27,6 +27,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(about = "Control a dedicated Chrome profile using native CDP JSONL commands")]
+	Browser(crate::browser_cli::BrowserArgs),
 	#[command(about = "Run one prompt against the workspace")]
 	Run(RunArgs),
 	#[command(about = "Serve the experimental Rust JSONL v1 RPC subset")]
@@ -111,32 +113,46 @@ struct SessionArgs {
 
 #[derive(Debug, clap::Args)]
 struct RunArgs {
+	#[arg(
+		long,
+		requires = "browser_profile",
+		help = "Enable approved native browser tools with this Chrome executable"
+	)]
+	browser_chrome:   Option<PathBuf>,
+	#[arg(
+		long,
+		requires = "browser_chrome",
+		help = "Dedicated persistent profile for native browser tools"
+	)]
+	browser_profile:  Option<PathBuf>,
+	#[arg(long, requires = "browser_chrome")]
+	browser_headless: bool,
 	#[arg(long, help = "Use the experimental asynchronous session owner")]
-	async_session: bool,
+	async_session:    bool,
 	#[arg(long, help = "Explicitly request OpenAI-style streamed usage; requires host support")]
-	request_usage: bool,
+	request_usage:    bool,
 	#[arg(long, default_value = ".omp/session.jsonl")]
-	session:       PathBuf,
+	session:          PathBuf,
 	#[arg(long)]
-	leaf:          Option<String>,
+	leaf:             Option<String>,
 	#[arg(long, help = "Emit ordered JSON events, including provisional streamed text")]
-	events:        bool,
+	events:           bool,
 	#[arg(short, long)]
-	prompt:        String,
+	prompt:           String,
 	#[arg(short, long, default_value = ".")]
-	workspace:     PathBuf,
+	workspace:        PathBuf,
 	#[arg(long)]
-	agent_dir:     Option<PathBuf>,
+	agent_dir:        Option<PathBuf>,
 	#[arg(long)]
-	tag:           Vec<String>,
+	tag:              Vec<String>,
 	#[arg(long)]
-	model:         Option<String>,
+	model:            Option<String>,
 	#[arg(long)]
-	base_url:      Option<String>,
+	base_url:         Option<String>,
 	#[arg(long)]
-	api_key:       Option<String>,
+	api_key:          Option<String>,
 	#[arg(long)]
-	max_steps:     Option<u32>,
+	max_steps:        Option<u32>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -161,6 +177,7 @@ pub(crate) fn execute() -> Result<u8> {
 
 fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
+		Commands::Browser(args) => crate::browser_cli::execute(args),
 		Commands::Run(args) => run(args),
 		Commands::Rpc(args) => rpc(args),
 		Commands::Replay(args) => {
@@ -317,6 +334,7 @@ fn run(args: RunArgs) -> Result<u8> {
 			.filter(|p| p.is_dir());
 		return run_async_session(&args, &workspace, settings, agent_dir);
 	}
+	let configured_browser = browser_options(&args);
 	let max_steps = settings.max_steps;
 	let model = HttpModel::new(settings).request_usage(args.request_usage);
 	let model_ref: &dyn Model = &model;
@@ -324,6 +342,9 @@ fn run(args: RunArgs) -> Result<u8> {
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
 	let mut session =
 		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
+	if let Some(options) = configured_browser {
+		session.configure_browser(options);
+	}
 	let mut output = io::stdout().lock();
 	let answer = session.submit(
 		&args.prompt,
@@ -350,6 +371,15 @@ fn run(args: RunArgs) -> Result<u8> {
 	Ok(0)
 }
 
+fn browser_options(args: &RunArgs) -> Option<harvest_browser::Options> {
+	Some(harvest_browser::Options {
+		chrome:     args.browser_chrome.clone()?,
+		profile:    args.browser_profile.clone()?,
+		headless:   args.browser_headless,
+		no_sandbox: false,
+	})
+}
+
 fn run_async_session(
 	args: &RunArgs,
 	workspace: &Path,
@@ -369,6 +399,7 @@ fn run_async_session(
 			Arc::new(HttpModel::new(settings).request_usage(args.request_usage)),
 			Arc::new(crate::tools::TerminalApproval),
 			SessionEngineOptions {
+				browser: browser_options(args),
 				max_model_turns,
 				user_agent_dir,
 				tags: args.tag.iter().cloned().collect(),

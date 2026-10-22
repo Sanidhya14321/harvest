@@ -8,6 +8,27 @@ The normal application still starts in TypeScript. No whole-product parity or
 distribution cutover is claimed. Existing browser/WASM proofs do not satisfy the
 new zero-JavaScript target.
 
+Completed **`browser:cdp-core`**: `harvest-browser` provides bounded native CDP
+control of a marked, locked persistent Chrome profile. Native CLI, public SDK,
+synchronous sessions and asynchronous sessions use the same engine and host
+approval boundary. Real Chrome checks navigation, DOM, typing/form clicks, PNG,
+exclusive ownership and persistent cookies; a copied native binary runs JSONL
+without language runtimes on PATH. Browser/runtime contracts, 111 core app tests,
+public SDK checks and strict Clippy pass. The initial screenshot probe raced a
+form navigation and failed; the strengthened fixture observes the submitted DOM
+before capture and passes. Logs retain both results. The larger native browser
+capability remains partial; legacy browser consumers have not moved yet.
+
+Completed **`control:embedded-sources`**: audit/ledger ownership now includes
+source-named text wrappers and known injected/prelude/bundle containers. All 118
+xtask contracts pass. Nineteen omitted executable payloads are recorded as pending;
+this expands the inventory without claiming any additional source removal.
+
+Next bounded browser slice: `tasks/BROWSER-RELAY-RETIREMENT.md`. Remove the approved
+extension/relay interface after preserving actionable migration errors and all
+remaining non-relay consumers. Do not delete shared browser/eval/computer code
+until its own last consumer moves.
+
 Completed control slice: **`control:playbook`** implements strict scope, gate
 repairs, source ownership/task catalog, generated status and branch CI. Its
 verification includes 105 xtask contracts plus doctests, strict Clippy and CLI

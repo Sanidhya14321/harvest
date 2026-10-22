@@ -76,6 +76,7 @@ fn baseline_source(path: &str) -> bool {
 /// baseline's language scope.
 pub(crate) fn source(path: &str) -> bool {
 	baseline_source(path)
+		|| crate::source_audit::embedded_script(path)
 		|| matches!(
 			Path::new(path).extension().and_then(|value| value.to_str()),
 			Some(
@@ -87,9 +88,9 @@ pub(crate) fn source(path: &str) -> bool {
 					| "go" | "rb"
 					| "lua"
 			)
-		) || [".in", ".tmpl", ".template"]
+		) || [".in", ".tmpl", ".template", ".txt"]
 		.iter()
-		.any(|suffix| path.strip_suffix(suffix).is_some_and(baseline_source))
+		.any(|suffix| path.strip_suffix(suffix).is_some_and(source))
 }
 
 fn documented(value: Option<&str>) -> bool {

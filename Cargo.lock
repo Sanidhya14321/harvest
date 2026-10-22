@@ -3976,6 +3976,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "harvest-browser"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "harvest-runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tungstenite",
+]
+
+[[package]]
 name = "harvest-media"
 version = "0.1.0"
 dependencies = [
@@ -3996,6 +4008,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "clap_complete",
@@ -4003,6 +4016,7 @@ dependencies = [
  "flume",
  "handlebars",
  "harvest-brain",
+ "harvest-browser",
  "harvest-media",
  "harvest-protocol",
  "harvest-runtime",
