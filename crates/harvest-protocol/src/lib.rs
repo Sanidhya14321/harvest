@@ -7,3 +7,4 @@
 pub mod digest;
 pub mod display;
 pub mod session;
+pub mod wire;
