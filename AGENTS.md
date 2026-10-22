@@ -33,7 +33,7 @@ This repo contains multiple packages, but **`packages/coding-agent/`** is the pr
 | `packages/wire/`                | Shared collab live-session protocol types                          |
 | `packages/collab-web/`          | Browser guest client + local relay for collab sessions             |
 | `packages/snapcompact/`         | Bitmap-frame context compression                                   |
-| `packages/browser-relay/`       | Extension relay for Eval browser API                               |
+| `crates/harvest-browser/`       | Native dedicated-profile CDP browser engine (extension relay retired) |
 | `packages/harvest-memory/`, `packages/harvest-schema/` | Memory backend + shared schema                       |
 | `packages/typescript-edit-benchmark/` | Edit benchmark suite                                         |
 | `crates/pi-*` (`crates/harvest-*` mirrors) | Rust natives: shell, ast, iso, voice, walker, edit, vcs, diff |

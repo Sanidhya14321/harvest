@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the extension and relay package; use the native Rust controller with a dedicated browser profile.
+
 ## [18.0.7] - 2026-08-26
 
 ### Changed

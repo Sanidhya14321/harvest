@@ -321,3 +321,21 @@ fn executable_streams_events_and_resumes_its_v3_session() {
 	let document = or_abort(harvest_omp::session_format::SessionDocument::decode(&bytes));
 	assert_eq!(document.entries().len(), 4);
 }
+
+#[test]
+fn retired_browser_relay_never_installs_or_starts_a_service() {
+	for arguments in [
+		vec!["browser-relay"],
+		vec!["browser-relay", "install", "--dir", "/unreachable"],
+		vec!["browser-relay", "--help"],
+	] {
+		keep(
+			omp()
+				.args(arguments)
+				.assert()
+				.failure()
+				.stderr(contains("harvest browser --chrome PATH --profile NEW_DIRECTORY"))
+				.stderr(contains("Sign in separately")),
+		);
+	}
+}

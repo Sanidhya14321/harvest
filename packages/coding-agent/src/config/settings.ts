@@ -944,6 +944,17 @@ export class Settings {
 		return this.#agentDir;
 	}
 
+	/** Reject retired relay configuration at the browser boundary, including runtime overrides. */
+	assertBrowserRelayRemoved(): void {
+		const enabled = getByPath(this.#merged, ["browser", "relay"]) ?? this.#merged["browser.relay"];
+		const endpoint = getByPath(this.#merged, ["browser", "relayUrl"]) ?? this.#merged["browser.relayUrl"];
+		if (enabled === true || (typeof endpoint === "string" && endpoint.trim().length > 0)) {
+			throw new Error(
+				"The Chrome extension relay has been removed. Remove browser.relay/browser.relayUrl from configuration and use native harvest browser --chrome PATH --profile NEW_DIRECTORY. See docs/browser-migration.md.",
+			);
+		}
+	}
+
 	/**
 	 * Raw global settings layer (`config.yml`/`config.yaml`), deep-cloned.
 	 *

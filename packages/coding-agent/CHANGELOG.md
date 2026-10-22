@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the Chrome extension relay; use the native Rust browser controller with a dedicated profile and separate sign-in.
+
 ### Fixed
 
 - Binary updates fetch the correct Harvest release assets and preserve the installed `omp` or `harvest` launcher alias.

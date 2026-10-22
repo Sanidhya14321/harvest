@@ -27,6 +27,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(name = "browser-relay", hide = true, disable_help_flag = true)]
+	RetiredBrowserRelay {
+		#[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+		arguments: Vec<std::ffi::OsString>,
+	},
 	#[command(about = "Control a dedicated Chrome profile using native CDP JSONL commands")]
 	Browser(crate::browser_cli::BrowserArgs),
 	#[command(about = "Run one prompt against the workspace")]
@@ -177,6 +182,11 @@ pub(crate) fn execute() -> Result<u8> {
 
 fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
+		Commands::RetiredBrowserRelay { .. } => bail!(
+			"The Chrome extension relay has been removed. Use the native harvest browser --chrome \
+			 PATH --profile NEW_DIRECTORY controller. Sign in separately in that dedicated profile; \
+			 existing Chrome profiles are never attached. See docs/browser-migration.md."
+		),
 		Commands::Browser(args) => crate::browser_cli::execute(args),
 		Commands::Run(args) => run(args),
 		Commands::Rpc(args) => rpc(args),

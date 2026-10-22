@@ -145,16 +145,23 @@
         "replacement_capabilities": [
           "surface:native-browser-control"
         ],
-        "status": "pending",
+        "status": "removed",
         "previous_implementation": {
           "status": "absent"
         },
         "previous_verification": {
           "status": "unverified"
-        }
+        },
+        "contract_suites": [
+          "rust-agent/tests/cli.rs",
+          "crates/harvest-browser/examples/verify_browser.rs",
+          "crates/harvest-browser/examples/verify_cli.rs",
+          "packages/coding-agent/test/cli-argv-routing.test.ts",
+          "packages/coding-agent/test/tools/browser-schema.test.ts"
+        ]
       },
       "legacy": {
-        "removable": false
+        "removable": true
       }
     },
     {
@@ -6722,6 +6729,29 @@
           "playbook-check"
         ],
         "evidence": []
+      },
+      {
+        "id": "browser:relay-retirement",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "browser:cdp-core",
+          "control:embedded-sources"
+        ],
+        "card": "docs/rust-migration/tasks/BROWSER-RELAY-RETIREMENT.md",
+        "capabilities": [
+          "command:browser-relay"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Approved Chrome extension/relay interface removed after native browser workflow verification at 1786b93. Eighteen source rows are verified retirements. Copied native CLI runs browser JSONL/profile reopen without language runtimes and seven installed CLI contracts including actionable retired-command rejection pass. All 112 core application tests and strict Clippy pass. Legacy argv/settings/browser contracts and typecheck pass; Bun lock and Nix workspace outputs regenerated. Native browser capability remains partial; unrelated retained browser consumers remain pending."
+        ]
       }
     ]
   }

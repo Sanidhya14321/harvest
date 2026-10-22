@@ -47,11 +47,6 @@ export const commands: CommandEntry[] = [
 		help: commandHelp.benchHelp,
 	},
 	{
-		name: "browser-relay",
-		load: () => import("./commands/browser-relay").then(m => m.default),
-		help: commandHelp.browserRelayHelp,
-	},
-	{
 		name: "cleanse",
 		load: () => import("./commands/cleanse").then(m => m.default),
 		help: commandHelp.cleanseHelp,
@@ -366,6 +361,20 @@ function stripLaunchGlobalFlags(leading: readonly string[]): string[] {
  * other subcommands that cannot parse them (#8891).
  */
 export function resolveCliArgv(argv: string[]): ResolvedCliArgv {
+	// Retired commands must never become a model prompt, including behind global flags.
+	for (let index = 0; index < argv.length; index += 1) {
+		const argument = argv[index];
+		if (argument === "--") break;
+		if (!argument.startsWith("-")) {
+			if (argument === "browser-relay") {
+				return {
+					error: "The Chrome extension relay has been removed. Use the native harvest browser --chrome PATH --profile NEW_DIRECTORY controller and sign in separately. See docs/browser-migration.md.",
+				};
+			}
+			break;
+		}
+		if (flagConsumesValue(argument, argv[index + 1])) index += 1;
+	}
 	const first = argv[0];
 	const reservedMessage = reservedTopLevelWordMessage(argv);
 	if (reservedMessage) return { error: reservedMessage };

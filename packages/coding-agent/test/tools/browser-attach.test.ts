@@ -266,7 +266,15 @@ describe("pickElectronTarget", () => {
 				prelude.invoke(parameters, { session, toolCallId: "browser-attach-navigation" });
 			let opened = false;
 			const tabName = `attach-navigation-${process.pid}-${Math.random().toString(36).slice(2)}`;
-			const requested = "data:text/html,<title>attached-navigation-target</title>";
+			const fixture = Bun.serve({
+				hostname: "127.0.0.1",
+				port: 0,
+				fetch: () =>
+					new Response("<!doctype html><title>attached-navigation-target</title>", {
+						headers: { "Content-Type": "text/html" },
+					}),
+			});
+			const requested = String(fixture.url);
 			const targetPage = (await launched.browser.pages())[0];
 			if (!targetPage) throw new Error("Expected the launched browser to expose a page target");
 
@@ -286,6 +294,7 @@ describe("pickElectronTarget", () => {
 				expect(targetPage.url()).toBe(requested);
 			} finally {
 				if (opened) await invokeBrowser({ action: "close", name: tabName });
+				await fixture.stop(true);
 			}
 		},
 		30_000,
@@ -308,10 +317,20 @@ describe("pickElectronTarget", () => {
 			const targetPage = (await launched.browser.pages())[0];
 			if (!targetPage) throw new Error("Expected the launched browser to expose a page target");
 
+			const requested = "http://127.0.0.1:9/aborted-by-interception";
 			let requestCount = 0;
 			const onRequest = (request: HTTPRequest) => {
-				requestCount++;
-				void request.abort("failed");
+				// Count the attempted navigation, excluding favicon/background requests.
+				if (
+					request.url() === requested &&
+					request.isNavigationRequest() &&
+					request.frame() === targetPage.mainFrame()
+				) {
+					requestCount++;
+					void request.abort("failed");
+				} else {
+					void request.continue();
+				}
 			};
 			await targetPage.setRequestInterception(true);
 			targetPage.on("request", onRequest);
@@ -329,7 +348,7 @@ describe("pickElectronTarget", () => {
 						// Loopback keeps a hypothetical interception miss local and
 						// loud (instant connection refusal, count 0) instead of
 						// wandering into DNS or a proxy.
-						url: "http://127.0.0.1:9/aborted-by-interception",
+						url: requested,
 						waitUntil: "domcontentloaded",
 						timeoutMs: 15_000,
 					}),

@@ -4595,29 +4595,6 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
-	"browser.relay": {
-		type: "boolean",
-		default: false,
-		ui: {
-			tab: "tools",
-			group: "Grep & Browser",
-			label: "Browser Relay",
-			description:
-				"Drive your own Chrome tabs through the omp browser relay. Install the extension once (`omp browser-relay install`); the relay server auto-starts when the browser prelude needs it. Takes precedence over Browser CDP URL; set PI_BROWSER_RELAY=0 or PI_BROWSER_RELAY=1 to override.",
-		},
-	},
-
-	"browser.relayUrl": {
-		type: "string",
-		default: undefined,
-		ui: {
-			tab: "tools",
-			group: "Grep & Browser",
-			label: "Browser Relay URL",
-			description: "harvest browser relay endpoint (default http://127.0.0.1:9224).",
-		},
-	},
-
 	"browser.headless": {
 		type: "boolean",
 		default: true,

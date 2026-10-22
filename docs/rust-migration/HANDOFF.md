@@ -24,10 +24,23 @@ source-named text wrappers and known injected/prelude/bundle containers. All 118
 xtask contracts pass. Nineteen omitted executable payloads are recorded as pending;
 this expands the inventory without claiming any additional source removal.
 
-Next bounded browser slice: `tasks/BROWSER-RELAY-RETIREMENT.md`. Remove the approved
-extension/relay interface after preserving actionable migration errors and all
-remaining non-relay consumers. Do not delete shared browser/eval/computer code
-until its own last consumer moves.
+Completed **`browser:relay-retirement`**: the owned Chrome extension, relay
+bridge/server/daemon, installer/build/smoke code, embedded payloads and retired
+relay-only tests are removed. The old command and enabled relay requests return
+native-browser migration guidance. Settings UI, registry/worker connections and
+Bun/Nix workspace ownership are updated; license documents remain. Eighteen
+source rows are verified approved retirements, not retained behavior parity.
+The native candidate passes JSONL/profile reopening with an empty PATH and all
+seven installed CLI contracts; 112 core app tests and strict Clippy pass.
+The addon rebuild and 86 native host contracts also pass. Focused legacy browser,
+argv/settings contracts and typecheck pass. Viewport fixtures now use loopback
+HTTP because host Chrome policy blocks `data:`; failed receipts stay. The attach
+retry fixture counts its target navigation rather than unrelated background
+requests, retaining the exactly-once assertion.
+
+The browser search/PDF/computer/eval and other native-product consumers still
+need bounded implementation cards and migration. Their shared sources stay
+pending until the last consumer moves; do not retire them based on relay removal.
 
 Completed control slice: **`control:playbook`** implements strict scope, gate
 repairs, source ownership/task catalog, generated status and branch CI. Its
