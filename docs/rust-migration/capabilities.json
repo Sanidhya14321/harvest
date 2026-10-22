@@ -5699,7 +5699,7 @@
       {
         "id": "control:coverage",
         "kind": "control",
-        "state": "in_progress",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "tooling",
         "depends_on": [
@@ -5713,7 +5713,7 @@
           "playbook-check"
         ],
         "evidence": [
-          "Reviewed additive local measurement includes all nine existing pi-* engine suites plus every previous package; instrumented build/result pending. Threshold and report scope are unchanged."
+          "Linux x86_64, nightly-2026-08-08, source checkpoint 1a22bd5 plus additive workflow selection: 2,925 nextest contracts pass (five existing skips); unfiltered LCOV reports 107,698/144,597 lines (74.48%); cargo llvm-cov report --fail-under-lines 65 succeeds. All previous packages and all nine owned pi-* engine suites are included; no exclusions or threshold change. Logs/LCOV under target/migration/coverage-current*."
         ]
       },
       {

@@ -66,15 +66,13 @@ Its receipt remains failed. **`control:legacy-session-contracts`** records the
 writer-lease, discovery/path and error/label families. Compare the baseline and
 review their contracts before changing behavior or splitting implementation cards.
 
-Current active work: **`control:coverage`**. An additive instrumented run of all
-nine existing pi-* Rust engine suites plus the previous product suites passed
-2,923 tests (five skips). Collection filled the disk; clear generated build caches
-and repeat collection with headroom before claiming coverage. The isolated
-coverage worktree (`git worktree list`) uses
-`target/coverage-native` under the main workspace as its instrumented target.
-Run its full tests and unchanged 65% report before committing the workflow
-selection. The nine-package recipe is in its card; the current pushed CI recipe
-still has the old package selection and is expected to fail that floor.
+Completed **`control:coverage`**: the additive selection includes all nine
+existing pi-* engine suites and every previous package. On Linux x86_64 with the
+pinned nightly, 2,925 tests pass (five existing skips), and the unfiltered report
+measures 107,698/144,597 lines (74.48%). The unchanged 65% enforcement succeeds.
+Logs/LCOV are under `target/migration/coverage-current*`; CI uses the same command.
+This measures selected Rust product/engine code, not whole-application parity.
+
 See `tasks/COVERAGE.md` before changing coverage scope. Installation now passes
 its help/version/brain checks, then hits the independent binary-size budget
 (121,519,040 > 20,971,520 bytes). `control:artifact-size` records the measured

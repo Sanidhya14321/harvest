@@ -41,3 +41,14 @@ metric remains the selected Rust product/ordinary engine code. Run the exact new
 workflow command and require both its tests and unchanged 65% report to pass
 before completion. Keep any real native-engine regressions visible and repair
 them before claiming success.
+
+## Verified result
+
+At source checkpoint `1a22bd5` plus this additive workflow selection, Linux x86_64
+and nightly-2026-08-08 run 2,925 passing contracts (five existing skips). The
+unfiltered LCOV/report contains 144,597 executable lines, 107,698 hit: **74.48%**.
+The exact unchanged `cargo llvm-cov report --fail-under-lines 65` command exits
+successfully. Fresh collection had 12 GB of disk headroom; the earlier disk-full
+collection was discarded. Logs and LCOV live under `target/migration/coverage-*`.
+No prior package, owned module or third-party report entry was excluded. CI
+reproduces this package selection; this is not a whole-product parity claim.

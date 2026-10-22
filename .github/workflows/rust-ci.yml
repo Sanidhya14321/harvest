@@ -253,7 +253,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - run: rustup component add llvm-tools-preview
       - name: Measure coverage
-        run: cargo llvm-cov nextest -p harvest-runtime -p harvest-brain -p harvest-protocol -p harvest-terminal -p harvest-terminal-wasm -p harvest-web -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp -p xtask --all-features --locked --no-report
+        run: cargo llvm-cov nextest -p harvest-runtime -p harvest-brain -p harvest-protocol -p harvest-terminal -p harvest-terminal-wasm -p harvest-web -p harvest-tui -p harvest-media -p harvest-tokenizer -p harvest-omp -p xtask -p pi-ast -p pi-builtins -p pi-diff -p pi-edit -p pi-iso -p pi-shell -p pi-vcs -p pi-voice -p pi-walker --all-features --locked --no-report
       - name: Report
         run: cargo llvm-cov report --lcov --output-path lcov.info
       - name: Enforce the floor
