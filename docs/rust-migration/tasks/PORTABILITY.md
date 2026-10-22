@@ -40,3 +40,11 @@ checks on CI, where the original temp-root aliases were observed. Linux success
 alone does not establish Windows/macOS success. Completion requires those CI
 results. Recovery: revert this repair's constructors, serializers and archive
 options together; never repair data by moving it outside its authorized root.
+
+Follow-up from CI 39775015370/job 119811632870: Windows core passed its debug
+contracts, then the release `provider_usage` fixture failed with Winsock 10035.
+Its accepted socket inherited the listener's nonblocking mode. Explicitly return
+accepted fixture streams to blocking mode before applying the existing bounded
+read timeout. Preserve the 10-second accept deadline, request limits and all
+assertions. Rerun the five provider-usage tests and Windows CI; this task remains
+in progress until that result is available.

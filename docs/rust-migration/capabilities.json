@@ -5648,7 +5648,7 @@
       {
         "id": "control:coverage",
         "kind": "control",
-        "state": "blocked",
+        "state": "in_progress",
         "review": "reviewed",
         "work_unit": "tooling",
         "depends_on": [
@@ -5661,13 +5661,14 @@
           "rust-contracts",
           "playbook-check"
         ],
-        "evidence": [],
-        "blocker": "Rust CI coverage reports 20.81% lines against 65%; owned pi-* dependencies are instrumented but their suites are not selected. Add meaningful coverage before completion; do not lower the floor."
+        "evidence": [
+          "Reviewed additive local measurement includes all nine existing pi-* engine suites plus every previous package; instrumented build/result pending. Threshold and report scope are unchanged."
+        ]
       },
       {
         "id": "control:portability",
         "kind": "control",
-        "state": "in_progress",
+        "state": "blocked",
         "review": "reviewed",
         "work_unit": "tooling",
         "depends_on": [
@@ -5684,8 +5685,10 @@
           "149 runtime, memory and tooling contracts plus doctests passed on Linux",
           "Strict Clippy passed for runtime, brain, tokenizer, media and xtask",
           "RUSTDOCFLAGS=-D warnings cargo doc --locked -p harvest-tokenizer --no-deps passed",
-          "Windows/macOS installed and alias contracts remain pending CI verification"
-        ]
+          "Windows/macOS installed and alias contracts remain pending CI verification",
+          "CI a024198 passes Linux/ARM/macOS contracts and Windows debug; Windows core release exposed inherited nonblocking fixture sockets (10035). Explicit blocking-mode follow-up passes five Linux provider-usage contracts; Windows rerun pending."
+        ],
+        "blocker": "Await Windows core/full release-profile CI for the accepted-socket blocking-mode fix; five Linux provider-usage contracts pass. Inspect Rust CI for the pushed fix before marking done."
       },
       {
         "id": "media:sixel",

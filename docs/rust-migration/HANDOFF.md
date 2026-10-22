@@ -43,18 +43,25 @@ Completed **`control:terminal-reproducibility`**: generated payloads match betwe
 two checkouts and different Cargo homes. They remain transitional JS artifacts
 owned by the native UI migration, not approved final-product glue.
 
-Completed **`control:oauth-fixtures`**: 19 refresh-race assertions and the AI
-TypeScript check pass. Fixtures use the existing refresh hook before seeding;
-production logic and all original CAS/disable assertions remain intact.
+Completed **`control:oauth-fixtures`** and **`control:legacy-workspace`**: 19
+refresh-race assertions, seven planner/watchdog contracts and all 49 workspace
+chunks pass. AI fixtures now inject at the current refresh boundary; the legacy
+runner bounds VM/process lifetimes without dropping test files. The earlier
+full-transition failure is retained as a failed receipt, not reclassified as a
+passing transition. Other legacy buckets/release evidence remain separate.
 
-Completed **`control:legacy-workspace`**: all 49 workspace chunks and seven
-planner/watchdog contracts pass. All 414 AI test files remain covered exactly
-once. Keep prior failed transition receipts as failed historical evidence.
+`control:portability` now awaits Windows release-profile CI for the accepted
+socket blocking-mode follow-up. Five local provider-usage contracts pass;
+Linux/ARM/macOS contracts and the earlier Windows debug contracts passed CI.
+Keep the task blocked until the new Windows variants pass.
 
-Current foundation repair: **`control:portability`**. Linux runtime/memory/tooling
-contracts, strict Clippy and tokenizer rustdoc pass. Push the repair and inspect
-Windows/macOS CI results before marking it done. `control:coverage` remains
-blocked by a measured first-party coverage gap; the 65% floor remains intact.
+Current active work: **`control:coverage`**. An additive instrumented build of all
+nine existing pi-* Rust engine suites plus the previous product suites is running
+in the isolated coverage worktree (`git worktree list`). It uses
+`target/coverage-native` under the main workspace as its instrumented target.
+Run its full tests and unchanged 65% report before committing the workflow
+selection. The nine-package recipe is in its card; the current pushed CI recipe
+still has the old package selection and is expected to fail that floor.
 See `tasks/COVERAGE.md` before changing coverage scope. Installation now passes
 its help/version/brain checks, then hits the independent binary-size budget
 (121,519,040 > 20,971,520 bytes). `control:artifact-size` records the measured

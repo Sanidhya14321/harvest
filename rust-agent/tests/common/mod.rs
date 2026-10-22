@@ -37,6 +37,9 @@ impl HttpFixture {
 					Err(error) => return Err(error.into()),
 				}
 			};
+			// Winsock inherits the listener's nonblocking mode; Unix accept does
+			// not. These bounded request reads require blocking sockets on both.
+			socket.set_nonblocking(false)?;
 			socket.set_read_timeout(Some(Duration::from_secs(5)))?;
 			let mut reader = BufReader::new(&mut socket);
 			let mut headers = Vec::new();

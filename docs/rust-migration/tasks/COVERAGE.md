@@ -28,3 +28,16 @@ followed by `cargo llvm-cov report --lcov --output-path lcov.info` and
 platform and report as evidence. The command must succeed without weakening
 the floor or hiding first-party code. Recovery: restore the prior measurement
 configuration, preserve failing reports, and keep this task blocked.
+
+## Reviewed additive suite selection
+
+The existing first-party engine suites provide over 2,500 Rust test cases across
+`pi-ast`, `pi-builtins`, `pi-diff`, `pi-edit`, `pi-iso`, `pi-shell`, `pi-vcs`,
+`pi-voice` and `pi-walker`. Add all nine packages to the existing measurement
+command, retaining every previous package and the unfiltered report/floor. No
+filename exclusion or reduced threshold is introduced. The transitional N-API
+adapter remains covered by its existing rebuilt-addon host contracts; this job's
+metric remains the selected Rust product/ordinary engine code. Run the exact new
+workflow command and require both its tests and unchanged 65% report to pass
+before completion. Keep any real native-engine regressions visible and repair
+them before claiming success.
