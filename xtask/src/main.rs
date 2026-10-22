@@ -40,6 +40,8 @@ fn execute() -> Result<()> {
 		"version" => xtask::version::execute(selection),
 		"package" => packaging::execute(selection),
 		"migration" => xtask::migration::execute(selection),
+		"playbook" => xtask::playbook::execute(selection),
+		"acceptance" => xtask::acceptance::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
 		"test" => {
 			let doctest_selection = xtask::testing::doctest_selection(&selection)?;
@@ -55,29 +57,7 @@ fn execute() -> Result<()> {
 			check.extend(selection);
 			cargo(&check)
 		},
-		"capabilities" => {
-			let manifest: serde_json::Value =
-				serde_json::from_str(include_str!("../../docs/rust-migration/capabilities.json"))?;
-			let progress = xtask::capabilities::inspect(&manifest)?;
-			println!(
-				"{}/{} capabilities have Rust implementations (partial or complete)",
-				progress.implemented, progress.total
-			);
-			println!(
-				"{}/{} legacy capabilities verified for Rust parity",
-				progress.verified, progress.total
-			);
-			if selection
-				.iter()
-				.any(|argument| argument == "--require-complete")
-				&& progress.verified != progress.retained
-			{
-				bail!(
-					"distribution cutover blocked: legacy capabilities still lack verified Rust parity"
-				);
-			}
-			Ok(())
-		},
+		"capabilities" => xtask::capabilities::execute(selection),
 		"help" | "--help" | "-h" => {
 			println!(
 				"cargo xtask npm-versions [--check] [--release VERSION|--workspace]\ncargo xtask \
@@ -90,7 +70,8 @@ fn execute() -> Result<()> {
 				 CURRENT]\ncargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo \
 				 package and target selectors]\ncargo xtask capabilities [--require-complete]\nTests \
 				 require cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
-				 --help\ncargo xtask secrets --help\ncargo xtask migration [--require-complete]"
+				 --help\ncargo xtask secrets --help\ncargo xtask migration \
+				 [--require-complete]\ncargo xtask playbook <check|status|next> [--json]"
 			);
 			Ok(())
 		},

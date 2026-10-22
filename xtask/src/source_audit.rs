@@ -110,28 +110,43 @@ impl SourceFile {
 
 #[derive(Debug, Serialize)]
 pub struct Inventory {
-	pub schema_version:          u32,
-	pub scope:                   &'static str,
-	pub review_level:            &'static str,
-	pub source_fingerprint:      String,
-	pub files_read:              usize,
-	pub bytes_read:              usize,
-	pub authored_js_ts_files:    usize,
-	pub authored_js_ts_lines:    usize,
-	pub script_asset_candidates: Vec<String>,
-	pub files_by_language:       BTreeMap<String, usize>,
-	pub absent_tracked_paths:    Vec<String>,
-	pub excluded_report:         String,
-	pub files:                   Vec<SourceFile>,
+	pub schema_version:            u32,
+	pub scope:                     &'static str,
+	pub review_level:              &'static str,
+	pub source_fingerprint:        String,
+	pub files_read:                usize,
+	pub bytes_read:                usize,
+	pub authored_js_ts_files:      usize,
+	pub authored_js_ts_lines:      usize,
+	pub script_asset_candidates:   Vec<String>,
+	/// Includes generated bindings and executable templates. Only vendored
+	/// dependencies and the explicitly reviewed inert fixture roles are exempt.
+	pub non_rust_executable_files: Vec<String>,
+	pub files_by_language:         BTreeMap<String, usize>,
+	pub absent_tracked_paths:      Vec<String>,
+	pub excluded_report:           String,
+	pub files:                     Vec<SourceFile>,
 }
 
 fn language(path: &Path) -> &'static str {
+	if let Some(stem) = path.to_str().and_then(|path| {
+		[".in", ".tmpl", ".template"]
+			.iter()
+			.find_map(|suffix| path.strip_suffix(suffix))
+	}) {
+		return language(Path::new(stem));
+	}
 	match path.extension().and_then(|value| value.to_str()) {
 		Some("rs") => "rust",
 		Some("ts" | "tsx" | "mts" | "cts") => "typescript",
 		Some("js" | "jsx" | "mjs" | "cjs") => "javascript",
 		Some("py") => "python",
-		Some("sh" | "bash" | "ps1") => "shell",
+		Some("jl") => "julia",
+		Some("sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "cmd" | "bat") => "shell",
+		Some("m") => "objective_c",
+		Some("go") => "go",
+		Some("rb") => "ruby",
+		Some("lua") => "lua",
 		Some("kdl") => "kdl",
 		Some("md" | "mdx" | "rst") => "documentation",
 		Some("json" | "json5" | "jsonl" | "yaml" | "yml" | "toml" | "lock") => "configuration",
@@ -246,21 +261,22 @@ pub fn inspect_files(fs: &JailedFs, manifest: &[u8], output: &Path) -> Result<In
 		}
 	}
 	let mut inventory = Inventory {
-		schema_version:          1,
-		scope:                   "Git tracked plus nonignored untracked checkout files; ignored \
-		                          build outputs and .git internals excluded",
-		review_level:            "inventory-only; a file hash or source count does not establish \
-		                          semantic review or Rust parity",
-		source_fingerprint:      String::new(),
-		files_read:              0,
-		bytes_read:              0,
-		authored_js_ts_files:    0,
-		authored_js_ts_lines:    0,
-		script_asset_candidates: Vec::new(),
-		files_by_language:       BTreeMap::new(),
-		absent_tracked_paths:    Vec::new(),
-		excluded_report:         portable_path(&output)?,
-		files:                   Vec::new(),
+		schema_version:            2,
+		scope:                     "Git tracked plus nonignored untracked checkout files; ignored \
+		                            build outputs and .git internals excluded",
+		review_level:              "inventory-only; a file hash or source count does not establish \
+		                            semantic review or Rust parity",
+		source_fingerprint:        String::new(),
+		files_read:                0,
+		bytes_read:                0,
+		authored_js_ts_files:      0,
+		authored_js_ts_lines:      0,
+		script_asset_candidates:   Vec::new(),
+		non_rust_executable_files: Vec::new(),
+		files_by_language:         BTreeMap::new(),
+		absent_tracked_paths:      Vec::new(),
+		excluded_report:           portable_path(&output)?,
+		files:                     Vec::new(),
 	};
 	let mut fingerprint = ContentDigest::default();
 	for path in paths {
@@ -269,7 +285,12 @@ pub fn inspect_files(fs: &JailedFs, manifest: &[u8], output: &Path) -> Result<In
 			inventory.absent_tracked_paths.push(path_string);
 			continue;
 		};
-		let language = language(&path);
+		let detected_language = language(&path);
+		let language = if detected_language == "other" && bytes.starts_with(b"#!/") {
+			"shell"
+		} else {
+			detected_language
+		};
 		if matches!(
 			path.extension().and_then(|part| part.to_str()),
 			Some("html" | "htm" | "xhtml" | "svg")
@@ -289,6 +310,20 @@ pub fn inspect_files(fs: &JailedFs, manifest: &[u8], output: &Path) -> Result<In
 				.map(|text| text.lines().count()),
 			sha256:   content_hash(&bytes),
 		};
+		if matches!(
+			language,
+			"javascript"
+				| "typescript"
+				| "python"
+				| "julia"
+				| "shell"
+				| "objective_c"
+				| "go" | "ruby"
+				| "lua"
+		) && !matches!(file.role, Role::Vendored | Role::LanguageFixture)
+		{
+			inventory.non_rust_executable_files.push(file.path.clone());
+		}
 		fingerprint.update(file.path.as_bytes());
 		fingerprint.update(&[0]);
 		fingerprint.update(file.sha256.as_bytes());
@@ -382,6 +417,10 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 		inventory.script_asset_candidates.len()
 	);
 	println!(
+		"{} non-Rust executable sources remain (including generated bindings and templates)",
+		inventory.non_rust_executable_files.len()
+	);
+	println!(
 		"{}/{} retained capabilities implemented (partial or complete); {}/{} verified; {}/{} \
 		 retirements removed",
 		progress.implemented,
@@ -411,11 +450,8 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 	if require_complete {
 		progress.require_complete()?;
 		crate::migration::execute(vec!["--require-complete".into()])?;
-		if inventory.authored_js_ts_files != 0 {
-			bail!(
-				"authored JS/TS remains outside generated bindings, vendored sources and language \
-				 fixtures"
-			);
+		if !inventory.non_rust_executable_files.is_empty() {
+			bail!("non-Rust executable sources remain, including generated bindings/templates");
 		}
 		if !inventory.script_asset_candidates.is_empty() {
 			bail!("HTML/SVG script assets remain without reviewed Rust ownership");

@@ -65,6 +65,33 @@ fn unknown_shared_or_unreviewed_changes_widen_to_full_and_cycles_fail() -> Resul
 	Ok(())
 }
 
+#[test]
+fn release_plan_includes_acceptance_gates_that_are_not_transition_checks() -> Result<()> {
+	let mut data = manifest();
+	data["execution"]["release_gates"] = json!(["contracts", "sdk"]);
+	data["execution"]["checks"]
+		.as_array_mut()
+		.unwrap()
+		.push(json!({
+			"id":"installed-sdk", "command":["cargo","xtask","acceptance","sdk"],
+			"timeout_seconds":60, "kind":"sdk"
+		}));
+	let graph = inspect_graph(&data)?;
+	assert!(
+		!plan(&graph, Scope::Full, &[])?
+			.checks
+			.iter()
+			.any(|check| check.id == "installed-sdk")
+	);
+	assert!(
+		plan(&graph, Scope::Release, &[])?
+			.checks
+			.iter()
+			.any(|check| check.id == "installed-sdk")
+	);
+	Ok(())
+}
+
 fn fixture() -> Result<(TempDir, String)> {
 	let root = tempdir()?;
 	assert!(

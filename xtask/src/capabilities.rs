@@ -1,6 +1,13 @@
 //! Implementation evidence, intentional retirement and distribution cutover are
 //! separate gates.
+use std::{
+	env,
+	path::{Path, PathBuf},
+};
+
 use anyhow::{Context, Result, bail};
+use clap::Parser;
+use harvest_runtime::JailedFs;
 use serde_json::Value;
 
 pub struct Progress {
@@ -39,6 +46,40 @@ fn evidence_list(value: &Value) -> bool {
 	value
 		.as_array()
 		.is_some_and(|items| !items.is_empty() && items.iter().all(nonempty_text))
+}
+
+#[derive(Parser)]
+#[command(name = "cargo xtask capabilities")]
+struct Arguments {
+	#[arg(long)]
+	root:             Option<PathBuf>,
+	#[arg(long)]
+	require_complete: bool,
+}
+
+pub fn execute(arguments: Vec<String>) -> Result<()> {
+	let args = Arguments::try_parse_from(std::iter::once("capabilities".into()).chain(arguments))?;
+	let fs = JailedFs::open(&args.root.unwrap_or(env::current_dir()?))?;
+	let manifest: Value = serde_json::from_slice(
+		&fs.read(Path::new("docs/rust-migration/capabilities.json"), 16 * 1024 * 1024)?,
+	)?;
+	let progress = inspect(&manifest)?;
+	println!(
+		"{}/{} retained capabilities have Rust implementations (partial or complete)",
+		progress.implemented, progress.retained
+	);
+	println!(
+		"{}/{} retained capabilities verified for Rust parity; {}/{} retirements removed",
+		progress.verified, progress.retained, progress.removed, progress.retired
+	);
+	println!(
+		"{}/{} installed candidates verified; {}/{} legacy replacements removed",
+		progress.candidate_verified, progress.retained, progress.legacy_removed, progress.retained
+	);
+	if args.require_complete {
+		progress.require_complete()?;
+	}
+	Ok(())
 }
 
 pub fn inspect(manifest: &Value) -> Result<Progress> {
@@ -102,7 +143,7 @@ pub fn inspect(manifest: &Value) -> Result<Progress> {
 			if !nonempty_text(&retirement["reason"]) || !nonempty_text(&retirement["evidence"]) {
 				bail!("retirement missing approved scope evidence: {id}");
 			}
-			match retirement["decision"].as_str() {
+			let needs_replacement = match retirement["decision"].as_str() {
 				Some("rust-api-replacement")
 					if id.starts_with("sdk-import:")
 						|| matches!(
@@ -112,25 +153,51 @@ pub fn inspect(manifest: &Value) -> Result<Progress> {
 								| "compat:custom-renderers"
 						) =>
 				{
-					if !evidence_list(&retirement["replacement_capabilities"]) {
-						bail!("retired interface missing retained replacements: {id}");
-					}
-					for replacement in retirement["replacement_capabilities"]
-						.as_array()
-						.context("invalid replacements")?
-					{
-						let replacement_id = replacement.as_str().context("invalid replacement ID")?;
-						let replacement = ids
-							.get(replacement_id)
-							.context("unknown replacement capability")?;
-						if replacement["scope"] == "retired" || replacement_id == *id {
-							bail!("replacement must be a retained capability: {id}");
-						}
-					}
+					true
+				},
+				Some("native-interface-replacement")
+					if matches!(
+						*id,
+						"surface:browser-wasm"
+							| "command:browser-relay"
+							| "compat:browser-dashboard"
+							| "compat:browser-session-export"
+							| "compat:shell-completion-scripts"
+							| "compat:installer-scripts"
+					) =>
+				{
+					true
+				},
+				Some("remove-language-eval")
+					if matches!(*id, "tool:eval" | "tool:eval-python" | "tool:eval-julia")
+						|| id.starts_with("worker:eval/py/")
+						|| id.starts_with("worker:eval/jl/") =>
+				{
+					false
 				},
 				Some("remove-js-eval")
-					if *id == "tool:eval-javascript" || id.starts_with("worker:eval/js/") => {},
+					if *id == "tool:eval-javascript" || id.starts_with("worker:eval/js/") =>
+				{
+					false
+				},
 				_ => bail!("unapproved retirement decision: {id}"),
+			};
+			if needs_replacement {
+				if !evidence_list(&retirement["replacement_capabilities"]) {
+					bail!("retired interface missing retained replacements: {id}");
+				}
+				for replacement in retirement["replacement_capabilities"]
+					.as_array()
+					.context("invalid replacements")?
+				{
+					let replacement_id = replacement.as_str().context("invalid replacement ID")?;
+					let replacement = ids
+						.get(replacement_id)
+						.context("unknown replacement capability")?;
+					if replacement["scope"] == "retired" || replacement_id == *id {
+						bail!("replacement must be a retained capability: {id}");
+					}
+				}
 			}
 			match retirement["status"].as_str() {
 				Some("pending") => {},
@@ -292,7 +359,7 @@ mod tests {
 		assert!(inspect(&json!({"version":3,"capabilities":[retained(),row]})).is_err());
 	}
 	#[test]
-	fn removal_policy_cannot_retire_python_eval_or_the_entire_application() {
+	fn js_only_removal_cannot_retire_other_tools_or_the_entire_application() {
 		let mut row = retired();
 		row["id"] = json!("tool:eval");
 		row["retirement"]["decision"] = json!("remove-js-eval");

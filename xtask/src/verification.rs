@@ -2,7 +2,7 @@
 //!
 //! Passing transition checks never marks a product capability as verified.
 use std::{
-	collections::BTreeSet,
+	collections::{BTreeMap, BTreeSet},
 	env,
 	path::{Path, PathBuf},
 	process::{Command, Stdio},
@@ -52,6 +52,10 @@ pub struct Graph {
 	pub units:         Vec<Unit>,
 	pub checks:        Vec<Check>,
 	pub release_gates: Vec<String>,
+	#[serde(default)]
+	pub tasks:         Vec<crate::playbook::Task>,
+	#[serde(default)]
+	pub acceptance:    BTreeMap<String, crate::acceptance::Gate>,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,6 +147,20 @@ pub fn inspect_graph(manifest: &serde_json::Value) -> Result<Graph> {
 			.is_some_and(|unit| ids.contains(unit))
 		{
 			bail!("capability lacks a known work unit: {}", row["id"]);
+		}
+	}
+	for (kind, gate) in &graph.acceptance {
+		if !graph.release_gates.contains(kind)
+			|| gate.capabilities.is_empty()
+			|| gate.capabilities.iter().any(|id| {
+				!manifest["capabilities"].as_array().is_some_and(|rows| {
+					rows
+						.iter()
+						.any(|row| row["id"] == *id && row["scope"] != "retired")
+				})
+			}) || gate.checks.iter().any(|id| !checks.contains(id.as_str()))
+		{
+			bail!("invalid release acceptance registration {kind}");
 		}
 	}
 	Ok(graph)
@@ -238,7 +256,10 @@ pub fn plan(graph: &Graph, scope: Scope, changed: &[String]) -> Result<Plan> {
 	let checks = graph
 		.checks
 		.iter()
-		.filter(|check| requested.contains(&check.id))
+		.filter(|check| {
+			requested.contains(&check.id)
+				|| (scope == Scope::Release && graph.release_gates.contains(&check.kind))
+		})
 		.cloned()
 		.collect();
 	Ok(Plan {
@@ -370,7 +391,9 @@ pub fn execute(
 	if scope == Scope::Release {
 		progress.require_complete()?;
 		crate::migration::execute(vec!["--require-complete".into()])?;
-		if inventory.authored_js_ts_files != 0 || !inventory.script_asset_candidates.is_empty() {
+		if !inventory.non_rust_executable_files.is_empty()
+			|| !inventory.script_asset_candidates.is_empty()
+		{
 			bail!("release source ownership remains incomplete");
 		}
 		for gate in &graph.release_gates {
@@ -382,7 +405,7 @@ pub fn execute(
 			"contracts",
 			"sdk",
 			"plugins",
-			"browser",
+			"native-ui",
 			"installed",
 			"performance",
 			"registry",

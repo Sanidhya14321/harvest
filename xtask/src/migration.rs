@@ -23,6 +23,8 @@ pub struct Ledger {
 #[serde(deny_unknown_fields)]
 struct Entry {
 	path: String,
+	#[serde(default)]
+	task_id: Option<String>,
 	disposition: String,
 	implementation: String,
 	behavioral_verification: String,
@@ -37,7 +39,7 @@ struct Entry {
 	retirement_reason: Option<String>,
 }
 
-fn source(path: &str) -> bool {
+fn baseline_source(path: &str) -> bool {
 	Path::new(path)
 		.extension()
 		.and_then(|value| value.to_str())
@@ -47,6 +49,26 @@ fn source(path: &str) -> bool {
 				"ts" | "tsx" | "mts" | "cts" | "js" | "jsx" | "mjs" | "cjs" | "py" | "jl"
 			)
 		})
+}
+
+/// New scripts must be inventoried without rewriting the immutable original
+/// baseline's language scope.
+pub(crate) fn source(path: &str) -> bool {
+	baseline_source(path)
+		|| matches!(
+			Path::new(path).extension().and_then(|value| value.to_str()),
+			Some(
+				"sh"
+					| "bash" | "zsh"
+					| "fish" | "ps1"
+					| "psm1" | "cmd"
+					| "bat" | "m"
+					| "go" | "rb"
+					| "lua"
+			)
+		) || [".in", ".tmpl", ".template"]
+		.iter()
+		.any(|suffix| path.strip_suffix(suffix).is_some_and(baseline_source))
 }
 
 fn documented(value: Option<&str>) -> bool {
@@ -77,6 +99,13 @@ pub fn inspect(baseline: &Baseline, ledger: &Ledger, tracked: &[String]) -> Resu
 	let mut seen = BTreeSet::new();
 	let mut completed = 0;
 	for entry in &ledger.entries {
+		if entry
+			.task_id
+			.as_deref()
+			.is_some_and(|id| id.trim().is_empty())
+		{
+			bail!("empty source task ID: {}", entry.path);
+		}
 		if !seen.insert(entry.path.as_str()) {
 			bail!("duplicate migration entry: {}", entry.path);
 		}
@@ -136,7 +165,7 @@ pub fn inspect(baseline: &Baseline, ledger: &Ledger, tracked: &[String]) -> Resu
 		if removed && !complete {
 			bail!("source removed without verified replacement or retirement: {}", entry.path);
 		}
-		if complete && (removed || entry.disposition == "browser-glue") {
+		if complete && removed {
 			completed += 1;
 		}
 	}
@@ -150,7 +179,7 @@ fn validate_baseline(baseline: &Baseline, original: &[String]) -> Result<()> {
 	let recorded: BTreeSet<&str> = baseline.paths.iter().map(String::as_str).collect();
 	let expected: BTreeSet<&str> = original
 		.iter()
-		.filter(|path| source(path))
+		.filter(|path| baseline_source(path))
 		.map(String::as_str)
 		.collect();
 	if recorded.len() != baseline.paths.len() || recorded != expected {

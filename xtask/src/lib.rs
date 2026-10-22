@@ -34,4 +34,6 @@ pub mod source_audit;
 
 mod browser_check;
 
+pub mod acceptance;
+pub mod playbook;
 pub mod versions;

@@ -4,7 +4,7 @@ on:
   merge_group:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, ts-to-rust]
 permissions:
   contents: read
 concurrency:
@@ -47,6 +47,15 @@ jobs:
       - run: cargo xtask theme-index --check
       - run: cargo xtask migration
       - run: cargo xtask capabilities
+      - run: cargo xtask playbook check
+      - run: cargo xtask source-audit audit --output target/migration/source-audit.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: migration-checks-${{ github.sha }}
+          path: target/migration/
+          if-no-files-found: ignore
+          retention-days: 14
   test:
     name: Contracts (${{ matrix.os }}, ${{ matrix.features }})
     defaults:

@@ -1,6 +1,10 @@
 # Rust migration implementation status
 
-Continuation checkpoint and agent instructions: [HANDOFF.md](HANDOFF.md) (2026-10-20).
+Current instructions: [PLAYBOOK.md](PLAYBOOK.md), [SCOPE.md](SCOPE.md), and [HANDOFF.md](HANDOFF.md).
+
+Generate current counters with `cargo xtask playbook status --json`. The detailed
+implementation notes below preserve historical slice evidence; their old counts
+and browser-glue policy do not establish the current strict Rust-only target.
 
 The normal application still launches TypeScript. This change establishes the
 shared Rust foundations and native brain maintenance; it does not complete the

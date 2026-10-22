@@ -1,5 +1,14 @@
 # Development Rules
 
+## Rust migration work
+
+For the full-workspace migration on `ts-to-rust`, read
+`docs/rust-migration/PLAYBOOK.md`, `SCOPE.md`, and the live `HANDOFF.md`.
+The user-approved strict Rust-only target supersedes historical browser-glue and
+installer-script exceptions. Bun/TypeScript rules below apply to retained
+transitional consumers, not to new ordinary Rust engines. Use the existing
+source/capability/task gates and preserve the original baseline.
+
 ## Default Context
 
 This repo contains multiple packages, but **`packages/coding-agent/`** is the primary focus. Unless otherwise specified, assume work refers to this package.

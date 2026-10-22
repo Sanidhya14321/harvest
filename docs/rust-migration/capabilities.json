@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 4,
   "baseline": "Merged PR #4 plus supported legacy application contracts. Partial primitive implementations do not establish parity.",
   "capabilities": [
     {
@@ -10,7 +10,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:acp",
@@ -20,7 +31,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:auth-broker",
@@ -30,7 +52,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:auth-gateway",
@@ -40,7 +73,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:agents",
@@ -50,7 +94,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:bench",
@@ -60,7 +115,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:browser-relay",
@@ -70,7 +136,26 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-browser-control"
+        ],
+        "status": "pending",
+        "previous_implementation": {
+          "status": "absent"
+        },
+        "previous_verification": {
+          "status": "unverified"
+        }
+      },
+      "legacy": {
+        "removable": false
+      }
     },
     {
       "id": "command:cleanse",
@@ -80,7 +165,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:commit",
@@ -90,7 +186,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:completions",
@@ -115,7 +222,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:__complete",
@@ -125,7 +243,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:compress",
@@ -135,7 +264,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:config",
@@ -145,7 +285,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:dry-balance",
@@ -155,7 +306,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:gc",
@@ -165,7 +327,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:grep",
@@ -175,7 +348,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:gallery",
@@ -185,7 +369,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:git",
@@ -195,7 +390,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:grievances",
@@ -205,7 +411,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:images",
@@ -215,7 +432,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:if-bench",
@@ -225,7 +453,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:install",
@@ -235,7 +474,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:join",
@@ -245,7 +495,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:models",
@@ -255,7 +516,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:plugin",
@@ -265,7 +537,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:ps",
@@ -275,7 +558,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:say",
@@ -285,7 +579,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:share",
@@ -295,7 +600,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:setup",
@@ -305,7 +621,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:shell",
@@ -315,7 +642,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:read",
@@ -325,7 +663,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:render",
@@ -335,7 +684,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:ssh",
@@ -345,7 +705,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:stats",
@@ -355,7 +726,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "browser"
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:update",
@@ -365,7 +747,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:usage",
@@ -375,7 +768,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:tiny-models",
@@ -385,7 +789,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:token",
@@ -395,7 +810,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:ttsr",
@@ -405,7 +831,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:worktree",
@@ -415,7 +852,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "command:search",
@@ -425,7 +873,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:read",
@@ -448,7 +907,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:security_scan",
@@ -458,7 +928,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:bash",
@@ -481,7 +962,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:edit",
@@ -507,7 +999,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:ast_grep",
@@ -517,7 +1020,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:ast_edit",
@@ -527,7 +1041,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:ask",
@@ -537,7 +1062,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:debug",
@@ -547,7 +1083,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:eval",
@@ -557,7 +1104,24 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "scope": "retired",
+      "retirement": {
+        "decision": "remove-language-eval",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [],
+        "status": "pending",
+        "previous_implementation": {
+          "status": "absent"
+        },
+        "previous_verification": {
+          "status": "unverified"
+        }
+      },
+      "legacy": {
+        "removable": false
+      }
     },
     {
       "id": "tool:github",
@@ -567,7 +1131,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:glob",
@@ -577,7 +1152,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:grep",
@@ -604,7 +1190,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:lsp",
@@ -614,7 +1211,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:checkpoint",
@@ -624,7 +1232,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:rewind",
@@ -634,7 +1253,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:task",
@@ -644,7 +1274,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:hub",
@@ -654,7 +1295,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:todo",
@@ -664,7 +1316,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:web_search",
@@ -674,7 +1337,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:write",
@@ -697,7 +1371,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:memory_edit",
@@ -707,7 +1392,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "memory"
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:retain",
@@ -717,7 +1413,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:recall",
@@ -727,7 +1434,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:reflect",
@@ -737,7 +1455,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:learn",
@@ -747,7 +1476,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:manage_skill",
@@ -757,7 +1497,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:search_code",
@@ -767,7 +1518,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:sessions",
@@ -777,7 +1539,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "tool:presets",
@@ -787,7 +1560,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "hidden-tool:think",
@@ -797,7 +1581,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "hidden-tool:yield",
@@ -807,7 +1602,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "hidden-tool:goal",
@@ -817,7 +1623,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:security",
@@ -827,7 +1644,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:settings",
@@ -837,7 +1665,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:setup",
@@ -847,7 +1686,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:plan",
@@ -857,7 +1707,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:plan-review",
@@ -867,7 +1728,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:vibe",
@@ -877,7 +1749,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:goal",
@@ -887,7 +1770,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:guided-goal",
@@ -897,7 +1791,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:loop",
@@ -907,7 +1812,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:queue",
@@ -917,7 +1833,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:model",
@@ -927,7 +1854,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:switch",
@@ -937,7 +1875,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:fast",
@@ -947,7 +1896,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:skillful",
@@ -957,7 +1917,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:extended-context",
@@ -967,7 +1938,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:computer",
@@ -977,7 +1959,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:prewalk",
@@ -987,7 +1980,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:advisor",
@@ -997,7 +2001,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:export",
@@ -1007,7 +2022,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:trace",
@@ -1017,7 +2043,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:dump",
@@ -1027,7 +2064,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:share",
@@ -1037,7 +2085,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:collab",
@@ -1047,7 +2106,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:join",
@@ -1057,7 +2127,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:leave",
@@ -1067,7 +2148,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:browser",
@@ -1077,7 +2169,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:copy",
@@ -1087,7 +2190,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:open",
@@ -1097,7 +2211,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:todo",
@@ -1107,7 +2232,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:session",
@@ -1117,7 +2253,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:jobs",
@@ -1127,7 +2274,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:usage",
@@ -1137,7 +2295,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:stats",
@@ -1147,7 +2316,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "browser"
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:changelog",
@@ -1157,7 +2337,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:hotkeys",
@@ -1167,7 +2358,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:tools",
@@ -1177,7 +2379,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:context",
@@ -1187,7 +2400,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:extensions",
@@ -1197,7 +2421,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:agents",
@@ -1207,7 +2442,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:skills",
@@ -1217,7 +2463,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:git",
@@ -1227,7 +2484,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:hub",
@@ -1237,7 +2505,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:branch",
@@ -1247,7 +2526,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:fork",
@@ -1257,7 +2547,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:tree",
@@ -1267,7 +2568,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:login",
@@ -1277,7 +2589,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:logout",
@@ -1287,7 +2610,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:mcp",
@@ -1297,7 +2631,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "services"
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:ssh",
@@ -1307,7 +2652,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:new",
@@ -1317,7 +2673,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:fresh",
@@ -1327,7 +2694,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:clear",
@@ -1337,7 +2715,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:drop",
@@ -1347,7 +2736,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:compact",
@@ -1357,7 +2757,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:shake",
@@ -1367,7 +2778,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:handoff",
@@ -1377,7 +2799,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:resume",
@@ -1387,7 +2820,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:tab",
@@ -1397,7 +2841,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:diagnostics",
@@ -1407,7 +2862,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:pin",
@@ -1417,7 +2883,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:btw",
@@ -1427,7 +2904,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:tan",
@@ -1437,7 +2925,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:omfg",
@@ -1447,7 +2946,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:cleanse",
@@ -1457,7 +2967,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:retry",
@@ -1467,7 +2988,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:debug",
@@ -1477,7 +3009,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:memory",
@@ -1487,7 +3030,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "memory"
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:rename",
@@ -1497,7 +3051,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:move",
@@ -1507,7 +3072,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:wt",
@@ -1517,7 +3093,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:add-dir",
@@ -1527,7 +3114,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:remove-dir",
@@ -1537,7 +3135,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:dirs",
@@ -1547,7 +3156,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:exit",
@@ -1557,7 +3177,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:restart",
@@ -1567,7 +3198,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:marketplace",
@@ -1577,7 +3219,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:plugins",
@@ -1587,7 +3240,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:reload-plugins",
@@ -1597,7 +3261,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:force",
@@ -1607,7 +3282,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:live",
@@ -1617,7 +3303,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:pause",
@@ -1627,7 +3324,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:quit",
@@ -1637,7 +3345,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:commands",
@@ -1647,7 +3366,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "slash:sidebar",
@@ -1657,7 +3387,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:streaming-providers",
@@ -1685,7 +3426,18 @@
         ],
         "removable": false
       },
-      "work_unit": "catalog-providers"
+      "work_unit": "catalog-providers",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:oauth-credentials",
@@ -1695,7 +3447,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "catalog-providers"
+      "work_unit": "catalog-providers",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:kdl-catalog",
@@ -1705,7 +3468,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "catalog-providers"
+      "work_unit": "catalog-providers",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:settings-profiles",
@@ -1715,7 +3489,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:session-v3",
@@ -1742,7 +3527,18 @@
         ],
         "removable": false
       },
-      "work_unit": "storage"
+      "work_unit": "storage",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:session-v1-v2-import",
@@ -1767,7 +3563,18 @@
         ],
         "removable": false
       },
-      "work_unit": "storage"
+      "work_unit": "storage",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:prototype-session-import",
@@ -1777,7 +3584,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "storage"
+      "work_unit": "storage",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:rpc-v1-v2",
@@ -1794,7 +3612,18 @@
           "rust-agent/tests/rpc.rs"
         ]
       },
-      "work_unit": "services"
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:acp-v1",
@@ -1804,7 +3633,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "services"
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:terminal-inline-transcript",
@@ -1825,7 +3665,18 @@
           "rust-agent/tests/replay.rs"
         ]
       },
-      "work_unit": "terminal"
+      "work_unit": "terminal",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:terminal-input-resize-restoration",
@@ -1887,7 +3738,18 @@
         ],
         "removable": false
       },
-      "work_unit": "terminal"
+      "work_unit": "terminal",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:rust-sdk",
@@ -1913,7 +3775,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:extension-process-abi-v1",
@@ -1923,7 +3796,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:dynamic-tools",
@@ -1933,7 +3817,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:delegation-goals-advisor",
@@ -1943,7 +3838,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:mcp",
@@ -1953,7 +3859,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "services"
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:lsp-dap",
@@ -1963,26 +3880,60 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "services"
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:browser-wasm",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "crates/harvest-web/src/browser.rs",
-          "crates/harvest-web/src/lib.rs",
-          "xtask/src/web_replay.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
-        "status": "unverified",
-        "contract_suites": [
-          "crates/harvest-web/tests/replay_safety.rs",
-          "xtask/tests/web_replay.rs"
-        ]
+        "status": "unverified"
       },
-      "work_unit": "browser"
+      "work_unit": "browser",
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard"
+        ],
+        "status": "pending",
+        "previous_implementation": {
+          "status": "partial",
+          "paths": [
+            "crates/harvest-web/src/browser.rs",
+            "crates/harvest-web/src/lib.rs",
+            "xtask/src/web_replay.rs"
+          ]
+        },
+        "previous_verification": {
+          "status": "unverified",
+          "contract_suites": [
+            "crates/harvest-web/tests/replay_safety.rs",
+            "xtask/tests/web_replay.rs"
+          ]
+        }
+      },
+      "legacy": {
+        "removable": false
+      }
     },
     {
       "id": "surface:eval-ssh",
@@ -1992,7 +3943,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "services"
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:memory-backends",
@@ -2002,7 +3964,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "memory"
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:stats",
@@ -2012,7 +3985,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "browser"
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:benchmarks",
@@ -2022,7 +4006,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "browser"
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:collaboration",
@@ -2032,7 +4027,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "browser"
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:media-local-inference",
@@ -2063,7 +4069,18 @@
         ],
         "removable": false
       },
-      "work_unit": "media"
+      "work_unit": "media",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:python-automation",
@@ -2073,7 +4090,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "browser"
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:codegen",
@@ -2102,7 +4130,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:release-installers",
@@ -2135,7 +4174,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:installed-parity-without-legacy-runtimes",
@@ -2145,7 +4195,18 @@
       "verification": {
         "status": "unverified"
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:automatic-session-learning",
@@ -2168,7 +4229,18 @@
         ],
         "removable": false
       },
-      "work_unit": "memory"
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "surface:session-tail-recovery",
@@ -2194,7 +4266,18 @@
         ],
         "removable": false
       },
-      "work_unit": "application"
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     },
     {
       "id": "compat:single-engine-owner",
@@ -2212,7 +4295,398 @@
           "rust-agent/src/durable_session.rs"
         ]
       },
-      "work_unit": "plugins"
+      "work_unit": "plugins",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-replay",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-stats",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-collaboration",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-run-dashboard",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-automation-dashboard",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-browser-control",
+      "work_unit": "services",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-command-completion",
+      "work_unit": "application",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-installation",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:performance-baselines",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:registry-installation",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:artifact-signatures",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "sdk-import:typescript",
+      "work_unit": "application",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "rust-api-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:rust-sdk",
+          "surface:rpc-v1-v2"
+        ],
+        "status": "pending"
+      }
+    },
+    {
+      "id": "sdk-import:python-rpc",
+      "work_unit": "services",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "rust-api-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:rust-sdk",
+          "surface:rpc-v1-v2"
+        ],
+        "status": "pending"
+      }
+    },
+    {
+      "id": "compat:shell-completion-scripts",
+      "work_unit": "tooling",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-command-completion"
+        ],
+        "status": "pending"
+      }
+    },
+    {
+      "id": "compat:installer-scripts",
+      "work_unit": "tooling",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-installation"
+        ],
+        "status": "pending"
+      }
     }
   ],
   "execution": {
@@ -2632,7 +5106,8 @@
           "rust-contracts",
           "transition-native-build",
           "transition-workspace",
-          "npm-release-version-check"
+          "npm-release-version-check",
+          "playbook-check"
         ],
         "review": "pending",
         "deletion_unit": "tooling",
@@ -2659,27 +5134,27 @@
           "cargo",
           "fmt",
           "-p",
-          "-p",
-          "harvest-tui",
-          "-p",
-          "harvest-tokenizer",
-          "-p",
-          "harvest-media",
           "harvest-runtime",
           "-p",
-          "harvest-protocol",
-          "-p",
           "harvest-brain",
+          "-p",
+          "harvest-protocol",
           "-p",
           "harvest-terminal",
           "-p",
           "harvest-terminal-wasm",
           "-p",
+          "harvest-web",
+          "-p",
+          "harvest-tui",
+          "-p",
+          "harvest-media",
+          "-p",
+          "harvest-tokenizer",
+          "-p",
           "harvest-omp",
           "-p",
           "xtask",
-          "-p",
-          "harvest-web",
           "--",
           "--check"
         ],
@@ -2834,17 +5309,1071 @@
         ],
         "timeout_seconds": 3600,
         "kind": "check"
+      },
+      {
+        "id": "playbook-check",
+        "command": [
+          "cargo",
+          "xtask",
+          "playbook",
+          "check"
+        ],
+        "timeout_seconds": 60,
+        "kind": "check"
+      },
+      {
+        "id": "release-sdk",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "sdk"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "sdk"
+      },
+      {
+        "id": "release-plugins",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "plugins"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "plugins"
+      },
+      {
+        "id": "release-native-ui",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "native-ui"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "native-ui"
+      },
+      {
+        "id": "release-installed",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "installed"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "installed"
+      },
+      {
+        "id": "release-performance",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "performance"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "performance"
+      },
+      {
+        "id": "release-registry",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "registry"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "registry"
+      },
+      {
+        "id": "release-signatures",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "signatures"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "signatures"
       }
     ],
     "release_gates": [
       "contracts",
       "sdk",
       "plugins",
-      "browser",
+      "native-ui",
       "installed",
       "performance",
       "registry",
       "signatures"
+    ],
+    "acceptance": {
+      "sdk": {
+        "capabilities": [
+          "surface:rust-sdk",
+          "surface:rpc-v1-v2"
+        ],
+        "checks": []
+      },
+      "plugins": {
+        "capabilities": [
+          "surface:extension-process-abi-v1",
+          "surface:dynamic-tools"
+        ],
+        "checks": []
+      },
+      "native-ui": {
+        "capabilities": [
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard",
+          "surface:native-browser-control"
+        ],
+        "checks": []
+      },
+      "installed": {
+        "capabilities": [
+          "surface:installed-parity-without-legacy-runtimes",
+          "surface:native-installation"
+        ],
+        "checks": []
+      },
+      "performance": {
+        "capabilities": [
+          "surface:performance-baselines"
+        ],
+        "checks": []
+      },
+      "registry": {
+        "capabilities": [
+          "surface:registry-installation"
+        ],
+        "checks": []
+      },
+      "signatures": {
+        "capabilities": [
+          "surface:artifact-signatures"
+        ],
+        "checks": []
+      }
+    },
+    "tasks": [
+      {
+        "id": "control:playbook",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [],
+        "card": "docs/rust-migration/tasks/CONTROL.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 105 contracts and doctest pass",
+          "cargo clippy --locked -p xtask --all-targets --all-features -- -D warnings",
+          "xtask/tests/playbook.rs",
+          "xtask/tests/verification.rs",
+          "cargo xtask migration; cargo xtask capabilities; cargo xtask playbook check"
+        ]
+      },
+      {
+        "id": "media:sixel",
+        "kind": "migration",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/SIXEL.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:protocol",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "protocol",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/protocol.md",
+        "capabilities": [],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:protocol",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "protocol",
+        "depends_on": [
+          "review:protocol"
+        ],
+        "card": "docs/rust-migration/tasks/protocol.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:primitives",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/primitives.md",
+        "capabilities": [],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:primitives",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "primitives",
+        "depends_on": [
+          "review:primitives"
+        ],
+        "card": "docs/rust-migration/tasks/primitives.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:storage",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "storage",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/storage.md",
+        "capabilities": [
+          "surface:session-v3",
+          "surface:session-v1-v2-import",
+          "surface:prototype-session-import"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:storage",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "storage",
+        "depends_on": [
+          "review:storage",
+          "migrate:protocol"
+        ],
+        "card": "docs/rust-migration/tasks/storage.md",
+        "capabilities": [
+          "surface:session-v3",
+          "surface:session-v1-v2-import",
+          "surface:prototype-session-import"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-runtime"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:catalog-providers",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/catalog-providers.md",
+        "capabilities": [
+          "surface:streaming-providers",
+          "surface:oauth-credentials",
+          "surface:kdl-catalog"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:catalog-providers",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "review:catalog-providers",
+          "migrate:protocol"
+        ],
+        "card": "docs/rust-migration/tasks/catalog-providers.md",
+        "capabilities": [
+          "surface:streaming-providers",
+          "surface:oauth-credentials",
+          "surface:kdl-catalog"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:memory",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "memory",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/memory.md",
+        "capabilities": [
+          "tool:memory_edit",
+          "slash:memory",
+          "surface:memory-backends",
+          "surface:automatic-session-learning"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:memory",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "memory",
+        "depends_on": [
+          "review:memory",
+          "migrate:storage"
+        ],
+        "card": "docs/rust-migration/tasks/memory.md",
+        "capabilities": [
+          "tool:memory_edit",
+          "slash:memory",
+          "surface:memory-backends",
+          "surface:automatic-session-learning"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:plugins",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "plugins",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/plugins.md",
+        "capabilities": [
+          "compat:single-engine-owner"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:plugins",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "plugins",
+        "depends_on": [
+          "review:plugins",
+          "migrate:protocol",
+          "migrate:storage"
+        ],
+        "card": "docs/rust-migration/tasks/plugins.md",
+        "capabilities": [
+          "compat:single-engine-owner"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-runtime"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:application",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/application.md",
+        "capabilities": [
+          "command:launch",
+          "command:acp",
+          "command:auth-broker",
+          "command:auth-gateway",
+          "command:agents",
+          "command:bench",
+          "command:browser-relay",
+          "command:cleanse",
+          "command:commit",
+          "command:completions",
+          "command:__complete",
+          "command:compress",
+          "command:config",
+          "command:dry-balance",
+          "command:gc",
+          "command:grep",
+          "command:gallery",
+          "command:git",
+          "command:grievances",
+          "command:images",
+          "command:if-bench",
+          "command:install",
+          "command:join",
+          "command:models",
+          "command:plugin",
+          "command:ps",
+          "command:say",
+          "command:share",
+          "command:setup",
+          "command:shell",
+          "command:read",
+          "command:render",
+          "command:ssh",
+          "command:update",
+          "command:usage",
+          "command:tiny-models",
+          "command:token",
+          "command:ttsr",
+          "command:worktree",
+          "command:search",
+          "tool:read",
+          "tool:security_scan",
+          "tool:bash",
+          "tool:edit",
+          "tool:ast_grep",
+          "tool:ast_edit",
+          "tool:ask",
+          "tool:debug",
+          "tool:eval",
+          "tool:github",
+          "tool:glob",
+          "tool:grep",
+          "tool:lsp",
+          "tool:checkpoint",
+          "tool:rewind",
+          "tool:task",
+          "tool:hub",
+          "tool:todo",
+          "tool:web_search",
+          "tool:write",
+          "tool:retain",
+          "tool:recall",
+          "tool:reflect",
+          "tool:learn",
+          "tool:manage_skill",
+          "tool:search_code",
+          "tool:sessions",
+          "tool:presets",
+          "hidden-tool:think",
+          "hidden-tool:yield",
+          "hidden-tool:goal",
+          "slash:security",
+          "slash:settings",
+          "slash:setup",
+          "slash:plan",
+          "slash:plan-review",
+          "slash:vibe",
+          "slash:goal",
+          "slash:guided-goal",
+          "slash:loop",
+          "slash:queue",
+          "slash:model",
+          "slash:switch",
+          "slash:fast",
+          "slash:skillful",
+          "slash:extended-context",
+          "slash:computer",
+          "slash:prewalk",
+          "slash:advisor",
+          "slash:export",
+          "slash:trace",
+          "slash:dump",
+          "slash:share",
+          "slash:collab",
+          "slash:join",
+          "slash:leave",
+          "slash:browser",
+          "slash:copy",
+          "slash:open",
+          "slash:todo",
+          "slash:session",
+          "slash:jobs",
+          "slash:usage",
+          "slash:changelog",
+          "slash:hotkeys",
+          "slash:tools",
+          "slash:context",
+          "slash:extensions",
+          "slash:agents",
+          "slash:skills",
+          "slash:git",
+          "slash:hub",
+          "slash:branch",
+          "slash:fork",
+          "slash:tree",
+          "slash:login",
+          "slash:logout",
+          "slash:ssh",
+          "slash:new",
+          "slash:fresh",
+          "slash:clear",
+          "slash:drop",
+          "slash:compact",
+          "slash:shake",
+          "slash:handoff",
+          "slash:resume",
+          "slash:tab",
+          "slash:diagnostics",
+          "slash:pin",
+          "slash:btw",
+          "slash:tan",
+          "slash:omfg",
+          "slash:cleanse",
+          "slash:retry",
+          "slash:debug",
+          "slash:rename",
+          "slash:move",
+          "slash:wt",
+          "slash:add-dir",
+          "slash:remove-dir",
+          "slash:dirs",
+          "slash:exit",
+          "slash:restart",
+          "slash:marketplace",
+          "slash:plugins",
+          "slash:reload-plugins",
+          "slash:force",
+          "slash:live",
+          "slash:pause",
+          "slash:quit",
+          "slash:commands",
+          "slash:sidebar",
+          "surface:settings-profiles",
+          "surface:rust-sdk",
+          "surface:extension-process-abi-v1",
+          "surface:dynamic-tools",
+          "surface:delegation-goals-advisor",
+          "surface:codegen",
+          "surface:release-installers",
+          "surface:installed-parity-without-legacy-runtimes",
+          "surface:session-tail-recovery",
+          "surface:native-command-completion",
+          "sdk-import:typescript"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:application",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "application",
+        "depends_on": [
+          "review:application",
+          "migrate:storage",
+          "migrate:catalog-providers",
+          "migrate:memory",
+          "migrate:plugins",
+          "migrate:primitives"
+        ],
+        "card": "docs/rust-migration/tasks/application.md",
+        "capabilities": [
+          "command:launch",
+          "command:acp",
+          "command:auth-broker",
+          "command:auth-gateway",
+          "command:agents",
+          "command:bench",
+          "command:browser-relay",
+          "command:cleanse",
+          "command:commit",
+          "command:completions",
+          "command:__complete",
+          "command:compress",
+          "command:config",
+          "command:dry-balance",
+          "command:gc",
+          "command:grep",
+          "command:gallery",
+          "command:git",
+          "command:grievances",
+          "command:images",
+          "command:if-bench",
+          "command:install",
+          "command:join",
+          "command:models",
+          "command:plugin",
+          "command:ps",
+          "command:say",
+          "command:share",
+          "command:setup",
+          "command:shell",
+          "command:read",
+          "command:render",
+          "command:ssh",
+          "command:update",
+          "command:usage",
+          "command:tiny-models",
+          "command:token",
+          "command:ttsr",
+          "command:worktree",
+          "command:search",
+          "tool:read",
+          "tool:security_scan",
+          "tool:bash",
+          "tool:edit",
+          "tool:ast_grep",
+          "tool:ast_edit",
+          "tool:ask",
+          "tool:debug",
+          "tool:eval",
+          "tool:github",
+          "tool:glob",
+          "tool:grep",
+          "tool:lsp",
+          "tool:checkpoint",
+          "tool:rewind",
+          "tool:task",
+          "tool:hub",
+          "tool:todo",
+          "tool:web_search",
+          "tool:write",
+          "tool:retain",
+          "tool:recall",
+          "tool:reflect",
+          "tool:learn",
+          "tool:manage_skill",
+          "tool:search_code",
+          "tool:sessions",
+          "tool:presets",
+          "hidden-tool:think",
+          "hidden-tool:yield",
+          "hidden-tool:goal",
+          "slash:security",
+          "slash:settings",
+          "slash:setup",
+          "slash:plan",
+          "slash:plan-review",
+          "slash:vibe",
+          "slash:goal",
+          "slash:guided-goal",
+          "slash:loop",
+          "slash:queue",
+          "slash:model",
+          "slash:switch",
+          "slash:fast",
+          "slash:skillful",
+          "slash:extended-context",
+          "slash:computer",
+          "slash:prewalk",
+          "slash:advisor",
+          "slash:export",
+          "slash:trace",
+          "slash:dump",
+          "slash:share",
+          "slash:collab",
+          "slash:join",
+          "slash:leave",
+          "slash:browser",
+          "slash:copy",
+          "slash:open",
+          "slash:todo",
+          "slash:session",
+          "slash:jobs",
+          "slash:usage",
+          "slash:changelog",
+          "slash:hotkeys",
+          "slash:tools",
+          "slash:context",
+          "slash:extensions",
+          "slash:agents",
+          "slash:skills",
+          "slash:git",
+          "slash:hub",
+          "slash:branch",
+          "slash:fork",
+          "slash:tree",
+          "slash:login",
+          "slash:logout",
+          "slash:ssh",
+          "slash:new",
+          "slash:fresh",
+          "slash:clear",
+          "slash:drop",
+          "slash:compact",
+          "slash:shake",
+          "slash:handoff",
+          "slash:resume",
+          "slash:tab",
+          "slash:diagnostics",
+          "slash:pin",
+          "slash:btw",
+          "slash:tan",
+          "slash:omfg",
+          "slash:cleanse",
+          "slash:retry",
+          "slash:debug",
+          "slash:rename",
+          "slash:move",
+          "slash:wt",
+          "slash:add-dir",
+          "slash:remove-dir",
+          "slash:dirs",
+          "slash:exit",
+          "slash:restart",
+          "slash:marketplace",
+          "slash:plugins",
+          "slash:reload-plugins",
+          "slash:force",
+          "slash:live",
+          "slash:pause",
+          "slash:quit",
+          "slash:commands",
+          "slash:sidebar",
+          "surface:settings-profiles",
+          "surface:rust-sdk",
+          "surface:extension-process-abi-v1",
+          "surface:dynamic-tools",
+          "surface:delegation-goals-advisor",
+          "surface:codegen",
+          "surface:release-installers",
+          "surface:installed-parity-without-legacy-runtimes",
+          "surface:session-tail-recovery",
+          "surface:native-command-completion",
+          "sdk-import:typescript"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-singleton",
+          "transition-runtime",
+          "transition-agent-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:terminal",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "terminal",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/terminal.md",
+        "capabilities": [
+          "surface:terminal-inline-transcript",
+          "surface:terminal-input-resize-restoration",
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:terminal",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "terminal",
+        "depends_on": [
+          "review:terminal",
+          "migrate:protocol",
+          "migrate:primitives",
+          "migrate:application"
+        ],
+        "card": "docs/rust-migration/tasks/terminal.md",
+        "capabilities": [
+          "surface:terminal-inline-transcript",
+          "surface:terminal-input-resize-restoration",
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "transition-ui"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:services",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "services",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/services.md",
+        "capabilities": [
+          "slash:mcp",
+          "surface:rpc-v1-v2",
+          "surface:acp-v1",
+          "surface:mcp",
+          "surface:lsp-dap",
+          "surface:eval-ssh",
+          "surface:native-browser-control",
+          "sdk-import:python-rpc"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:services",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "services",
+        "depends_on": [
+          "review:services",
+          "migrate:application"
+        ],
+        "card": "docs/rust-migration/tasks/services.md",
+        "capabilities": [
+          "slash:mcp",
+          "surface:rpc-v1-v2",
+          "surface:acp-v1",
+          "surface:mcp",
+          "surface:lsp-dap",
+          "surface:eval-ssh",
+          "surface:native-browser-control",
+          "sdk-import:python-rpc"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "transition-runtime",
+          "transition-agent-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:browser",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/browser.md",
+        "capabilities": [
+          "command:stats",
+          "slash:stats",
+          "surface:browser-wasm",
+          "surface:stats",
+          "surface:benchmarks",
+          "surface:collaboration",
+          "surface:python-automation"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:browser",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "browser",
+        "depends_on": [
+          "review:browser",
+          "migrate:protocol",
+          "migrate:services"
+        ],
+        "card": "docs/rust-migration/tasks/browser.md",
+        "capabilities": [
+          "command:stats",
+          "slash:stats",
+          "surface:browser-wasm",
+          "surface:stats",
+          "surface:benchmarks",
+          "surface:collaboration",
+          "surface:python-automation"
+        ],
+        "checks": [
+          "transition-native-build",
+          "transition-native",
+          "rust-format",
+          "rust-contracts",
+          "rust-web-wasm-check",
+          "replay-browser-contract"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:media",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "media",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/media.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:media",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "media",
+        "depends_on": [
+          "review:media",
+          "migrate:application"
+        ],
+        "card": "docs/rust-migration/tasks/media.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:tooling",
+        "kind": "review",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/tooling.md",
+        "capabilities": [
+          "surface:native-installation",
+          "surface:performance-baselines",
+          "surface:registry-installation",
+          "surface:artifact-signatures",
+          "compat:shell-completion-scripts",
+          "compat:installer-scripts"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "migrate:tooling",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "tooling",
+        "depends_on": [
+          "review:tooling"
+        ],
+        "card": "docs/rust-migration/tasks/tooling.md",
+        "capabilities": [
+          "surface:native-installation",
+          "surface:performance-baselines",
+          "surface:registry-installation",
+          "surface:artifact-signatures",
+          "compat:shell-completion-scripts",
+          "compat:installer-scripts"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-workspace",
+          "npm-release-version-check",
+          "playbook-check"
+        ],
+        "evidence": []
+      }
     ]
   }
 }
