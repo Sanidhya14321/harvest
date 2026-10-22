@@ -152,6 +152,7 @@ pub(crate) fn zip_bytes<'a>(
 		writer.start_file(
 			name,
 			SimpleFileOptions::default()
+				.system(zip::System::Unix)
 				.last_modified_time(zip::DateTime::default())
 				.compression_method(CompressionMethod::Deflated)
 				.unix_permissions(permissions),

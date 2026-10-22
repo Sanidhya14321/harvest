@@ -93,8 +93,8 @@ impl BrainIndex {
 						.and_then(|text| {
 							let id_path = path.strip_prefix(&source).unwrap_or(&path);
 							let mut document =
-								parse_markdown(store.scope, &id_path.to_string_lossy(), text)?;
-							document.path = path.to_string_lossy().into_owned();
+								parse_markdown(store.scope, &crate::document_path(id_path), text)?;
+							document.path = crate::document_path(&path);
 							Ok(document)
 						}) {
 						Ok(mut document) => {

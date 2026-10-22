@@ -45,7 +45,8 @@ use std::{
 };
 
 /// Default directory name for Harvest's per-user state (overridable via
-/// `HARVEST_CONFIG_DIR` / `PI_CONFIG_DIR`, matching `packages/utils/src/dirs.ts`).
+/// `HARVEST_CONFIG_DIR` / `PI_CONFIG_DIR`, matching
+/// `packages/utils/src/dirs.ts`).
 const DEFAULT_CONFIG_DIR: &str = ".harvest";
 
 /// App name used as the XDG-root subdirectory (`$XDG_STATE_HOME/harvest/`),
@@ -266,7 +267,8 @@ fn build_crash_log_path(dir: &Path, kind: CrashKind, pid: u32, now_ms: u128) -> 
 
 fn logs_dir() -> Option<PathBuf> {
 	let home = home_dir()?;
-	let config_override = std::env::var_os("HARVEST_CONFIG_DIR").or_else(|| std::env::var_os("PI_CONFIG_DIR"));
+	let config_override =
+		std::env::var_os("HARVEST_CONFIG_DIR").or_else(|| std::env::var_os("PI_CONFIG_DIR"));
 	let xdg_logs = xdg_state_logs_from_env(&home, config_override.as_deref());
 	Some(resolve_logs_dir(&home, config_override.as_deref(), xdg_logs))
 }
@@ -291,11 +293,13 @@ fn resolve_logs_dir(
 /// Compute the XDG-state logs dir if the runtime environment matches the
 /// JS-side eligibility rules in `packages/utils/src/dirs.ts`: linux/macos,
 /// `$XDG_STATE_HOME` set, `$XDG_STATE_HOME/harvest` exists on disk, and
-/// `HARVEST_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR` is unset or pointing at the default agent dir.
+/// `HARVEST_CODING_AGENT_DIR` / `PI_CODING_AGENT_DIR` is unset or pointing at
+/// the default agent dir.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn xdg_state_logs_from_env(home: &Path, config_dir_override: Option<&OsStr>) -> Option<PathBuf> {
 	let default_agent_dir = default_agent_dir(home, config_dir_override);
-	let agent_override = std::env::var_os("HARVEST_CODING_AGENT_DIR").or_else(|| std::env::var_os("PI_CODING_AGENT_DIR"));
+	let agent_override = std::env::var_os("HARVEST_CODING_AGENT_DIR")
+		.or_else(|| std::env::var_os("PI_CODING_AGENT_DIR"));
 	let xdg_state_home = std::env::var_os("XDG_STATE_HOME");
 	xdg_state_logs(
 		xdg_state_home.as_deref(),
@@ -584,8 +588,10 @@ mod tests {
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn default_agent_dir_respects_pi_config_dir() {
-		let dir =
-			default_agent_dir(Path::new("/tmp/pi-natives-test-home"), Some(OsStr::new(".harvest-dev")));
+		let dir = default_agent_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			Some(OsStr::new(".harvest-dev")),
+		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.harvest-dev/agent"));
 	}
 
@@ -595,7 +601,9 @@ mod tests {
 		let panic_log = build_crash_log_path(dir, CrashKind::Panic, 4242, 1_700_000_000_000);
 		assert_eq!(
 			panic_log,
-			PathBuf::from("/tmp/pi-natives-test-home/.harvest/logs/native-panic-4242-1700000000000.log")
+			PathBuf::from(
+				"/tmp/pi-natives-test-home/.harvest/logs/native-panic-4242-1700000000000.log"
+			)
 		);
 		let alloc_log = build_crash_log_path(dir, CrashKind::Alloc, 99, 1);
 		assert_eq!(

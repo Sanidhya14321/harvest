@@ -5511,6 +5511,48 @@
         ]
       },
       {
+        "id": "control:portability",
+        "kind": "control",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/PORTABILITY.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "149 runtime, memory and tooling contracts plus doctests passed on Linux",
+          "Strict Clippy passed for runtime, brain, tokenizer, media and xtask",
+          "RUSTDOCFLAGS=-D warnings cargo doc --locked -p harvest-tokenizer --no-deps passed",
+          "Windows/macOS installed and alias contracts remain pending CI verification"
+        ]
+      },
+      {
+        "id": "control:coverage",
+        "kind": "control",
+        "state": "blocked",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/COVERAGE.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [],
+        "blocker": "Rust CI coverage reports 20.81% lines against 65%; owned pi-* dependencies are instrumented but their suites are not selected. Add meaningful coverage before completion; do not lower the floor."
+      },
+      {
         "id": "media:sixel",
         "kind": "migration",
         "state": "ready",

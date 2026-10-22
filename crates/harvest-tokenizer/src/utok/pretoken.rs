@@ -3,7 +3,7 @@
 //! Families use HF `Split` semantics with `behavior: Isolated` — every
 //! match becomes its own piece and unmatched gaps survive as pieces too.
 //! Every family runs a hand-written codepoint scanner ([`crate::utok::scan`])
-//! natively over any UTF flavor. The regex chain ([`Splitter::Regex`]) is
+//! natively over any UTF flavor. The regex chain (`Splitter::Regex`) is
 //! test-only: it is the differential oracle the scanners are validated
 //! against, and fancy-regex is a dev-dependency.
 

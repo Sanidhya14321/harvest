@@ -68,8 +68,9 @@ static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 pub struct JailedFs {
-	root:      PathBuf,
-	directory: Dir,
+	root:           PathBuf,
+	requested_root: PathBuf,
+	directory:      Dir,
 }
 
 /// Closing before unlink also releases staging files on Windows and unwinds.
@@ -105,11 +106,16 @@ pub struct DirectoryEntry {
 
 impl JailedFs {
 	pub fn open(root: &Path) -> Result<Self> {
-		let root = root
+		let requested_root = if root.is_absolute() {
+			root.to_path_buf()
+		} else {
+			std::env::current_dir()?.join(root)
+		};
+		let root = requested_root
 			.canonicalize()
 			.context("failed to resolve filesystem root")?;
 		let directory = Dir::open_ambient_dir(&root, ambient_authority())?;
-		Ok(Self { root, directory })
+		Ok(Self { root, requested_root, directory })
 	}
 
 	/// Create an explicitly authorized root through its deepest existing parent.
@@ -143,7 +149,7 @@ impl JailedFs {
 		base.directory.create_dir_all(&relative)?;
 		let directory = base.directory.open_dir(&relative)?;
 		let root = base.root.join(base.directory.canonicalize(&relative)?);
-		Ok(Self { root, directory })
+		Ok(Self { root, requested_root: absolute, directory })
 	}
 
 	pub fn root(&self) -> &Path {
@@ -224,7 +230,12 @@ impl JailedFs {
 	/// Normalize paths lexically; the directory capability enforces real access.
 	pub fn relative(&self, path: &Path) -> Result<PathBuf> {
 		let path = if path.is_absolute() {
-			authorized_suffix(path, &self.root)?
+			// Preserve the explicitly authorized root spelling as well as its
+			// canonical name (macOS /var aliases and Windows short names). Only
+			// the suffix is used: actual I/O remains bound to the original Dir,
+			// so retargeting an alias cannot grant access to another directory.
+			authorized_suffix(path, &self.root)
+				.or_else(|_| authorized_suffix(path, &self.requested_root))?
 		} else {
 			Cow::Borrowed(path)
 		};

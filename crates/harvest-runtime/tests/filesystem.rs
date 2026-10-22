@@ -328,6 +328,32 @@ fn ordinary_absolute_windows_paths_share_the_canonical_jail_and_owner() {
 
 #[cfg(unix)]
 #[test]
+fn explicitly_opened_root_alias_remains_bound_to_its_original_directory() {
+	use std::os::unix::fs::symlink;
+	let holder = tempfile::tempdir().unwrap();
+	let actual = tempfile::tempdir().unwrap();
+	let outside = tempfile::tempdir().unwrap();
+	let alias = holder.path().join("alias");
+	symlink(actual.path(), &alias).unwrap();
+	let jail = JailedFs::open(&alias).unwrap();
+	jail
+		.atomic_write(&alias.join("nested/session.jsonl"), b"original")
+		.unwrap();
+	assert_eq!(jail.read(Path::new("nested/session.jsonl"), 100).unwrap(), b"original");
+	std::fs::remove_file(&alias).unwrap();
+	symlink(outside.path(), &alias).unwrap();
+	jail
+		.atomic_write(&alias.join("nested/session.jsonl"), b"still authorized")
+		.unwrap();
+	assert_eq!(
+		std::fs::read(actual.path().join("nested/session.jsonl")).unwrap(),
+		b"still authorized"
+	);
+	assert!(!outside.path().join("nested/session.jsonl").exists());
+}
+
+#[cfg(unix)]
+#[test]
 fn newly_appended_session_logs_are_private_even_with_a_permissive_umask() {
 	use std::{os::unix::fs::PermissionsExt, process::Command};
 

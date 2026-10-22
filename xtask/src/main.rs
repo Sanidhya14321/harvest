@@ -67,10 +67,11 @@ fn execute() -> Result<()> {
 				 --help\ncargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums \
 				 OUTPUT ASSET...\ncargo xtask emit-extensions --help\ncargo xtask theme-index \
 				 --help\ncargo xtask clippy-config --help\ncargo xtask fix-elf-verdef --help\ncargo \
-				 xtask release-notes --help\ncargo xtask version [--set VERSION --expect \
-				 CURRENT]\ncargo xtask check [Cargo package selectors]\ncargo xtask test [Cargo \
-				 package and target selectors]\ncargo xtask capabilities [--require-complete]\nTests \
-				 require cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
+				 xtask release-notes --help\ncargo xtask spoofed-versions [--root ROOT] [--update] \
+				 [--release-json FILE]\ncargo xtask version [--set VERSION --expect CURRENT]\ncargo \
+				 xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and target \
+				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
+				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
 				 --help\ncargo xtask secrets --help\ncargo xtask migration \
 				 [--require-complete]\ncargo xtask playbook <check|status|next> [--json]"
 			);
