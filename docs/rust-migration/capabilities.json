@@ -5898,8 +5898,9 @@
           "transition-workspace"
         ],
         "evidence": [
-          "Added Rust-owned collab wire constants in crates/harvest-protocol/src/wire.rs with a contract test.",
-          "cargo fmt -p harvest-protocol -- --check; cargo clippy --locked -p harvest-protocol --all-targets --all-features -- -D warnings; cargo test -p harvest-protocol pass."
+          "Added Rust-owned collab wire constants and WireUsage/WireModel serde types in crates/harvest-protocol/src/wire.rs.",
+          "Rust tests cover constants and camelCase round trips; strict Clippy and cargo test pass.",
+          "TS packages/wire remains during transition; consumer switch-over and deletion remain."
         ]
       },
       {
