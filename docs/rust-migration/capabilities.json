@@ -5898,9 +5898,9 @@
           "transition-workspace"
         ],
         "evidence": [
-          "Added Rust-owned collab wire constants and WireUsage/WireModel serde types in crates/harvest-protocol/src/wire.rs.",
-          "Rust tests cover constants and camelCase round trips; strict Clippy and cargo test pass.",
-          "TS packages/wire remains during transition; consumer switch-over and deletion remain."
+          "Added Rust-owned collab wire constants plus WireUsage, WireModel, content blocks, AssistantContent and StopReason in crates/harvest-protocol/src/wire.rs.",
+          "Rust tests cover constants, camelCase serde round trips and discriminated AssistantContent; strict Clippy and cargo test pass.",
+          "TS packages/wire remains during transition; full message/frame migration and consumer switch-over remain."
         ]
       },
       {

@@ -87,3 +87,85 @@ mod wire_types_tests {
 		assert_eq!(decoded, model);
 	}
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AssistantContent {
+	Text(TextContent),
+	#[serde(rename = "thinking")]
+	Thinking(ThinkingContent),
+	#[serde(rename = "redactedThinking")]
+	RedactedThinking(RedactedThinkingContent),
+	#[serde(rename = "toolCall")]
+	ToolCall(ToolCallContent),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextContent {
+	pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageContent {
+	pub data:      String,
+	#[serde(rename = "mimeType")]
+	pub mime_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThinkingContent {
+	pub thinking: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedactedThinkingContent {
+	pub data: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallContent {
+	pub id:        String,
+	pub name:      String,
+	pub arguments: serde_json::Value,
+	pub intent:    Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StopReason {
+	Stop,
+	Length,
+	ToolUse,
+	Error,
+	Aborted,
+}
+
+#[cfg(test)]
+mod wire_content_tests {
+	use super::*;
+
+	#[test]
+	fn assistant_content_round_trips() {
+		let content = AssistantContent::ToolCall(ToolCallContent {
+			id:        "1".into(),
+			name:      "bash".into(),
+			arguments: serde_json::json!({"cmd":"ls"}),
+			intent:    Some("list".into()),
+		});
+		let json = serde_json::to_string(&content).unwrap();
+		assert!(json.contains("\"type\":\"toolCall\""));
+		let decoded: AssistantContent = serde_json::from_str(&json).unwrap();
+		assert_eq!(decoded, content);
+	}
+
+	#[test]
+	fn stop_reason_uses_camel_case() {
+		let json = serde_json::to_string(&StopReason::ToolUse).unwrap();
+		assert_eq!(json, "\"toolUse\"");
+	}
+}
