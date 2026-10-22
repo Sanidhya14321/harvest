@@ -655,3 +655,53 @@ pub enum HostFrame {
 		message: String,
 	},
 }
+
+#[cfg(test)]
+mod frame_tests {
+	use super::*;
+
+	#[test]
+	fn guest_hello_round_trips() {
+		let frame = GuestFrame::Hello {
+			proto:       3,
+			name:        "guest".into(),
+			write_token: Some("tok".into()),
+		};
+		let json = serde_json::to_string(&frame).unwrap();
+		assert!(json.contains("\"t\":\"hello\""));
+		let decoded: GuestFrame = serde_json::from_str(&json).unwrap();
+		assert_eq!(decoded, frame);
+	}
+
+	#[test]
+	fn host_welcome_round_trips() {
+		let frame = HostFrame::Welcome {
+			proto:       3,
+			header:      SessionHeader {
+				kind:      "session".into(),
+				id:        "s".into(),
+				title:     None,
+				timestamp: "t".into(),
+				cwd:       "/".into(),
+			},
+			state:       SessionState {
+				is_streaming:         false,
+				queued_message_count: 0,
+				session_name:         None,
+				cwd:                  "/".into(),
+				model:                None,
+				thinking_level:       None,
+				context_usage:        None,
+				participants:         vec![],
+				is_aborting:          None,
+			},
+			agents:      vec![],
+			entry_count: 0,
+			read_only:   None,
+		};
+		let json = serde_json::to_string(&frame).unwrap();
+		assert!(json.contains("\"t\":\"welcome\""));
+		let decoded: HostFrame = serde_json::from_str(&json).unwrap();
+		assert_eq!(decoded, frame);
+	}
+}
