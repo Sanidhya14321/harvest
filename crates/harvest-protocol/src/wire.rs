@@ -169,3 +169,111 @@ mod wire_content_tests {
 		assert_eq!(json, "\"toolUse\"");
 	}
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum WireContent {
+	Text(String),
+	Blocks(Vec<ContentBlock>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ContentBlock {
+	Text(TextContent),
+	Image(ImageContent),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "role", rename_all = "camelCase")]
+pub enum WireMessage {
+	User(UserMessage),
+	#[serde(rename = "developer")]
+	Developer(DeveloperMessage),
+	#[serde(rename = "assistant")]
+	Assistant(AssistantMessage),
+	#[serde(rename = "toolResult")]
+	ToolResult(ToolResultMessage),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserMessage {
+	pub content:   WireContent,
+	pub synthetic: Option<bool>,
+	pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeveloperMessage {
+	pub content:   WireContent,
+	pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantMessage {
+	pub content:       Vec<AssistantContent>,
+	pub model:         String,
+	pub usage:         WireUsage,
+	#[serde(rename = "stopReason")]
+	pub stop_reason:   StopReason,
+	#[serde(rename = "errorMessage")]
+	pub error_message: Option<String>,
+	pub timestamp:     i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolResultMessage {
+	#[serde(rename = "toolCallId")]
+	pub tool_call_id: String,
+	#[serde(rename = "toolName")]
+	pub tool_name:    String,
+	pub content:      Vec<ContentBlock>,
+	pub details:      Option<serde_json::Value>,
+	#[serde(rename = "isError")]
+	pub is_error:     bool,
+	pub timestamp:    i64,
+}
+
+#[cfg(test)]
+mod wire_message_tests {
+	use super::*;
+
+	#[test]
+	fn user_message_string_content_round_trips() {
+		let msg = WireMessage::User(UserMessage {
+			content:   WireContent::Text("hi".into()),
+			synthetic: Some(true),
+			timestamp: 1,
+		});
+		let json = serde_json::to_string(&msg).unwrap();
+		assert!(json.contains("\"role\":\"user\""));
+		let decoded: WireMessage = serde_json::from_str(&json).unwrap();
+		assert_eq!(decoded, msg);
+	}
+
+	#[test]
+	fn assistant_message_round_trips() {
+		let msg = WireMessage::Assistant(AssistantMessage {
+			content:       vec![AssistantContent::Text(TextContent { text: "x".into() })],
+			model:         "m".into(),
+			usage:         WireUsage {
+				input:        1,
+				output:       2,
+				cache_read:   0,
+				cache_write:  0,
+				total_tokens: 3,
+				cost:         WireCost { total: 0.0 },
+			},
+			stop_reason:   StopReason::Stop,
+			error_message: None,
+			timestamp:     2,
+		});
+		let json = serde_json::to_string(&msg).unwrap();
+		let decoded: WireMessage = serde_json::from_str(&json).unwrap();
+		assert_eq!(decoded, msg);
+	}
+}
