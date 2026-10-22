@@ -55,9 +55,22 @@ socket blocking-mode follow-up. Five local provider-usage contracts pass;
 Linux/ARM/macOS contracts and the earlier Windows debug contracts passed CI.
 Keep the task blocked until the new Windows variants pass.
 
-Current active work: **`control:coverage`**. An additive instrumented build of all
-nine existing pi-* Rust engine suites plus the previous product suites is running
-in the isolated coverage worktree (`git worktree list`). It uses
+Completed **`control:terminal-fixtures`**: all 38 terminal/SIXEL host contracts
+pass headlessly with an explicit fixture color mode, without a global FORCE_COLOR
+override. Coding-agent typecheck and targeted formatting/lint pass; production
+color detection is unchanged.
+
+The source-bound transition at `747421f` passes 452 Rust contracts/doctests,
+the native rebuild and all 49 workspace chunks, then fails 22 singleton contracts.
+Its receipt remains failed. **`control:legacy-session-contracts`** records the
+writer-lease, discovery/path and error/label families. Compare the baseline and
+review their contracts before changing behavior or splitting implementation cards.
+
+Current active work: **`control:coverage`**. An additive instrumented run of all
+nine existing pi-* Rust engine suites plus the previous product suites passed
+2,923 tests (five skips). Collection filled the disk; clear generated build caches
+and repeat collection with headroom before claiming coverage. The isolated
+coverage worktree (`git worktree list`) uses
 `target/coverage-native` under the main workspace as its instrumented target.
 Run its full tests and unchanged 65% report before committing the workflow
 selection. The nine-package recipe is in its card; the current pushed CI recipe

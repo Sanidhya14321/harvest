@@ -5399,6 +5399,18 @@
         ],
         "timeout_seconds": 7200,
         "kind": "signatures"
+      },
+      {
+        "id": "terminal-fixture-contracts",
+        "command": [
+          "bun",
+          "test",
+          "packages/coding-agent/test/utils/terminal-graphics.test.ts",
+          "packages/coding-agent/test/bash-execution-sixel.test.ts",
+          "packages/coding-agent/test/tools/bash-sixel-render.test.ts"
+        ],
+        "timeout_seconds": 120,
+        "kind": "contracts"
       }
     ],
     "release_gates": [
@@ -5511,6 +5523,45 @@
           "xtask/src/spoofed_versions.rs: real loopback HTTP headers, bounded response and failed-status contracts",
           "Live upstream freshness is not certified by captured metadata."
         ]
+      },
+      {
+        "id": "control:terminal-fixtures",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "terminal",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/TERMINAL-FIXTURES.md",
+        "capabilities": [],
+        "checks": [
+          "terminal-fixture-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "All 38 affected terminal/SIXEL host contracts pass headlessly without FORCE_COLOR; coding-agent typecheck and targeted oxfmt/oxlint pass. Production color detection and every existing assertion remain intact."
+        ]
+      },
+      {
+        "id": "control:legacy-session-contracts",
+        "kind": "control",
+        "state": "blocked",
+        "review": "pending",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-SESSION-CONTRACTS.md",
+        "capabilities": [],
+        "checks": [
+          "transition-singleton",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Source-bound transition receipt at 747421f: 452 Rust contracts/doctests and workspace pass; singleton bucket fails 22 contracts. Receipt remains failed."
+        ],
+        "blocker": "Reproduce the writer-lease, discovery/path and error/label failure families against the baseline; review intended contracts and split bounded prerequisite cards before changing production semantics."
       },
       {
         "id": "control:legacy-workspace",

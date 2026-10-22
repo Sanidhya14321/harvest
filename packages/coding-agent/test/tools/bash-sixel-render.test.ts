@@ -2,7 +2,8 @@ import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { RenderResultOptions } from "@harvest/pi-agent-core";
-import { getThemeByName, setThemeInstance, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
+import { loadTheme } from "@harvest/pi-coding-agent/modes/theme/loader";
+import { setThemeInstance, type Theme } from "@harvest/pi-coding-agent/modes/theme/theme";
 import { bashToolRenderer } from "@harvest/pi-coding-agent/tools/bash";
 import { previewWindowRows } from "@harvest/pi-coding-agent/tools/render-utils";
 import { ImageProtocol, TERMINAL } from "@harvest/pi-tui";
@@ -19,9 +20,8 @@ describe("bashToolRenderer", () => {
 	let uiTheme: Theme;
 
 	beforeAll(async () => {
-		const loadedTheme = await getThemeByName("dark");
-		if (!loadedTheme) throw new Error("Expected dark theme");
-		uiTheme = loadedTheme;
+		// These style contracts simulate a colored terminal, even headlessly.
+		uiTheme = await loadTheme("dark", { mode: "truecolor" });
 	});
 
 	afterEach(() => {
