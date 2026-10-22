@@ -20,6 +20,20 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 		.to_path_buf();
 	let filesystem = JailedFs::open(&root)?;
 	let target = filesystem.resource_path(Path::new("target/terminal-wasm"))?;
+	// Panic locations in dependency crates otherwise embed the build machine's
+	// Cargo registry path. That makes the checked-in payload differ in CI even
+	// when the source and pinned toolchain are identical.
+	let mut remaps = vec![format!("--remap-path-prefix={}=/harvest", root.display())];
+	if let Some(home) = env::var_os("CARGO_HOME").map(PathBuf::from).or_else(|| {
+		env::var_os("HOME")
+			.or_else(|| env::var_os("USERPROFILE"))
+			.map(|home| PathBuf::from(home).join(".cargo"))
+	}) {
+		remaps.push(format!("--remap-path-prefix={}=/cargo", home.display()));
+		if let Ok(canonical) = home.canonicalize() {
+			remaps.push(format!("--remap-path-prefix={}=/cargo", canonical.display()));
+		}
+	}
 	let status = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
 		.current_dir(&root)
 		.args([
@@ -36,7 +50,7 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 		.arg(&target)
 		// Host-specific native build flags must never leak into the WASM payload.
 		.env_remove("RUSTFLAGS")
-		.env_remove("CARGO_ENCODED_RUSTFLAGS")
+		.env("CARGO_ENCODED_RUSTFLAGS", remaps.join("\x1f"))
 		.status()
 		.context("could not start terminal WASM build")?;
 	if !status.success() {

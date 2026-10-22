@@ -5513,6 +5513,49 @@
         ]
       },
       {
+        "id": "control:terminal-reproducibility",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/TERMINAL-REPRODUCIBILITY.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask terminal-wasm and --check passed",
+          "Generated terminal.js bytes match in /workspace/harvest and /tmp/harvest-next with distinct Cargo-home paths",
+          "1668178-byte payload embeds stable /cargo paths; no /home, /workspace or /tmp build paths",
+          "43 host contracts passed including portable-terminal installation and rendering",
+          "260 Rust contracts plus media doctest passed"
+        ]
+      },
+      {
+        "id": "control:coverage",
+        "kind": "control",
+        "state": "blocked",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/COVERAGE.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [],
+        "blocker": "Rust CI coverage reports 20.81% lines against 65%; owned pi-* dependencies are instrumented but their suites are not selected. Add meaningful coverage before completion; do not lower the floor."
+      },
+      {
         "id": "control:portability",
         "kind": "control",
         "state": "in_progress",
@@ -5534,25 +5577,6 @@
           "RUSTDOCFLAGS=-D warnings cargo doc --locked -p harvest-tokenizer --no-deps passed",
           "Windows/macOS installed and alias contracts remain pending CI verification"
         ]
-      },
-      {
-        "id": "control:coverage",
-        "kind": "control",
-        "state": "blocked",
-        "review": "reviewed",
-        "work_unit": "tooling",
-        "depends_on": [
-          "control:playbook"
-        ],
-        "card": "docs/rust-migration/tasks/COVERAGE.md",
-        "capabilities": [],
-        "checks": [
-          "rust-format",
-          "rust-contracts",
-          "playbook-check"
-        ],
-        "evidence": [],
-        "blocker": "Rust CI coverage reports 20.81% lines against 65%; owned pi-* dependencies are instrumented but their suites are not selected. Add meaningful coverage before completion; do not lower the floor."
       },
       {
         "id": "media:sixel",

@@ -26,9 +26,25 @@ Completed **`tooling:spoofed-versions`**: the root maintenance command now calls
 Rust; its TS entrypoint is removed. Native CLI parity, failure and jailed update
 contracts pass. Live upstream freshness remains separate from offline fixtures.
 
-Next bounded implementation: **`media:sixel`**, with reviewed instructions.
-Its card is `tasks/SIXEL.md`. Baseline fixtures must come from Git and a rebuilt
-addon; archived machine-local cache paths are optional historical evidence.
+Completed **`media:sixel`**: ordinary Rust/SDK and temporary N-API consumers now
+share one bounded engine. The Git-reconstructed baseline, native Rust consumer,
+rebuilt addon and host contracts pass. Its larger media capability stays partial.
+
+Completed **`control:terminal-reproducibility`**: generated payloads match between
+two checkouts and different Cargo homes. They remain transitional JS artifacts
+owned by the native UI migration, not approved final-product glue.
+
+Current foundation repair: **`control:portability`**. Linux runtime/memory/tooling
+contracts, strict Clippy and tokenizer rustdoc pass. Push the repair and inspect
+Windows/macOS CI results before marking it done. `control:coverage` remains
+blocked by a measured first-party coverage gap; the 65% floor remains intact.
+See `tasks/COVERAGE.md` before changing coverage scope. Independent reviewed
+subsystem-review procedures remain available; split implementation work into
+bounded cards before making it ready.
+
+A live read-only version-checker probe failed because this environment's HTTPS
+proxy denied the GitHub API tunnel. Native/offline and loopback HTTP contracts
+pass; no live freshness claim or provider-source update was made.
 
 Release acceptance registrations deliberately block while their installed suites
 and capabilities remain unverified. Run `cargo xtask acceptance GATE` to obtain
