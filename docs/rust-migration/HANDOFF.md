@@ -30,6 +30,13 @@ Completed **`tooling:version-wrapper`**: removed the unused Bun launcher for
 version synchronization. Release consumers already invoke `cargo xtask npm-versions`;
 native release/check contracts run without Bun/Node on PATH.
 
+Completed **`tooling:homebrew-tap`**: the tap-staging shell script is replaced
+by `cargo xtask tap-update`; CI/release consumers call it directly. The compiled
+helper runs with Git-only PATH and preserves the baseline new/no-op/update
+behavior, unrelated staged work, local config and linked worktree isolation.
+Five integration contracts and all 117 xtask tests plus doctests/strict Clippy
+pass. This does not publish or certify the complete release capability.
+
 Completed **`control:inert-data`**: source/task final gates now consistently
 accept explicitly reviewed, fully verified retained data on the existing exact
 allowlist. `verified_inert` is separate from removals; no actual source row was
@@ -56,7 +63,8 @@ blocking mode: a forced-nonblocking/delayed-header regression fails before the f
 and passes afterward, along with all five existing offline/cache/checksum registry
 contracts. Timeouts and limits remain unchanged. The newer macOS release failure
 is captured in `tasks/PORTABILITY.md`; keep this task blocked until platform CI
-passes.
+passes. Windows full-feature and macOS full-feature CI passed at `747421f`
+(run `39782981204`); the core variants still need the follow-up evidence.
 
 Completed **`control:terminal-fixtures`**: all 38 terminal/SIXEL host contracts
 pass headlessly with an explicit fixture color mode, without a global FORCE_COLOR

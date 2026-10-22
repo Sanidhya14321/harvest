@@ -5499,6 +5499,28 @@
         ]
       },
       {
+        "id": "tooling:homebrew-tap",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/HOMEBREW-TAP.md",
+        "capabilities": [
+          "surface:release-installers"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Baseline shell selftest captured from blob 1c108d73978ba7b60061bd17bc2de6cac4253c2e at 838c33f. Five Rust integration contracts pass: compiled native CLI with Git-only PATH, new/no-op/update parity, exact formula/identity/HEAD/config preservation, dirty/staged/oversized/invalid/escaping input refusal, competing writer refusal and linked worktree isolation. All 117 xtask tests plus doctests and strict Clippy pass. Workflow consumers now call native tap-update; no live tap, push or publish was performed."
+        ]
+      },
+      {
         "id": "tooling:spoofed-versions",
         "kind": "migration",
         "state": "done",

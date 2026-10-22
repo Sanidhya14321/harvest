@@ -28,6 +28,7 @@ fn execute() -> Result<()> {
 		"path-versions" => xtask::versions::execute(selection),
 		"npm-versions" => xtask::npm_versions::execute(selection),
 		"registry" => xtask::registry::execute(selection),
+		"tap-update" => xtask::homebrew_tap::execute(selection),
 		"source-audit" => xtask::source_audit::execute(selection),
 		"terminal-wasm" => xtask::terminal_wasm::execute(selection),
 		"web-replay" => xtask::web_replay::execute(selection),
@@ -61,13 +62,14 @@ fn execute() -> Result<()> {
 		"capabilities" => xtask::capabilities::execute(selection),
 		"help" | "--help" | "-h" => {
 			println!(
-				"cargo xtask npm-versions [--check] [--release VERSION|--workspace]\ncargo xtask \
-				 path-versions [VERSION] [--check]\ncargo xtask registry --help\ncargo xtask \
-				 source-audit --help\ncargo xtask terminal-wasm [--check]\ncargo xtask web-replay \
-				 --help\ncargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums \
-				 OUTPUT ASSET...\ncargo xtask emit-extensions --help\ncargo xtask theme-index \
-				 --help\ncargo xtask clippy-config --help\ncargo xtask fix-elf-verdef --help\ncargo \
-				 xtask release-notes --help\ncargo xtask spoofed-versions [--root ROOT] [--update] \
+				"cargo xtask tap-update --formula FILE --tap CHECKOUT --tag TAG\ncargo xtask \
+				 npm-versions [--check] [--release VERSION|--workspace]\ncargo xtask path-versions \
+				 [VERSION] [--check]\ncargo xtask registry --help\ncargo xtask source-audit \
+				 --help\ncargo xtask terminal-wasm [--check]\ncargo xtask web-replay --help\ncargo \
+				 xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums OUTPUT \
+				 ASSET...\ncargo xtask emit-extensions --help\ncargo xtask theme-index --help\ncargo \
+				 xtask clippy-config --help\ncargo xtask fix-elf-verdef --help\ncargo xtask \
+				 release-notes --help\ncargo xtask spoofed-versions [--root ROOT] [--update] \
 				 [--release-json FILE]\ncargo xtask version [--set VERSION --expect CURRENT]\ncargo \
 				 xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and target \
 				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \

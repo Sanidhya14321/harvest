@@ -313,11 +313,10 @@ jobs:
       - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780
         with:
           tool: cargo-nextest
-      - name: Formula templates render without a published release
+      - name: Formula and tap contracts run without a published release
         run: |
           set -euo pipefail
           cargo xtask test -p xtask
-          sh rust-agent/scripts/update_homebrew_tap.sh --selftest
       - name: Look for a published release
         id: release
         env:
@@ -361,8 +360,8 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
           brew tap-new "${GITHUB_REPOSITORY_OWNER}/tap"
-          sh rust-agent/scripts/update_homebrew_tap.sh homebrew-release/omp.rb \
-            "$(brew --repository "${GITHUB_REPOSITORY_OWNER}/tap")" test-release
+          cargo xtask tap-update --formula homebrew-release/omp.rb \
+            --tap "$(brew --repository "${GITHUB_REPOSITORY_OWNER}/tap")" --tag test-release
       - name: Install the formula
         if: steps.release.outputs.present == 'true'
         run: brew install "${GITHUB_REPOSITORY_OWNER}/tap/omp"

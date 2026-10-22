@@ -341,5 +341,5 @@ jobs:
           set -euo pipefail
           git clone --depth 1 \
             "https://x-access-token:${PUKBOT_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/homebrew-tap.git" tap
-          sh rust-agent/scripts/update_homebrew_tap.sh omp.rb tap "${TAG}"
+          cargo xtask tap-update --formula omp.rb --tap tap --tag "${TAG}"
           git -C tap push origin HEAD:main
