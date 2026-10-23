@@ -3414,7 +3414,9 @@
         "paths": [
           "rust-agent/src/provider.rs",
           "rust-agent/src/streaming.rs",
-          "rust-agent/src/usage.rs"
+          "rust-agent/src/usage.rs",
+          "rust-agent/src/anthropic.rs",
+          "rust-agent/src/sse.rs"
         ]
       },
       "verification": {
@@ -3423,7 +3425,8 @@
           "rust-agent/src/streaming.rs",
           "rust-agent/tests/cli.rs",
           "rust-agent/tests/provider_usage.rs",
-          "rust-agent/tests/provider_diagnostics.rs"
+          "rust-agent/tests/provider_diagnostics.rs",
+          "rust-agent/tests/anthropic_provider.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -7016,6 +7019,32 @@
           "74 focused contracts and 38 JS/schema/connection contracts pass. Historical display, JS owner isolation, cancellation, registry and ordinary setup behavior remain covered. Two native SDK/copied-CLI retirement checks pass with no language runtime on the candidate PATH.",
           "JavaScript evaluation retirement remains blocked on native browser/computer consumers; tool:eval retirement stays pending. Transitional rejection/type facades and historical records remain pending Rust application cutover. Final source-bound results are recorded under target/migration/python-retirement-*.",
           "All 49 legacy workspace groups and 125 Rust contracts pass. Runtime/session run failed 19/34 groups with 43 contracts: three retired Python-hook expectations corrected and targeted tests pass; all 40 others reproduce on unchanged 2ff0193 in exact chunk replay. The full runtime and migration gates remain failed; source-bound receipt preserves both results."
+        ]
+      },
+      {
+        "id": "catalog-providers:anthropic-text-tools",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook",
+          "review:catalog-providers",
+          "services:rpc-transport"
+        ],
+        "card": "docs/rust-migration/tasks/ANTHROPIC-TEXT-TOOLS.md",
+        "capabilities": [
+          "surface:streaming-providers"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Native Messages text/tool boundary shared by sync/async sessions, RPC and Rust SDK; explicit model/host selection avoids catalog policy guesses.",
+          "Bounded SSE/JSON, matched tool replay, additive lossless usage, cancellation and redacted failures checked by native contracts and copied CLI. Source-bound receipt: target/migration/anthropic-receipt.json.",
+          "Whole-provider parity and credentialed evidence remain pending; no TS source is eligible for deletion before production consumer cutover."
         ]
       }
     ]

@@ -60,7 +60,7 @@ async fn send(sender: &SyncSender<Packet>, cancellation: &CancelToken, mut packe
 
 async fn request(
 	url: String,
-	api_key: String,
+	headers: Vec<(String, String)>,
 	body: Vec<u8>,
 	stream: bool,
 	cancellation: &CancelToken,
@@ -68,7 +68,20 @@ async fn request(
 ) -> Result<()> {
 	let client = reqwest::Client::builder()
 		.timeout(Duration::from_secs(60))
-		.redirect(reqwest::redirect::Policy::limited(5))
+		.redirect(reqwest::redirect::Policy::custom(|attempt| {
+			// Custom API-key headers are not automatically stripped by HTTP
+			// clients on cross-origin redirects. Never forward credentials.
+			let same_origin = attempt.previous().first().is_some_and(|original| {
+				original.scheme() == attempt.url().scheme()
+					&& original.host_str() == attempt.url().host_str()
+					&& original.port_or_known_default() == attempt.url().port_or_known_default()
+			});
+			if same_origin && attempt.previous().len() < 5 {
+				attempt.follow()
+			} else {
+				attempt.stop()
+			}
+		}))
 		.build()
 		.map_err(|_| crate::provider::ProviderRequestError::Transport(ureq::ErrorKind::Io))?;
 	let mut request = client
@@ -78,8 +91,8 @@ async fn request(
 	if stream {
 		request = request.header("Accept", "text/event-stream");
 	}
-	if !api_key.is_empty() {
-		request = request.bearer_auth(api_key);
+	for (name, value) in headers {
+		request = request.header(name, value);
 	}
 	let mut response = tokio::select! {
 		_ = cancellation.wait() => return Ok(()),
@@ -136,7 +149,7 @@ pub struct Response {
 impl Response {
 	pub fn open(
 		url: String,
-		api_key: String,
+		headers: Vec<(String, String)>,
 		body: Vec<u8>,
 		stream: bool,
 		cancellation: &CancelToken,
@@ -148,7 +161,7 @@ impl Response {
 		let (sender, receiver) = mpsc::sync_channel(CHANNEL_DEPTH);
 		let token = cancellation.clone();
 		let worker = runtime()?.spawn(async move {
-			if let Err(error) = request(url, api_key, body, stream, &token, &sender).await {
+			if let Err(error) = request(url, headers, body, stream, &token, &sender).await {
 				let _ = send(&sender, &token, Packet::Failure(error)).await;
 			}
 		});

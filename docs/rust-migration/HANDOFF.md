@@ -16,25 +16,30 @@ the cancelled OpenCode approach is not a blocker.
 
 ## Current outcome
 
-`application:python-eval-retirement` removes 25 reviewed kernel, runner, injected
-Python prelude and private execution-test files under the approved retirement
-policy. Python execution, kernel tools, setup and direct session calls reject
-without interpreter probes, hooks, subprocesses or JS fallback. Settings/PI_PY
-cannot restore a kernel; old runtime controls are hidden. Historical transcript
-and display records remain readable, and ordinary shell behavior is retained.
+Native Anthropic Messages text/tool support now connects the Rust SDK and
+sync/async CLI plus RPC through `HttpModel::anthropic_messages`. Shared SSE
+framing and cancellable transport retain bounds; origin checks prevent API-key
+redirect leaks. Complete tool-result exchanges and lossless split usage flow
+through existing session persistence. Explicit model/host flags avoid inventing
+catalog policy. See `tasks/ANTHROPIC-TEXT-TOOLS.md` and source-bound
+`target/migration/anthropic-*` results. Whole streaming-provider capability remains
+partial/unverified: thinking, multimodal, OAuth/catalog policy, retries and live
+credentialed checks remain pending. Default application remains TS; no legacy
+provider source is removable at this stage. The package integration pass passed
+136 checks; the subsequent affected-provider run passed six checks, including
+the added cross-origin redirect probe (137 distinct native checks covered).
+Strict package Clippy, formatting and playbook checks pass. The generated
+verification plan still requests full verification; that transition was not
+executed or certified for this native-only batch. The inherited removal gate
+remains failed as recorded below.
 
-Two copied-native/SDK retirement checks, 125 Rust contracts, all 49 legacy
-workspace chunks, 74 focused legacy contracts and 38 JS/schema connection
-contracts pass. Updated shortcut-hook/schema tests also pass. Strict Rust Clippy,
-affected TS lint/format and typechecks are required before committing. Final
-source-bound logs/receipts are under `target/migration/python-retirement-*`.
-The runtime/session integration run failed 19 of 34 groups; obsolete Python-hook
-expectations are corrected with passing targeted checks. All 40 remaining failing contracts reproduce on unchanged `2ff0193` using
-the same failing chunk commands. The raw run remains failed; do not call this a
-passing transition. Baseline resources were rebuilt from its sources, using the
-unchanged verified addon. See the current runtime section in
-`tasks/LEGACY-SESSION-CONTRACTS.md`.
-See `tasks/PYTHON-EVAL-RETIREMENT.md` and `docs/python-repl.md`.
+Previous `application:python-eval-retirement` removed 25 approved kernel/prelude/
+private-test sources. Its 125 Rust contracts and all 49 legacy workspace groups
+passed. The runtime/session integration run failed 19/34 groups; all 40 remaining
+contracts reproduced on unchanged `2ff0193`. Preserve the failed receipt rather
+than rerunning unchanged legacy failures for native-only application additions.
+See `tasks/PYTHON-EVAL-RETIREMENT.md`, `tasks/LEGACY-SESSION-CONTRACTS.md` and
+`target/migration/python-retirement-*`.
 
 JavaScript evaluation still serves retained browser/computer workers. Move those
 consumers to native CDP/desktop APIs before removing the shared JS engine.

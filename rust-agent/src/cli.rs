@@ -90,17 +90,22 @@ struct ReplayArgs {
 #[derive(Debug, clap::Args)]
 struct RpcArgs {
 	#[arg(long, default_value = ".omp/session.jsonl")]
-	session:   PathBuf,
+	session:           PathBuf,
 	#[arg(long)]
-	leaf:      Option<String>,
+	leaf:              Option<String>,
 	#[arg(short, long, default_value = ".")]
-	workspace: PathBuf,
+	workspace:         PathBuf,
 	#[arg(long)]
-	agent_dir: Option<PathBuf>,
+	agent_dir:         Option<PathBuf>,
 	#[arg(long)]
-	tag:       Vec<String>,
+	tag:               Vec<String>,
 	#[arg(long)]
-	model:     Option<String>,
+	model:             Option<String>,
+	#[arg(long, default_value = "openai-chat", value_parser = ["openai-chat", "anthropic-messages"], requires_if("anthropic-messages", "base_url"), requires_if("anthropic-messages", "model"))]
+	api:               String,
+	#[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..))]
+	max_output_tokens: u32,
+
 	#[arg(long)]
 	base_url:  Option<String>,
 	#[arg(long)]
@@ -140,41 +145,46 @@ struct RunArgs {
 		requires = "browser_profile",
 		help = "Enable approved native browser tools with this Chrome executable"
 	)]
-	browser_chrome:   Option<PathBuf>,
+	browser_chrome:    Option<PathBuf>,
 	#[arg(
 		long,
 		requires = "browser_chrome",
 		help = "Dedicated persistent profile for native browser tools"
 	)]
-	browser_profile:  Option<PathBuf>,
+	browser_profile:   Option<PathBuf>,
 	#[arg(long, requires = "browser_chrome")]
-	browser_headless: bool,
+	browser_headless:  bool,
 	#[arg(long, help = "Use the experimental asynchronous session owner")]
-	async_session:    bool,
+	async_session:     bool,
 	#[arg(long, help = "Explicitly request OpenAI-style streamed usage; requires host support")]
-	request_usage:    bool,
+	request_usage:     bool,
 	#[arg(long, default_value = ".omp/session.jsonl")]
-	session:          PathBuf,
+	session:           PathBuf,
 	#[arg(long)]
-	leaf:             Option<String>,
+	leaf:              Option<String>,
 	#[arg(long, help = "Emit ordered JSON events, including provisional streamed text")]
-	events:           bool,
+	events:            bool,
 	#[arg(short, long)]
-	prompt:           String,
+	prompt:            String,
 	#[arg(short, long, default_value = ".")]
-	workspace:        PathBuf,
+	workspace:         PathBuf,
 	#[arg(long)]
-	agent_dir:        Option<PathBuf>,
+	agent_dir:         Option<PathBuf>,
 	#[arg(long)]
-	tag:              Vec<String>,
+	tag:               Vec<String>,
 	#[arg(long)]
-	model:            Option<String>,
+	model:             Option<String>,
+	#[arg(long, default_value = "openai-chat", value_parser = ["openai-chat", "anthropic-messages"], requires_if("anthropic-messages", "base_url"), requires_if("anthropic-messages", "model"))]
+	api:               String,
+	#[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..))]
+	max_output_tokens: u32,
+
 	#[arg(long)]
-	base_url:         Option<String>,
+	base_url:  Option<String>,
 	#[arg(long)]
-	api_key:          Option<String>,
+	api_key:   Option<String>,
 	#[arg(long)]
-	max_steps:        Option<u32>,
+	max_steps: Option<u32>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -313,6 +323,20 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 	Ok(0)
 }
 
+fn configured_model(
+	settings: config::Settings,
+	api: &str,
+	max_tokens: u32,
+	usage: bool,
+) -> Result<HttpModel> {
+	let model = HttpModel::new(settings).request_usage(usage);
+	if api == "anthropic-messages" {
+		model.anthropic_messages(max_tokens)
+	} else {
+		Ok(model)
+	}
+}
+
 fn rpc(args: RpcArgs) -> Result<u8> {
 	let workspace = args
 		.workspace
@@ -345,7 +369,7 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 			&workspace,
 			&args.session,
 			args.leaf.as_deref(),
-			Arc::new(HttpModel::new(settings)),
+			Arc::new(configured_model(settings, &args.api, args.max_output_tokens, false)?),
 			Arc::new(crate::tools::DenyMutations),
 			SessionEngineOptions {
 				max_model_turns,
@@ -392,7 +416,7 @@ fn run(args: RunArgs) -> Result<u8> {
 	}
 	let configured_browser = browser_options(&args);
 	let max_steps = settings.max_steps;
-	let model = HttpModel::new(settings).request_usage(args.request_usage);
+	let model = configured_model(settings, &args.api, args.max_output_tokens, args.request_usage)?;
 	let model_ref: &dyn Model = &model;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
@@ -452,7 +476,12 @@ fn run_async_session(
 			workspace,
 			&args.session,
 			args.leaf.as_deref(),
-			Arc::new(HttpModel::new(settings).request_usage(args.request_usage)),
+			Arc::new(configured_model(
+				settings,
+				&args.api,
+				args.max_output_tokens,
+				args.request_usage,
+			)?),
 			Arc::new(crate::tools::TerminalApproval),
 			SessionEngineOptions {
 				browser: browser_options(args),

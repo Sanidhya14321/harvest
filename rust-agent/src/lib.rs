@@ -2,6 +2,7 @@
 //! met.
 pub mod agent;
 pub mod agent_session;
+mod anthropic;
 mod brain_cli;
 pub mod chat;
 mod cli;
@@ -12,6 +13,7 @@ pub mod provider;
 pub mod replay_cli;
 pub mod rpc;
 pub mod session_engine;
+mod sse;
 mod transport;
 pub use harvest_protocol as protocol;
 pub use harvest_terminal as terminal;

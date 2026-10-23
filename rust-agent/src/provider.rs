@@ -67,8 +67,9 @@ pub trait Model {
 
 #[derive(Clone)]
 pub struct HttpModel {
-	settings:      Settings,
-	request_usage: bool,
+	settings:       Settings,
+	request_usage:  bool,
+	message_tokens: Option<u32>,
 }
 
 impl fmt::Debug for HttpModel {
@@ -77,6 +78,7 @@ impl fmt::Debug for HttpModel {
 			.debug_struct("HttpModel")
 			.field("model", &self.settings.model)
 			.field("request_usage", &self.request_usage)
+			.field("anthropic_messages", &self.message_tokens.is_some())
 			.finish_non_exhaustive()
 	}
 }
@@ -99,7 +101,17 @@ impl std::error::Error for ProviderRequestError {}
 
 impl HttpModel {
 	pub const fn new(settings: Settings) -> Self {
-		Self { settings, request_usage: false }
+		Self { settings, request_usage: false, message_tokens: None }
+	}
+
+	/// Select the Anthropic Messages wire API explicitly. Endpoint/model policy
+	/// remains the caller's responsibility until catalog resolution is ported.
+	pub fn anthropic_messages(mut self, max_output_tokens: u32) -> Result<Self> {
+		if max_output_tokens == 0 {
+			bail!("max output tokens must be at least 1");
+		}
+		self.message_tokens = Some(max_output_tokens);
+		Ok(self)
 	}
 
 	/// Explicit opt-in until compatible-host request policy is catalog-resolved.
@@ -117,7 +129,11 @@ impl HttpModel {
 	) -> Result<crate::transport::Response> {
 		crate::transport::Response::open(
 			endpoint(&self.settings.base_url),
-			self.settings.api_key.clone(),
+			if self.settings.api_key.is_empty() {
+				Vec::new()
+			} else {
+				vec![("Authorization".into(), format!("Bearer {}", self.settings.api_key))]
+			},
 			serde_json::to_vec(&request)?,
 			streaming,
 			cancellation,
@@ -167,6 +183,9 @@ impl Model for HttpModel {
 		messages: &[ChatMessage],
 		tools: &[ToolSpec],
 	) -> Result<ModelResponse> {
+		if let Some(tokens) = self.message_tokens {
+			return crate::anthropic::complete(&self.settings, tokens, messages, tools);
+		}
 		let request = CompletionRequest {
 			model: &self.settings.model,
 			messages,
@@ -201,6 +220,16 @@ impl Model for HttpModel {
 		cancellation: &harvest_runtime::cancel::CancelToken,
 		on_text: &mut dyn FnMut(&str) -> Result<()>,
 	) -> Result<ModelResponse> {
+		if let Some(tokens) = self.message_tokens {
+			return crate::anthropic::stream(
+				&self.settings,
+				tokens,
+				messages,
+				tools,
+				cancellation,
+				on_text,
+			);
+		}
 		cancellation.heartbeat()?;
 		let response = self.request(
 			CompletionRequest {

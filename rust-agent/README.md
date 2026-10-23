@@ -214,3 +214,21 @@ EOF terminate the reader; reconnect after a transport error. The portable
 The server uses one ordered writer, a 64 MiB queued-byte budget and a 10-second
 deadline for each complete logical write. Serialization itself enforces the
 negotiated size limit; chunks are encoded lazily as output drains.
+
+### Native Anthropic Messages text and tools
+
+The experimental Rust candidate supports an explicit Messages wire path:
+
+```text
+harvest run --api anthropic-messages --model YOUR_MODEL --base-url https://api.anthropic.com/v1 --max-output-tokens 4096 --prompt "Read the workspace"
+```
+
+Set `OMP_API_KEY` rather than putting credentials in command history. The same
+flags select the provider in `harvest rpc`; `--async-session` uses the shared
+session owner. Rust embedders select
+`HttpModel::new(settings).anthropic_messages(max_output_tokens)?`.
+
+Text/tool calls, matched results, streaming cancellation and raw usage are
+supported. Thinking/signatures, images, OAuth, beta/server tools, retry policy
+and catalog configuration remain pending. Unsupported response blocks fail
+explicitly. This opt-in candidate does not replace the default application yet.
