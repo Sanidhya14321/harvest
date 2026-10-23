@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current language-services continuation base: `9ecee5f`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current benchmark continuation base: `bee9356`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -31,7 +31,8 @@ through this table and the machine task before editing a shared interface.
 | MCP client and tool bridge | `rust-agent/src/mcp`, shared HTTP/SSE owner | native sync/async sessions, RPC, direct SDK, `harvest mcp`, `--enable-mcp`/`--mcp-config` | OAuth/discovery/legacy SSE/reconnect, idle event delivery, hot reload and installed/platform parity | Written/connected; unverified |
 | LSP client and text edits | `rust-agent/src/language_services/{lsp,edits,runtime}.rs` | native tool registry, sync/async sessions, RPC, SDK, CLI | resource operations, full diagnostics/sync/discovery/linters/editorconfig, recovery/performance/platform tests | Written/connected; unverified |
 | Debug adapter and session state | `rust-agent/src/language_services/{dap,runtime}.rs` | same host owner/config/tool/session/CLI boundaries | socket/discovery/reverse terminal/advanced breakpoint workflows, cleanup and behavioral/platform tests | Written/connected; unverified |
-| Benchmark generation/orchestration | same Rust edit-benchmark module and future native metaharness owner | existing TS runner still active | mutation generation, archive handling, shape analysis, orchestration and consumer cutover | Not converted |
+| Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, retries/guided/early-stop/tool-use policies, exports, native views, metaharness cutover | Written/connected; unverified |
+| Benchmark generation | same Rust edit-benchmark owner | existing TS generator still active | mutation generation, archive handling and shape analysis | Not converted |
 
 ## Inputs, connections and deletion rules
 
@@ -59,6 +60,33 @@ loader, settings implementation and metaharness still consume them. Default
 launchers remain on the current product until retained behavior is connected and
 installed verification passes. Legacy language plugin loading is retired by the
 native ABI; the old TS application's retirement diagnostic/cutover is unfinished.
+
+## Language/deletion audit and current benchmark continuation
+
+[LANGUAGE-PROGRESS.md](LANGUAGE-PROGRESS.md) binds counts to `bee9356` and records
+GitHub's default branch `main`, live language-endpoint access limitations, 60
+TS/TSX deletions since baseline and zero in the previous four commits. Do not
+claim Rust additions reduced TS. This benchmark continuation also removes zero TS
+files: the metaharness adapter/package consumers remain active.
+
+Native orchestration now owns sorted task selection, independent input copies,
+bounded concurrent repetitions, one session/model per run, externally owned
+session/event artifacts, final-argument fixture mutation approval, cancellation,
+per-run outcomes and raw/aggregate usage. CLI and SDK call the same owner.
+`AgentSession::open_with_storage` reuses the durable writer while keeping the
+scored workspace separate; existing `open` callers preserve their storage layout.
+The actual legacy inputs/consumers remain `packages/metaharness/adapters/edit/runner.ts`,
+its CLI and `packages/typescript-edit-benchmark/src/in-process-client.ts`.
+See `RUST-BENCHMARK.md` for every retained gap, limits and exact native command.
+
+Verification during stabilization: run a scripted SDK model through multiple
+isolated runs, check deterministic ordering and input/expected immutability,
+shared final-argument jail/approval, mixed missing/valid/overflow usage, denied
+shell/service calls, overlapping output/writer rejection, failure/cancellation/
+timeout/queue cleanup and copied installed CLI model requests. Verify interrupted
+artifacts and session cwd/replay. Then cover actual retained metaharness workflows
+before moving/deleting their consumers. Recovery: revert this checkpoint; the
+production TS runner remains active and historical scores/data are untouched.
 
 ## Stabilization queue (deferred, not passed)
 
@@ -106,6 +134,15 @@ native ABI; the old TS application's retirement diagnostic/cutover is unfinished
       do not infer performance or crash recovery from compilation.
 - [ ] Run consolidated behavioral, installed-platform and full transition checks;
       update receipts and only then update done/verified/removal claims.
+
+## Benchmark checkpoint compiler evidence
+
+Aggregate `cargo check --locked -p harvest-omp --all-targets --all-features`
+passes on the current host; log `target/migration/conversion-benchmark-connections-final.log`.
+Formatting and playbook ownership metadata validation pass. This is compiler and
+metadata evidence only. Behavioral, installed, performance and platform checks
+remain deferred. Receipt: `target/migration/conversion-benchmark-receipt.json`.
+No source-removal claim or completed capability count changes.
 
 ## Checkpoint evidence and recovery
 

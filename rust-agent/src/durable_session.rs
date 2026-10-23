@@ -30,6 +30,17 @@ pub struct DurableSession {
 impl DurableSession {
 	/// Opens a current v3 log or creates one. Imports must use a separate file.
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
+		Self::open_for_workspace(root, path, leaf, root)
+	}
+
+	/// Storage ownership and the recorded working directory can be distinct.
+	pub fn open_for_workspace(
+		root: &Path,
+		path: &Path,
+		leaf: Option<&str>,
+		workspace: &Path,
+	) -> Result<Self> {
+		let workspace = workspace.canonicalize()?;
 		let fs = JailedFs::open(root)?;
 		let path = fs.resource_path(path)?;
 		let ownership = lock_session(&fs, &path)?;
@@ -43,7 +54,7 @@ impl DurableSession {
 				format!("{}:{timestamp}:{}", root.display(), std::process::id()).as_bytes(),
 			);
 			let header =
-				json!({"type":"session", "version":3, "id":id, "timestamp":timestamp, "cwd":fs.root()});
+				json!({"type":"session", "version":3, "id":id, "timestamp":timestamp, "cwd":workspace});
 			let mut line = serde_json::to_vec(&header)?;
 			line.push(b'\n');
 			fs.append_checked(&path, &line, SESSION_LIMIT, Some(&content_hash(&bytes)))?;
@@ -57,6 +68,18 @@ impl DurableSession {
 			bail!("damaged or unterminated session requires explicit recovery before writing");
 		}
 		document.validate_tree()?;
+		if workspace != fs.root() {
+			let recorded: PathBuf = serde_json::from_str(
+				document
+					.header()
+					.get("cwd")
+					.context("external session storage requires a recorded workspace")?
+					.get(),
+			)?;
+			if recorded != workspace {
+				bail!("stored session belongs to a different workspace");
+			}
+		}
 		let id: String = serde_json::from_str(document.header()["id"].get())?;
 		let leaf = leaf.map(str::to_owned).or_else(|| {
 			document

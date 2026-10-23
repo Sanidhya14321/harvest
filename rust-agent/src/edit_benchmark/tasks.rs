@@ -49,6 +49,7 @@ pub fn list_files(filesystem: &JailedFs, directory: &Path) -> Result<Vec<PathBuf
 pub fn load_tasks(fixtures: &Path) -> Result<Vec<Task>> {
 	let filesystem = JailedFs::open(fixtures)?;
 	let mut tasks = Vec::new();
+	let mut metadata_bytes = 0_usize;
 	for entry in filesystem.entries(Path::new(""), MAX_FILES)? {
 		ensure!(!entry.is_symlink, "benchmark task cannot be a symlink");
 		if !entry.is_directory {
@@ -67,6 +68,10 @@ pub fn load_tasks(fixtures: &Path) -> Result<Vec<Task>> {
 				Ok::<_, anyhow::Error>(RawValue::from_string(raw)?)
 			})
 			.transpose()?;
+		metadata_bytes = metadata_bytes
+			.checked_add(prompt.len() + metadata.as_ref().map_or(0, |raw| raw.get().len()))
+			.ok_or_else(|| anyhow::anyhow!("benchmark metadata size overflow"))?;
+		ensure!(metadata_bytes <= 64 * 1024 * 1024, "benchmark task metadata exceeds limit");
 		tasks.push(Task {
 			id: entry.name,
 			prompt: prompt.trim().into(),

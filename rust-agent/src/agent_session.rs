@@ -53,7 +53,18 @@ pub struct AgentSession {
 }
 impl AgentSession {
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
-		let log = DurableSession::open(root, path, leaf)?;
+		Self::open_with_storage(root, root, path, leaf)
+	}
+
+	/// Keep the session writer in an explicitly owned artifact directory while
+	/// tools remain jailed to the workspace. Both roots are host-authorized.
+	pub fn open_with_storage(
+		root: &Path,
+		storage: &Path,
+		path: &Path,
+		leaf: Option<&str>,
+	) -> Result<Self> {
+		let log = DurableSession::open_for_workspace(storage, path, leaf, root)?;
 		Ok(Self {
 			tools: tools::ToolRuntime::default(),
 			root: root.canonicalize()?,

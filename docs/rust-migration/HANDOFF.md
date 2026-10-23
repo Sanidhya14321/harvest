@@ -49,6 +49,23 @@ acceptance gates. Whole-source conversion remains unfinished; the common card
 contains the generated full feature snapshot. Previous validated Anthropic and
 Python-retirement checkpoints are in the archived handoff and their cards.
 
+## Current continuation
+
+Native `edit-benchmark run` and `run_tasks` SDK now connect the existing scorer,
+configuration/provider and agent-session owners: isolated fixture copies, bounded
+workers/repetitions, cancellation/deadlines, scoped final-argument approval,
+external session/events, usage capture and ordered durable outcomes. See
+`RUST-BENCHMARK.md` and the shared card for unfinished metaharness workflows.
+Behavioral/installed checks remain deferred; no verified/done claims advance.
+
+The user requested language/deletion verification. `LANGUAGE-PROGRESS.md` records
+GitHub default branch `main`; direct language bytes were inaccessible. At
+`bee9356`, 4,955 tracked TS/TSX files contain 55,484,591 raw blob bytes. There are
+60 deletion paths since `d811cb2`, but zero in the previous four commits. This
+continuation also deletes zero TS sources because metaharness consumers remain.
+Report source reductions separately from native additions. Do not change Linguist
+settings or default branch to change the display.
+
 ## Open blockers
 
 - Normal application launch is still TypeScript. The Rust candidate is opt-in.
