@@ -27,6 +27,10 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(about = "Query or refactor with a configured native language server")]
+	Lsp(crate::language_services::cli::Arguments),
+	#[command(about = "Inspect or control a program with a configured native debug adapter")]
+	Debug(crate::language_services::cli::Arguments),
 	#[command(about = "Inspect or call an explicitly configured native MCP server")]
 	Mcp(crate::mcp::cli::Arguments),
 	#[command(about = "Show redacted resolved native configuration and profile selection")]
@@ -119,7 +123,7 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 			..Default::default()
 		},
 	)?;
-	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredPlugins":resolved.plugins.len(),"configuredMcpServers":resolved.mcp.len()});
+	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredPlugins":resolved.plugins.len(),"configuredMcpServers":resolved.mcp.len(),"configuredLanguageServers":resolved.lsp.len(),"configuredDebugAdapters":resolved.dap.len()});
 	serde_json::to_writer(io::stdout().lock(), &output)?;
 	writeln!(io::stdout().lock())?;
 	Ok(0)
@@ -127,6 +131,10 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 
 #[derive(Debug, Default, clap::Args)]
 struct ConfigurationArgs {
+	#[arg(long, help = "Enable configured native language-server tools")]
+	enable_lsp:     bool,
+	#[arg(long, help = "Enable configured native debugger tools")]
+	enable_debug:   bool,
 	#[arg(long, help = "Connect MCP servers declared in native configuration")]
 	enable_mcp:     bool,
 	#[arg(
@@ -173,6 +181,15 @@ impl ConfigurationArgs {
 				max_output_tokens,
 			},
 		)?;
+		// Configurations remain inspectable without launching programs. Runtime
+		// exposure is an explicit host choice; adapters start lazily on invocation.
+		if !self.enable_lsp {
+			resolved.lsp.clear();
+		}
+		if !self.enable_debug {
+			resolved.dap.clear();
+		}
+
 		if !resolved.mcp.is_empty() && !self.enable_mcp {
 			bail!("MCP servers in native configuration require --enable-mcp");
 		}
@@ -333,6 +350,8 @@ pub(crate) fn execute() -> Result<u8> {
 
 fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
+		Commands::Lsp(arguments) => crate::language_services::cli::execute("lsp", arguments),
+		Commands::Debug(arguments) => crate::language_services::cli::execute("debug", arguments),
 		Commands::Mcp(arguments) => crate::mcp::cli::execute(arguments),
 		Commands::Config(args) => inspect_configuration(args),
 		Commands::EditBenchmark(arguments) => crate::edit_benchmark::cli::execute(arguments),
@@ -506,6 +525,8 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 				max_model_turns,
 				plugins: resolved.plugins,
 				mcp: resolved.mcp,
+				lsp: resolved.lsp,
+				dap: resolved.dap,
 				user_agent_dir,
 				tags: args.tag.into_iter().collect(),
 				event_capacity: 256,
@@ -558,6 +579,8 @@ fn run(args: RunArgs) -> Result<u8> {
 			resolved.max_output_tokens,
 			resolved.plugins,
 			resolved.mcp,
+			resolved.lsp,
+			resolved.dap,
 		);
 	}
 	let configured_browser = browser_options(&args);
@@ -571,6 +594,7 @@ fn run(args: RunArgs) -> Result<u8> {
 		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
 	session.configure_plugins(&resolved.plugins, &Default::default())?;
 	session.configure_mcp(&resolved.mcp, &Default::default())?;
+	session.configure_language_services(resolved.lsp, resolved.dap)?;
 	if let Some(options) = configured_browser {
 		session.configure_browser(options);
 	}
@@ -618,6 +642,8 @@ fn run_async_session(
 	max_output_tokens: u32,
 	plugins: Vec<crate::plugins::Configuration>,
 	mcp: Vec<crate::mcp::Configuration>,
+	lsp: Vec<crate::language_services::LspConfiguration>,
+	dap: Vec<crate::language_services::DapConfiguration>,
 ) -> Result<u8> {
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.worker_threads(2)
@@ -636,6 +662,8 @@ fn run_async_session(
 				max_model_turns,
 				plugins,
 				mcp,
+				lsp,
+				dap,
 				user_agent_dir,
 				tags: args.tag.iter().cloned().collect(),
 				..Default::default()

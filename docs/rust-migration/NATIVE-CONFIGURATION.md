@@ -56,3 +56,8 @@ replace earlier layers, like plugins. Runtime startup requires `--enable-mcp`,
 while explicit `--mcp-config` JSON files are host-selected inputs. Duplicate names
 are errors. Inspection reports a server count and never connects. See
 [NATIVE-MCP.md](NATIVE-MCP.md) for pending discovery/OAuth/legacy format behavior.
+
+Native `[[lsp]]`/`[[dap]]` arrays now share these layers, replacing earlier arrays
+and validating names/limits. They are exposed to model tools only when the host
+selects --enable-lsp/--enable-debug; configuration inspection starts neither.
+See [NATIVE-LSP-DAP.md](NATIVE-LSP-DAP.md) for lazy ownership and remaining work.

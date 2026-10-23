@@ -11,6 +11,7 @@ pub mod configuration;
 pub mod durable_session;
 mod edit;
 pub mod edit_benchmark;
+pub mod language_services;
 pub mod mcp;
 pub mod plugins;
 mod process_transport;

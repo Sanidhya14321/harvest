@@ -394,10 +394,11 @@ mod tests {
 /// final-argument approval.
 #[derive(Default)]
 pub struct ToolRuntime {
-	mcp:             Vec<crate::mcp::Client>,
-	plugins:         Vec<crate::plugins::Plugin>,
-	browser_options: Option<harvest_browser::Options>,
-	browser:         Option<harvest_browser::Browser>,
+	language_services: crate::language_services::Runtime,
+	mcp:               Vec<crate::mcp::Client>,
+	plugins:           Vec<crate::plugins::Plugin>,
+	browser_options:   Option<harvest_browser::Options>,
+	browser:           Option<harvest_browser::Browser>,
 }
 
 impl ToolRuntime {
@@ -415,6 +416,8 @@ impl ToolRuntime {
 			.map(|spec| spec.name().to_owned())
 			.collect();
 		names.insert("browser".into());
+		names.insert("lsp".into());
+		names.insert("debug".into());
 		for server in &self.mcp {
 			for tool in server.tools() {
 				names.insert(tool.spec.name().to_owned());
@@ -448,6 +451,8 @@ impl ToolRuntime {
 			.map(|spec| spec.name().to_owned())
 			.collect();
 		names.insert("browser".into());
+		names.insert("lsp".into());
+		names.insert("debug".into());
 		for plugin in &self.plugins {
 			for tool in plugin.tools() {
 				names.insert(tool.name().into());
@@ -474,6 +479,15 @@ impl ToolRuntime {
 		Ok(())
 	}
 
+	pub fn configure_language_services(
+		&mut self,
+		root: &Path,
+		lsp: Vec<crate::language_services::LspConfiguration>,
+		dap: Vec<crate::language_services::DapConfiguration>,
+	) -> Result<()> {
+		self.language_services.configure(root, lsp, dap)
+	}
+
 	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
 		self.browser = None;
 		self.browser_options = Some(options);
@@ -481,6 +495,7 @@ impl ToolRuntime {
 
 	pub fn specs(&self) -> Vec<crate::chat::ToolSpec> {
 		let mut specs = crate::chat::specs();
+		specs.extend(self.language_services.specs());
 		for server in &self.mcp {
 			specs.extend(server.tools().iter().map(|tool| tool.spec.clone()));
 		}
@@ -500,6 +515,10 @@ impl ToolRuntime {
 		policy: &dyn Approval,
 		cancellation: &harvest_runtime::cancel::CancelToken,
 	) -> Result<String> {
+		if matches!(call.function.name.as_str(), "lsp" | "debug") {
+			return self.language_services.invoke(call, policy, cancellation);
+		}
+
 		if let Some(server) = self.mcp.iter_mut().find(|server| {
 			server
 				.tools()

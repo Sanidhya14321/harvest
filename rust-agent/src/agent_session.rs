@@ -84,6 +84,14 @@ impl AgentSession {
 			.configure_mcp(&self.root, configurations, cancellation)
 	}
 
+	pub fn configure_language_services(
+		&mut self,
+		lsp: Vec<crate::language_services::LspConfiguration>,
+		dap: Vec<crate::language_services::DapConfiguration>,
+	) -> Result<()> {
+		self.tools.configure_language_services(&self.root, lsp, dap)
+	}
+
 	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
 		self.tools.configure_browser(options);
 	}

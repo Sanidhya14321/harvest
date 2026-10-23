@@ -242,3 +242,13 @@ command lists tools/resources/prompts and performs explicit calls. Model calls
 still require host approval. See [native MCP migration status](../docs/rust-migration/NATIVE-MCP.md)
 for configuration, APIs and unfinished OAuth/legacy SSE/event/platform behavior.
 This conversion checkpoint compiles; behavioral and installed checks are deferred.
+
+### Native language/debug conversion checkpoint
+
+Host-selected `[[lsp]]` and `[[dap]]` native configurations expose the shared
+`lsp`/`debug` tools using --enable-lsp/--enable-debug. The same Rust clients serve
+sync/async sessions, RPC, SDK users and `harvest lsp`/`harvest debug` CLI commands.
+`--interactive` keeps terminal CLI ownership for multiple structured requests.
+See [native language/debug status](../docs/rust-migration/NATIVE-LSP-DAP.md) for
+approval, configuration and unfinished discovery/recovery/platform contracts.
+Behavioral and installed verification remains deferred for this checkpoint.

@@ -38,6 +38,8 @@ pub struct Resolved {
 	pub max_output_tokens: u32,
 	pub plugins:           Vec<Configuration>,
 	pub mcp:               Vec<crate::mcp::Configuration>,
+	pub lsp:               Vec<crate::language_services::LspConfiguration>,
+	pub dap:               Vec<crate::language_services::DapConfiguration>,
 }
 
 #[derive(Clone, Default, Deserialize)]
@@ -48,6 +50,8 @@ struct Layer {
 	max_output_tokens: Option<u32>,
 	plugins:           Option<Vec<Configuration>>,
 	mcp:               Option<Vec<crate::mcp::Configuration>>,
+	lsp:               Option<Vec<crate::language_services::LspConfiguration>>,
+	dap:               Option<Vec<crate::language_services::DapConfiguration>>,
 }
 impl Layer {
 	fn merge(&mut self, newer: Self) {
@@ -66,6 +70,8 @@ impl Layer {
 		field!(self.max_output_tokens, newer.max_output_tokens);
 		field!(self.plugins, newer.plugins);
 		field!(self.mcp, newer.mcp);
+		field!(self.lsp, newer.lsp);
+		field!(self.dap, newer.dap);
 	}
 }
 #[derive(Clone, Default, Deserialize)]
@@ -215,11 +221,27 @@ pub fn load(
 		server.validate()?;
 		ensure!(mcp_names.insert(&server.name), "duplicate MCP server name in native configuration");
 	}
+	let lsp = document.layer.lsp.unwrap_or_default();
+	let dap = document.layer.dap.unwrap_or_default();
+	ensure!(lsp.len() <= 16 && dap.len() <= 16, "too many native language services");
+	let mut names = BTreeSet::new();
+	for server in &lsp {
+		server.validate()?;
+		ensure!(names.insert(&server.process.name), "duplicate LSP server name");
+	}
+	names.clear();
+	for adapter in &dap {
+		adapter.validate()?;
+		ensure!(names.insert(&adapter.process.name), "duplicate debug adapter name");
+	}
+
 	Ok(Resolved {
 		settings: config::resolve_file_values(flags, environment, document.layer.settings)?,
 		api,
 		max_output_tokens,
 		plugins,
 		mcp,
+		lsp,
+		dap,
 	})
 }

@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current MCP continuation base: `2c2078c`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current language-services continuation base: `9ecee5f`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -27,8 +27,10 @@ through this table and the machine task before editing a shared interface.
 | Plugin UI | same protocol Event enum; SDK callback | direct host SDK callback | session/TUI forwarding and interactive choice responses | Partial; unfinished |
 | Native settings/profiles | `rust-agent/src/configuration.rs`, `config.rs` | sync/async run, RPC, SDK, redacted `harvest config` | legacy YAML/JSONC/schema/external-source parity, settings persistence/UI, credential ownership | Written/connected foundation; unfinished parity |
 | Rust edit scoring | `rust-agent/src/edit_benchmark` | native CLI list/compare/apply and ordinary Rust APIs | normalization/patch/file-set bounds tests; actual model runs and usage integration | Written/connected; unverified |
-| Shared process owner | `rust-agent/src/process_transport.rs` | native plugins and MCP stdio | platform descendant/console cleanup, cancellation/failure/queue regressions | Written/connected; unverified |
+| Shared process owner | `rust-agent/src/process_transport.rs` | native plugins, MCP stdio, LSP and DAP | platform descendant/console cleanup, cancellation/failure/queue regressions | Written/connected; unverified |
 | MCP client and tool bridge | `rust-agent/src/mcp`, shared HTTP/SSE owner | native sync/async sessions, RPC, direct SDK, `harvest mcp`, `--enable-mcp`/`--mcp-config` | OAuth/discovery/legacy SSE/reconnect, idle event delivery, hot reload and installed/platform parity | Written/connected; unverified |
+| LSP client and text edits | `rust-agent/src/language_services/{lsp,edits,runtime}.rs` | native tool registry, sync/async sessions, RPC, SDK, CLI | resource operations, full diagnostics/sync/discovery/linters/editorconfig, recovery/performance/platform tests | Written/connected; unverified |
+| Debug adapter and session state | `rust-agent/src/language_services/{dap,runtime}.rs` | same host owner/config/tool/session/CLI boundaries | socket/discovery/reverse terminal/advanced breakpoint workflows, cleanup and behavioral/platform tests | Written/connected; unverified |
 | Benchmark generation/orchestration | same Rust edit-benchmark module and future native metaharness owner | existing TS runner still active | mutation generation, archive handling, shape analysis, orchestration and consumer cutover | Not converted |
 
 ## Inputs, connections and deletion rules
@@ -37,7 +39,9 @@ Inputs: existing plugin/extension interfaces under
 `packages/coding-agent/src/extensibility`, config/config-file/settings sources,
 `packages/typescript-edit-benchmark/src/{tasks,verify,in-process-client}.ts`,
 metaharness edit adapter, MCP client/types/transports/config/tool bridge under
-`packages/coding-agent/src/mcp`, current native tools/provider/session engines.
+`packages/coding-agent/src/mcp`, LSP/DAP clients/config/types/edits and shared
+`jsonrpc/message-framing.ts`, tools/debug.ts and lsp/tool.ts, current native
+tools/provider/session engines.
 The source ledger continues owning every retained legacy path through its parent
 migration task. This leaf reserves native destination interfaces; it does not
 certify the unported parent or move a source row to verified removal.
@@ -45,7 +49,8 @@ certify the unported parent or move a source row to verified removal.
 Implementation order: owned tool schemas; executable protocol/host/SDK; connect
 session ownership and host approval; shared configuration/profile selection;
 connect native launchers; versioned benchmark loader/apply/scorer/CLI; shared
-process owner and MCP transports/client/config/tool bridge/CLI. All are
+process owner and MCP transports/client/config/tool bridge/CLI; Content-Length
+framing, LSP/DAP clients/state, UTF-16 text edits and native host connections. All are
 written before the consolidated stabilization phase. Reuse existing jailed file,
 edit, transport, provider and session engines. No new dependency or N-API adapter.
 
@@ -87,6 +92,18 @@ native ABI; the old TS application's retirement diagnostic/cutover is unfinished
       delivery and atomic dynamic-tool refresh across the shared host registry.
 - [ ] Platform process/console/session ownership and descendant cleanup for both
       plugin and MCP users of the shared process owner.
+- [ ] Content-Length framing fragmentation, duplicate/oversized/truncated headers
+      and bodies, queue/EOF/cancellation and shared JSONL compatibility.
+- [ ] LSP initialization, UTF-16 positions/edits/surrogates/overlap/order, server
+      callbacks, final-edit approval, stale versions, partial writes and sync.
+- [ ] Full language-server discovery/pooling/linters/warmup, diagnostics, resource
+      operations/code-action commands/rename_file, editorconfig and recovery.
+- [ ] DAP initialization/configurationDone, out-of-order requests/events, final
+      target argument approval, launch/attach/stepping/inspection and cleanup.
+- [ ] Socket adapters, reverse terminal/child sessions and remaining breakpoint
+      wrappers; startup/exit/cancellation, stale references, TUI and platform parity.
+- [ ] Native coordinate CPU budgets, large outputs and URI/path/encoding limits;
+      do not infer performance or crash recovery from compilation.
 - [ ] Run consolidated behavioral, installed-platform and full transition checks;
       update receipts and only then update done/verified/removal claims.
 
@@ -106,6 +123,13 @@ Its aggregate all-target/all-feature compiler connection check passes, recorded 
 or installed verification is claimed for this continuation. See `NATIVE-MCP.md`
 for implemented contracts and the remaining retained behavior.
 
+Language-services continuation writes and connects native LSP/DAP and workspace
+text-edit handling. Shared framing supports Content-Length as well as JSONL.
+Aggregate compiler connection results are recorded in
+`target/migration/conversion-lsp-dap-connections*.log`; behavioral/installed/
+performance/platform checks remain deferred. See `NATIVE-LSP-DAP.md` for every
+unfinished boundary and the exact current API behavior.
+
 Future stabilization commands: `cargo xtask test -p harvest-omp`, affected strict
 Clippy/format, actual native plugin/CLI installation workflows, and the existing
 source/capability verification plan. Receipts remain under ignored
@@ -123,13 +147,12 @@ sources. Until then this task stays in_progress and capabilities stay unverified
 
 ## Next conversion frontier
 
-Continue the services work with native LSP/DAP framing, lifecycle and tool
-connections. Extend the shared process owner with their required framing; do not
-create another child-process implementation. Host-applied workspace edits must
-retain the jailed filesystem and final-argument approval owner. These features
-remain absent/unconverted in the snapshot until actual code is written. Existing
-provider, plugin, MCP, configuration and session interfaces keep their current
-owners; broaden the shared registry without duplicating it.
+Native language/debug foundations now exist in the reserved paths above. Continue
+remaining service/application conversions against these owners; do not duplicate
+LSP/DAP/process/registry implementations. Preserve the explicit unconverted
+contracts in NATIVE-LSP-DAP.md. Prioritize remaining native session lifecycle and
+provider/config/catalog consumers, then native interactive UI; use the generated
+feature matrix and source ledger to maintain complete ownership.
 
 ## Full feature snapshot from capabilities.json
 
@@ -220,11 +243,11 @@ retirements are listed separately from implemented features.
 | `tool:ast_grep` | absent | unverified | `migrate:application` |
 | `tool:ast_edit` | absent | unverified | `migrate:application` |
 | `tool:ask` | absent | unverified | `migrate:application` |
-| `tool:debug` | absent | unverified | `migrate:application` |
+| `tool:debug` | partial | unverified | `application:conversion-first` |
 | `tool:github` | absent | unverified | `migrate:application` |
 | `tool:glob` | absent | unverified | `migrate:application` |
 | `tool:grep` | partial | unverified | `migrate:application` |
-| `tool:lsp` | absent | unverified | `migrate:application` |
+| `tool:lsp` | partial | unverified | `application:conversion-first` |
 | `tool:checkpoint` | absent | unverified | `migrate:application` |
 | `tool:rewind` | absent | unverified | `migrate:application` |
 | `tool:task` | absent | unverified | `migrate:application` |
@@ -355,7 +378,7 @@ retirements are listed separately from implemented features.
 | `surface:rpc-v1-v2` | partial | unverified | `migrate:services` |
 | `surface:acp-v1` | absent | unverified | `migrate:services` |
 | `surface:mcp` | partial | unverified | `application:conversion-first` |
-| `surface:lsp-dap` | absent | unverified | `migrate:services` |
+| `surface:lsp-dap` | partial | unverified | `application:conversion-first` |
 | `surface:eval-ssh` | absent | unverified | `migrate:services` |
 | `surface:native-browser-control` | partial | unverified | `migrate:services` |
 

@@ -19,7 +19,7 @@ in-progress conversion checkpoints without claiming verified feature completion.
 
 `application:conversion-first` is in_progress and has scheduling priority. Native
 owned tool schemas, executable plugin protocol/host/Rust SDK, layered TOML
-configuration/profiles, rust-v1 edit scoring and native MCP are written and connected across
+configuration/profiles, rust-v1 edit scoring, native MCP and language/debug services are written and connected across
 native APIs/CLI/sync/async/RPC. The example plugin uses host-jailed reads. Startup
 is explicitly host-enabled. The redacted config inspector starts no plugins.
 
@@ -29,13 +29,19 @@ pagination, tool/resource/prompt APIs, host approval, native config and CLI are
 connected. See `NATIVE-MCP.md` for unfinished OAuth/discovery/legacy SSE,
 notifications/reconnect and platform process cleanup. Legacy MCP sources remain.
 
-An aggregate all-target/all-feature compiler connection check passes, recorded in
-`target/migration/conversion-mcp-connections*.log`. Behavioral
-tests, Clippy, installation and legacy cutover checks are **deferred** at the
-user's instruction; no new capability is verified/done or legacy-removed. The
-common card identifies remaining plugin lifecycle/UI/marketplace, full legacy
-settings/schema and benchmark generation/orchestration contracts. Keep converting
-independent remaining areas, then run consolidated stabilization passes.
+The current continuation adds bounded Content-Length framing, LSP initialization/
+queries/document sync/UTF-16 text edits and DAP adapter/session state. Both share
+the existing process/tool/config/approval owners. Native run/RPC host flags are
+--enable-lsp/--enable-debug; direct SDK and terminal CLI connections are present.
+See NATIVE-LSP-DAP.md for incomplete discovery/diagnostics/resource operations/
+recovery/socket/reverse-request/platform behavior. Legacy consumers remain.
+
+Compiler connection results are under
+`target/migration/conversion-lsp-dap-connections*.log`. Behavioral tests, Clippy,
+installation, performance and legacy cutover checks remain **deferred**. No new
+capability is verified/done or legacy-removed. Continue broad code conversion via
+the shared task/card, then consolidate stabilization. Source inventories and the
+generated feature snapshot retain honest pending ownership.
 
 Default application and consumers still use TS. Do not delete their sources or
 replace the product with the experimental native subset. Preserve final Rust-only
