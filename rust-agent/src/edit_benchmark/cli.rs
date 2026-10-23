@@ -16,6 +16,19 @@ pub(crate) struct Arguments {
 enum Command {
 	/// Execute isolated native model runs and write rust-v1 artifacts.
 	Run(RunArguments),
+	Mutations,
+	Generate {
+		#[arg(long)]
+		source:   PathBuf,
+		#[arg(long)]
+		output:   PathBuf,
+		#[arg(long)]
+		task_id:  String,
+		#[arg(long)]
+		mutation: String,
+		#[arg(long, default_value_t = 42)]
+		seed:     u64,
+	},
 	/// Calibrate edit shapes from existing session logs, without running models.
 	EditShapes {
 		#[arg(long)]
@@ -189,6 +202,20 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 	let cancellation = Default::default();
 	let report = match arguments.command {
 		Command::Run(arguments) => return run(arguments),
+		Command::Mutations => {
+			serde_json::to_writer(io::stdout().lock(), &super::MutationKind::ALL)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(0);
+		},
+		Command::Generate { source, output, task_id, mutation, seed } => {
+			let kind = super::MutationKind::from_name(&mutation).ok_or_else(|| {
+				anyhow::anyhow!("unsupported native mutation; use edit-benchmark mutations")
+			})?;
+			let report = super::generate_task(&source, &output, &task_id, kind, seed, &cancellation)?;
+			serde_json::to_writer(io::stdout().lock(), &report)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(0);
+		},
 		Command::EditShapes { sessions_dir, repo, max_sessions, json } => {
 			let sessions = match sessions_dir {
 				Some(path) => path,

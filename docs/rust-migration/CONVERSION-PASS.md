@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current benchmark integration continuation base: `1e12aa2`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current mutation-producer continuation base: `aedb5d3`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -32,10 +32,11 @@ through this table and the machine task before editing a shared interface.
 | LSP client and text edits | `rust-agent/src/language_services/{lsp,edits,runtime}.rs` | native tool registry, sync/async sessions, RPC, SDK, CLI | resource operations, full diagnostics/sync/discovery/linters/editorconfig, recovery/performance/platform tests | Written/connected; unverified |
 | Debug adapter and session state | `rust-agent/src/language_services/{dap,runtime}.rs` | same host owner/config/tool/session/CLI boundaries | socket/discovery/reverse terminal/advanced breakpoint workflows, cleanup and behavioral/platform tests | Written/connected; unverified |
 | Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, retries/guided/early-stop policies, formatted exports, native views, metaharness cutover | Written/connected; unverified |
-| Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | mutation selection and compatibility/behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
+| Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | remaining mutation families, corpus/difficulty policies and behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
 | Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native bounded/unchanged metadata cases | Written/connected; removal verification pending |
 | Native tool-result metadata | `rust-agent/src/{edit,tools,durable_session,agent_session,session_engine}.rs` | shared native SDK/sync/async/RPC committed records and benchmark analyzer | actual result/error/no-op/metadata bounds and persistence/replay regressions | Written/connected; unverified |
 | Fixture archives | `rust-agent/src/edit_benchmark/archive.rs` | SDK FixtureSource, CLI unpack/list/validate/run and shared task loader | malformed/CRC/path/alias/budget/cancellation/platform and installed contracts | Written/connected; unverified |
+| Syntax-aware mutation generation | `crates/pi-ast/src/mutations.rs`; `rust-agent/src/edit_benchmark/generate.rs` | native generate/mutations CLI and SDK -> shared snapshots/hunks -> validate/run | regex/bindings/composite, corpus/difficulty/calibrated shapes, legacy generator cutover, behavioral/installed checks | Written/connected foundation; unverified |
 
 ## Inputs, connections and deletion rules
 
@@ -173,6 +174,40 @@ Run the consolidated contracts through `cargo xtask test -p harvest-omp`, follow
 by installed checks and the unchanged migration/source-removal gates. All remain
 deferred. Compiler connection and metadata logs/receipt use ignored
 `target/migration/conversion-benchmark-integrations-*`; no addon rebuild is needed.
+
+## Current mutation-producer batch
+
+Base `aedb5d3`. Twenty AST mutation families are written in the shared pi-ast owner,
+with no second parser/cache. Native generate/mutations CLI and SDK now select from
+reviewed source-data trees, snapshot original expected bytes, apply bounded
+source-range mutations, re-parse and publish through the existing exact hunk
+producer. Producer/seed/provenance are versioned `rust-ast-v1`, independently of
+historical Babel generation. RUST-BENCHMARK.md lists exact interfaces, limits,
+known compatibility gaps and recovery behavior.
+
+Inputs/consumers: legacy `src/mutations.ts`, `generate.ts`, existing pi-ast parser,
+native paired-tree/task/archive/run owners and static benchmark task Markdown.
+Both legacy TS sources still serve the package's generator. Their reviewed ledger
+rows transfer to this active task with partial implementations and retained state.
+No TS source is deleted or marked verified in this batch. The common manifests
+keep benchmark capability partial. Avoid duplicating syntax engines or silently
+replacing the generator's unported flags/contracts.
+
+Pending prerequisites: regex quantifiers, binding-aware multi-edit identifiers,
+composites, corpus/difficulty/dedup/calibration and specialized prompt guidance,
+archive production, then actual TS generator/metaharness consumer replacement.
+Missing semantic analysis stays explicit; syntactic validity is not binding parity.
+Existing native APIs and the next independent task can advance without guessing.
+
+Recovery: revert this batch to aedb5d3; preserved legacy generator/data remain.
+Consolidated checks: every advertised family through the native generator,
+exact hunk validation and installed runner, deterministic seeds/provenance,
+comments/escapes/Unicode/JSX/TS, source/output separation before creation,
+invalid syntax/no candidates, mutation budgets, cancellation and cleanup. Use
+`cargo xtask test -p pi-ast -p harvest-omp` when stabilization starts; retain full
+migration/source-removal acceptance. Formatting and aggregate current-host
+compiler connection results use ignored `target/migration/conversion-mutations-*`.
+Behavioral/installed/platform checks remain deferred; no completed feature claim.
 
 ## Stabilization queue (deferred, not passed)
 

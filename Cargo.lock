@@ -4029,6 +4029,7 @@ dependencies = [
  "harvest-terminal",
  "harvest-tokenizer",
  "harvest-tui",
+ "pi-ast",
  "pi-diff",
  "pi-edit",
  "pi-shell",

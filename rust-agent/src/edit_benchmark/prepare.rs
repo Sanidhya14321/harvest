@@ -1,5 +1,5 @@
 //! Native deterministic task preparation from reviewed input/expected trees.
-//! Language-specific mutation selection remains a separate pending producer.
+//! The native AST mutation producer reuses the same exact hunk/copy contract.
 use std::{
 	collections::BTreeSet,
 	path::{Path, PathBuf},
@@ -38,6 +38,29 @@ struct FileIdentity {
 	expected_sha256: String,
 }
 
+/// Resolve a proposed destination without creating it. Pin existing ancestry
+/// through the shared capability resolver before testing source separation.
+pub(crate) fn prospective_output(output: &Path) -> Result<PathBuf> {
+	let absolute = if output.is_absolute() {
+		output.to_owned()
+	} else {
+		std::env::current_dir()?.join(output)
+	};
+	let mut ancestor = absolute.as_path();
+	while !ancestor.exists() {
+		ancestor = ancestor
+			.parent()
+			.ok_or_else(|| anyhow::anyhow!("output has no existing ancestor"))?;
+	}
+	let fs = JailedFs::open(ancestor)?;
+	let suffix = absolute.strip_prefix(ancestor)?;
+	if suffix.as_os_str().is_empty() {
+		Ok(fs.root().to_owned())
+	} else {
+		fs.resource_path(suffix)
+	}
+}
+
 /// Writes one new unpacked task, never overwriting an existing task. No input
 /// or expected source is executed or mutated. Copies use the shared filesystem
 /// jail.
@@ -46,6 +69,17 @@ pub fn prepare_task(
 	expected: &Path,
 	output: &Path,
 	task_id: &str,
+	cancellation: &CancelToken,
+) -> Result<PreparedTask> {
+	prepare_task_with_provenance(input, expected, output, task_id, None, cancellation)
+}
+
+pub(crate) fn prepare_task_with_provenance(
+	input: &Path,
+	expected: &Path,
+	output: &Path,
+	task_id: &str,
+	provenance: Option<&serde_json::Value>,
 	cancellation: &CancelToken,
 ) -> Result<PreparedTask> {
 	ensure!(
@@ -58,6 +92,13 @@ pub fn prepare_task(
 	);
 	let input = JailedFs::open(input)?;
 	let expected = JailedFs::open(expected)?;
+	let proposed = prospective_output(output)?;
+	for source in [&input, &expected] {
+		ensure!(
+			!proposed.starts_with(source.root()) && !source.root().starts_with(&proposed),
+			"prepared output must be disjoint from source trees"
+		);
+	}
 	let input_files: BTreeSet<_> = list_files(&input, Path::new(""))?.into_iter().collect();
 	let expected_files: BTreeSet<_> = list_files(&expected, Path::new(""))?.into_iter().collect();
 	ensure!(
@@ -117,7 +158,7 @@ pub fn prepare_task(
 	)?;
 	ensure!(prompt.len() <= 256 * 1024, "generated task prompt exceeds 256 KiB");
 	let metadata = serde_json::to_vec(&serde_json::json!({"scoring_version":SCORING_VERSION,
-        "producer":"rust-paired-tree-v1","file_path":prompt_files[0].path,"files":identities}))?;
+        "producer":if provenance.is_some(){super::generate::PRODUCER_VERSION}else{"rust-paired-tree-v1"},"mutation":provenance,"file_path":prompt_files[0].path,"files":identities}))?;
 	ensure!(metadata.len() <= 256 * 1024, "fixture metadata exceeds 256 KiB");
 	let output = JailedFs::open_or_create(output)?;
 	for source in [&input, &expected] {

@@ -207,3 +207,68 @@ missing/failed/unresolved results, requirement flags and exported raw numeric
 usage. Session persistence failure after a successful filesystem mutation retains
 the existing recovery limitation; journaling is still pending. The analyzer's
 full-record JSON projection also needs unknown numeric-usage compatibility tests.
+
+## Native AST mutation producer (conversion checkpoint)
+
+```text
+harvest edit-benchmark mutations
+harvest edit-benchmark generate --source /path/to/reviewed-source-data --output /path/to/new-fixtures --task-id comparison-case --mutation swap-comparison --seed 42
+```
+
+`pi_ast::mutations` owns syntax-aware candidates and byte-edit application, using
+the existing shared parser/language/cache. The application `generate_task` API
+owns selection, snapshots, fixture publication and cancellation. There is one
+native AST parser/cache, not a benchmark-specific parser. `generate` writes a
+normal unpacked task that the existing native validate/list/run commands consume.
+The source tree is explicit reviewed data; no repository/corpus discovery is
+silently performed and no source is executed. Original input trees remain intact.
+
+Twenty family implementations are written: comparison/equality/logical/arithmetic
+operators, negation, increment/decrement, booleans, optional chains, argument
+swaps, nullish operators, Unicode en dashes, off-by-one boundaries, adjacent and
+sibling statements, if/else branches, redundant wrappers, duplicate blocks,
+fall-through case labels, repeated-statement literal/operator flips and distant
+block moves. `mutations` advertises the exact native names. JS/JSX, TypeScript and
+TSX use their registered grammars. Flow recovery and Babel binding analysis are
+not ported. Tree-sitter syntax validation does not certify name resolution or
+runtime semantics, which intentionally change in mutation tasks.
+
+The native producer is separately identified as `rust-ast-v1`. Its seed algorithm
+is SplitMix64, with unbiased reservoir selection across sorted source files and
+ordered candidates. It is not the legacy JavaScript LCG/Babel candidate stream.
+Metadata records producer, exact seed, family, target, candidate ranges/old/new
+bytes, line, candidate/rejected-source counts and SHA-256 original/mutated content
+identities. Historical fixtures, mutation results and scores retain their original
+identities; no historical seed/candidate equivalence is claimed.
+
+Source snapshots are bounded to 64 MiB and shared file/traversal limits. Unsupported
+file types are copied inertly; non-UTF8, oversized or parser-rejected mutation
+targets remain unchanged and are counted as rejected sources. Candidate discovery
+is bounded to 256 KiB source, 100,000 named nodes, depth 256, 4,096 candidates and
+8 MiB candidate text per file. Global selection caps at 100,000 candidates. Parse
+callbacks check cancellation before/after parsing and during traversal; a parse
+itself remains synchronous inside the existing owner. Application validates old
+bytes, UTF-8 ranges and non-overlap, bounds output and re-parses it. A rejected
+selected mutation fails explicitly; there is no unbounded retry or fallback.
+
+Original snapshots become expected files, mutated snapshots become input files.
+Publication reuses the exact hunk producer and static Markdown prompt, including
+its byte-exact re-solve. Output paths are checked for source separation before
+creation; expected/input fingerprints and mutation provenance are bounded before
+prompt publication. Temporary snapshots are cleaned by their owner. Partial
+explicit output remains inspectable on failure, as with paired preparation.
+
+Still pending: regex quantifier mutation, binding-aware identifier multi-edit,
+composite multi-edit, full numeric/string escape/Flow and grammar-specific
+eligibility parity, legacy difficulty/corpus/dedup/calibrated-size policies,
+mutation-specific prompt guidance, archive generation and full metaharness
+consumer cutover. Both TS `mutations.ts` and `generate.ts` remain required by the
+legacy package generator. Their ledger rows are partial/unverified, not removed.
+
+Stabilization must run representative cases of every family through generate,
+validate and installed native run; check the repaired expected bytes and unchanged
+surrounding source, deterministic seeds, UTF-8/comments/strings, JSX/TS ambiguity,
+optional calls/computed access, grouping/shadowing, no candidates, stale/overlap
+ranges, syntax rejection, statement movement and actual two-hunk shapes. Exercise
+source/output aliases before creation, symlinks, budgets, cancellation and failure
+cleanup. No behavioral or installed verification is claimed by this checkpoint.

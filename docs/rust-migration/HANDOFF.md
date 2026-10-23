@@ -51,23 +51,22 @@ Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
 
-Benchmark integration base `1e12aa2`: actual staged edit diff/no-op/error metadata
-now flows through typed ToolOutput and the existing durable writer into both
-native session hosts/RPC. The analyzer can measure native edits. Benchmark runs
-use actual committed tool evidence, optional successful read/edit requirements and
-lossless messages.json export. Native tar.gz input materializes through one
-FixtureSource owner into the existing loader/list/validate/run path; explicit
-unpack is available. No source is executed. See RUST-BENCHMARK.md for bounds,
-compatibility choices and every remaining contract.
+Mutation-producer base `aedb5d3`: shared pi-ast now owns 20 syntax-aware mutation
+families. Native generate/mutations CLI and SDK snapshot source data, choose seeded
+candidates, apply checked byte ranges, re-parse, and publish through the same exact
+hunk/task owner. Producer `rust-ast-v1` has explicit native seed/provenance; it does
+not relabel historical Babel candidates/results. See RUST-BENCHMARK.md and the
+common card for limits and remaining contracts. Source/output separation now
+runs before creating destinations. Stale utility/test incremental caches were
+removed to recover build space; source/evidence/native-engine caches were kept.
 
-No TS sources are deleted in this batch. The earlier 355-line analyzer removal
-stays pending verification; remaining generator/metaharness consumers still use TS.
-The source gate retains 35 inherited unsupported removals plus that unverified
-analyzer replacement. Zero retained capabilities have verified complete parity.
-All behavioral/installed/platform checks remain deferred; compiler/metadata
-connection checks alone do not advance completion. Next: native mutation selection,
-metaharness orchestration/retry/early-stop and native views through these owners,
-then consolidated stabilization. Keep failures and receipts honest.
+No TS sources are deleted here. mutations.ts/generate.ts still serve the retained
+legacy generator; their ledger rows are partial/unverified and explicitly owned.
+Regex quantifiers, binding-aware identifier multi-edit, composite multi-edit,
+corpus/difficulty/dedup/calibration and specialized prompts, archive production and
+metaharness cutover remain next prerequisites. Behavioral/installed/platform
+checks remain deferred; current-host compilation does not establish parity.
+Source removal/verified capability counters do not advance.
 
 The user explicitly requests minimal interaction: continue across ready batches
 within active execution, push coherent checkpoints and do not ask for another
