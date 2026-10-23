@@ -2,11 +2,11 @@
 //! never loaded as rust-v1 results. Fixture source text is inert input data.
 mod archive;
 pub(crate) mod cli;
-pub use archive::{ArchiveReport, FixtureSource, unpack_fixtures};
+pub use archive::{ArchiveReport, FixtureSource, PackedArchive, pack_fixtures, unpack_fixtures};
 mod evidence;
 pub use evidence::{ToolEvidence, tool_evidence};
 mod generate;
-pub use generate::{GenerationReport, generate_task};
+pub use generate::{GenerationReport, RejectedSource, generate_task};
 pub use pi_ast::mutations::MutationKind;
 pub mod hunks;
 mod prepare;

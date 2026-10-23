@@ -223,14 +223,15 @@ normal unpacked task that the existing native validate/list/run commands consume
 The source tree is explicit reviewed data; no repository/corpus discovery is
 silently performed and no source is executed. Original input trees remain intact.
 
-Twenty family implementations are written: comparison/equality/logical/arithmetic
+Code paths for 23 named families are written; eligibility and parity remain partial: comparison/equality/logical/arithmetic
 operators, negation, increment/decrement, booleans, optional chains, argument
 swaps, nullish operators, Unicode en dashes, off-by-one boundaries, adjacent and
 sibling statements, if/else branches, redundant wrappers, duplicate blocks,
 fall-through case labels, repeated-statement literal/operator flips and distant
-block moves. `mutations` advertises the exact native names. JS/JSX, TypeScript and
+block moves, regex quantifier changes, composite edits and conservative identifier
+reference edits. `mutations` advertises the exact native names. JS/JSX, TypeScript and
 TSX use their registered grammars. Flow recovery and Babel binding analysis are
-not ported. Tree-sitter syntax validation does not certify name resolution or
+not fully ported. Tree-sitter syntax validation does not certify name resolution or
 runtime semantics, which intentionally change in mutation tasks.
 
 The native producer is separately identified as `rust-ast-v1`. Its seed algorithm
@@ -258,11 +259,45 @@ creation; expected/input fingerprints and mutation provenance are bounded before
 prompt publication. Temporary snapshots are cleaned by their owner. Partial
 explicit output remains inspectable on failure, as with paired preparation.
 
-Still pending: regex quantifier mutation, binding-aware identifier multi-edit,
-composite multi-edit, full numeric/string escape/Flow and grammar-specific
+Regex quantifiers use the existing shared Regex grammar over each literal's
+pattern. Only actual `one_or_more`/`zero_or_more` nodes are changed; character
+classes, escaped signs, flags and lazy suffixes remain unchanged. Patterns rejected
+by that grammar and Unicode-set (`v`) literals are ineligible, rather than guessed.
+
+Composite candidates combine 2–5 different token families against the same original
+snapshot with non-overlapping ranges. They enumerate a bounded neighborhood of 64
+later candidates per anchor, not the historical sequential re-mutation algorithm.
+The pool/output each cap at 4,096 candidates and 8 MiB edit text; selected output
+still passes shared range checks and syntax re-parse. Seed/provenance remain native.
+
+Identifier multi-edit resolves declarations and references before selection, with
+lexical block/function scopes, var hoisting, simple parameters and function names.
+It prefers bindings with references on at least three lines, falling back to two;
+selects 2–4 distinct reference lines; and includes the declaration when its line is
+selected. Only selected references change. ASCII misspellings follow the legacy
+permutation, excluding unchanged/keyword/invalid-first-character/colliding names.
+The current subset supports JavaScript only: imports/exports, JSX, classes/methods,
+catch/with/eval, destructuring/default/rest parameters, duplicate declarations,
+for-in/of and Annex B block functions are rejected. These restrictions preserve
+honest partial eligibility; full Babel binding behavior is still unfinished.
+Generation reports retain up to 32 rejected-source examples with bounded reasons;
+no-eligible-candidate errors name the first rejection. Selected-application failures
+include the family and relative source path. Sources remain unchanged.
+
+`pack_fixtures` and `edit-benchmark pack --fixtures /path/to/tasks --output /existing/parent/tasks.tar.gz`
+connect validated native tasks to the existing archive loader/list/validate/run.
+No source is executed. Sorted regular-file entries use stable timestamps/mode/IDs
+and gzip headers, and the same portable path/case-alias policy as extraction.
+All shared source traversal/file bounds apply, compressed output caps at 32 MiB,
+and publication is jailed, writer-owned, atomic and create-only. Output must be
+outside the fixture tree; its parent must already exist. Cancellation/failure
+before publication leaves no partial archive. Sources must be quiescent while
+exporting; this does not claim a transaction over a concurrently modified tree.
+Historical archive import remains supported independently of native production.
+
+Still pending: full binding/numeric/string escape/Flow and grammar-specific
 eligibility parity, legacy difficulty/corpus/dedup/calibrated-size policies,
-mutation-specific prompt guidance, archive generation and full metaharness
-consumer cutover. Both TS `mutations.ts` and `generate.ts` remain required by the
+mutation-specific prompt guidance and full metaharness consumer cutover. Both TS `mutations.ts` and `generate.ts` remain required by the
 legacy package generator. Their ledger rows are partial/unverified, not removed.
 
 Stabilization must run representative cases of every family through generate,
@@ -271,4 +306,5 @@ surrounding source, deterministic seeds, UTF-8/comments/strings, JSX/TS ambiguit
 optional calls/computed access, grouping/shadowing, no candidates, stale/overlap
 ranges, syntax rejection, statement movement and actual two-hunk shapes. Exercise
 source/output aliases before creation, symlinks, budgets, cancellation and failure
-cleanup. No behavioral or installed verification is claimed by this checkpoint.
+cleanup. Include export/import byte identity, stable archive bytes, long names,
+case aliases, existing output, compression limits and concurrent-source behavior. No behavioral or installed verification is claimed by this checkpoint.

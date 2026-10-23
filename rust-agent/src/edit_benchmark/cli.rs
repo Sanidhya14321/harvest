@@ -40,6 +40,13 @@ enum Command {
 		#[arg(long)]
 		json:         bool,
 	},
+	/// Export validated inert fixtures as a native tar.gz archive.
+	Pack {
+		#[arg(long)]
+		fixtures: PathBuf,
+		#[arg(long)]
+		output:   PathBuf,
+	},
 	Unpack {
 		#[arg(long)]
 		archive: PathBuf,
@@ -248,6 +255,12 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 		},
 		Command::Prepare { input, expected, output, task_id } => {
 			let report = super::prepare_task(&input, &expected, &output, &task_id, &cancellation)?;
+			serde_json::to_writer(io::stdout().lock(), &report)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(0);
+		},
+		Command::Pack { fixtures, output } => {
+			let report = super::pack_fixtures(&fixtures, &output, &cancellation)?;
 			serde_json::to_writer(io::stdout().lock(), &report)?;
 			writeln!(io::stdout().lock())?;
 			return Ok(0);

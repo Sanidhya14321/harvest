@@ -32,11 +32,11 @@ through this table and the machine task before editing a shared interface.
 | LSP client and text edits | `rust-agent/src/language_services/{lsp,edits,runtime}.rs` | native tool registry, sync/async sessions, RPC, SDK, CLI | resource operations, full diagnostics/sync/discovery/linters/editorconfig, recovery/performance/platform tests | Written/connected; unverified |
 | Debug adapter and session state | `rust-agent/src/language_services/{dap,runtime}.rs` | same host owner/config/tool/session/CLI boundaries | socket/discovery/reverse terminal/advanced breakpoint workflows, cleanup and behavioral/platform tests | Written/connected; unverified |
 | Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, retries/guided/early-stop policies, formatted exports, native views, metaharness cutover | Written/connected; unverified |
-| Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | remaining mutation families, corpus/difficulty policies and behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
+| Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | full mutation eligibility, corpus/difficulty policies and behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
 | Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native bounded/unchanged metadata cases | Written/connected; removal verification pending |
 | Native tool-result metadata | `rust-agent/src/{edit,tools,durable_session,agent_session,session_engine}.rs` | shared native SDK/sync/async/RPC committed records and benchmark analyzer | actual result/error/no-op/metadata bounds and persistence/replay regressions | Written/connected; unverified |
-| Fixture archives | `rust-agent/src/edit_benchmark/archive.rs` | SDK FixtureSource, CLI unpack/list/validate/run and shared task loader | malformed/CRC/path/alias/budget/cancellation/platform and installed contracts | Written/connected; unverified |
-| Syntax-aware mutation generation | `crates/pi-ast/src/mutations.rs`; `rust-agent/src/edit_benchmark/generate.rs` | native generate/mutations CLI and SDK -> shared snapshots/hunks -> validate/run | regex/bindings/composite, corpus/difficulty/calibrated shapes, legacy generator cutover, behavioral/installed checks | Written/connected foundation; unverified |
+| Fixture archives | `rust-agent/src/edit_benchmark/archive.rs` | SDK FixtureSource/pack_fixtures, CLI pack/unpack/list/validate/run and shared task loader | malformed/CRC/path/alias/budget/cancellation/platform and installed contracts | Written/connected; unverified |
+| Syntax-aware mutation generation | `crates/pi-ast/src/mutations.rs`; `rust-agent/src/edit_benchmark/generate.rs` | native generate/mutations CLI and SDK -> shared snapshots/hunks -> validate/run | full binding/grammar eligibility, corpus/difficulty/calibrated shapes, legacy generator cutover, behavioral/installed checks | Written/connected foundation; unverified |
 
 ## Inputs, connections and deletion rules
 
@@ -175,39 +175,47 @@ by installed checks and the unchanged migration/source-removal gates. All remain
 deferred. Compiler connection and metadata logs/receipt use ignored
 `target/migration/conversion-benchmark-integrations-*`; no addon rebuild is needed.
 
-## Current mutation-producer batch
+## Current mutation-producer continuation
 
-Base `aedb5d3`. Twenty AST mutation families are written in the shared pi-ast owner,
-with no second parser/cache. Native generate/mutations CLI and SDK now select from
-reviewed source-data trees, snapshot original expected bytes, apply bounded
-source-range mutations, re-parse and publish through the existing exact hunk
-producer. Producer/seed/provenance are versioned `rust-ast-v1`, independently of
-historical Babel generation. RUST-BENCHMARK.md lists exact interfaces, limits,
-known compatibility gaps and recovery behavior.
+Owner: `application:conversion-first`. Base `e29f5cd`. The sole syntax/cache owner
+is `pi-ast`; its `mutations/{extended,bindings}.rs` extend the existing public
+candidate/apply APIs. Native CLI/SDK generation still uses the same seeded
+selection, snapshots, exact hunks and fixture publisher. The registry now has code
+paths for 23 named families, with partial supported eligibility and no behavioral
+certification. Do not equate family-name coverage with completed migration.
 
-Inputs/consumers: legacy `src/mutations.ts`, `generate.ts`, existing pi-ast parser,
-native paired-tree/task/archive/run owners and static benchmark task Markdown.
-Both legacy TS sources still serve the package's generator. Their reviewed ledger
-rows transfer to this active task with partial implementations and retained state.
-No TS source is deleted or marked verified in this batch. The common manifests
-keep benchmark capability partial. Avoid duplicating syntax engines or silently
-replacing the generator's unported flags/contracts.
+Inputs: legacy `src/mutations.ts` and `generate.ts`; existing pi-ast JavaScript,
+TypeScript/TSX and Regex grammars; shared jailed filesystem and task/archive owners.
+Regex changes use parsed quantifiers, not substitutions through classes/escapes.
+Composites use 2–5 distinct token families and checked non-overlapping ranges in
+one original snapshot. Identifier edits use a conservative JavaScript lexical
+resolver; unsupported forms fail closed. RUST-BENCHMARK.md specifies the supported
+forms, exact limits and intentional native producer policy differences.
 
-Pending prerequisites: regex quantifiers, binding-aware multi-edit identifiers,
-composites, corpus/difficulty/dedup/calibration and specialized prompt guidance,
-archive production, then actual TS generator/metaharness consumer replacement.
-Missing semantic analysis stays explicit; syntactic validity is not binding parity.
-Existing native APIs and the next independent task can advance without guessing.
+Connections: CLI mutations/generate -> ordinary Rust candidates/apply -> existing
+hunk/task publisher -> validate/run; CLI pack -> pack_fixtures -> portable native
+tar.gz -> existing FixtureSource/unpack/list/validate/run. Generation includes
+bounded rejected-source examples and contextual selected-mutation errors. The
+archive exporter shares import path rules, stable entry metadata, size bounds,
+writer lease and jailed create-only publication. No additional parser or process
+runtime is introduced.
 
-Recovery: revert this batch to aedb5d3; preserved legacy generator/data remain.
-Consolidated checks: every advertised family through the native generator,
-exact hunk validation and installed runner, deterministic seeds/provenance,
-comments/escapes/Unicode/JSX/TS, source/output separation before creation,
-invalid syntax/no candidates, mutation budgets, cancellation and cleanup. Use
-`cargo xtask test -p pi-ast -p harvest-omp` when stabilization starts; retain full
-migration/source-removal acceptance. Formatting and aggregate current-host
-compiler connection results use ignored `target/migration/conversion-mutations-*`.
-Behavioral/installed/platform checks remain deferred; no completed feature claim.
+Pending prerequisites: expand reviewed binding/grammar eligibility; port original
+corpus filters, difficulty/dedup/calibrated-size policies and specialized prompts;
+then replace actual generator/metaharness consumers. Source files stay retained;
+ledger rows remain partial/unverified. No capability or verified removal advances.
+
+Recovery: revert this continuation to e29f5cd; retained generator/data remain.
+Stabilization: run every advertised family through native generate, exact hunk
+validation and installed run; add binding/shadow/hoist/unsupported forms, regex
+classes/escapes/lazy/flags, composites across families and separated hunks, stable
+seed/provenance, stale/overlap ranges, bounded rejection reasons, cancellation and
+source immutability. Cover pack/unpack byte identity, archive reproducibility,
+long paths/case aliases/compression bounds, existing output and failed publication.
+Use `cargo xtask test -p pi-ast -p harvest-omp` in the consolidated stabilization
+phase. Current-host compiler/format/ownership receipts are ignored under
+`target/migration/conversion-mutation-extensions-*`; behavioral/installed/platform
+checks stay deferred. Export expects quiescent source data, not concurrent editing.
 
 ## Stabilization queue (deferred, not passed)
 

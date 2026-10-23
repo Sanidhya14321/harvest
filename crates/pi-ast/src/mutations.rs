@@ -6,6 +6,9 @@ use tree_sitter::Node;
 
 use crate::{SupportLang, parse_cache::parse_cached};
 
+mod bindings;
+mod extended;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MutationKind {
@@ -29,9 +32,12 @@ pub enum MutationKind {
 	RemoveCaseLabel,
 	DuplicateLineFlip,
 	MoveDistantBlock,
+	SwapRegexQuantifier,
+	CompositeMultiEdit,
+	IdentifierMultiEdit,
 }
 impl MutationKind {
-	pub const ALL: [Self; 20] = [
+	pub const ALL: [Self; 23] = [
 		Self::SwapComparison,
 		Self::SwapEquality,
 		Self::SwapLogical,
@@ -52,6 +58,9 @@ impl MutationKind {
 		Self::RemoveCaseLabel,
 		Self::DuplicateLineFlip,
 		Self::MoveDistantBlock,
+		Self::SwapRegexQuantifier,
+		Self::CompositeMultiEdit,
+		Self::IdentifierMultiEdit,
 	];
 
 	pub fn name(self) -> &'static str {
@@ -76,6 +85,9 @@ impl MutationKind {
 			Self::RemoveCaseLabel => "remove-case-label",
 			Self::DuplicateLineFlip => "duplicate-line-flip",
 			Self::MoveDistantBlock => "move-distant-block",
+			Self::SwapRegexQuantifier => "swap-regex-quantifier",
+			Self::CompositeMultiEdit => "composite-multi-edit",
+			Self::IdentifierMultiEdit => "identifier-multi-edit",
 		}
 	}
 
@@ -164,6 +176,15 @@ pub fn candidates(
 		parse_cached(code, lang)?.ok_or_else(|| anyhow::anyhow!("mutation parse interrupted"))?;
 	heartbeat()?;
 	ensure!(!tree.root_node().has_error(), "mutation source contains syntax errors");
+	if kind == MutationKind::IdentifierMultiEdit {
+		return bindings::identifier_candidates(code, lang, tree.root_node(), heartbeat);
+	}
+	if kind == MutationKind::SwapRegexQuantifier {
+		return extended::regex_candidates(code, tree.root_node(), heartbeat);
+	}
+	if kind == MutationKind::CompositeMultiEdit {
+		return extended::composite_candidates(code, lang, heartbeat);
+	}
 	let mut duplicate_counts = std::collections::BTreeMap::new();
 	if kind == MutationKind::DuplicateLineFlip {
 		let mut pending = vec![tree.root_node()];

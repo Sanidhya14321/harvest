@@ -2,7 +2,7 @@
 //! source bytes are snapshotted as expected data and never modified in place.
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken, content_hash};
 use pi_ast::{
 	SupportLang,
@@ -32,14 +32,20 @@ impl Random {
 	}
 }
 #[derive(Debug, Serialize)]
+pub struct RejectedSource {
+	pub target: PathBuf,
+	pub reason: String,
+}
+#[derive(Debug, Serialize)]
 pub struct GenerationReport {
-	pub producer:         &'static str,
-	pub seed:             u64,
-	pub mutation:         MutationKind,
-	pub target:           PathBuf,
-	pub candidates:       usize,
-	pub rejected_sources: usize,
-	pub fixture:          super::PreparedTask,
+	pub producer:          &'static str,
+	pub seed:              u64,
+	pub mutation:          MutationKind,
+	pub target:            PathBuf,
+	pub candidates:        usize,
+	pub rejected_sources:  usize,
+	pub rejected_examples: Vec<RejectedSource>,
+	pub fixture:           super::PreparedTask,
 }
 /// `source` is a reviewed source-data tree, not a repository discovery rule.
 /// Unsupported/large/non-UTF8 files are retained as inert copies. Only the
@@ -66,6 +72,16 @@ pub fn generate_task(
 	let mut selected: Option<(PathBuf, SupportLang, Candidate)> = None;
 	let mut seen = 0_usize;
 	let mut rejected = 0;
+	let mut rejected_examples = Vec::new();
+	let mut reject = |path: &Path, reason: &str| {
+		rejected += 1;
+		if rejected_examples.len() < 32 {
+			rejected_examples.push(RejectedSource {
+				target: path.to_owned(),
+				reason: reason.chars().take(256).collect(),
+			});
+		}
+	};
 	let mut total = 0_usize;
 	for path in paths {
 		cancellation.heartbeat()?;
@@ -83,19 +99,19 @@ pub fn generate_task(
 			continue;
 		};
 		let Ok(code) = std::str::from_utf8(&bytes) else {
-			rejected += 1;
+			reject(&path, "source is not UTF-8");
 			continue;
 		};
 		if code.len() > 256 * 1024 {
-			rejected += 1;
+			reject(&path, "source exceeds 256 KiB");
 			continue;
 		}
 		let candidates =
 			match mutations::candidates(code, lang, kind, &mut || cancellation.heartbeat()) {
 				Ok(candidates) => candidates,
-				Err(_) => {
+				Err(error) => {
 					cancellation.heartbeat()?;
-					rejected += 1;
+					reject(&path, &error.to_string());
 					continue;
 				},
 			};
@@ -107,11 +123,22 @@ pub fn generate_task(
 			}
 		}
 	}
-	let (path, lang, candidate) =
-		selected.ok_or_else(|| anyhow::anyhow!("no eligible mutation candidate in source tree"))?;
+	let (path, lang, candidate) = selected.ok_or_else(|| {
+		let detail = rejected_examples
+			.first()
+			.map(|r| r.reason.as_str())
+			.unwrap_or("no matching syntax");
+		anyhow::anyhow!(
+			"no eligible {} candidate: {detail} ({rejected} rejected sources)",
+			kind.name()
+		)
+	})?;
 	let original = expected.read(&path, 256 * 1024)?;
 	let code = std::str::from_utf8(&original)?;
-	let mutated = mutations::apply(code, lang, &candidate, &mut || cancellation.heartbeat())?;
+	let mutated = mutations::apply(code, lang, &candidate, &mut || cancellation.heartbeat())
+		.with_context(|| {
+			format!("selected {} mutation rejected in {}", kind.name(), path.display())
+		})?;
 	input.atomic_write(&path, mutated.as_bytes())?;
 	let provenance = serde_json::json!({"producer":PRODUCER_VERSION,"seed":seed,"mutation":kind,
         "target":path,"selected":candidate,"original_sha256":content_hash(&original),
@@ -131,6 +158,7 @@ pub fn generate_task(
 		target: path,
 		candidates: seen,
 		rejected_sources: rejected,
+		rejected_examples,
 		fixture,
 	})
 }

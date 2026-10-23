@@ -51,22 +51,20 @@ Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
 
-Mutation-producer base `aedb5d3`: shared pi-ast now owns 20 syntax-aware mutation
-families. Native generate/mutations CLI and SDK snapshot source data, choose seeded
-candidates, apply checked byte ranges, re-parse, and publish through the same exact
-hunk/task owner. Producer `rust-ast-v1` has explicit native seed/provenance; it does
-not relabel historical Babel candidates/results. See RUST-BENCHMARK.md and the
-common card for limits and remaining contracts. Source/output separation now
-runs before creating destinations. Stale utility/test incremental caches were
-removed to recover build space; source/evidence/native-engine caches were kept.
+Mutation-producer continuation base `e29f5cd`: shared pi-ast now has code paths
+for all 23 named mutation families. Regex changes use the existing Regex grammar;
+composites combine non-overlapping edits from distinct families; identifier edits
+use a conservative JavaScript lexical binding resolver. Full binding/grammar
+eligibility remains partial. Native generation now reports bounded rejection
+examples. SDK/CLI `pack` exports validated inert fixtures through the same portable
+archive/path rules consumed by native unpack/list/validate/run. See
+RUST-BENCHMARK.md and the common card for supported forms, limits and policies.
 
-No TS sources are deleted here. mutations.ts/generate.ts still serve the retained
-legacy generator; their ledger rows are partial/unverified and explicitly owned.
-Regex quantifiers, binding-aware identifier multi-edit, composite multi-edit,
-corpus/difficulty/dedup/calibration and specialized prompts, archive production and
-metaharness cutover remain next prerequisites. Behavioral/installed/platform
-checks remain deferred; current-host compilation does not establish parity.
-Source removal/verified capability counters do not advance.
+No TS source is deleted: mutations.ts/generate.ts still serve the legacy generator.
+Next: complete reviewed binding/grammar eligibility, corpus/difficulty/dedup/
+calibration and specialized prompts, then actual generator/metaharness cutover.
+Behavioral/installed/platform checks remain deferred; compiler/format/ownership
+checks do not establish parity. Verified capability/removal counters do not advance.
 
 The user explicitly requests minimal interaction: continue across ready batches
 within active execution, push coherent checkpoints and do not ask for another
