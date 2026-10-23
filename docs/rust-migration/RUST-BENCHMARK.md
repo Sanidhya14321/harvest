@@ -69,8 +69,8 @@ in measured token totals. Prices remain unavailable. A completed output mismatch
 is unsuccessful, distinct from cancellation, timeout and failed execution. CLI
 returns nonzero if any run is unsuccessful. No expected fixture is executed.
 
-Pending: language-specific mutation selection, retries/guided mutations,
-connection/early-stop policies, formatted conversation exports, interactive
+Pending: full language-specific mutation eligibility, provider/timeout retries and guided mutations,
+connection/first-event timeout policies, formatted conversation exports, interactive
 benchmark views and metaharness consumer cutover. Global artifact/disk quotas, crash resume and custom-model
 cancellation enforcement also need explicit contracts and stabilization evidence. Babel/Prettier historical scores retain their old meanings.
 No TS benchmark source is removed before those remaining consumers move.
@@ -308,3 +308,40 @@ ranges, syntax rejection, statement movement and actual two-hunk shapes. Exercis
 source/output aliases before creation, symlinks, budgets, cancellation and failure
 cleanup. Include export/import byte identity, stable archive bytes, long names,
 case aliases, existing output, compression limits and concurrent-source behavior. No behavioral or installed verification is claimed by this checkpoint.
+
+## Bounded attempts and exact-match stopping (written, unverified)
+
+`run --max-attempts 3 --no-edit-retries 2` uses the same model/session/workspace
+for follow-ups. Defaults are one scored attempt and two no-edit retries; each
+setting is capped at 16 (attempts minimum one). A no-edit retry means this turn
+made no persisted edit/write call; it consumes its independent run-wide retry
+budget before spending a scored attempt. Tool success is still taken from actual
+results, not prose or attempted writes. All attempts share one run timeout and
+existing per-run usage/events limits. A transport/session failure ends the run;
+provider and attempt-timeout recovery needs a typed contract first. These retries
+are not the full historical adapter policy.
+
+After all calls in a tool batch have durable results, the same session owner may
+stop before another provider request if rust-v1 exact full-tree matching and
+required read/edit evidence pass. Default enabled; disable with
+`--no-early-stop-on-match`. No formatted comparison, synthetic assistant message,
+extra usage, new writer or unfinished tool call is introduced. Final scoring is
+repeated. General submit/execute clients retain their original behavior.
+
+Artifacts add `attempt-NN.json`, `score-NN.json`, cumulative `usage-NN.json` and,
+with --export-messages, `messages-NN.json`. Final usage/messages also preserve
+partial failed turns; outcome.json includes attempts/no_edit_retries/early_stopped.
+Final score.json remains the last completed scoring result, absent on turn failure.
+
+`harvest edit-benchmark view --output RUN_DIRECTORY [--json]` and the SummaryView
+SDK inspect native summary.json without model/network access. Read limit 2 MiB,
+1..1000 ordered runs, validated version/state/totals and attempt limits; text task
+identities are JSON escaped and no artifact paths are followed. Older rust-v1
+summaries without attempt data show unavailable, never zero. This static native
+report does not establish full interactive dashboard or metaharness parity.
+
+Pending acceptance: scripted and installed retry/no-edit/multi-tool/early-stop
+ordering/cancellation/usage/artifact contracts, old session API regression checks,
+and malformed/version/index/totals/control-label summary handling. No runtime or
+installed verification exists for this continuation. Legacy cli.ts still imports
+runner.ts; in-process-client.ts and metaharness orchestration remain active.

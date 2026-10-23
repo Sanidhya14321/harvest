@@ -16,6 +16,13 @@ pub(crate) struct Arguments {
 enum Command {
 	/// Execute isolated native model runs and write rust-v1 artifacts.
 	Run(RunArguments),
+	/// Inspect a completed native summary without model/network access.
+	View {
+		#[arg(long)]
+		output: PathBuf,
+		#[arg(long)]
+		json:   bool,
+	},
 	Mutations,
 	Generate {
 		#[arg(long)]
@@ -88,6 +95,14 @@ enum Command {
 }
 #[derive(Debug, clap::Args)]
 struct RunArguments {
+	/// Keep requesting model responses after a matching committed tool batch.
+	#[arg(long)]
+	no_early_stop_on_match:    bool,
+	/// Scored attempts, excluding no-edit retries; all share one run deadline.
+	#[arg(long, default_value_t = 1)]
+	max_attempts:              u32,
+	#[arg(long, default_value_t = 2)]
+	no_edit_retries:           u32,
 	/// Authorize configured !credential commands in the invocation workspace.
 	#[arg(long)]
 	allow_credential_commands: bool,
@@ -171,6 +186,9 @@ fn run(arguments: RunArguments) -> Result<u8> {
 		&arguments.fixtures,
 		&arguments.output,
 		&super::RunConfiguration {
+			early_stop_on_match: !arguments.no_early_stop_on_match,
+			max_attempts: arguments.max_attempts,
+			no_edit_retries: arguments.no_edit_retries,
 			repetitions: arguments.repetitions,
 			require_read_tool: arguments.require_read_tool,
 			require_edit_tool: arguments.require_edit_tool,
@@ -213,6 +231,16 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 	let cancellation = Default::default();
 	let report = match arguments.command {
 		Command::Run(arguments) => return run(arguments),
+		Command::View { output, json } => {
+			let summary = super::SummaryView::load(&output)?;
+			if json {
+				serde_json::to_writer(io::stdout().lock(), &summary)?;
+				writeln!(io::stdout().lock())?;
+			} else {
+				summary.write_text(&mut io::stdout().lock())?;
+			}
+			return Ok(0);
+		},
 		Command::Mutations => {
 			serde_json::to_writer(io::stdout().lock(), &super::MutationKind::ALL)?;
 			writeln!(io::stdout().lock())?;

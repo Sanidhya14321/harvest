@@ -38,12 +38,21 @@ SDK consumers keep their APIs and bounded queues. Whitespace/ignored fields coun
 queue prefetch is separate from the consumed-frame quota. Boundary/cancellation/
 framing and MCP/LSP/DAP/SDK runtime regressions are still pending.
 
+Benchmark continuation base `91ee52d`: native run_tasks/CLI now have bounded
+same-session verification/no-edit retries, cumulative per-attempt artifacts and
+exact-match stopping after complete durable tool batches. Native view/SummaryView
+reads completed rust-v1 summaries without providers. Normal session callers keep
+existing behavior. Provider/attempt-timeout recovery, guided policies, interactive
+views and metaharness consumer moves remain pending. See RUST-BENCHMARK.md and the
+reviewed common card; runner.ts is partial/retained, no TS deletion.
+
 Compiler, format and ownership checks only; behavioral/installed/platform evidence
 is deferred. No TS source is deleted and no verified capability/removal counter
 advances in these continuations. Generate counts from `cargo xtask playbook status
 --json`; partial Rust code and raw language bytes are not engineering completion.
 Ignored receipts/logs: target/migration/conversion-provider-values-*,
-conversion-plugin-events-* and conversion-process-byte-count-*. Prior source hashes/evidence remain historical.
+conversion-plugin-events-*, conversion-process-byte-count-* and
+conversion-benchmark-retries-*. Prior source hashes/evidence remain historical.
 
 ## Next dependency-ready work
 
@@ -57,7 +66,7 @@ conversion-plugin-events-* and conversion-process-byte-count-*. Prior source has
   Reuse current value resolver/invalidation and cancellable transport.
 - Benchmark: shared AST has partial paths for 23 mutation names, paired preparation,
   exact hunks, rust-v1 scoring, native archive export/import and orchestration.
-  Finish corpus/difficulty/dedup/calibration/prompts, retries/early-stop/native views
+  Finish corpus/difficulty/dedup/calibration/prompts, provider/timeout retries and interactive native views
   and actual metaharness cutover. See RUST-BENCHMARK.md and the common card.
 - Settings: ConfigFile<T> owns typed bounded decoding/cache/default/fallback/
   relocation and explicit JSON-to-YAML creation. Full schemas/discovery, implicit

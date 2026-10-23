@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current process-byte continuation base: `34e1876`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current benchmark-attempt continuation base: `91ee52d`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -34,7 +34,7 @@ through this table and the machine task before editing a shared interface.
 | MCP client and tool bridge | `rust-agent/src/mcp`, shared HTTP/SSE owner | native sync/async sessions, RPC, direct SDK, `harvest mcp`, `--enable-mcp`/`--mcp-config` | OAuth/discovery/legacy SSE/reconnect, idle event delivery, hot reload and installed/platform parity | Written/connected; unverified |
 | LSP client and text edits | `rust-agent/src/language_services/{lsp,edits,runtime}.rs` | native tool registry, sync/async sessions, RPC, SDK, CLI | resource operations, full diagnostics/sync/discovery/linters/editorconfig, recovery/performance/platform tests | Written/connected; unverified |
 | Debug adapter and session state | `rust-agent/src/language_services/{dap,runtime}.rs` | same host owner/config/tool/session/CLI boundaries | socket/discovery/reverse terminal/advanced breakpoint workflows, cleanup and behavioral/platform tests | Written/connected; unverified |
-| Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, retries/guided/early-stop policies, formatted exports, native views, metaharness cutover | Written/connected; unverified |
+| Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, provider/timeout retries and guided policies, formatted exports, interactive views, metaharness cutover | Written/connected; unverified |
 | Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | full mutation eligibility, corpus/difficulty policies and behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
 | Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native bounded/unchanged metadata cases | Written/connected; removal verification pending |
 | Native tool-result metadata | `rust-agent/src/{edit,tools,durable_session,agent_session,session_engine}.rs` | shared native SDK/sync/async/RPC committed records and benchmark analyzer | actual result/error/no-op/metadata bounds and persistence/replay regressions | Written/connected; unverified |
@@ -763,3 +763,68 @@ retirements are listed separately from implemented features.
 | `sdk-import:python-rpc` | pending | surface:rust-sdk, surface:rpc-v1-v2 |
 | `compat:shell-completion-scripts` | pending | surface:native-command-completion |
 | `compat:installer-scripts` | pending | surface:native-installation |
+
+## Current benchmark attempts, early-stop and native summary continuation
+
+Owner/task: `application:conversion-first`; base `91ee52d`; capability
+`surface:benchmarks`. Prerequisites: existing native runner/scorer, durable sync
+session, shared configuration/provider/approval and fixture archive owner are
+written. Inputs: `packages/metaharness/adapters/edit/runner.ts` retry loop and
+buildEarlyStop, its cli.ts import, in-process-client.ts, current Rust runner and
+stored tool evidence. Only the ledger's named runner subset is reviewed; remaining
+legacy contracts below are not inferred complete.
+
+Sole destinations: edit_benchmark/{runner,evidence,view,cli}.rs, ordinary
+AgentSession's optional tool checkpoint, two static Markdown retry prompts.
+Connections: existing run_tasks SDK/native run CLI, existing session generation/
+writer/event owner, same jailed workspace and model across attempts; native view
+CLI and SummaryView SDK read the existing summary. No parallel runtime or scorer.
+
+Written rules: 1..16 scored attempts (default 1), 0..16 no-edit retries (default 2)
+with an independent run-wide budget; maximum 32 submits. Per-turn persisted calls
+identify no edit/write attempts; old edits never mask a later read-only turn.
+Matching output with required successful tool evidence ends the run immediately.
+All submits retain session/history/model/workspace and share the original deadline,
+usage and artifact limits. Errors/timeouts are not retried as output mismatches.
+Retry prompts contain no expected fixture or fabricated diff. No-edit retries do
+not spend a scored-attempt slot until their separate allowance is exhausted.
+
+Early-stop is enabled by default, disabled by CLI --no-early-stop-on-match or SDK
+configuration. The ordinary session owner checks only after every call in the
+assistant tool batch has a durable result; never abort with unresolved calls or
+fabricate an assistant response/usage. Use the existing rust-v1 full file-set and
+CRLF-only scorer, and honor read/edit requirements. Normal submit/execute callers
+supply no checkpoint and preserve existing behavior. Final scoring still runs.
+
+Numbered attempt/score/usage and optional messages artifacts preserve each turn;
+usage snapshots are cumulative and final usage/messages preserve partial failed
+turns. Output remains new-directory-only. Outcomes expose attempt/retry counts and
+early-stop. Read-only view --output DIR [--json] accepts only complete native
+summary files <=2 MiB and <=1000 ordered runs with consistent totals/states;
+unknown old attempt fields remain unavailable. Text labels are JSON escaped.
+The view never opens paths supplied by a report or contacts providers. It is a
+static native report, not the full interactive metaharness dashboard replacement.
+
+Bounded prerequisites to continue independently:
+1. Typed provider failure classification and same-session recovery/backoff;
+   first-event/attempt-timeout telemetry with retained retry budgets. Do not retry
+   arbitrary errors or reset the outer run deadline.
+2. Guided prompt/difficulty/mutation-intent policies and formatter retirement
+   mapping to rust-v1, without claiming historical score equivalence.
+3. Full retained metaharness run/report/queue analytics and interactive native
+   views; move cli.ts and actual adapter consumers only after their contracts move.
+
+Deletion: zero. runner.ts, in-process-client.ts and all shared TS inputs remain
+live. Recovery: revert this coherent continuation to 91ee52d; default production
+TS behavior and immutable baseline are unchanged. Acceptance during consolidated
+stabilization: scripted SDK and installed native runs cover the rules above,
+repetition/concurrency determinism, deadline/cancel/error/noop/unresolved/denied
+calls, mixed usage and artifact failures, tool-batch ordering/no extra provider
+request, old submit behavior and malformed/oversize/inconsistent/terminal-control
+views. Commands: cargo xtask test -p harvest-omp, installed edit-benchmark run/view,
+source-audit affected plan and final removal gates when consumers can be deleted.
+Conversion checks: cargo fmt -p harvest-omp -- --check;
+cargo check --locked -p harvest-omp --all-targets --all-features;
+existing xtask playbook check. Ignored receipt/log prefix:
+target/migration/conversion-benchmark-retries-. No behavioral/installed/platform
+verification, completed capability or verified source removal is claimed.

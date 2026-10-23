@@ -9,6 +9,7 @@ use serde_json::value::RawValue;
 
 #[derive(Debug, Default, Serialize)]
 pub struct ToolEvidence {
+	pub write_calls:      usize,
 	pub read_calls:       usize,
 	pub edit_calls:       usize,
 	pub successful_reads: usize,
@@ -63,6 +64,10 @@ pub fn tool_evidence(messages: &[Box<RawValue>]) -> Result<ToolEvidence> {
 						match name.as_str() {
 							"read" => result.read_calls += 1,
 							"edit" => result.edit_calls += 1,
+							"write" => {
+								result.write_calls += 1;
+								continue;
+							},
 							_ => continue,
 						}
 						ensure!(

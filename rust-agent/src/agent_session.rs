@@ -147,6 +147,23 @@ impl AgentSession {
 		self.execute(&handle, prompt, model, approval, options, sink)
 	}
 
+	/// Stop successfully at a durable tool-batch boundary when the host's
+	/// checkpoint returns true. Every call in the batch has its result
+	/// committed; no synthetic assistant response or provider usage is
+	/// recorded.
+	pub fn submit_until_tool_checkpoint(
+		&mut self,
+		prompt: &str,
+		model: &dyn Model,
+		approval: &dyn tools::Approval,
+		options: &RunOptions,
+		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+		checkpoint: &mut dyn FnMut(&[Box<serde_json::value::RawValue>]) -> Result<bool>,
+	) -> Result<String> {
+		let handle = self.begin(options.cancellation.clone())?;
+		self.execute_until(&handle, prompt, model, approval, options, sink, checkpoint)
+	}
+
 	pub fn execute(
 		&mut self,
 		handle: &RunHandle,
@@ -156,6 +173,19 @@ impl AgentSession {
 		options: &RunOptions,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
 	) -> Result<String> {
+		self.execute_until(handle, prompt, model, approval, options, sink, &mut |_| Ok(false))
+	}
+
+	fn execute_until(
+		&mut self,
+		handle: &RunHandle,
+		prompt: &str,
+		model: &dyn Model,
+		approval: &dyn tools::Approval,
+		options: &RunOptions,
+		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+		checkpoint: &mut dyn FnMut(&[Box<serde_json::value::RawValue>]) -> Result<bool>,
+	) -> Result<String> {
 		let Some((active, cancellation)) = &self.active else {
 			bail!("run is not active");
 		};
@@ -163,7 +193,7 @@ impl AgentSession {
 			bail!("stale run generation");
 		}
 		let cancellation = cancellation.clone();
-		let result = self.drive(prompt, model, approval, options, &cancellation, sink);
+		let result = self.drive(prompt, model, approval, options, &cancellation, sink, checkpoint);
 		self.active = None;
 		// Failure to deliver the terminal event is surfaced too, never hidden.
 		self.emit(
@@ -228,6 +258,7 @@ impl AgentSession {
 		options: &RunOptions,
 		cancellation: &CancelToken,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+		checkpoint: &mut dyn FnMut(&[Box<serde_json::value::RawValue>]) -> Result<bool>,
 	) -> Result<String> {
 		if prompt.is_empty() || options.max_steps == 0 {
 			bail!("prompt and positive max steps are required");
@@ -293,6 +324,12 @@ impl AgentSession {
 					sink,
 				)?;
 				messages.push(result);
+			}
+			cancellation.heartbeat()?;
+			let stop = checkpoint(self.stored_messages())?;
+			cancellation.heartbeat()?;
+			if stop {
+				return Ok(String::new());
 			}
 		}
 		bail!("stopped after {} steps", options.max_steps)

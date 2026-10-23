@@ -27,32 +27,43 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct RunConfiguration {
-	pub repetitions:       u32,
-	pub concurrency:       usize,
-	pub max_steps:         u32,
-	pub timeout:           Duration,
+	/// Check exact output after all results in a tool batch are durable.
+	pub early_stop_on_match: bool,
+	/// Scored attempts per run, excluding bounded no-edit retries.
+	pub max_attempts:        u32,
+	pub no_edit_retries:     u32,
+	pub repetitions:         u32,
+	pub concurrency:         usize,
+	pub max_steps:           u32,
+	pub timeout:             Duration,
 	/// An empty list selects all tasks, otherwise require exact existing IDs.
-	pub task_ids:          Vec<String>,
-	pub require_edit_tool: bool,
-	pub require_read_tool: bool,
-	pub export_messages:   bool,
+	pub task_ids:            Vec<String>,
+	pub require_edit_tool:   bool,
+	pub require_read_tool:   bool,
+	pub export_messages:     bool,
 }
 impl Default for RunConfiguration {
 	fn default() -> Self {
 		Self {
-			repetitions:       1,
-			concurrency:       1,
-			max_steps:         16,
-			timeout:           Duration::from_secs(300),
-			task_ids:          Vec::new(),
-			require_edit_tool: false,
-			require_read_tool: false,
-			export_messages:   false,
+			early_stop_on_match: true,
+			max_attempts:        1,
+			no_edit_retries:     2,
+			repetitions:         1,
+			concurrency:         1,
+			max_steps:           16,
+			timeout:             Duration::from_secs(300),
+			task_ids:            Vec::new(),
+			require_edit_tool:   false,
+			require_read_tool:   false,
+			export_messages:     false,
 		}
 	}
 }
 #[derive(Debug, Serialize)]
 pub struct RunOutcome {
+	pub early_stopped:          bool,
+	pub attempts:               u32,
+	pub no_edit_retries:        u32,
 	pub tool_evidence:          Option<super::ToolEvidence>,
 	pub requirements_satisfied: Option<bool>,
 	pub index:                  usize,
@@ -183,6 +194,8 @@ pub fn run_tasks<M: Model>(
 	model: &(impl Fn(&Task, u32) -> Result<M> + Sync),
 	approval: &(dyn Approval + Sync),
 ) -> Result<RunSummary> {
+	ensure!((1..=16).contains(&configuration.max_attempts), "max attempts must be 1..16");
+	ensure!(configuration.no_edit_retries <= 16, "no-edit retries must be 0..16");
 	ensure!((1..=100).contains(&configuration.repetitions), "repetitions must be 1..100");
 	ensure!((1..=16).contains(&configuration.concurrency), "concurrency must be 1..16");
 	ensure!((1..=1024).contains(&configuration.max_steps), "max steps must be 1..1024");
@@ -230,6 +243,7 @@ pub fn run_tasks<M: Model>(
 		&serde_json::json!({
 			 "scoring_version":SCORING_VERSION,"runs":count,"repetitions":configuration.repetitions,
 			 "concurrency":configuration.concurrency,"max_steps":configuration.max_steps,
+			 "early_stop_on_match":configuration.early_stop_on_match,"max_attempts":configuration.max_attempts,"no_edit_retries":configuration.no_edit_retries,
 			 "timeout_ms":configuration.timeout.as_millis(),
 			"require_edit_tool":configuration.require_edit_tool,"require_read_tool":configuration.require_read_tool,
 			"export_messages":configuration.export_messages,"tasks":tasks.iter().map(|t| &t.id).collect::<Vec<_>>()
@@ -299,6 +313,9 @@ fn run_one<M: Model>(
 ) -> Result<RunOutcome> {
 	let started = Instant::now();
 	let mut outcome = RunOutcome {
+		early_stopped: false,
+		attempts: 0,
+		no_edit_retries: 0,
 		tool_evidence: None,
 		requirements_satisfied: None,
 		index,
@@ -340,52 +357,126 @@ fn run_one<M: Model>(
 			inner:        factory(task, repetition)?,
 			measurements: RefCell::default(),
 		};
-		let answer = session.submit(
-			&task.prompt,
-			&model,
-			&ScopedApproval(approval),
-			&RunOptions {
-				max_steps:      configuration.max_steps,
-				user_agent_dir: None,
-				tags:           Default::default(),
-				cancellation:   token.clone(),
-			},
-			&mut |event| {
-				let mut bytes = serde_json::to_vec(&event)?;
-				bytes.push(b'\n');
-				artifacts.append(Path::new("events.jsonl"), &bytes, 16 * 1024 * 1024)
-			},
-		);
-		// Preserve partial accounting even when the turn fails or times out.
-		let measurements = model.measurements.into_inner();
-		let usage_unavailable =
-			answer.is_err() || measurements.calls == 0 || measurements.tokens.is_none();
+		let mut prompt = task.prompt.clone();
+		let mut scored_attempts = 0;
+		let attempts_result = (|| -> Result<()> {
+			loop {
+				token.heartbeat()?;
+				let first_message = session.stored_messages().len();
+				outcome.attempts += 1;
+				let answer = session.submit_until_tool_checkpoint(
+					&prompt,
+					&model,
+					&ScopedApproval(approval),
+					&RunOptions {
+						max_steps:      configuration.max_steps,
+						user_agent_dir: None,
+						tags:           Default::default(),
+						cancellation:   token.clone(),
+					},
+					&mut |event| {
+						let mut bytes = serde_json::to_vec(&event)?;
+						bytes.push(b'\n');
+						artifacts.append(Path::new("events.jsonl"), &bytes, 16 * 1024 * 1024)
+					},
+					&mut |messages| {
+						if !configuration.early_stop_on_match {
+							return Ok(false);
+						}
+						let evidence = super::tool_evidence(messages)?;
+						let requirements = (!configuration.require_read_tool
+							|| evidence.successful_reads > 0)
+							&& (!configuration.require_edit_tool || evidence.successful_edits > 0);
+						if !requirements {
+							return Ok(false);
+						}
+						let matched =
+							compare(&task.expected_directory, workspace.root(), &token)?.success;
+						outcome.early_stopped |= matched;
+						Ok(matched)
+					},
+				);
+				// Keep cumulative accounting even when a later turn or export fails.
+				let measurements = model.measurements.borrow();
+				persist(
+					&artifacts,
+					Path::new(&format!("usage-{:02}.json", outcome.attempts)),
+					&serde_json::json!({
+						"complete":answer.is_ok(),
+						"usage_unavailable":answer.is_err() || measurements.calls == 0 || measurements.tokens.is_none(),
+						"measurement": &*measurements
+					}),
+				)?;
+				drop(measurements);
+				let evidence = super::tool_evidence(session.stored_messages())?;
+				let attempt_evidence =
+					super::tool_evidence(&session.stored_messages()[first_message..])?;
+				if configuration.export_messages {
+					persist(
+						&artifacts,
+						Path::new(&format!("messages-{:02}.json", outcome.attempts)),
+						&session.stored_messages(),
+					)?;
+				}
+				let requirements = (!configuration.require_read_tool || evidence.successful_reads > 0)
+					&& (!configuration.require_edit_tool || evidence.successful_edits > 0);
+				outcome.requirements_satisfied = Some(requirements);
+				let patch_applied = evidence.patch_applied();
+				outcome.tool_evidence = Some(evidence);
+				persist(
+					&artifacts,
+					Path::new(&format!("attempt-{:02}.json", outcome.attempts)),
+					&serde_json::json!({"attempt":outcome.attempts,"complete":answer.is_ok(),
+					"tool_evidence":attempt_evidence,"requirements_satisfied":requirements}),
+				)?;
+				// Transport/session/timeout failures are not output mismatches. Do not
+				// retry them until their typed recovery contract is implemented.
+				answer?;
+				token.heartbeat()?;
+				let mut report = compare(&task.expected_directory, workspace.root(), &token)?;
+				report.patch_applied = patch_applied;
+				report.success &= requirements;
+				outcome.success = report.success;
+				persist(
+					&artifacts,
+					Path::new(&format!("score-{:02}.json", outcome.attempts)),
+					&report,
+				)?;
+				if report.success {
+					persist(&artifacts, Path::new("score.json"), &report)?;
+					break;
+				}
+				// Inspect this turn, not the whole session: an old edit must not hide
+				// a later read-only turn. No-edit retries have their own run-wide cap.
+				let no_edit = attempt_evidence.edit_calls == 0 && attempt_evidence.write_calls == 0;
+				if no_edit && outcome.no_edit_retries < configuration.no_edit_retries {
+					outcome.no_edit_retries += 1;
+					prompt = include_str!("../prompts/benchmark-no-edit-retry.md").into();
+				} else {
+					scored_attempts += 1;
+					if scored_attempts >= configuration.max_attempts {
+						persist(&artifacts, Path::new("score.json"), &report)?;
+						break;
+					}
+					prompt = include_str!("../prompts/benchmark-verification-retry.md").into();
+				}
+			}
+
+			Ok(())
+		})();
 		persist(
 			&artifacts,
 			Path::new("usage.json"),
 			&serde_json::json!({
-				 "complete":answer.is_ok(), "usage_unavailable":usage_unavailable, "measurement":measurements
+				"complete":attempts_result.is_ok(),"usage_unavailable":attempts_result.is_err() || model.measurements.borrow().calls == 0 || model.measurements.borrow().tokens.is_none(),
+				"measurement": &*model.measurements.borrow()
 			}),
 		)?;
-		// Derive observations from committed records, including failed and
-		// unresolved results, before propagating a turn error.
-		let evidence = super::tool_evidence(session.stored_messages())?;
 		if configuration.export_messages {
 			persist(&artifacts, Path::new("messages.json"), &session.stored_messages())?;
 		}
-		let requirements = (!configuration.require_read_tool || evidence.successful_reads > 0)
-			&& (!configuration.require_edit_tool || evidence.successful_edits > 0);
-		outcome.requirements_satisfied = Some(requirements);
-		let patch_applied = evidence.patch_applied();
-		outcome.tool_evidence = Some(evidence);
-		answer?;
-		token.heartbeat()?;
-		let mut report = compare(&task.expected_directory, workspace.root(), &token)?;
-		report.patch_applied = patch_applied;
-		report.success &= requirements;
-		outcome.success = report.success;
-		persist(&artifacts, Path::new("score.json"), &report)?;
-		Ok(())
+
+		attempts_result
 	})();
 	outcome.success &= execution.is_ok();
 	outcome.state = if execution.is_ok() {
