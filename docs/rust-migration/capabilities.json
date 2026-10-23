@@ -3610,13 +3610,16 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/rpc.rs",
-          "rust-agent/src/session_engine.rs"
+          "rust-agent/src/session_engine.rs",
+          "crates/harvest-protocol/src/transcript.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/tests/rpc.rs"
+          "rust-agent/tests/rpc.rs",
+          "crates/harvest-protocol/tests/transcript.rs",
+          "rust-agent/tests/rpc_cli.rs"
         ]
       },
       "work_unit": "services",
@@ -5444,6 +5447,20 @@
         ],
         "timeout_seconds": 120,
         "kind": "contracts"
+      },
+      {
+        "id": "rpc-transcript-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-protocol",
+          "-p",
+          "harvest-omp"
+        ],
+        "timeout_seconds": 1200,
+        "kind": "contracts"
       }
     ],
     "release_gates": [
@@ -6918,6 +6935,30 @@
           "cargo xtask test -p xtask: all 125 contracts passed; strict Clippy and formatting passed.",
           "Rust-only external generator fixtures exercise the compiled CLI with native-only PATH for bun2nix, nix-develop and portable invocation branches, lock restamping, canonical output, selected-generator failure and unsupported versions.",
           "Both legacy source rows now have complete replacement contracts and verified Linux orchestration; actual third-party generator semantics and cross-platform release checks remain separate."
+        ]
+      },
+      {
+        "id": "services:rpc-transcript",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "services",
+        "depends_on": [
+          "control:playbook",
+          "review:services"
+        ],
+        "card": "docs/rust-migration/tasks/RPC-TRANSCRIPT.md",
+        "capabilities": [
+          "surface:rpc-v1-v2"
+        ],
+        "checks": [
+          "rpc-transcript-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Eight captured legacy pagination fixtures match exact cursor strings, messages and errors; shared Rust contracts cover large-history reconstruction, malformed/unsafe cursors, oversized messages and assistant copy semantics.",
+          "All 138 harvest-protocol/harvest-omp tests pass, including live owner busy/stale cursor behavior, lossless bounded pages when whole history exceeds v1 limits, and a copied native executable serving real loopback provider bytes with only its installation directory on PATH. Strict Clippy and formatting pass; three existing legacy pagination tests pass.",
+          "No legacy source deleted: production TS RPC consumers remain pending, and surface:rpc-v1-v2 remains partial/unverified. The source-bound plan selects a full transition, which was not rerun; inherited removal, singleton, whole-addon lint and platform gates remain unresolved."
         ]
       }
     ]

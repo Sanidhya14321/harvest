@@ -46,7 +46,7 @@ cargo xtask playbook next --json
 
 The imported checkpoint is `6eefffc`; its history is preserved. Read the live
 HANDOFF.md for subsequent verified slices. `tasks/CONCURRENT-REMOVALS.md` records
-37 inherited deletions still missing replacement/retirement proof. Keep them
+35 remaining inherited deletions still missing replacement/retirement proof. Keep them
 pending; do not report file deletion or a Rust type port as verified behavior.
 The strict source-removal gate remains blocked until those contracts are resolved.
 `tasks/MEDIA-DOCX.md` and `tasks/HOST-DETECT.md` describe the bounded native
@@ -66,3 +66,6 @@ its network connection is no longer a migration blocker.
 Verified runtime batch: `control:legacy-terminal-contracts` resolves the six prior
 native-suite failures together. All four native test groups pass; see its task
 card for the clock boundary, retained assertions and remaining independent gates.
+
+Native RPC transcript query progress is recorded in `tasks/RPC-TRANSCRIPT.md`.
+Production RPC and the overall application remain pending Rust cutover.

@@ -8,6 +8,20 @@ The normal application still starts in TypeScript. No whole-product parity or
 distribution cutover is claimed. Existing browser/WASM proofs do not satisfy the
 new zero-JavaScript target.
 
+Completed **`services:rpc-transcript`**: native RPC now serves committed
+`get_messages_page` and `get_last_assistant_text` through shared portable Rust
+queries. Exact legacy cursor fixtures, bounded lossless history reconstruction,
+busy/stale error codes, copy rules and copied native CLI checks pass; all 138
+affected Rust tests, strict Clippy and three legacy pagination contracts pass.
+The copied executable communicates with a real loopback provider with no
+language runtime on PATH. No addon rebuild is needed for the new ordinary Rust
+query module. Production TS RPC remains in use; v2/other commands and consumer
+cutover remain pending, so the capability is partial/unverified and no TS source
+was deleted. See `tasks/RPC-TRANSCRIPT.md`. Receipts and the unexecuted full
+transition plan are under `target/migration/rpc-transcript-*`; focused results do
+not certify that transition. The first build exhausted disk during linking; old
+generated incremental caches were removed and the successful retry is retained.
+
 Completed **`control:legacy-terminal-contracts`** as one connected runtime batch:
 the native input bridge and host timers now share an explicitly selected monotonic
 clock, with validated timestamps and native-clock defaults for direct callers.
@@ -39,7 +53,7 @@ and the new `MIGRATION_CHECKLIST.md` entry point. Rust wire types and tooling po
 remain available. Protocol is still in progress until `packages/wire` consumers
 move and installed behavior passes; storage/provider tasks wait behind that work.
 
-**Source-removal blocker:** `cargo xtask migration` rejects 37 inherited deletions
+**Source-removal blocker:** `cargo xtask migration` rejects 35 remaining inherited deletions
 without complete contracts and verified replacement/retirement evidence. Invalid
 `implementation: verified` values and unsupported verified claims were reset to
 pending review; removed files stay removed and their history is preserved.

@@ -20,6 +20,11 @@ async fn frame<R: tokio::io::AsyncBufRead + Unpin>(output: &mut R) -> Result<Val
 async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_stdin_eof()
 -> Result<()> {
 	let root = tempfile::tempdir()?;
+	let installation = tempfile::tempdir()?;
+	let candidate = installation
+		.path()
+		.join(format!("harvest{}", std::env::consts::EXE_SUFFIX));
+	std::fs::copy(env!("CARGO_BIN_EXE_omp"), &candidate)?;
 	let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
 	let address = listener.local_addr()?;
 	let provider = tokio::spawn(async move {
@@ -79,8 +84,9 @@ async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_st
 			.await?;
 		Ok::<(), anyhow::Error>(())
 	});
-	let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_omp"))
+	let mut child = tokio::process::Command::new(&candidate)
 		.current_dir(root.path())
+		.env("PATH", installation.path())
 		.env("OMP_SKIP_INTEGRATIONS", "1")
 		.args([
 			"rpc",
@@ -130,6 +136,21 @@ async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_st
 	let history = frame(&mut output).await?;
 	assert_eq!(history["id"], "history");
 	assert_eq!(history["data"]["messages"][1], assistant);
+	for (request, expected) in [
+		(json!({"id":"copy","type":"get_last_assistant_text"}), json!({"text":"from Rust"})),
+		(
+			json!({"id":"page","type":"get_messages_page","limit":256}),
+			json!({"messages":history["data"]["messages"],"totalMessages":2}),
+		),
+	] {
+		let mut bytes = serde_json::to_vec(&request)?;
+		bytes.push(b'\n');
+		input.write_all(&bytes).await?;
+		let response = frame(&mut output).await?;
+		assert_eq!(response["id"], request["id"]);
+		assert_eq!(response["success"], true);
+		assert_eq!(response["data"], expected);
+	}
 	input.shutdown().await?;
 	drop(input);
 	let status = tokio::time::timeout(Duration::from_secs(10), child.wait()).await??;

@@ -1,0 +1,397 @@
+[
+  {
+    "name": "default",
+    "messages": [
+      {
+        "role": "user",
+        "content": "question 🦀",
+        "timestamp": 1
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "thinking",
+            "thinking": "opaque"
+          }
+        ],
+        "provider": "fixture",
+        "timestamp": 2
+      },
+      {
+        "role": "toolResult",
+        "content": [
+          {
+            "type": "text",
+            "text": "result"
+          }
+        ],
+        "toolCallId": "call",
+        "timestamp": 3
+      }
+    ],
+    "snapshot": {
+      "sessionId": "session-1",
+      "leafId": "leaf-1",
+      "messageCount": 3
+    },
+    "options": {},
+    "expected": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "question 🦀",
+          "timestamp": 1
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "answer"
+            },
+            {
+              "type": "thinking",
+              "thinking": "opaque"
+            }
+          ],
+          "provider": "fixture",
+          "timestamp": 2
+        },
+        {
+          "role": "toolResult",
+          "content": [
+            {
+              "type": "text",
+              "text": "result"
+            }
+          ],
+          "toolCallId": "call",
+          "timestamp": 3
+        }
+      ],
+      "totalMessages": 3
+    }
+  },
+  {
+    "name": "first",
+    "messages": [
+      {
+        "role": "user",
+        "content": "question 🦀",
+        "timestamp": 1
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "thinking",
+            "thinking": "opaque"
+          }
+        ],
+        "provider": "fixture",
+        "timestamp": 2
+      },
+      {
+        "role": "toolResult",
+        "content": [
+          {
+            "type": "text",
+            "text": "result"
+          }
+        ],
+        "toolCallId": "call",
+        "timestamp": 3
+      }
+    ],
+    "snapshot": {
+      "sessionId": "session-1",
+      "leafId": "leaf-1",
+      "messageCount": 3
+    },
+    "options": {
+      "limit": 1
+    },
+    "expected": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "question 🦀",
+          "timestamp": 1
+        }
+      ],
+      "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzZXNzaW9uSWQiOiJzZXNzaW9uLTEiLCJsZWFmSWQiOiJsZWFmLTEiLCJtZXNzYWdlQ291bnQiOjMsIm9mZnNldCI6MX0",
+      "totalMessages": 3
+    }
+  },
+  {
+    "name": "next",
+    "messages": [
+      {
+        "role": "user",
+        "content": "question 🦀",
+        "timestamp": 1
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "thinking",
+            "thinking": "opaque"
+          }
+        ],
+        "provider": "fixture",
+        "timestamp": 2
+      },
+      {
+        "role": "toolResult",
+        "content": [
+          {
+            "type": "text",
+            "text": "result"
+          }
+        ],
+        "toolCallId": "call",
+        "timestamp": 3
+      }
+    ],
+    "snapshot": {
+      "sessionId": "session-1",
+      "leafId": "leaf-1",
+      "messageCount": 3
+    },
+    "options": {
+      "limit": 1,
+      "cursor": "eyJ2ZXJzaW9uIjoxLCJzZXNzaW9uSWQiOiJzZXNzaW9uLTEiLCJsZWFmSWQiOiJsZWFmLTEiLCJtZXNzYWdlQ291bnQiOjMsIm9mZnNldCI6MX0"
+    },
+    "expected": {
+      "messages": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "answer"
+            },
+            {
+              "type": "thinking",
+              "thinking": "opaque"
+            }
+          ],
+          "provider": "fixture",
+          "timestamp": 2
+        }
+      ],
+      "nextCursor": "eyJ2ZXJzaW9uIjoxLCJzZXNzaW9uSWQiOiJzZXNzaW9uLTEiLCJsZWFmSWQiOiJsZWFmLTEiLCJtZXNzYWdlQ291bnQiOjMsIm9mZnNldCI6Mn0",
+      "totalMessages": 3
+    }
+  },
+  {
+    "name": "stale-leaf",
+    "messages": [
+      {
+        "role": "user",
+        "content": "question 🦀",
+        "timestamp": 1
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "thinking",
+            "thinking": "opaque"
+          }
+        ],
+        "provider": "fixture",
+        "timestamp": 2
+      },
+      {
+        "role": "toolResult",
+        "content": [
+          {
+            "type": "text",
+            "text": "result"
+          }
+        ],
+        "toolCallId": "call",
+        "timestamp": 3
+      }
+    ],
+    "snapshot": {
+      "sessionId": "session-1",
+      "leafId": "other",
+      "messageCount": 3
+    },
+    "options": {
+      "cursor": "eyJ2ZXJzaW9uIjoxLCJzZXNzaW9uSWQiOiJzZXNzaW9uLTEiLCJsZWFmSWQiOiJsZWFmLTEiLCJtZXNzYWdlQ291bnQiOjMsIm9mZnNldCI6MX0"
+    },
+    "error": "RPC message cursor is stale",
+    "code": "stale_cursor"
+  },
+  {
+    "name": "stale-session",
+    "messages": [
+      {
+        "role": "user",
+        "content": "question 🦀",
+        "timestamp": 1
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "thinking",
+            "thinking": "opaque"
+          }
+        ],
+        "provider": "fixture",
+        "timestamp": 2
+      },
+      {
+        "role": "toolResult",
+        "content": [
+          {
+            "type": "text",
+            "text": "result"
+          }
+        ],
+        "toolCallId": "call",
+        "timestamp": 3
+      }
+    ],
+    "snapshot": {
+      "sessionId": "other",
+      "leafId": "leaf-1",
+      "messageCount": 3
+    },
+    "options": {
+      "cursor": "eyJ2ZXJzaW9uIjoxLCJzZXNzaW9uSWQiOiJzZXNzaW9uLTEiLCJsZWFmSWQiOiJsZWFmLTEiLCJtZXNzYWdlQ291bnQiOjMsIm9mZnNldCI6MX0"
+    },
+    "error": "RPC message cursor is stale",
+    "code": "stale_cursor"
+  },
+  {
+    "name": "invalid",
+    "messages": [
+      {
+        "role": "user",
+        "content": "question 🦀",
+        "timestamp": 1
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "thinking",
+            "thinking": "opaque"
+          }
+        ],
+        "provider": "fixture",
+        "timestamp": 2
+      },
+      {
+        "role": "toolResult",
+        "content": [
+          {
+            "type": "text",
+            "text": "result"
+          }
+        ],
+        "toolCallId": "call",
+        "timestamp": 3
+      }
+    ],
+    "snapshot": {
+      "sessionId": "session-1",
+      "leafId": "leaf-1",
+      "messageCount": 3
+    },
+    "options": {
+      "cursor": "bad="
+    },
+    "error": "Invalid RPC message cursor"
+  },
+  {
+    "name": "zero-limit",
+    "messages": [
+      {
+        "role": "user",
+        "content": "question 🦀",
+        "timestamp": 1
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "answer"
+          },
+          {
+            "type": "thinking",
+            "thinking": "opaque"
+          }
+        ],
+        "provider": "fixture",
+        "timestamp": 2
+      },
+      {
+        "role": "toolResult",
+        "content": [
+          {
+            "type": "text",
+            "text": "result"
+          }
+        ],
+        "toolCallId": "call",
+        "timestamp": 3
+      }
+    ],
+    "snapshot": {
+      "sessionId": "session-1",
+      "leafId": "leaf-1",
+      "messageCount": 3
+    },
+    "options": {
+      "limit": 0
+    },
+    "error": "RPC message page limit must be between 1 and 256"
+  },
+  {
+    "name": "empty",
+    "messages": [],
+    "snapshot": {
+      "sessionId": "empty",
+      "leafId": null,
+      "messageCount": 0
+    },
+    "options": {},
+    "expected": {
+      "messages": [],
+      "totalMessages": 0
+    }
+  }
+]

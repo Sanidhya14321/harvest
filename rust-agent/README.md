@@ -176,3 +176,19 @@ limit violations and cancellation return errors rather than partial success.
 The legacy Markit importer currently uses a temporary native callback bridge.
 Its TypeScript API remains pending migration; this does not complete all media
 or document-import capabilities.
+
+## Experimental native RPC transcript queries
+
+`harvest rpc` serves bounded JSONL over stdin/stdout using the native session
+owner. `get_messages_page` returns committed messages, `totalMessages` and an
+optional `nextCursor`; pass that cursor to obtain the next page. `limit` defaults
+to 100 and must be between 1 and 256. Cursors identify the session, branch leaf
+and message count. Error codes `session_busy` and `stale_cursor` tell clients to
+wait or restart pagination. Messages retain their original provider fields.
+
+`get_last_assistant_text` returns `{ "text": "…" }`, or `{}` when no text is
+available. It combines only text blocks from the most recent eligible assistant.
+The full history query `get_messages` remains available. An individually oversized
+message produces an explicit v1 frame-limit error; history is never truncated.
+Protocol v2, steering, compaction and the other production RPC commands remain
+pending. This opt-in adapter has not replaced the production TypeScript RPC mode.

@@ -6,6 +6,7 @@
 use std::{collections::BTreeMap, io, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
+use harvest_protocol::transcript::{self, Snapshot, StaleCursor};
 use harvest_runtime::MAX_EVENT_BYTES;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json, value::RawValue};
@@ -121,6 +122,8 @@ struct Response<'a, T> {
 	data:    Option<T>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	error:   Option<&'a str>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	code:    Option<&'a str>,
 }
 
 struct Sink(mpsc::Sender<Vec<u8>>);
@@ -139,7 +142,8 @@ impl Sink {
 		command: &str,
 		data: Option<T>,
 	) -> Result<()> {
-		let response = Response { id, kind: "response", command, success: true, data, error: None };
+		let response =
+			Response { id, kind: "response", command, success: true, data, error: None, code: None };
 		match encode(&response) {
 			Ok(bytes) => self.0.send(bytes).await.context("RPC output closed"),
 			Err(_) => {
@@ -151,6 +155,16 @@ impl Sink {
 	}
 
 	async fn error(&self, id: Option<&str>, command: &str, error: &str) -> Result<()> {
+		self.coded_error(id, command, error, None).await
+	}
+
+	async fn coded_error(
+		&self,
+		id: Option<&str>,
+		command: &str,
+		error: &str,
+		code: Option<&str>,
+	) -> Result<()> {
 		self
 			.send(&Response::<()> {
 				id,
@@ -159,6 +173,7 @@ impl Sink {
 				success: false,
 				data: None,
 				error: Some(error),
+				code,
 			})
 			.await
 	}
@@ -418,6 +433,69 @@ impl Adapter<'_> {
 					.success(id, command, Some(self.state(&snapshot)))
 					.await?;
 			},
+			"get_last_assistant_text" => {
+				let snapshot = self.session.snapshot().await?;
+				let text = transcript::last_assistant_text(&snapshot.stored_messages)?;
+				let data = text.map_or_else(|| json!({}), |text| json!({"text":text}));
+				self.sink.success(id, command, Some(data)).await?;
+			},
+			"get_messages_page" => {
+				let snapshot = self.session.snapshot().await?;
+				if snapshot.state != SessionState::Idle || !snapshot.queued.is_empty() {
+					return self
+						.sink
+						.coded_error(
+							id,
+							command,
+							"Cannot page messages while the session is changing",
+							Some("session_busy"),
+						)
+						.await;
+				}
+				let cursor = match request.fields.get("cursor") {
+					None => None,
+					Some(Value::String(cursor)) => Some(cursor.as_str()),
+					_ => {
+						return self
+							.sink
+							.error(id, command, "Invalid RPC message cursor")
+							.await;
+					},
+				};
+				let limit = match request.fields.get("limit") {
+					None | Some(Value::Null) => None,
+					Some(value) => {
+						match transcript::safe_integer(value).and_then(|n| usize::try_from(n).ok()) {
+							Some(limit) => Some(limit),
+							None => {
+								return self
+									.sink
+									.error(id, command, "RPC message page limit must be between 1 and 256")
+									.await;
+							},
+						}
+					},
+				};
+				let identity = Snapshot {
+					session_id:    snapshot.session_id,
+					leaf_id:       snapshot.leaf,
+					message_count: snapshot.stored_messages.len(),
+				};
+				match transcript::page(&snapshot.stored_messages, &identity, cursor, limit) {
+					Ok(page) => self.sink.success(id, command, Some(page)).await?,
+					Err(error) => {
+						self
+							.sink
+							.coded_error(
+								id,
+								command,
+								&error.to_string(),
+								error.is::<StaleCursor>().then_some("stale_cursor"),
+							)
+							.await?;
+					},
+				}
+			},
 			"get_messages" => {
 				#[derive(Serialize)]
 				struct Messages {
@@ -572,10 +650,8 @@ fn known_command(command: &str) -> bool {
 			| "switch_session"
 			| "branch"
 			| "get_branch_messages"
-			| "get_last_assistant_text"
 			| "set_session_name"
 			| "handoff"
-			| "get_messages_page"
 			| "get_login_providers"
 			| "login"
 	)

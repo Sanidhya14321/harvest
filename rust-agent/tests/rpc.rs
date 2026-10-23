@@ -330,6 +330,83 @@ async fn rpc_stale_abort_cannot_cancel_current_work_and_explicit_resume_unparks_
 }
 
 #[tokio::test]
+async fn transcript_queries_page_committed_history_and_reject_busy_or_stale_requests() -> Result<()>
+{
+	let root = tempfile::tempdir()?;
+	let entered = Arc::new(Notify::new());
+	let release = Arc::new(Semaphore::new(0));
+	let mut client = Connection::open(root.path(), vec![immediate(" first answer "), Reply {
+		message: answer("second answer"),
+		gate:    Some((entered.clone(), release.clone())),
+	}])
+	.await?;
+	client
+		.send(json!({"id":"empty","type":"get_last_assistant_text"}))
+		.await?;
+	assert_eq!(client.response("empty").await?["data"], json!({}));
+	client
+		.send(json!({"id":"first","type":"prompt","message":"first question"}))
+		.await?;
+	client.response("first").await?;
+	client.terminal().await?;
+	client
+		.send(json!({"id":"page","type":"get_messages_page","limit":1.0}))
+		.await?;
+	let page = client.response("page").await?;
+	assert_eq!(page["success"], true);
+	assert_eq!(page["data"]["totalMessages"], 2);
+	assert_eq!(page["data"]["messages"].as_array().unwrap().len(), 1);
+	assert_eq!(page["data"]["messages"][0]["role"], "user");
+	let cursor = page["data"]["nextCursor"].as_str().unwrap().to_owned();
+	client
+		.send(json!({"id":"next","type":"get_messages_page","cursor":cursor}))
+		.await?;
+	let next = client.response("next").await?;
+	assert_eq!(next["data"]["messages"][0]["content"][0]["text"], " first answer ");
+	assert!(next["data"].get("nextCursor").is_none());
+	client
+		.send(json!({"id":"copy","type":"get_last_assistant_text"}))
+		.await?;
+	assert_eq!(client.response("copy").await?["data"]["text"], "first answer");
+	client
+		.send(json!({"id":"second","type":"prompt","message":"second question"}))
+		.await?;
+	client.response("second").await?;
+	entered.notified().await;
+	client
+		.send(json!({"id":"busy","type":"get_messages_page"}))
+		.await?;
+	let busy = client.response("busy").await?;
+	assert_eq!(busy["success"], false);
+	assert_eq!(busy["code"], "session_busy");
+	release.add_permits(1);
+	client.terminal().await?;
+	client
+		.send(json!({"id":"stale","type":"get_messages_page","cursor":cursor}))
+		.await?;
+	assert_eq!(client.response("stale").await?["code"], "stale_cursor");
+	for invalid in [
+		json!({"cursor":null}),
+		json!({"cursor":4}),
+		json!({"limit":257}),
+		json!({"limit":1.5}),
+		json!({"limit":"1"}),
+	] {
+		let mut request = invalid;
+		request["id"] = json!("invalid");
+		request["type"] = json!("get_messages_page");
+		client.send(request).await?;
+		assert_eq!(client.response("invalid").await?["success"], false);
+	}
+	client
+		.send(json!({"id":"after","type":"get_last_assistant_text"}))
+		.await?;
+	assert_eq!(client.response("after").await?["data"]["text"], "second answer");
+	client.close().await?;
+	Ok(())
+}
+
+#[tokio::test]
 async fn rpc_recovers_from_malformed_and_oversized_frames_and_never_acknowledges_unported_features()
 -> Result<()> {
 	let root = tempfile::tempdir()?;
@@ -379,6 +456,7 @@ async fn rpc_refuses_oversized_history_without_truncation_and_keeps_serving_stat
 	for _ in 0..2 {
 		durable.commit(&harvest_omp::chat::user("x".repeat(MAX_EVENT_BYTES / 2 + 1)), "fixture")?;
 	}
+	let expected = serde_json::to_value(durable.stored_messages())?;
 	drop(durable);
 	let before = std::fs::read(root.path().join("rpc.jsonl"))?;
 	let mut client = Connection::open(root.path(), vec![]).await?;
@@ -388,6 +466,22 @@ async fn rpc_refuses_oversized_history_without_truncation_and_keeps_serving_stat
 	let history = client.response("large").await?;
 	assert_eq!(history["success"], false);
 	assert!(history.get("data").is_none());
+	client
+		.send(json!({"id":"first-page","type":"get_messages_page"}))
+		.await?;
+	let first = client.response("first-page").await?;
+	assert_eq!(first["success"], true);
+	assert_eq!(first["data"]["messages"].as_array().unwrap().len(), 1);
+	client
+		.send(
+			json!({"id":"second-page","type":"get_messages_page","cursor":first["data"]["nextCursor"]}),
+		)
+		.await?;
+	let second = client.response("second-page").await?;
+	assert_eq!(second["success"], true);
+	assert_eq!(first["data"]["messages"][0], expected[0]);
+	assert_eq!(second["data"]["messages"][0], expected[1]);
+	assert!(second["data"].get("nextCursor").is_none());
 	client
 		.send(json!({"id":"count","type":"get_state"}))
 		.await?;
