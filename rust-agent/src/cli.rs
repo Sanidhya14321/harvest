@@ -105,6 +105,7 @@ struct ConfigArgs {
 	agent_dir: Option<PathBuf>,
 	#[arg(long)]
 	profile:   Option<String>,
+	/// Ordered native configuration overlay (TOML, JSONC/JSON or YAML).
 	#[arg(long = "config")]
 	overlays:  Vec<PathBuf>,
 }
@@ -144,6 +145,7 @@ struct ConfigurationArgs {
 	mcp_configs:    Vec<PathBuf>,
 	#[arg(long)]
 	profile:        Option<String>,
+	/// Ordered native configuration overlay (TOML, JSONC/JSON or YAML).
 	#[arg(long = "config")]
 	overlays:       Vec<PathBuf>,
 	#[arg(long, help = "Allow native executables declared in the selected configuration")]

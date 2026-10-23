@@ -114,6 +114,7 @@ struct RunArguments {
 	max_steps:             Option<u32>,
 	#[arg(long)]
 	profile:               Option<String>,
+	/// Ordered native configuration overlay (TOML, JSONC/JSON or YAML).
 	#[arg(long = "config")]
 	overlays:              Vec<PathBuf>,
 	/// Explicitly authorize only jailed fixture write/edit calls. No shell,

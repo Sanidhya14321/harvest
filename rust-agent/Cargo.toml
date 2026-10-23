@@ -88,6 +88,7 @@ pi-walker = { path = "../crates/pi-walker" }
 pi-shell = { path = "../crates/pi-shell", optional = true }
 regex.workspace = true
 serde.workspace = true
+serde_yaml_ng = "0.10.0"
 serde_json = { workspace = true, features = ["raw_value"] }
 tokio.workspace = true
 reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"] }

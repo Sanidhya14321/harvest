@@ -134,7 +134,8 @@ responses enter the durable log. Replay sends chat content and tool protocol
 blocks; accounting metadata stays in storage.
 
 Native provider failures expose typed HTTP status or transport categories.
-Configuration parse errors retain only the filename and byte offset; SDK settings,
+Configuration parse errors retain only configuration identity and byte or line/column
+positions; SDK settings,
 environment and override debug output omit API keys and endpoint URLs.
 Error chains and `HttpModel` debug output omit endpoint URLs, credentials,
 upstream status text and response bodies. Raw HTTP failures are not attached as

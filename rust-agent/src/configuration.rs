@@ -1,4 +1,4 @@
-//! Layered native configuration and named profiles. Legacy YAML/schema
+//! Layered native configuration and named profiles. Legacy settings/schema
 //! migration remains tracked separately; this module never rewrites existing
 //! settings.
 use std::{
@@ -8,6 +8,8 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
+
+mod document;
 
 use crate::{
 	config::{self, Environment, FileSettings, Overrides, Settings},
@@ -27,6 +29,7 @@ pub struct LoadOptions {
 	pub user_directory:      Option<PathBuf>,
 	pub profile:             Option<String>,
 	pub environment_profile: Option<String>,
+	/// Ordered native-schema overlays: TOML, JSON/JSONC, or YAML.
 	pub overlays:            Vec<PathBuf>,
 	pub api:                 Option<Api>,
 	pub max_output_tokens:   Option<u32>,
@@ -97,21 +100,13 @@ fn read(root: &Path, path: &Path, required: bool) -> Result<Option<Document>> {
 		return Ok(None);
 	};
 	let source = std::str::from_utf8(&bytes).context("configuration is not UTF-8")?;
-	// Keep legacy diagnostic identity without retaining TOML source excerpts.
+	// Preserve diagnostic identity without retaining source excerpts or values.
 	let label = if path == Path::new(".omp/config.toml") {
 		".omp/config.toml"
 	} else {
 		"native configuration"
 	};
-	toml::from_str(source)
-		.map(Some)
-		.map_err(|error: toml::de::Error| {
-			if let Some(span) = error.span() {
-				anyhow::anyhow!("failed to parse {label} at byte {}", span.start)
-			} else {
-				anyhow::anyhow!("failed to parse {label}")
-			}
-		})
+	document::parse(source, path, label).map(Some)
 }
 fn merge_document(target: &mut Document, newer: Document) {
 	target.layer.merge(newer.layer);

@@ -20307,19 +20307,19 @@
     },
     {
       "path": "packages/coding-agent/src/config/config-file.ts",
-      "disposition": "review-required",
-      "implementation": "absent",
+      "disposition": "replace",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
-      "contract": null,
-      "consumers": null,
-      "persisted_formats": null,
-      "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "contract": "Load typed configuration with YAML/JSONC syntax, fallback discovery, schema/auxiliary validation, error/default/cache behavior, JSON-to-YAML migration, relocation and serialization. Native read-only explicit overlays now share bounded JSONC/YAML decoding, native schema/profile precedence and redacted diagnostics. Full legacy schema/discovery, migrations, serialization, cache/invalidation and relocation are not yet ported.",
+      "consumers": "Native configuration::load/config::resolve -> config inspection, sync/async run, RPC, benchmark runs and Rust SDK. Retained TS settings/model/service ConfigFile consumers still require this source.",
+      "persisted_formats": "Native TOML remains default discovery. Explicit native JSON/JSONC/YAML overlays share the native schema, not a legacy settings-schema migration. Existing settings bytes are never rewritten by the native decoder.",
+      "external_dependencies": "Existing serde/serde_json/TOML and locked serde_yaml_ng; existing jailed filesystem. Native decoding needs no Bun/Node/Python runtime; TS consumers remain transitional.",
+      "rust_destination": "rust-agent/src/configuration.rs and configuration/document.rs; existing config.rs and CLI/SDK consumers",
+      "verification_requirements": "Consolidated equivalent native formats and profile/mixed-overlay precedence across CLI/run/RPC/SDK; JSONC comments/escaping/trailing-comma failures; YAML documents/aliases/cycles/keys/tags/numbers; decoding budgets, immutable input and credential-redacted failures; retained full settings/discovery/cache/persistence/migration before cutover/deletion. Behavioral/installed/platform checks deferred.",
       "retirement_reason": null,
-      "task_id": "migrate:application"
+      "task_id": "application:conversion-first"
     },
     {
       "path": "packages/coding-agent/src/config/custom-models.ts",

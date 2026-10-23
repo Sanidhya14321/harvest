@@ -18,7 +18,7 @@ in-progress conversion checkpoints without claiming verified feature completion.
 ## Active checkpoint
 
 `application:conversion-first` is in_progress and has scheduling priority. Native
-owned tool schemas, executable plugin protocol/host/Rust SDK, layered TOML
+owned tool schemas, executable plugin protocol/host/Rust SDK, layered native
 configuration/profiles, rust-v1 edit scoring, native MCP and language/debug services are written and connected across
 native APIs/CLI/sync/async/RPC. The example plugin uses host-jailed reads. Startup
 is explicitly host-enabled. The redacted config inspector starts no plugins.
@@ -50,6 +50,16 @@ contains the generated full feature snapshot. Previous validated Anthropic and
 Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
+
+Configuration-format continuation base `7f06083`: native `--config` and SDK
+explicit overlays now decode JSON/JSONC/YAML through the existing resolver and
+profile precedence. JSONC comments/trailing commas preserve string contents and
+positions. YAML/JSONC structures and alias expansion are bounded during decoding;
+errors discard source/scalars/chains. Native TOML discovery is preserved. Read
+NATIVE-CONFIGURATION.md and the common card before expanding schemas/discovery.
+TS config-file.ts is partial/retained: its schema/migration/persistence/cache and
+current consumers still need conversion. Compiler/format/ownership checks only;
+behavioral/installed/platform checks remain deferred.
 
 Mutation-producer continuation base `e29f5cd`: shared pi-ast now has code paths
 for all 23 named mutation families. Regex changes use the existing Regex grammar;
