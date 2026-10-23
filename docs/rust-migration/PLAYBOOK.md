@@ -52,12 +52,21 @@ card and inspect its real consumers; mark missing-contract tasks blocked and
 continue independent work. Ask only for essential input unavailable from the
 checkout or connected sources. Preserve user changes and scope boundaries.
 
-Do not promise unattended work after execution ends: this chat cannot create a
-persistent background coding session by itself. At a resource/environment or
-execution limit, save a concrete checkpoint and next actions. Never manufacture
-completion percentages to satisfy a progress request. Report verified retained
-capabilities, partial implementations and verified source removals separately;
-the user explicitly requested percentages, which must identify their denominators.
+An hourly continuation automation titled "Continue Harvest Rust migration" is
+now enabled for the current task. The earlier assumption that no scheduling
+facility was available is superseded. Scheduled runs should resume actual coding
+from the remote branch and this playbook, update ownership/evidence and push
+coherent checkpoints. This is scheduled resumption, not an unlimited single turn.
+Verify each run's actual commits and checks; successful schedule creation alone
+is not evidence that a coding run executed. Do not create duplicate automations
+or overlapping writers. At a resource/environment or execution limit, save a
+concrete checkpoint and next actions for the next run. Pause the automation when
+the user stops it or complete acceptance is verified. Keep service identifiers
+out of this public repository; use the automation service to inspect run state.
+
+Never manufacture completion percentages to satisfy a progress request. Report
+verified retained capabilities, partial implementations and verified source
+removals separately; percentages must identify their denominators.
 
 ## Start a fresh session
 

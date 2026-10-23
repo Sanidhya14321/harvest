@@ -71,8 +71,13 @@ then consolidated stabilization. Keep failures and receipts honest.
 
 The user explicitly requests minimal interaction: continue across ready batches
 within active execution, push coherent checkpoints and do not ask for another
-`continue` after a commit. The autonomy rule is persisted in PLAYBOOK.md. This
-chat cannot run an unattended background coding session after its turn ends.
+`continue` after a commit. The autonomy rule is persisted in PLAYBOOK.md. An enabled hourly automation
+("Continue Harvest Rust migration") now schedules coding resumptions for this
+task. This supersedes the earlier statement that no scheduling option existed.
+Creation is confirmed; actual automated coding/run results must be verified from
+the service and remote commits. Do not create duplicate writers. Read the current
+remote tip and save checkpoints for later resumptions without asking the user to
+type continue. Pause scheduling on user cancellation or verified completion.
 Progress percentages must distinguish verified capability parity, partial code
 and verified source removal; never describe partial-code ratios as completion.
 
