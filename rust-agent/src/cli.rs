@@ -27,6 +27,10 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(about = "Show redacted resolved native configuration and profile selection")]
+	Config(ConfigArgs),
+	#[command(about = "List fixtures or score edits using the separate rust-v1 baseline")]
+	EditBenchmark(crate::edit_benchmark::cli::Arguments),
 	#[command(name = "setup", hide = true, disable_help_flag = true)]
 	RetiredSetup {
 		component: String,
@@ -88,7 +92,100 @@ struct ReplayArgs {
 }
 
 #[derive(Debug, clap::Args)]
+struct ConfigArgs {
+	#[arg(short, long, default_value = ".")]
+	workspace: PathBuf,
+	#[arg(long)]
+	agent_dir: Option<PathBuf>,
+	#[arg(long)]
+	profile:   Option<String>,
+	#[arg(long = "config")]
+	overlays:  Vec<PathBuf>,
+}
+fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
+	let root = args.workspace.canonicalize()?;
+	let environment = config::environment_from(|key| env::var(key).ok())?;
+	let resolved = crate::configuration::load(
+		&root,
+		&Overrides::default(),
+		&environment,
+		&crate::configuration::LoadOptions {
+			user_directory: config::agent_dir_from(args.agent_dir, |key| env::var_os(key)),
+			profile: args.profile,
+			environment_profile: env::var("OMP_PROFILE").ok(),
+			overlays: args.overlays,
+			..Default::default()
+		},
+	)?;
+	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredPlugins":resolved.plugins.len()});
+	serde_json::to_writer(io::stdout().lock(), &output)?;
+	writeln!(io::stdout().lock())?;
+	Ok(0)
+}
+
+#[derive(Debug, Default, clap::Args)]
+struct ConfigurationArgs {
+	#[arg(long)]
+	profile:        Option<String>,
+	#[arg(long = "config")]
+	overlays:       Vec<PathBuf>,
+	#[arg(long, help = "Allow native executables declared in the selected configuration")]
+	enable_plugins: bool,
+	#[arg(long = "plugin", help = "Explicit native executable plugin; never a TS/JS module")]
+	plugins:        Vec<PathBuf>,
+}
+impl ConfigurationArgs {
+	fn load(
+		&self,
+		root: &Path,
+		flags: &Overrides,
+		environment: &config::Environment,
+		api: Option<&str>,
+		max_output_tokens: Option<u32>,
+		agent_dir: Option<PathBuf>,
+	) -> Result<crate::configuration::Resolved> {
+		let api = api.map(|api| {
+			if api == "anthropic-messages" {
+				crate::configuration::Api::AnthropicMessages
+			} else {
+				crate::configuration::Api::OpenaiChat
+			}
+		});
+		let mut resolved = crate::configuration::load(
+			root,
+			flags,
+			environment,
+			&crate::configuration::LoadOptions {
+				user_directory: config::agent_dir_from(agent_dir, |key| env::var_os(key)),
+				profile: self.profile.clone(),
+				environment_profile: env::var("OMP_PROFILE").ok(),
+				overlays: self.overlays.clone(),
+				api,
+				max_output_tokens,
+			},
+		)?;
+		if !resolved.plugins.is_empty() && !self.enable_plugins {
+			bail!("native plugins in configuration require --enable-plugins");
+		}
+		for executable in &self.plugins {
+			resolved.plugins.push(crate::plugins::Configuration {
+				executable:  executable.clone(),
+				arguments:   Vec::new(),
+				environment: Default::default(),
+				timeout_ms:  30_000,
+			});
+		}
+		if resolved.plugins.len() > 16 {
+			bail!("too many configured plugins");
+		}
+		Ok(resolved)
+	}
+}
+
+#[derive(Debug, clap::Args)]
 struct RpcArgs {
+	#[command(flatten)]
+	configuration:     ConfigurationArgs,
 	#[arg(long, default_value = ".omp/session.jsonl")]
 	session:           PathBuf,
 	#[arg(long)]
@@ -101,10 +198,10 @@ struct RpcArgs {
 	tag:               Vec<String>,
 	#[arg(long)]
 	model:             Option<String>,
-	#[arg(long, default_value = "openai-chat", value_parser = ["openai-chat", "anthropic-messages"], requires_if("anthropic-messages", "base_url"), requires_if("anthropic-messages", "model"))]
-	api:               String,
-	#[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..))]
-	max_output_tokens: u32,
+	#[arg(long, value_parser = ["openai-chat", "anthropic-messages"])]
+	api:               Option<String>,
+	#[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+	max_output_tokens: Option<u32>,
 
 	#[arg(long)]
 	base_url:  Option<String>,
@@ -140,6 +237,8 @@ struct SessionArgs {
 
 #[derive(Debug, clap::Args)]
 struct RunArgs {
+	#[command(flatten)]
+	configuration:     ConfigurationArgs,
 	#[arg(
 		long,
 		requires = "browser_profile",
@@ -174,10 +273,10 @@ struct RunArgs {
 	tag:               Vec<String>,
 	#[arg(long)]
 	model:             Option<String>,
-	#[arg(long, default_value = "openai-chat", value_parser = ["openai-chat", "anthropic-messages"], requires_if("anthropic-messages", "base_url"), requires_if("anthropic-messages", "model"))]
-	api:               String,
-	#[arg(long, default_value_t = 4096, value_parser = clap::value_parser!(u32).range(1..))]
-	max_output_tokens: u32,
+	#[arg(long, value_parser = ["openai-chat", "anthropic-messages"])]
+	api:               Option<String>,
+	#[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+	max_output_tokens: Option<u32>,
 
 	#[arg(long)]
 	base_url:  Option<String>,
@@ -209,6 +308,8 @@ pub(crate) fn execute() -> Result<u8> {
 
 fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
+		Commands::Config(args) => inspect_configuration(args),
+		Commands::EditBenchmark(arguments) => crate::edit_benchmark::cli::execute(arguments),
 		Commands::Document(args) => {
 			let fs = harvest_runtime::JailedFs::open(&args.workspace)?;
 			let input = fs.read(&args.file, harvest_media::docx::INPUT_LIMIT)?;
@@ -325,12 +426,12 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 
 fn configured_model(
 	settings: config::Settings,
-	api: &str,
+	api: crate::configuration::Api,
 	max_tokens: u32,
 	usage: bool,
 ) -> Result<HttpModel> {
 	let model = HttpModel::new(settings).request_usage(usage);
-	if api == "anthropic-messages" {
+	if api == crate::configuration::Api::AnthropicMessages {
 		model.anthropic_messages(max_tokens)
 	} else {
 		Ok(model)
@@ -343,7 +444,7 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 		.canonicalize()
 		.context("failed to resolve RPC workspace")?;
 	let environment = config::environment_from(|key| env::var(key).ok())?;
-	let settings = config::resolve(
+	let resolved = args.configuration.load(
 		&workspace,
 		&Overrides {
 			model:     args.model,
@@ -352,7 +453,11 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 			max_steps: args.max_steps,
 		},
 		&environment,
+		args.api.as_deref(),
+		args.max_output_tokens,
+		args.agent_dir.clone(),
 	)?;
+	let settings = resolved.settings;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
 	let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -369,10 +474,11 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 			&workspace,
 			&args.session,
 			args.leaf.as_deref(),
-			Arc::new(configured_model(settings, &args.api, args.max_output_tokens, false)?),
+			Arc::new(configured_model(settings, resolved.api, resolved.max_output_tokens, false)?),
 			Arc::new(crate::tools::DenyMutations),
 			SessionEngineOptions {
 				max_model_turns,
+				plugins: resolved.plugins,
 				user_agent_dir,
 				tags: args.tag.into_iter().collect(),
 				event_capacity: 256,
@@ -399,7 +505,7 @@ fn run(args: RunArgs) -> Result<u8> {
 		.canonicalize()
 		.with_context(|| format!("failed to resolve {}", args.workspace.display()))?;
 	let environment = config::environment_from(|key| env::var(key).ok())?;
-	let settings = config::resolve(
+	let resolved = args.configuration.load(
 		&workspace,
 		&Overrides {
 			model:     args.model.clone(),
@@ -408,20 +514,34 @@ fn run(args: RunArgs) -> Result<u8> {
 			max_steps: args.max_steps,
 		},
 		&environment,
+		args.api.as_deref(),
+		args.max_output_tokens,
+		args.agent_dir.clone(),
 	)?;
+	let settings = resolved.settings;
 	if args.async_session {
 		let agent_dir = config::agent_dir_from(args.agent_dir.clone(), |key| env::var_os(key))
 			.filter(|p| p.is_dir());
-		return run_async_session(&args, &workspace, settings, agent_dir);
+		return run_async_session(
+			&args,
+			&workspace,
+			settings,
+			agent_dir,
+			resolved.api,
+			resolved.max_output_tokens,
+			resolved.plugins,
+		);
 	}
 	let configured_browser = browser_options(&args);
 	let max_steps = settings.max_steps;
-	let model = configured_model(settings, &args.api, args.max_output_tokens, args.request_usage)?;
+	let model =
+		configured_model(settings, resolved.api, resolved.max_output_tokens, args.request_usage)?;
 	let model_ref: &dyn Model = &model;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
 	let mut session =
 		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
+	session.configure_plugins(&resolved.plugins, &Default::default())?;
 	if let Some(options) = configured_browser {
 		session.configure_browser(options);
 	}
@@ -465,6 +585,9 @@ fn run_async_session(
 	workspace: &Path,
 	settings: config::Settings,
 	user_agent_dir: Option<PathBuf>,
+	api: crate::configuration::Api,
+	max_output_tokens: u32,
+	plugins: Vec<crate::plugins::Configuration>,
 ) -> Result<u8> {
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.worker_threads(2)
@@ -476,16 +599,12 @@ fn run_async_session(
 			workspace,
 			&args.session,
 			args.leaf.as_deref(),
-			Arc::new(configured_model(
-				settings,
-				&args.api,
-				args.max_output_tokens,
-				args.request_usage,
-			)?),
+			Arc::new(configured_model(settings, api, max_output_tokens, args.request_usage)?),
 			Arc::new(crate::tools::TerminalApproval),
 			SessionEngineOptions {
 				browser: browser_options(args),
 				max_model_turns,
+				plugins,
 				user_agent_dir,
 				tags: args.tag.iter().cloned().collect(),
 				..Default::default()

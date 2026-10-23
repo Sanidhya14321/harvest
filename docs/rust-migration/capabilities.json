@@ -287,7 +287,11 @@
     {
       "id": "command:config",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/cli.rs",
+          "rust-agent/src/configuration.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -3494,7 +3498,12 @@
     {
       "id": "surface:settings-profiles",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/configuration.rs",
+          "rust-agent/src/config.rs",
+          "rust-agent/src/cli.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -3808,7 +3817,13 @@
     {
       "id": "surface:extension-process-abi-v1",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/plugins",
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/chat.rs",
+          "rust-agent/examples/native-plugin.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -4018,7 +4033,10 @@
     {
       "id": "surface:benchmarks",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/edit_benchmark"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -5533,6 +5551,37 @@
       }
     },
     "tasks": [
+      {
+        "id": "application:conversion-first",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application",
+          "review:plugins",
+          "review:tooling",
+          "review:catalog-providers"
+        ],
+        "card": "docs/rust-migration/CONVERSION-PASS.md",
+        "capabilities": [
+          "surface:extension-process-abi-v1",
+          "surface:settings-profiles",
+          "surface:benchmarks",
+          "command:config"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "User-directed conversion-first checkpoint: native plugin host/SDK, dynamic tool schemas, layered configuration/profiles and rust-v1 edit scoring are written and connected.",
+          "Aggregate cargo check --locked -p harvest-omp --all-targets --all-features passes; behavioral tests, Clippy, installation and full legacy cutover verification are deliberately deferred.",
+          "Task stays in_progress; no feature is marked verified/done or legacy-removed. Detailed ownership and remaining contracts are recorded in the Markdown card."
+        ]
+      },
       {
         "id": "control:playbook",
         "kind": "control",

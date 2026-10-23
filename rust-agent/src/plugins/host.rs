@@ -1,0 +1,361 @@
+//! One process owner, bounded reader/writer queues, deadline and cancellation.
+use std::{
+	collections::{BTreeMap, BTreeSet},
+	io::{BufReader, Read, Write},
+	path::{Path, PathBuf},
+	process::{Child, Command, Stdio},
+	sync::{
+		Arc, Mutex,
+		mpsc::{self, Receiver, SyncSender, TrySendError},
+	},
+	thread,
+	time::Duration,
+};
+
+use anyhow::{Context, Result, bail, ensure};
+use harvest_runtime::cancel::CancelToken;
+use serde::Deserialize;
+use serde_json::Value;
+
+use super::protocol::{self, Event, Frame, ProtocolError};
+use crate::{
+	chat::{ToolCall, ToolSpec},
+	tools::Approval,
+};
+
+fn default_timeout() -> u32 {
+	30_000
+}
+
+/// Trusted host configuration; never constructed from model tool arguments.
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Configuration {
+	pub executable:  PathBuf,
+	#[serde(default)]
+	pub arguments:   Vec<String>,
+	#[serde(default)]
+	pub environment: BTreeMap<String, String>,
+	#[serde(default = "default_timeout")]
+	pub timeout_ms:  u32,
+}
+impl std::fmt::Debug for Configuration {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("PluginConfiguration")
+			.field("executable", &self.executable)
+			.field("timeout_ms", &self.timeout_ms)
+			.finish_non_exhaustive()
+	}
+}
+
+pub struct Plugin {
+	child:   Child,
+	input:   Option<SyncSender<Vec<u8>>>,
+	output:  Receiver<Result<Frame>>,
+	stderr:  Arc<Mutex<Vec<u8>>>,
+	tools:   Vec<ToolSpec>,
+	next_id: u64,
+	timeout: Duration,
+	closed:  bool,
+}
+impl Plugin {
+	pub fn launch(
+		root: &Path,
+		configuration: &Configuration,
+		cancellation: &CancelToken,
+	) -> Result<Self> {
+		cancellation.heartbeat()?;
+		ensure!(
+			(1..=600_000).contains(&configuration.timeout_ms),
+			"plugin timeout must be between 1 and 600000 milliseconds"
+		);
+		ensure!(
+			configuration.arguments.len() <= 128 && configuration.environment.len() <= 128,
+			"plugin launch configuration exceeds limit"
+		);
+		let executable = if configuration.executable.is_absolute() {
+			configuration.executable.clone()
+		} else {
+			root.join(&configuration.executable)
+		};
+		let executable = executable
+			.canonicalize()
+			.context("cannot resolve native plugin executable")?;
+		let extension = executable
+			.extension()
+			.and_then(|v| v.to_str())
+			.unwrap_or("")
+			.to_ascii_lowercase();
+		let stem = executable
+			.file_stem()
+			.and_then(|v| v.to_str())
+			.unwrap_or("")
+			.to_ascii_lowercase();
+		ensure!(
+			!matches!(
+				extension.as_str(),
+				"ts" | "tsx" | "js" | "mjs" | "cjs" | "py" | "jl" | "sh" | "ps1" | "cmd" | "bat"
+			) && !matches!(
+				stem.as_str(),
+				"bun"
+					| "node" | "nodejs"
+					| "python" | "python3"
+					| "julia" | "bash"
+					| "sh" | "pwsh"
+					| "powershell"
+			),
+			"language plugins are retired; build a native executable using Harvest's Rust plugin SDK \
+			 (docs/rust-plugin-protocol.md)"
+		);
+		let mut child = Command::new(executable)
+			.args(&configuration.arguments)
+			.envs(&configuration.environment)
+			.current_dir(root)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::piped())
+			.spawn()
+			.context("cannot start native plugin")?;
+		let mut stdin = child.stdin.take().context("plugin stdin unavailable")?;
+		let stdout = child.stdout.take().context("plugin stdout unavailable")?;
+		let mut error_stream = child.stderr.take().context("plugin stderr unavailable")?;
+		let (input, incoming) = mpsc::sync_channel::<Vec<u8>>(8);
+		let (outgoing, output) = mpsc::sync_channel(16);
+		thread::spawn(move || {
+			while let Ok(bytes) = incoming.recv() {
+				if stdin
+					.write_all(&bytes)
+					.and_then(|()| stdin.flush())
+					.is_err()
+				{
+					break;
+				}
+			}
+		});
+		thread::spawn(move || {
+			let mut reader = BufReader::new(stdout);
+			loop {
+				match protocol::read(&mut reader) {
+					Ok(Some(frame)) => {
+						if outgoing.send(Ok(frame)).is_err() {
+							break;
+						}
+					},
+					Ok(None) => break,
+					Err(error) => {
+						let _ = outgoing.send(Err(error));
+						break;
+					},
+				}
+			}
+		});
+		let stderr = Arc::new(Mutex::new(Vec::new()));
+		let tail = stderr.clone();
+		thread::spawn(move || {
+			let mut bytes = [0; 4096];
+			while let Ok(count) = error_stream.read(&mut bytes) {
+				if count == 0 {
+					break;
+				}
+				let Ok(mut tail) = tail.lock() else {
+					break;
+				};
+				tail.extend_from_slice(&bytes[..count]);
+				if tail.len() > 8192 {
+					let excess = tail.len() - 8192;
+					tail.drain(..excess);
+				}
+			}
+		});
+		let mut plugin = Self {
+			child,
+			input: Some(input),
+			output,
+			stderr,
+			tools: Vec::new(),
+			next_id: 1,
+			timeout: Duration::from_millis(u64::from(configuration.timeout_ms)),
+			closed: false,
+		};
+		let deadline = cancellation.child_with_timeout(plugin.timeout);
+		let initialize = plugin
+			.send(&Frame::Initialize { id: 0, versions: vec![protocol::VERSION] }, &deadline)
+			.and_then(|()| plugin.receive(&deadline));
+		match initialize {
+			Ok(Frame::Initialized { id: 0, version: protocol::VERSION, name, tools }) => {
+				ensure!(
+					!name.is_empty() && name.len() <= 128 && tools.len() <= protocol::MAX_TOOLS,
+					"invalid plugin handshake identity or tool count"
+				);
+				let mut names = BTreeSet::new();
+				for tool in &tools {
+					tool.validate()?;
+					ensure!(names.insert(tool.name()), "duplicate plugin tool name");
+				}
+				plugin.tools = tools;
+				Ok(plugin)
+			},
+			_ => {
+				plugin.terminate();
+				bail!("plugin handshake failed; native protocol version 1 is required");
+			},
+		}
+	}
+
+	pub fn tools(&self) -> &[ToolSpec] {
+		&self.tools
+	}
+
+	/// Host diagnostics only; never insert stderr into model output or stdout.
+	pub fn stderr_tail(&self) -> Vec<u8> {
+		self
+			.stderr
+			.lock()
+			.map(|tail| tail.clone())
+			.unwrap_or_default()
+	}
+
+	fn send(&mut self, frame: &Frame, cancellation: &CancelToken) -> Result<()> {
+		let mut bytes = protocol::encode(frame)?;
+		let input = self.input.as_ref().context("plugin is closed")?;
+		loop {
+			cancellation.heartbeat()?;
+			match input.try_send(bytes) {
+				Ok(()) => return Ok(()),
+				Err(TrySendError::Disconnected(_)) => bail!("plugin input closed"),
+				Err(TrySendError::Full(pending)) => bytes = pending,
+			}
+			thread::sleep(Duration::from_millis(10));
+		}
+	}
+
+	fn receive(&mut self, cancellation: &CancelToken) -> Result<Frame> {
+		loop {
+			cancellation.heartbeat()?;
+			match self.output.recv_timeout(Duration::from_millis(10)) {
+				Ok(frame) => return frame,
+				Err(mpsc::RecvTimeoutError::Disconnected) => bail!("plugin exited before its response"),
+				Err(mpsc::RecvTimeoutError::Timeout) => {},
+			}
+		}
+	}
+
+	pub fn invoke(
+		&mut self,
+		root: &Path,
+		call: &ToolCall,
+		approval: &dyn Approval,
+		cancellation: &CancelToken,
+		on_event: &mut dyn FnMut(Event) -> Result<()>,
+	) -> Result<String> {
+		ensure!(
+			!self.closed
+				&& self
+					.tools
+					.iter()
+					.any(|tool| tool.name() == call.function.name),
+			"plugin tool is unavailable"
+		);
+		ensure!(
+			call.function.arguments.len() < protocol::MAX_FRAME_BYTES,
+			"plugin arguments exceed limit"
+		);
+		let arguments: Value = serde_json::from_str(&call.function.arguments)
+			.map_err(|_| anyhow::anyhow!("invalid plugin tool arguments"))?;
+		ensure!(arguments.is_object(), "plugin arguments must be an object");
+		cancellation.heartbeat()?;
+		// All external execution needs final-argument host approval. Plugin metadata
+		// cannot grant readonly privileges or authorize nested host mutations.
+		ensure!(approval.approve(call)?, "plugin tool requires host approval");
+		cancellation.heartbeat()?;
+		let id = self.next_id;
+		self.next_id = id
+			.checked_add(1)
+			.context("plugin request identity exhausted")?;
+		let deadline = cancellation.child_with_timeout(self.timeout);
+		let result = self.exchange(root, id, call, arguments, approval, &deadline, on_event);
+		if result.is_err() {
+			if let Some(input) = &self.input {
+				let _ = input.try_send(protocol::encode(&Frame::Cancel { id })?);
+			}
+			self.terminate();
+		}
+		result
+	}
+
+	fn exchange(
+		&mut self,
+		root: &Path,
+		id: u64,
+		call: &ToolCall,
+		arguments: Value,
+		approval: &dyn Approval,
+		deadline: &CancelToken,
+		on_event: &mut dyn FnMut(Event) -> Result<()>,
+	) -> Result<String> {
+		self.send(&Frame::Call { id, name: call.function.name.clone(), arguments }, deadline)?;
+		let mut events = 0;
+		let mut host_ids = BTreeSet::new();
+		let mut bytes = 0;
+		loop {
+			let frame = self.receive(deadline)?;
+			bytes += protocol::encode(&frame)?.len();
+			ensure!(bytes <= 16 * 1024 * 1024, "plugin response exchange exceeds limit");
+			match frame {
+				Frame::Result { id: response_id, value } if response_id == id => {
+					deadline.heartbeat()?;
+					return Ok(serde_json::to_string(&value)?);
+				},
+				Frame::Error { id: response_id, .. } if response_id == id => {
+					bail!("plugin reported a structured execution error")
+				},
+				Frame::Event { id: response_id, event } if response_id == id => {
+					events += 1;
+					ensure!(events <= protocol::MAX_EVENTS, "too many plugin events");
+					on_event(event)?;
+				},
+				Frame::HostCall { id: host_id, parent_id, call } if parent_id == id => {
+					ensure!(
+						host_ids.len() < protocol::MAX_HOST_CALLS && host_ids.insert(host_id),
+						"duplicate or excessive plugin host calls"
+					);
+					let response =
+						match crate::tools::invoke_with_cancellation(root, &call, approval, deadline) {
+							Ok(value) => {
+								Frame::HostResult { id: host_id, value: Some(value), error: None }
+							},
+							Err(_) => Frame::HostResult {
+								id:    host_id,
+								value: None,
+								error: Some(ProtocolError {
+									code:    "host_tool_failed".into(),
+									message: "Host tool denied or failed".into(),
+								}),
+							},
+						};
+					self.send(&response, deadline)?;
+				},
+				_ => bail!("plugin returned an unexpected frame or request identity"),
+			}
+		}
+	}
+
+	fn terminate(&mut self) {
+		if !self.closed {
+			self.closed = true;
+			self.input.take();
+			let _ = self.child.kill();
+			let _ = self.child.wait();
+		}
+	}
+}
+impl Drop for Plugin {
+	fn drop(&mut self) {
+		if let Some(input) = &self.input {
+			if let Ok(bytes) = protocol::encode(&Frame::Shutdown) {
+				let _ = input.try_send(bytes);
+			}
+		}
+		self.terminate();
+	}
+}

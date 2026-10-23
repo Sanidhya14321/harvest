@@ -64,6 +64,16 @@ impl AgentSession {
 		})
 	}
 
+	pub fn configure_plugins(
+		&mut self,
+		configurations: &[crate::plugins::Configuration],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		self
+			.tools
+			.configure_plugins(&self.root, configurations, cancellation)
+	}
+
 	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
 		self.tools.configure_browser(options);
 	}

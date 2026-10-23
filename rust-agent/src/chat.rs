@@ -25,26 +25,18 @@ pub struct ChatMessage {
 	pub tool_call_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolSpec {
 	#[serde(rename = "type")]
-	kind:     &'static str,
+	kind:     String,
 	function: ToolFunction,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ToolFunction {
-	name:        &'static str,
-	description: &'static str,
-	parameters:  ToolParameters,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-struct ToolParameters {
-	#[serde(rename = "type")]
-	kind:       &'static str,
-	properties: ToolProperties,
-	required:   &'static [&'static str],
+	name:        String,
+	description: String,
+	parameters:  serde_json::Value,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -95,8 +87,41 @@ const BOOLEAN: BooleanProperty = BooleanProperty { kind: "boolean" };
 const STRING: &StringProperty = &StringProperty { kind: "string", enum_values: None };
 
 impl ToolSpec {
-	pub const fn name(self) -> &'static str {
-		self.function.name
+	pub fn name(&self) -> &str {
+		&self.function.name
+	}
+
+	pub fn validate(&self) -> anyhow::Result<()> {
+		anyhow::ensure!(self.kind == "function", "unsupported tool schema kind");
+		Self::from_schema(
+			self.function.name.clone(),
+			self.function.description.clone(),
+			self.function.parameters.clone(),
+		)
+		.map(|_| ())
+	}
+
+	pub fn from_schema(
+		name: String,
+		description: String,
+		parameters: serde_json::Value,
+	) -> anyhow::Result<Self> {
+		anyhow::ensure!(
+			!name.is_empty()
+				&& name.len() <= 128
+				&& name
+					.bytes()
+					.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-')),
+			"invalid tool name"
+		);
+		anyhow::ensure!(
+			description.len() <= 16 * 1024 && parameters.is_object() && parameters["type"] == "object",
+			"invalid tool schema"
+		);
+		Ok(Self {
+			kind:     "function".into(),
+			function: ToolFunction { name, description, parameters },
+		})
 	}
 }
 
@@ -213,29 +238,30 @@ const EMPTY: ToolProperties = ToolProperties {
 	pattern:        None,
 };
 
-const fn spec(
+fn spec(
 	name: &'static str,
 	description: &'static str,
 	properties: ToolProperties,
 	required: &'static [&'static str],
 ) -> ToolSpec {
 	ToolSpec {
-		kind:     "function",
+		kind:     "function".into(),
 		function: ToolFunction {
-			name,
-			description,
-			parameters: ToolParameters { kind: "object", properties, required },
+			name:        name.into(),
+			description: description.into(),
+			parameters:  serde_json::json!({"type":"object", "properties":properties, "required":required}),
 		},
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use super::{specs, user};
+	use super::{ToolSpec, specs, user};
 
 	#[test]
 	fn tool_catalog_names_the_workspace_tools() {
-		let names: Vec<&str> = specs().iter().map(|spec| spec.function.name).collect();
+		let specifications = specs();
+		let names: Vec<&str> = specifications.iter().map(ToolSpec::name).collect();
 		assert_eq!(names, ["read", "write", "edit", "grep", "bash"]);
 	}
 

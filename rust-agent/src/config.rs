@@ -31,12 +31,12 @@ pub struct Environment {
 	pub max_steps: Option<u32>,
 }
 
-#[derive(Deserialize, Default)]
-struct FileSettings {
-	model:     Option<String>,
-	base_url:  Option<String>,
-	api_key:   Option<String>,
-	max_steps: Option<u32>,
+#[derive(Clone, Deserialize, Default)]
+pub(crate) struct FileSettings {
+	pub model:     Option<String>,
+	pub base_url:  Option<String>,
+	pub api_key:   Option<String>,
+	pub max_steps: Option<u32>,
 }
 
 impl fmt::Debug for Settings {
@@ -93,7 +93,14 @@ pub fn agent_dir_from(
 }
 
 pub fn resolve(root: &Path, flags: &Overrides, environment: &Environment) -> Result<Settings> {
-	let file = read_file(root)?;
+	Ok(crate::configuration::load(root, flags, environment, &Default::default())?.settings)
+}
+
+pub(crate) fn resolve_file_values(
+	flags: &Overrides,
+	environment: &Environment,
+	file: FileSettings,
+) -> Result<Settings> {
 	Ok(Settings {
 		model:     choose(
 			flags.model.clone(),
@@ -150,23 +157,6 @@ fn choose(
 	default: String,
 ) -> String {
 	flag.or(environment).or(file).unwrap_or(default)
-}
-
-fn read_file(root: &Path) -> Result<FileSettings> {
-	let fs = harvest_runtime::JailedFs::open(root)?;
-	let Some(bytes) = fs.read_optional(Path::new(".omp/config.toml"), 256 * 1024)? else {
-		return Ok(FileSettings::default());
-	};
-	let text = std::str::from_utf8(&bytes).context("configuration is not UTF-8")?;
-	// TOML diagnostics include the source line and can expose an unterminated
-	// API key, URL credentials or a nearby secret. Do not retain their chain.
-	toml::from_str(text).map_err(|error: toml::de::Error| {
-		if let Some(span) = error.span() {
-			anyhow::anyhow!("failed to parse .omp/config.toml at byte {}", span.start)
-		} else {
-			anyhow::anyhow!("failed to parse .omp/config.toml")
-		}
-	})
 }
 
 fn parse_steps(value: &str) -> Result<u32> {

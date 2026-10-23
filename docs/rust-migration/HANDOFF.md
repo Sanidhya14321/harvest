@@ -8,49 +8,33 @@ is preserved. Historical continuation narratives are in
 
 ## Continuing rule
 
-Read `PLAYBOOK.md`, `SCOPE.md` and the authoritative manifests. The user requests
-complete subsystem/consumer batches, focused checks while editing and one final
-integration pass per batch. Avoid isolated file/query ports and per-file addon
-rebuilds. Record this preference across handoffs. Direct implementation is active;
-the cancelled OpenCode approach is not a blocker.
+**Conversion first, stabilization/tests later** is the latest explicit user
+instruction. Read `PLAYBOOK.md` and the active shared task/card
+`CONVERSION-PASS.md` first. It reserves interfaces and lists all features,
+written/connected code, unfinished contracts and deferred verification. Avoid
+per-file tests, repeated legacy suites and addon rebuilds. Commit coherent
+in-progress conversion checkpoints without claiming verified feature completion.
 
-## Current outcome
+## Active checkpoint
 
-Native Anthropic Messages text/tool support now connects the Rust SDK and
-sync/async CLI plus RPC through `HttpModel::anthropic_messages`. Shared SSE
-framing and cancellable transport retain bounds; origin checks prevent API-key
-redirect leaks. Complete tool-result exchanges and lossless split usage flow
-through existing session persistence. Explicit model/host flags avoid inventing
-catalog policy. See `tasks/ANTHROPIC-TEXT-TOOLS.md` and source-bound
-`target/migration/anthropic-*` results. Whole streaming-provider capability remains
-partial/unverified: thinking, multimodal, OAuth/catalog policy, retries and live
-credentialed checks remain pending. Default application remains TS; no legacy
-provider source is removable at this stage. The package integration pass passed
-136 checks; the subsequent affected-provider run passed six checks, including
-the added cross-origin redirect probe (137 distinct native checks covered).
-Strict package Clippy, formatting and playbook checks pass. The generated
-verification plan still requests full verification; that transition was not
-executed or certified for this native-only batch. The inherited removal gate
-remains failed as recorded below.
+`application:conversion-first` is in_progress and has scheduling priority. Native
+owned tool schemas, executable plugin protocol/host/Rust SDK, layered TOML
+configuration/profiles and rust-v1 edit scoring are written and connected across
+native APIs/CLI/sync/async/RPC. The example plugin uses host-jailed reads. Startup
+is explicitly host-enabled. The redacted config inspector starts no plugins.
 
-Previous `application:python-eval-retirement` removed 25 approved kernel/prelude/
-private-test sources. Its 125 Rust contracts and all 49 legacy workspace groups
-passed. The runtime/session integration run failed 19/34 groups; all 40 remaining
-contracts reproduced on unchanged `2ff0193`. Preserve the failed receipt rather
-than rerunning unchanged legacy failures for native-only application additions.
-See `tasks/PYTHON-EVAL-RETIREMENT.md`, `tasks/LEGACY-SESSION-CONTRACTS.md` and
-`target/migration/python-retirement-*`.
+An aggregate all-target/all-feature compiler connection check passes. Behavioral
+tests, Clippy, installation and legacy cutover checks are **deferred** at the
+user's instruction; no new capability is verified/done or legacy-removed. The
+common card identifies remaining plugin lifecycle/UI/marketplace, full legacy
+settings/schema and benchmark generation/orchestration contracts. Keep converting
+independent remaining areas, then run consolidated stabilization passes.
 
-JavaScript evaluation still serves retained browser/computer workers. Move those
-consumers to native CDP/desktop APIs before removing the shared JS engine.
-`tool:eval` retirement remains pending, and TS rejection/type facades remain
-pending application cutover. Do not confuse an approved retirement with behavior
-ported to Rust.
-
-Previous completed batches include DOCX shared conversion, native CDP/extension
-relay retirement, native terminal clock repair, Rust tooling ports and RPC v2
-transport/client/transcript support. Their cards and archived handoff hold exact
-checks and limitations; whole application/provider/UI parity remains incomplete.
+Default application and consumers still use TS. Do not delete their sources or
+replace the product with the experimental native subset. Preserve final Rust-only
+acceptance gates. Whole-source conversion remains unfinished; the common card
+contains the generated full feature snapshot. Previous validated Anthropic and
+Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Open blockers
 

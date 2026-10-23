@@ -394,11 +394,40 @@ mod tests {
 /// final-argument approval.
 #[derive(Default)]
 pub struct ToolRuntime {
+	plugins:         Vec<crate::plugins::Plugin>,
 	browser_options: Option<harvest_browser::Options>,
 	browser:         Option<harvest_browser::Browser>,
 }
 
 impl ToolRuntime {
+	pub fn configure_plugins(
+		&mut self,
+		root: &Path,
+		configurations: &[crate::plugins::Configuration],
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		if configurations.len() > 16 {
+			bail!("too many configured plugins");
+		}
+		let mut names: std::collections::BTreeSet<String> = crate::chat::specs()
+			.iter()
+			.map(|spec| spec.name().to_owned())
+			.collect();
+		names.insert("browser".into());
+		let mut plugins = Vec::new();
+		for configuration in configurations {
+			let plugin = crate::plugins::Plugin::launch(root, configuration, cancellation)?;
+			for tool in plugin.tools() {
+				if !names.insert(tool.name().to_owned()) {
+					bail!("plugin tool collides with an existing tool");
+				}
+			}
+			plugins.push(plugin);
+		}
+		self.plugins = plugins;
+		Ok(())
+	}
+
 	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
 		self.browser = None;
 		self.browser_options = Some(options);
@@ -406,6 +435,9 @@ impl ToolRuntime {
 
 	pub fn specs(&self) -> Vec<crate::chat::ToolSpec> {
 		let mut specs = crate::chat::specs();
+		for plugin in &self.plugins {
+			specs.extend_from_slice(plugin.tools());
+		}
 		if self.browser_options.is_some() {
 			specs.push(crate::chat::browser_spec());
 		}
@@ -419,6 +451,14 @@ impl ToolRuntime {
 		policy: &dyn Approval,
 		cancellation: &harvest_runtime::cancel::CancelToken,
 	) -> Result<String> {
+		if let Some(plugin) = self.plugins.iter_mut().find(|plugin| {
+			plugin
+				.tools()
+				.iter()
+				.any(|tool| tool.name() == call.function.name)
+		}) {
+			return plugin.invoke(root, call, policy, cancellation, &mut |_| Ok(()));
+		}
 		if call.function.name != "browser" {
 			return invoke_with_cancellation(root, call, policy, cancellation);
 		}

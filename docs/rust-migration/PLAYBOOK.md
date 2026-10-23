@@ -1,45 +1,41 @@
 # Harvest Rust migration playbook
 
 Work on `ts-to-rust`. Preserve its existing history and user changes. Commit one
-verified behavior slice at a time; do not publish, release or merge to `main` as
+coherent migration checkpoint at a time; do not publish, release or merge to `main` as
 part of migration work. [SCOPE.md](SCOPE.md) records the user-approved target.
 
-## Execution batches for throughput
+## Conversion-first execution (latest user instruction)
 
-The user's continuing preference is complete subsystem/consumer batches rather
-than isolated file or small query ports. Prioritize work that closes an entire
-runtime boundary and enables consumer cutover. Use focused checks while editing
-and one integration pass for the finalized batch; repeat only checks affected by
-an actual correction. Preserve these instructions across session handoffs.
+The user explicitly changed execution order: write and connect Rust across larger
+subsystems first, then stabilize errors and run tests together. This supersedes
+older per-slice verification scheduling below and in historical task cards.
+Maintain [CONVERSION-PASS.md](CONVERSION-PASS.md) as the active Markdown ownership,
+connection and unfinished-work register, alongside the authoritative manifests.
 
-Use the existing dependency graph to group connected behavior into bounded
-subsystem batches. Prefer a complete native Rust consumer path using existing
-engines; avoid introducing a new N-API adapter for each source. Keep the complete
-retained behavior target and existing completion gates. These rules change work
-scheduling, not acceptance or approved retirements.
+1. Work across connected subsystems without stopping for per-file tests, Clippy,
+   legacy suites, addon rebuilds or installed verification after each edit.
+2. Record exact Rust destinations, consumer connections, remaining TS consumers
+   and dependencies for each feature. Reserve shared interfaces before editing;
+   a feature has one owner and one implementation, not parallel replacements.
+3. Commit/push coherent conversion checkpoints explicitly as **in progress and
+   unverified**. A conversion checkpoint may precede behavioral verification.
+   Keep machine task states `in_progress`; record code-written/connected and
+   verification-pending separately in Markdown. Never inflate completed features.
+4. Carry findings into a shared stabilization queue. Run an aggregate compiler
+   connection check at a checkpoint if useful; defer broad tests and expensive
+   builds to stabilization. Record failures; do not repeatedly rerun unchanged
+   checks or pause independent conversion work for a local failure.
+5. Preserve the complete target in SCOPE.md. Keep shared legacy sources until
+   their consumers move. Stage final deletions after connections and verify them
+   during stabilization. Do not replace implementations with generated stubs,
+   rename executable scripts as data, or silently remove retained behavior.
+6. Stabilization runs affected Rust integration, installation and legacy cutover
+   checks in consolidated passes, then updates verified/done/removal evidence.
+   Existing final acceptance gates remain mandatory before product cutover.
 
-1. Select dependency-ready tasks sharing a Rust crate or runtime boundary. Capture
-   their legacy contracts together and define the complete batch deletion set.
-2. Implement against ordinary Rust engines and the native CLI/session/SDK first.
-   Add a transitional binding only when the batch's identified legacy consumer
-   actually needs one. Preserve unmoved consumers and their sources.
-3. Use focused checks while editing. The existing `OMP_NATIVE_CARGO_PROFILE=dev`
-   override is available for a warm development cache; reserve the candidate
-   optimized build for batch acceptance and never call a dev build release or
-   performance evidence. Deduplicate the same Cargo/package checks
-   across the batch. Rebuild the addon once at the end only if its consumed Rust
-   engine or binding changed; xtask-only changes do not rebuild it.
-4. Finalize tracked contracts, ledgers and handoff before the final verification
-   pass. Run that pass once against the frozen batch; rerun only checks affected
-   by a correction. Keep receipts outside the source fingerprint.
-5. Record unresolved broad-suite failures without repeatedly rerunning an
-   unchanged reproduction. Run full integration at consumer cutovers and final
-   acceptance, and whenever a changed shared boundary justifies it. Do not label
-   focused checks as a full transition or skip the verification plan's required
-   broad checks when claiming that transition passed.
-6. Commit and push each coherent verified batch. Never delete shared files until
-   their last consumer moves, manufacture parity from generated stubs, or replace
-   the promised product with a smaller one to meet a deadline.
+The user's earlier batching preference still applies: ordinary Rust engines and
+native consumers first; no per-file N-API adapter. The native addon development
+profile override remains available when a future shared-engine cutover needs it.
 
 Direct implementation is active again at the user's request. The unsuccessful
 OpenCode assignment is historical; no external model connection blocks execution.
