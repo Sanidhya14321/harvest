@@ -100,13 +100,30 @@ fn version_help_and_tools_work() {
 			.stdout(contains("grep")),
 	);
 	keep(omp().arg("man").assert().success().stdout(contains("omp")));
-	keep(
-		omp()
-			.args(["completions", "bash"])
-			.assert()
-			.success()
-			.stdout(contains("omp")),
-	);
+}
+
+#[test]
+fn retired_shell_completions_emit_no_scripts_or_installed_files() {
+	let root = or_abort(tempfile::tempdir());
+	for arguments in [
+		vec!["completions", "bash"],
+		vec!["completions", "powershell", "--install"],
+		vec!["completions", "--automatic"],
+	] {
+		keep(
+			omp()
+				.args(arguments)
+				.env("HOME", root.path())
+				.env("USERPROFILE", root.path())
+				.env("XDG_DATA_HOME", root.path())
+				.env("XDG_STATE_HOME", root.path())
+				.assert()
+				.failure()
+				.stdout("")
+				.stderr(contains("retired")),
+		);
+	}
+	assert_eq!(or_abort(fs::read_dir(root.path())).count(), 0);
 }
 
 #[test]

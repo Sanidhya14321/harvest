@@ -51,6 +51,18 @@ Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
 
+Native completion retirement base `c4aef9a`: the candidate now rejects all
+`completions` invocations with migration guidance, emits no scripts and installs
+no shell files/wrappers. Generator dependency and shell.rs are removed. Both
+transitional native installers no longer call that retired command; checksum,
+artifact selection, real native aliases and PATH handling remain. Changed CLI and
+installer tests are queued, not run. See distribution.md and the common card.
+Native interactive completion is still absent; the old generator no longer counts
+as partial implementation. TS completion generation and owned installer/test
+scripts remain pending final Rust replacement/removal; no TS is deleted here.
+JavaScript-eval removal remains blocked on shared browser/computer consumers,
+confirmed by direct source review. Do not delete that shared worker/runtime.
+
 Configuration-file continuation base `5341753`: native layered reads now use
 shared `configuration::ConfigFile<T>` with primary/fallback paths, cached
 success/missing/error results, invalidation/mtime/relocation and validation/default

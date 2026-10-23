@@ -264,35 +264,25 @@ fi
 assert_equals 'existing binary' "$(cat "${bin_dir}/omp")"
 assert_contains 'checksum verification failed' "${case_dir}.out"
 
-printf 'test: installs completions for the configured shell\n'
-case_dir=${TEST_ROOT}/completions
+printf 'test: installs aliases without executing downloaded completion code\n'
+case_dir=${TEST_ROOT}/no-completions
 home_dir=${case_dir}/home
 bin_dir=${case_dir}/bin
 prepare_release omp-linux-x64 '#!/bin/sh
-set -eu
-[ "$1" = completions ] && [ "$2" = bash ] && [ "$3" = --install ] && [ "$4" = --automatic ]
-target=${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/omp
-mkdir -p "$(dirname "$target")"
-printf "generated bash completions\\n" >"$target"'
+exit 99'
 OMP_TEST_SHELL=/bin/bash run_installer "${home_dir}" Linux x86_64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
-assert_contains 'generated bash completions' "${home_dir}/.local/share/bash-completion/completions/omp"
-assert_contains 'installing bash completions' "${case_dir}.out"
+[ -f "${bin_dir}/harvest" ] || fail "harvest alias was not installed"
+[ ! -e "${home_dir}/.local/share/bash-completion" ] || fail "retired completions were installed"
 
 printf 'test: installs harvest when SHELL is empty\n'
 case_dir=${TEST_ROOT}/empty-shell
 home_dir=${case_dir}/home
 bin_dir=${case_dir}/bin
 prepare_release omp-linux-x64 '#!/bin/sh
-set -eu
-[ "$1" = completions ] && [ "$2" = bash ] && [ "$3" = --install ] && [ "$4" = --automatic ]
-target=${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/omp
-mkdir -p "$(dirname "$target")"
-printf "fallback bash completions\\n" >"$target"
-'
+exit 99'
 OMP_TEST_SHELL='' run_installer "${home_dir}" Linux x86_64 --bin-dir "${bin_dir}" >"${case_dir}.out" 2>&1
 [ -f "${bin_dir}/harvest" ] || fail "harvest was not installed when SHELL was empty"
-assert_contains 'fallback bash completions' "${home_dir}/.local/share/bash-completion/completions/omp"
-assert_contains 'SHELL is not set; using bash completion paths' "${case_dir}.out"
+[ ! -e "${home_dir}/.local/share/bash-completion" ] || fail "retired completions were installed"
 
 printf 'test: updates a shell profile once for the default bin directory\n'
 case_dir=${TEST_ROOT}/path-update
@@ -367,21 +357,25 @@ esac'
 fi
 
 if [ -n "${OMP_TEST_BINARY:-}" ]; then
-    printf 'test: explicit completion installation skips unrelated bootstrap\n'
-    case_dir=${TEST_ROOT}/explicit-bootstrap
+    printf 'test: installed candidate rejects completion installation without bootstrap\n'
+    case_dir=${TEST_ROOT}/retired-bootstrap
     mkdir -p "${case_dir}/bin"
     cp "${OMP_TEST_BINARY}" "${case_dir}/bin/omp"
-    env HOME="${case_dir}/home" XDG_DATA_HOME="${case_dir}/data" XDG_CONFIG_HOME="${case_dir}/config" \
+    if env HOME="${case_dir}/home" XDG_DATA_HOME="${case_dir}/data" XDG_CONFIG_HOME="${case_dir}/config" \
         XDG_STATE_HOME="${case_dir}/state" SHELL=/bin/fish PATH="${case_dir}/bin:${ORIGINAL_PATH}" \
-        "${case_dir}/bin/omp" completions bash --install --automatic >/dev/null
-    [ -s "${case_dir}/data/bash-completion/completions/omp" ] || fail "explicit bash completion was not installed"
-    [ ! -e "${case_dir}/config/fish/completions/omp.fish" ] || fail "explicit installation bootstrapped another shell"
-    [ -L "${case_dir}/bin/harvest" ] || fail "explicit installation did not create harvest"
-    printf 'test: first-use --version still bootstraps the configured shell\n'
+        "${case_dir}/bin/omp" completions bash --install --automatic >"${case_dir}/stdout" 2>"${case_dir}/stderr"; then
+        fail "retired completions unexpectedly succeeded"
+    fi
+    [ ! -s "${case_dir}/stdout" ] || fail "retired command emitted a script"
+    assert_contains 'retired' "${case_dir}/stderr"
+    [ ! -e "${case_dir}/data" ] || fail "retired command created completion data"
+    [ ! -e "${case_dir}/config" ] || fail "retired command created config"
+    [ ! -e "${case_dir}/bin/harvest" ] || fail "retired command created a wrapper"
+    printf 'test: version does not bootstrap shell files\n'
     env HOME="${case_dir}/first-home" XDG_DATA_HOME="${case_dir}/first-data" XDG_CONFIG_HOME="${case_dir}/first-config" \
         XDG_STATE_HOME="${case_dir}/first-state" SHELL=/bin/bash PATH="${case_dir}/bin:${ORIGINAL_PATH}" \
         "${case_dir}/bin/omp" --version >/dev/null
-    [ -s "${case_dir}/first-data/bash-completion/completions/omp" ] || fail "first-use --version skipped bootstrap"
+    [ ! -e "${case_dir}/first-data" ] || fail "version bootstrapped retired completions"
 fi
 
 printf 'All shell installer tests passed.\n'

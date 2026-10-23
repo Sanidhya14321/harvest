@@ -26,7 +26,6 @@ pub use harvest_terminal as terminal;
 mod search;
 mod session_context;
 pub mod session_format;
-mod shell;
 mod streaming;
 pub mod tools;
 

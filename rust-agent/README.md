@@ -30,8 +30,10 @@ cargo run --locked -p harvest-omp --bin harvest -- \
 
 Provider configuration currently uses flags, then `OMP_MODEL`, `OMP_BASE_URL`,
 `OMP_API_KEY`/`OPENAI_API_KEY`, then the prototype's `.omp/config.toml`.
-Help and version never install shell integration. Explicit setup is
-`harvest completions bash --install`.
+Help and version never install shell integration. Executable shell completion and
+bootstrap generation is retired; `harvest completions` returns migration guidance
+without emitting scripts or installing files. Native in-application completion
+remains under migration. Native archives/package managers retain real command aliases.
 
 New runs create session-v3 logs at `.omp/session.jsonl`; subsequent runs resume
 that log. Existing headerless prototype logs are rejected and preserved. V1/v2

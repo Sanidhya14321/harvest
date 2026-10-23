@@ -7,7 +7,6 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
-use clap_complete::{Shell, generate};
 use clap_mangen::Man;
 
 use crate::{
@@ -15,7 +14,6 @@ use crate::{
 	config::{self, Overrides},
 	provider::{HttpModel, Model},
 	session_engine::{SessionEngine, SessionEngineOptions},
-	shell,
 };
 
 #[derive(Debug, Parser)]
@@ -62,8 +60,11 @@ enum Commands {
 	Tools,
 	#[command(about = "Inspect compatible session JSONL without changing its source")]
 	Session(SessionArgs),
-	#[command(about = "Print or install shell completions")]
-	Completions(CompletionArgs),
+	#[command(name = "completions", hide = true, disable_help_flag = true)]
+	RetiredCompletions {
+		#[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+		arguments: Vec<std::ffi::OsString>,
+	},
 	#[command(about = "Print the manual page")]
 	Man,
 	#[command(about = "Retrieve and organize project and user brains")]
@@ -359,15 +360,6 @@ struct RunArgs {
 	max_steps: Option<u32>,
 }
 
-#[derive(Debug, clap::Args)]
-struct CompletionArgs {
-	shell:     Option<String>,
-	#[arg(long)]
-	install:   bool,
-	#[arg(long)]
-	automatic: bool,
-}
-
 pub(crate) fn execute() -> Result<u8> {
 	let parsed = Cli::try_parse();
 	match parsed {
@@ -429,7 +421,11 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		},
 		Commands::Tools => tools(),
 		Commands::Session(args) => inspect_session(args),
-		Commands::Completions(args) => completions(args),
+		Commands::RetiredCompletions { .. } => bail!(
+			"Executable shell completion and bootstrap scripts are retired by the Rust-only \
+			 migration. Use harvest --help for available commands. Native in-application completion \
+			 remains under migration; see docs/rust-migration/SCOPE.md."
+		),
 		Commands::Man => manual(),
 		Commands::Brain(args) => crate::brain_cli::execute(args),
 		Commands::Organize(args) => crate::brain_cli::organize_command(args),
@@ -765,43 +761,6 @@ fn tools() -> Result<u8> {
 	Ok(0)
 }
 
-fn completions(args: CompletionArgs) -> Result<u8> {
-	let name = args
-		.shell
-		.or_else(shell::detected_shell)
-		.context("could not detect a supported shell; name one explicitly")?;
-	let script = completion_script(&name)?;
-	if args.install || args.automatic {
-		let layout = process_layout()?;
-		let path = shell::install(&name, &layout, &script)?;
-		writeln!(io::stdout(), "{}", path.display())?;
-		return Ok(0);
-	}
-	write!(io::stdout(), "{script}")?;
-	Ok(0)
-}
-
-pub(crate) fn completion_script(shell: &str) -> Result<String> {
-	let mut command = Cli::command();
-	let mut script = Vec::new();
-	generate(clap_shell(shell)?, &mut command, "omp", &mut script);
-	String::from_utf8(script).context("the completion script was not valid UTF-8")
-}
-
-fn process_layout() -> Result<shell::Layout> {
-	let home = env::var_os("HOME")
-		.or_else(|| env::var_os("USERPROFILE"))
-		.map(PathBuf::from)
-		.context("HOME is not set")?;
-	let data = env::var_os("XDG_DATA_HOME").map_or_else(|| home.join(".local/share"), PathBuf::from);
-	let state = env::var_os("XDG_STATE_HOME")
-		.map_or_else(|| home.join(".local/state"), PathBuf::from)
-		.join("omp");
-	// nosemgrep: rust.lang.security.current-exe.current-exe
-	let executable = env::current_exe().context("failed to locate the omp executable")?;
-	Ok(shell::Layout { home, data, state, executable })
-}
-
 fn manual() -> Result<u8> {
 	let mut page = Vec::new();
 	Man::new(Cli::command())
@@ -810,15 +769,4 @@ fn manual() -> Result<u8> {
 	let text = String::from_utf8(page).context("the manual page was not valid UTF-8")?;
 	write!(io::stdout(), "{text}")?;
 	Ok(0)
-}
-
-fn clap_shell(shell: &str) -> Result<Shell> {
-	match shell {
-		"bash" => Ok(Shell::Bash),
-		"zsh" => Ok(Shell::Zsh),
-		"fish" => Ok(Shell::Fish),
-		"powershell" | "pwsh" => Ok(Shell::PowerShell),
-		"elvish" => Ok(Shell::Elvish),
-		_ => bail!("unsupported shell {shell}"),
-	}
 }

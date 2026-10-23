@@ -160,7 +160,7 @@ try {
     $actualHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
     Assert-Equal -Expected $expectedHash -Actual $actualHash -Message "installed binary hash"
     Assert-Equal -Expected $expectedHash -Actual (Get-FileHash -LiteralPath (Join-Path $binDir "harvest.exe") -Algorithm SHA256).Hash -Message "installed harvest alias hash"
-    Assert-Equal -Expected "completions powershell --install --automatic" -Actual ([IO.File]::ReadAllText($env:OMP_TEST_COMPLETION_LOG)) -Message "completion installation arguments"
+    if (Test-Path -LiteralPath $env:OMP_TEST_COMPLETION_LOG) { throw "installer executed the downloaded binary for retired completions" }
     Assert-Contains -Needle "https://github.com/Sanidhya14321/harvest/releases/download/v1.2.3/$global:OmpTestAsset" -Path $DownloadsLog
     Assert-Contains -Needle "verified SHA-256 checksum" -Path (Join-Path $TestRoot "successful-install.log")
 

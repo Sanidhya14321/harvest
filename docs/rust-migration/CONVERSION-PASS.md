@@ -257,6 +257,42 @@ compiler/format/ownership evidence uses ignored
 `target/migration/conversion-config-owner-*`; no behavioral/installed/platform or
 complete-source/capability claim is made.
 
+## Current native completion retirement
+
+Owner: `application:conversion-first`; base `c4aef9a`. Approved contract:
+`SCOPE.md`/`compat:shell-completion-scripts` retire owned executable shell completion
+and bootstrap artifacts; native in-application completion remains retained. Inputs:
+`rust-agent/src/{cli,shell}.rs`, CLI tests, Cargo dependency, both Rust-candidate
+installer scripts and their test harnesses. Connections reviewed: both installers
+invoked native completion installation after moving binaries and would abort on
+its retirement; those direct calls are removed while checksum/alias/PATH handling
+is retained. All four retained script rows transfer to this task as pending
+retirements, with their remaining executable runtime/test ownership explicit.
+
+Written: hidden native `completions` rejection accepts legacy arguments and emits
+no script/installation; removes generator/helpers and `clap_complete`; deletes
+shell.rs and its retired implementation-specific tests. CLI and installer tests
+now expect rejection/no generation. Native archives retain both real command
+aliases. Manual/help remain. Existing installed user files are untouched. Retained
+command completion is honestly absent, not partially implemented by a deprecated
+shell generator. See distribution.md for exact boundaries and historical evidence.
+
+The JavaScript-eval dependency review confirms its worker/runtime is still shared
+with browser/computer and the eval tool/code-mode bridge; it cannot yet be removed.
+Preserve that existing blocker and port its named native consumers first. This
+review does not retire or certify those unrelated workflows.
+
+Recovery: revert this continuation to c4aef9a. Stabilization: native legacy argument
+variants return nonzero/empty stdout/no filesystem writes; native help/version/man
+and packaged aliases work; both installers succeed without running downloaded
+completion code and retain checksum/architecture/PATH behavior. Updated tests are
+not executed in conversion-first phase. Use `cargo xtask test -p harvest-omp`, then
+owned installer/platform workflows during consolidation. Retire remaining TS shell
+generator and shell/PowerShell installer/test sources only after native replacements
+are connected and their required evidence exists. Logs/receipt:
+`target/migration/conversion-shell-retirement-*`. No verified source-removal,
+capability or completed retirement claim is advanced.
+
 ## Stabilization queue (deferred, not passed)
 
 - [ ] Plugin frame/handshake/version/schema/name/identity bounds and corruption.
@@ -411,7 +447,7 @@ retirements are listed separately from implemented features.
 | `command:bench` | absent | unverified | `migrate:application` |
 | `command:cleanse` | absent | unverified | `migrate:application` |
 | `command:commit` | absent | unverified | `migrate:application` |
-| `command:completions` | partial | unverified | `migrate:application` |
+| `command:completions` | absent | unverified | `migrate:application` |
 | `command:__complete` | absent | unverified | `migrate:application` |
 | `command:compress` | absent | unverified | `migrate:application` |
 | `command:config` | partial | unverified | `application:conversion-first` |

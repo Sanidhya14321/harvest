@@ -209,23 +209,18 @@
     {
       "id": "command:completions",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/cli.rs",
-          "rust-agent/src/shell.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/tests/cli.rs",
-          "rust-agent/src/shell.rs"
+          "rust-agent/tests/cli.rs"
         ]
       },
       "installation": "experimental-rust-cli",
       "legacy": {
         "paths": [
-          "packages/coding-agent/src/commands/"
+          "packages/coding-agent/src/cli/completion-gen.ts"
         ],
         "removable": false
       },

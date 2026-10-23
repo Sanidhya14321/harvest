@@ -73,7 +73,6 @@ harvest-browser = { path = "../crates/harvest-browser" }
 anyhow.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap.workspace = true
-clap_complete = "4.5.65"
 clap_mangen = "0.2.31"
 flume = { workspace = true, optional = true }
 harvest-brain = { path = "../crates/harvest-brain" }
