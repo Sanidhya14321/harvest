@@ -57,13 +57,8 @@ The full native TUI suite also has unresolved contracts; see
 `tasks/LEGACY-TERMINAL-CONTRACTS.md`. Keep that failure and whole-addon lint
 failures visible alongside passing DOCX/host checks.
 
-Execution split: the supervising agent selects/contracts/reviews bounded slices;
-OpenCode performs their code edits and scoped tests in an isolated worktree.
-The first assignment is `tasks/GEN-NIX.md`; it owns the two inherited Nix source
-rows. Review the resulting diff before final commits/pushes. No model output or
-claimed test result alone advances the source-removal gate.
-
-OpenCode connection blocker: the first `tooling:gen-nix` run failed with an HTTP
-proxy 403 before editing. Its reviewed task remains blocked pending access to
-OpenCode's API or an accessible configured server/provider. See GEN-NIX.md for
-the exact execution checkpoint; do not claim that delegation completed the port.
+Execution mode: direct implementation, per the user's latest instruction.
+Use PLAYBOOK.md's execution-batch rules: connected native Rust behavior, shared
+engines, deduplicated focused checks and one final verification per frozen batch.
+The OpenCode request failed before edits and that execution approach is cancelled;
+its network connection is no longer a migration blocker.

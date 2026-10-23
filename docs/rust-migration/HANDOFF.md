@@ -8,13 +8,20 @@ The normal application still starts in TypeScript. No whole-product parity or
 distribution cutover is claimed. Existing browser/WASM proofs do not satisfy the
 new zero-JavaScript target.
 
-The user now wants the supervisor to own thinking/review and OpenCode to perform
-code changes. `tooling:gen-nix` is the first reviewed assignment; two inherited
-Nix rows were transferred to it. OpenCode 1.19.4 and an isolated worktree are set
-up, but its DeepSeek V4.1 Flash request failed with proxy HTTP 403 before edits.
-No paid-provider credentials are configured. Resume the card once OpenCode API
-access or an accessible configured server/provider is available. Do not bypass
-network policy or silently substitute supervisor code edits for this delegation.
+Direct implementation resumed at the user's request; the OpenCode approach is
+cancelled. Use the execution-batch rules in PLAYBOOK.md to avoid per-file binding
+rebuilds and repeated whole-workspace tests. Scope and acceptance remain strict.
+
+Completed **`tooling:gen-nix`**: the inherited Rust command now preserves the
+legacy line-anchored version stamp contract and ignores non-executable PATH
+entries. Rust normalization tests and compiled-CLI tests exercise native generator,
+Nix development-shell and portable fallback argument/working-directory behavior,
+failure propagation, existing-output preservation and future-version rejection.
+All 125 xtask tests and strict Clippy pass. The external-generator fixture is Rust;
+its temporary PATH has no installed language runtime. This proves orchestration,
+not the third-party generator's Nix semantics. Bun fallback remains transitional.
+Two inherited source rows are verified; the other inherited removals remain
+pending. No native-addon rebuild is needed for this xtask-only batch.
 
 Imported concurrent checkpoint **`6eefffc`**, preserving all 28 intervening commits
 and the new `MIGRATION_CHECKLIST.md` entry point. Rust wire types and tooling ports

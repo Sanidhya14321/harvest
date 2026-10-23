@@ -2,7 +2,7 @@
 use std::{env, fs, process::Command};
 
 pub fn normalize_lockfile_version(contents: &str) -> anyhow::Result<String> {
-	let re = regex::Regex::new(r#"(\s*"lockfileVersion":\s*)(\d+)(,)"#)?;
+	let re = regex::Regex::new(r#"(?m)^(\s*"lockfileVersion":\s*)(\d+)(,)"#)?;
 	let caps = re
 		.captures(contents)
 		.ok_or_else(|| anyhow::anyhow!("bun.lock is missing a lockfileVersion stamp"))?;
@@ -29,17 +29,35 @@ pub fn normalize_generated_nix(contents: &str) -> String {
 	format!("{}\n", contents.trim_end_matches(['\r', '\n']))
 }
 
+fn executable(path: &std::path::Path) -> bool {
+	let Ok(metadata) = path.metadata() else {
+		return false;
+	};
+	if !metadata.is_file() {
+		return false;
+	}
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::PermissionsExt;
+		metadata.permissions().mode() & 0o111 != 0
+	}
+	#[cfg(not(unix))]
+	{
+		true
+	}
+}
+
 fn find_executable(command: &str) -> Option<String> {
 	let path_var = env::var_os("PATH")?;
 	for dir in env::split_paths(&path_var) {
 		let candidate = dir.join(command);
-		if candidate.is_file() {
+		if executable(&candidate) {
 			return Some(candidate.to_string_lossy().into_owned());
 		}
 		#[cfg(windows)]
 		{
 			let candidate = dir.join(format!("{command}.exe"));
-			if candidate.is_file() {
+			if executable(&candidate) {
 				return Some(candidate.to_string_lossy().into_owned());
 			}
 		}
@@ -123,4 +141,32 @@ pub fn execute() -> anyhow::Result<()> {
 		fs::write(&output_path, &normalized)?;
 	}
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{normalize_generated_nix, normalize_lockfile_version};
+
+	#[test]
+	fn lock_restamping_preserves_every_other_byte_and_rejects_unsupported_or_missing_stamps() {
+		let version_two = "{\r\n  \"lockfileVersion\": 2,\r\n  \"workspaces\": {},\r\n}\r\n";
+		assert_eq!(
+			normalize_lockfile_version(version_two).unwrap(),
+			version_two.replacen(": 2,", ": 1,", 1)
+		);
+		let version_one = version_two.replacen(": 2,", ": 1,", 1);
+		assert_eq!(normalize_lockfile_version(&version_one).unwrap(), version_one);
+		for invalid in ["{}\n", "prefix \"lockfileVersion\": 2,\n", "{\n \"lockfileVersion\": 3,\n}"]
+		{
+			assert!(normalize_lockfile_version(invalid).is_err());
+		}
+	}
+
+	#[test]
+	fn generated_output_canonicalizes_only_trailing_line_endings() {
+		for input in ["}", "}\n", "}\r\n\r\n"] {
+			assert_eq!(normalize_generated_nix(input), "}\n");
+		}
+		assert_eq!(normalize_generated_nix("}\r\n "), "}\r\n \n");
+	}
 }

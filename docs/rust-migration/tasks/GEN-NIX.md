@@ -1,7 +1,7 @@
 # tooling:gen-nix — verify and complete the inherited Rust generator
 
-Execution owner: OpenCode implementation instance; the supervising agent owns
-architecture, review and final commits. Prerequisites: `control:playbook` and
+Execution owner: direct implementation by the primary agent, per the latest
+user instruction. The OpenCode attempt below is historical and cancelled. Prerequisites: `control:playbook` and
 `tooling:host-detect`. Source IDs: `scripts/gen-nix-bun.ts` and
 `scripts/gen-nix-bun.test.ts`. Both were deleted at `6eefffc` without sufficient
 verification. This bounded task removes them from the inherited-removal backlog
@@ -108,3 +108,22 @@ Resume after the environment permits OpenCode's API or the user supplies an
 accessible authenticated OpenCode server/provider. Keep architecture/review with
 the supervisor and code changes with OpenCode as requested; inspect the diff and
 independently rerun the card's checks before advancing the two source rows.
+
+## Direct implementation completion
+
+The user cancelled external-model delegation. The direct Rust implementation
+restores the legacy line anchor, preserves CRLF lockfile bytes except the version
+stamp, rejects future/missing stamps, checks executable permissions on Unix and
+retains deterministic generator precedence. Two normalization contracts and three
+compiled-CLI integration contracts cover all three invocation branches, native
+fixture output, selected-generator failure, no silent fallback, existing-output
+preservation, pre-invocation future-version refusal and non-executable shadowing.
+The fixture is Rust-only and subprocess PATH contains only its native aliases.
+
+`cargo clippy --locked -p xtask --all-targets --all-features -- -D warnings`
+and `cargo xtask test -p xtask` pass (125 tests plus doctest pass). The legacy
+source/tests remain deleted only after their meaningful contracts have Rust
+coverage. This task verifies Linux orchestration; third-party generator semantics
+and promised platform release checks remain separate. Global migration remains
+failed on other inherited deletions. No addon or unrelated legacy suite rebuild
+is required for this xtask-only slice.

@@ -4,6 +4,37 @@ Work on `ts-to-rust`. Preserve its existing history and user changes. Commit one
 verified behavior slice at a time; do not publish, release or merge to `main` as
 part of migration work. [SCOPE.md](SCOPE.md) records the user-approved target.
 
+## Execution batches for throughput
+
+Use the existing dependency graph to group connected behavior into bounded
+subsystem batches. Prefer a complete native Rust consumer path using existing
+engines; avoid introducing a new N-API adapter for each source. Keep the complete
+retained behavior target and existing completion gates. These rules change work
+scheduling, not acceptance or approved retirements.
+
+1. Select dependency-ready tasks sharing a Rust crate or runtime boundary. Capture
+   their legacy contracts together and define the complete batch deletion set.
+2. Implement against ordinary Rust engines and the native CLI/session/SDK first.
+   Add a transitional binding only when the batch's identified legacy consumer
+   actually needs one. Preserve unmoved consumers and their sources.
+3. Use focused checks while editing. Deduplicate the same Cargo/package checks
+   across the batch. Rebuild the addon once at the end only if its consumed Rust
+   engine or binding changed; xtask-only changes do not rebuild it.
+4. Finalize tracked contracts, ledgers and handoff before the final verification
+   pass. Run that pass once against the frozen batch; rerun only checks affected
+   by a correction. Keep receipts outside the source fingerprint.
+5. Record unresolved broad-suite failures without repeatedly rerunning an
+   unchanged reproduction. Run full integration at consumer cutovers and final
+   acceptance, and whenever a changed shared boundary justifies it. Do not label
+   focused checks as a full transition or skip the verification plan's required
+   broad checks when claiming that transition passed.
+6. Commit and push each coherent verified batch. Never delete shared files until
+   their last consumer moves, manufacture parity from generated stubs, or replace
+   the promised product with a smaller one to meet a deadline.
+
+Direct implementation is active again at the user's request. The unsuccessful
+OpenCode assignment is historical; no external model connection blocks execution.
+
 ## Start a fresh session
 
 1. Read root `AGENTS.md`, this file, `SCOPE.md`, and `HANDOFF.md`.

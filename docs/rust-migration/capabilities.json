@@ -6896,7 +6896,7 @@
       {
         "id": "tooling:gen-nix",
         "kind": "migration",
-        "state": "blocked",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "tooling",
         "depends_on": [
@@ -6911,9 +6911,11 @@
           "playbook-check"
         ],
         "evidence": [
-          "Actual OpenCode session ses_e98a0ea38ffei7LJqyF20APVxl exited 1 with an HTTP proxy 403 before any repository edit. Assignment and JSON/error logs are in /tmp/harvest-opencode; reviewed GEN-NIX.md is persistent."
-        ],
-        "blocker": "OpenCode 1.19.4 installed and assigned to isolated opencode/gen-nix worktree using opencode/deepseek-v4.1-flash-free, but its first model request failed: Proxy refused to open a tunnel: 403 Forbidden. No implementation edits occurred. Enable opencode.ai access or configure an accessible OpenCode server/provider, then resume the reviewed card."
+          "Direct implementation resumed after the user cancelled the blocked OpenCode approach; no external model edits were made.",
+          "cargo xtask test -p xtask: all 125 contracts passed; strict Clippy and formatting passed.",
+          "Rust-only external generator fixtures exercise the compiled CLI with native-only PATH for bun2nix, nix-develop and portable invocation branches, lock restamping, canonical output, selected-generator failure and unsupported versions.",
+          "Both legacy source rows now have complete replacement contracts and verified Linux orchestration; actual third-party generator semantics and cross-platform release checks remain separate."
+        ]
       }
     ]
   }
