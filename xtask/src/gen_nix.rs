@@ -1,20 +1,19 @@
 //! Generate nix/bun.nix from bun.lock using the pinned bun2nix input.
-use std::{
-	env,
-	fs,
-	process::Command,
-};
+use std::{env, fs, process::Command};
 
 pub fn normalize_lockfile_version(contents: &str) -> anyhow::Result<String> {
 	let re = regex::Regex::new(r#"(\s*"lockfileVersion":\s*)(\d+)(,)"#)?;
-	let caps = re.captures(contents).ok_or_else(|| anyhow::anyhow!("bun.lock is missing a lockfileVersion stamp"))?;
+	let caps = re
+		.captures(contents)
+		.ok_or_else(|| anyhow::anyhow!("bun.lock is missing a lockfileVersion stamp"))?;
 	let version: u32 = caps[2].parse()?;
 	if version <= 1 {
 		return Ok(contents.to_owned());
 	}
 	if version > 2 {
 		anyhow::bail!(
-			"bun.lock is lockfileVersion {version}, which changes content (scoped overrides) and cannot be downgraded for bun2nix"
+			"bun.lock is lockfileVersion {version}, which changes content (scoped overrides) and \
+			 cannot be downgraded for bun2nix"
 		);
 	}
 	let start = caps.get(0).unwrap().start();

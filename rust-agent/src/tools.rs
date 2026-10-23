@@ -86,7 +86,7 @@ fn invoke_authorized(
 	let name = call.function.name.as_str();
 	let arguments = call.function.arguments.as_str();
 	let output = match name {
-		"read" => read_file(root, &parse::<ReadArgs>(arguments)?)?,
+		"read" => read_file(root, &parse::<ReadArgs>(arguments)?, cancellation)?,
 		"write" => write_file(root, &parse::<WriteArgs>(arguments)?)?,
 		"edit" => crate::edit::replace(root, &parse::<EditArgs>(arguments)?, cancellation)?,
 		"grep" => crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, cancellation)?,
@@ -123,10 +123,20 @@ fn parse<T: for<'de> Deserialize<'de>>(arguments: &str) -> Result<T> {
 	serde_json::from_str(arguments).context("tool arguments are not valid JSON")
 }
 
-fn read_file(root: &Path, args: &ReadArgs) -> Result<String> {
+fn read_file(
+	root: &Path,
+	args: &ReadArgs,
+	cancellation: &harvest_runtime::cancel::CancelToken,
+) -> Result<String> {
 	let fs = JailedFs::open(root)?;
 	let path = fs.relative(Path::new(&args.path))?;
 	let bytes = fs.read(&path, MAX_FILE_BYTES)?;
+	if path
+		.extension()
+		.is_some_and(|ext| ext.eq_ignore_ascii_case("docx"))
+	{
+		return harvest_media::docx::markdown(&bytes, cancellation);
+	}
 	if bytes.contains(&0) {
 		bail!("{} is not a text file", path.display());
 	}
@@ -330,6 +340,34 @@ mod tests {
 			.unwrap_err();
 		assert!(error.to_string().contains("requires the full Rust profile"));
 		assert!(!root.path().join("blocked.txt").exists());
+	}
+
+	#[test]
+	fn read_docx_extracts_text_without_modifying_source_and_rejects_bad_input() {
+		let root = tempfile::tempdir().unwrap();
+		let input = include_bytes!("../../crates/harvest-media/tests/fixtures/docx/formatting.docx");
+		std::fs::write(root.path().join("note.DOCX"), input).unwrap();
+		let text = invoke(root.path(), &call("read", r#"{"path":"note.DOCX"}"#)).unwrap();
+		assert!(text.contains("Title & More"));
+		assert!(text.contains("Foot"));
+		assert_eq!(std::fs::read(root.path().join("note.DOCX")).unwrap(), input);
+		std::fs::write(root.path().join("bad.docx"), b"invalid archive").unwrap();
+		assert!(invoke(root.path(), &call("read", r#"{"path":"bad.docx"}"#)).is_err());
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn read_docx_cannot_follow_a_symlink_outside_workspace() {
+		let root = tempfile::tempdir().unwrap();
+		let outside = tempfile::tempdir().unwrap();
+		std::fs::write(
+			outside.path().join("secret.docx"),
+			include_bytes!("../../crates/harvest-media/tests/fixtures/docx/formatting.docx"),
+		)
+		.unwrap();
+		std::os::unix::fs::symlink(outside.path().join("secret.docx"), root.path().join("leak.docx"))
+			.unwrap();
+		assert!(invoke(root.path(), &call("read", r#"{"path":"leak.docx"}"#)).is_err());
 	}
 
 	#[test]

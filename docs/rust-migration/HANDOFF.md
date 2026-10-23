@@ -8,6 +8,45 @@ The normal application still starts in TypeScript. No whole-product parity or
 distribution cutover is claimed. Existing browser/WASM proofs do not satisfy the
 new zero-JavaScript target.
 
+Imported concurrent checkpoint **`6eefffc`**, preserving all 28 intervening commits
+and the new `MIGRATION_CHECKLIST.md` entry point. Rust wire types and tooling ports
+remain available. Protocol is still in progress until `packages/wire` consumers
+move and installed behavior passes; storage/provider tasks wait behind that work.
+
+**Source-removal blocker:** `cargo xtask migration` rejects 37 inherited deletions
+without complete contracts and verified replacement/retirement evidence. Invalid
+`implementation: verified` values and unsupported verified claims were reset to
+pending review; removed files stay removed and their history is preserved.
+`tasks/CONCURRENT-REMOVALS.md` lists each source and the first concrete review.
+Do not make a false green gate or count these removals as completed migration.
+
+Completed bounded slices: **`media:docx`** moves ZIP/XML/styles/lists/tables/footnotes
+and image rendering into `harvest_media::docx`, shared by the native CLI, jailed
+file reader, SDK and a temporary N-API callback bridge for Markit. Captured legacy
+fixtures match exactly; malformed/bounded/cancelled operations fail explicitly.
+The two superseded private TS engines are removed; the public TS adapter remains
+pending with its final application/Markit consumers. Media remains partial.
+
+**`tooling:host-detect`** repairs the concurrent port's Rust/Node architecture and
+JSON naming mismatch, adds platform/arch fields needed by the Bazel wrapper, and
+rejects unsupported hosts. Runtime CPU detection requires OS instruction support;
+no sysctl/PowerShell helper is needed. Serialization tests cover host branches;
+installed checks here cover Linux only, not all promised platforms.
+
+The merged checkpoint passes 272 Rust contracts plus the media doctest, eight
+copied-binary CLI contracts, 11 DOCX/Markit host checks, both affected TS
+typechecks, strict media/application/xtask Clippy, and all 49 legacy workspace
+groups. The addon is rebuilt through the corrected detector (139 exports).
+
+Verification logs/receipts are under `target/migration/docx-*`,
+`host-detect-*` and `merged-control-tests.log`. The optional strict whole-addon
+Clippy check still fails in unchanged PTY/portable-terminal/Wayland/OAuth code;
+`docx-napi-clippy.log` retains all 14 diagnostics. No lint was disabled. The media,
+application and xtask strict checks are separate. The full native run also fails six TUI contracts (reproduced in two files); see
+`tasks/LEGACY-TERMINAL-CONTRACTS.md`. Regression status is unproven; do not call
+them baseline-matched. The older full transition and its 22 singleton failures
+remain failed; targeted DOCX checks do not replace them.
+
 Completed **`browser:cdp-core`**: `harvest-browser` provides bounded native CDP
 control of a marked, locked persistent Chrome profile. Native CLI, public SDK,
 synchronous sessions and asynchronous sessions use the same engine and host

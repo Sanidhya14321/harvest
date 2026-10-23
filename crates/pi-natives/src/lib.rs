@@ -33,6 +33,7 @@ pub mod deccara;
 pub mod desktop;
 pub mod devicecheck;
 pub mod diff;
+pub mod docx;
 pub mod edit;
 pub mod fd;
 pub mod file_lock;

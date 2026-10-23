@@ -4,13 +4,20 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Shared HTML conversion and safe SVG previews for Harvest"
+description = "Shared bounded document, image and terminal media conversion for Harvest"
 
 [lints]
 workspace = true
 
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
+harvest-runtime = { path = "../harvest-runtime" }
+regex.workspace = true
+roxmltree = "0.21.1"
+serde.workspace = true
+serde_json.workspace = true
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 html-to-markdown-rs.workspace = true
 resvg.workspace = true
 icy_sixel.workspace = true
@@ -19,6 +26,4 @@ image = { workspace = true, features = ["bmp"] }
 zune-jpeg.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
-serde_json.workspace = true
 tempfile = "3"

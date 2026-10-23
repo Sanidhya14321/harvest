@@ -64,7 +64,10 @@ const hostDetect = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-d
 	encoding: "utf8",
 });
 if (hostDetect.status !== 0) throw new Error(hostDetect.stderr || "host-detect failed");
-const localAddon = JSON.parse(hostDetect.stdout.trim()) as { filename: string; x64Variant: "modern" | "baseline" | null };
+const localAddon = JSON.parse(hostDetect.stdout.trim()) as {
+	filename: string;
+	x64Variant: "modern" | "baseline" | null;
+};
 const effectiveVariant = localAddon.x64Variant;
 const variantSuffix = effectiveVariant ? `-${effectiveVariant}` : "";
 

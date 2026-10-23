@@ -339,3 +339,47 @@ fn retired_browser_relay_never_installs_or_starts_a_service() {
 		);
 	}
 }
+
+#[test]
+fn document_conversion_preserves_html_and_rejects_invalid_or_escaping_inputs() {
+	let root = or_abort(tempfile::tempdir());
+	let input = include_bytes!("../../crates/harvest-media/tests/fixtures/docx/formatting.docx");
+	or_abort(fs::write(root.path().join("note.docx"), input));
+	let expected: serde_json::Value = or_abort(serde_json::from_str(include_str!(
+		"../../crates/harvest-media/tests/fixtures/docx/formatting.json"
+	)));
+	let mut command = omp();
+	command
+		.args(["document", "--workspace"])
+		.arg(root.path())
+		.args(["--format", "json", "note.docx"]);
+	let output = command.assert().success().get_output().stdout.clone();
+	assert_eq!(or_abort(serde_json::from_slice::<serde_json::Value>(&output)), expected);
+	keep(
+		omp()
+			.args(["document", "--workspace"])
+			.arg(root.path())
+			.arg("note.docx")
+			.assert()
+			.success()
+			.stdout(contains("Title & More")),
+	);
+	or_abort(fs::write(root.path().join("bad.docx"), "invalid archive"));
+	keep(
+		omp()
+			.args(["document", "--workspace"])
+			.arg(root.path())
+			.arg("bad.docx")
+			.assert()
+			.failure(),
+	);
+	keep(
+		omp()
+			.args(["document", "--workspace"])
+			.arg(root.path())
+			.arg("../outside.docx")
+			.assert()
+			.failure(),
+	);
+	assert_eq!(or_abort(fs::read(root.path().join("note.docx"))), input);
+}

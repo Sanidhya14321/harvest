@@ -4055,7 +4055,8 @@
           "crates/harvest-media/src/html.rs",
           "crates/harvest-media/src/svg.rs",
           "crates/harvest-media/src/sixel.rs",
-          "rust-agent/src/lib.rs"
+          "rust-agent/src/lib.rs",
+          "crates/harvest-media/src/docx.rs"
         ]
       },
       "verification": {
@@ -4066,7 +4067,11 @@
           "crates/harvest-media/src/sixel.rs",
           "packages/natives/test/native.test.ts",
           "packages/coding-agent/test/tools/fetch-binary-dispatch.test.ts",
-          "packages/coding-agent/test/git-tui-sidebar.test.ts"
+          "packages/coding-agent/test/git-tui-sidebar.test.ts",
+          "crates/harvest-media/tests/docx.rs",
+          "packages/utils/test/docx.test.ts",
+          "packages/coding-agent/test/utils/markit-cache.test.ts",
+          "rust-agent/tests/cli.rs"
         ]
       },
       "installation": "experimental-rust-sdk",
@@ -5884,7 +5889,7 @@
       {
         "id": "migrate:protocol",
         "kind": "migration",
-        "state": "done",
+        "state": "in_progress",
         "review": "reviewed",
         "work_unit": "protocol",
         "depends_on": [
@@ -5900,7 +5905,8 @@
         "evidence": [
           "Ported collab wire types/constants to crates/harvest-protocol/src/wire.rs with serde round-trip tests.",
           "cargo fmt -p harvest-protocol -- --check; cargo clippy --locked -p harvest-protocol --all-targets --all-features -- -D warnings; cargo test -p harvest-protocol pass.",
-          "TS packages/wire ownership transferred to migrate:browser for eventual consumer switch-over/deletion."
+          "TS packages/wire ownership transferred to migrate:browser for eventual consumer switch-over/deletion.",
+          "Rust wire types are implemented, but packages/wire still serves TypeScript/browser consumers; source ownership remains with this task until actual switch-over and installed verification."
         ]
       },
       {
@@ -5968,7 +5974,7 @@
       {
         "id": "migrate:storage",
         "kind": "migration",
-        "state": "ready",
+        "state": "planned",
         "review": "reviewed",
         "work_unit": "storage",
         "depends_on": [
@@ -6015,7 +6021,7 @@
       {
         "id": "migrate:catalog-providers",
         "kind": "migration",
-        "state": "ready",
+        "state": "planned",
         "review": "reviewed",
         "work_unit": "catalog-providers",
         "depends_on": [
@@ -6794,6 +6800,98 @@
         "evidence": [
           "Approved Chrome extension/relay interface removed after native browser workflow verification at 1786b93. Eighteen source rows are verified retirements. Copied native CLI runs browser JSONL/profile reopen without language runtimes and seven installed CLI contracts including actionable retired-command rejection pass. All 112 core application tests and strict Clippy pass. Legacy argv/settings/browser contracts and typecheck pass; Bun lock and Nix workspace outputs regenerated. Native browser capability remains partial; unrelated retained browser consumers remain pending."
         ]
+      },
+      {
+        "id": "media:docx",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook",
+          "tooling:host-detect"
+        ],
+        "card": "docs/rust-migration/tasks/MEDIA-DOCX.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Four actual 043709e DOCX documents and legacy API results captured before replacement; exact HTML/diagnostic comparison plus style, malformed ZIP/XML, DTD/depth, declared-size/table bounds, image attributes, cancellation and cyclic inheritance contracts pass.",
+          "cargo xtask test -p harvest-media -p harvest-omp --no-default-features --features core: 136 tests plus one doctest passed after integrating 6eefffc; strict media/application Clippy passed.",
+          "Copied native CLI with PATH=/nonexistent: eight installed CLI contracts pass, including DOCX JSON parity, Markdown, errors and unchanged source; jailed read tool refuses outside symlinks.",
+          "Rebuilt merged native addon; 11 DOCX/Markit tests including actual PNG extraction and callback errors/cancellation pass; native/coding-agent typechecks pass; all 49 legacy workspace groups pass.",
+          "Two private TS engines (847 lines) removed after their consumers moved. Public TS callback bridge and Markit remain pending. Full native TUI suite, whole-addon Clippy, inherited removal gate and previous singleton transition remain failed; no full media/product parity claim."
+        ]
+      },
+      {
+        "id": "control:concurrent-removals",
+        "kind": "control",
+        "state": "blocked",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/CONCURRENT-REMOVALS.md",
+        "capabilities": [],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Preserved concurrent commits through 6eefffc. Invalid implementation=verified and unsupported verified removal claims are reset to honest pending review; original removal evidence remains in Git."
+        ],
+        "blocker": "37 removed source entries lack complete contracts/replacement or approved-retirement evidence; cargo xtask migration rejects the first unverified removal. See the card for exact sources and recovery."
+      },
+      {
+        "id": "tooling:host-detect",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/HOST-DETECT.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask -p harvest-protocol: 136 contracts passed; strict xtask Clippy and formatting passed.",
+          "Copied compiled detector with PATH=/nonexistent emits Node platform/arch, camelCase x64Variant and exact addon name. Native builder rebuilt/installed linux-x64-modern and regenerated 139 exports; actual DOCX/Markit imports load the addon successfully.",
+          "Supported host JSON branches are unit-tested; installed proof is Linux only. Wider native suite remains failed in unchanged TUI contracts, tracked separately."
+        ]
+      },
+      {
+        "id": "control:legacy-terminal-contracts",
+        "kind": "control",
+        "state": "blocked",
+        "review": "reviewed",
+        "work_unit": "terminal",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-TERMINAL-CONTRACTS.md",
+        "capabilities": [],
+        "checks": [
+          "transition-native",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Full native run passed three chunks and failed TUI: 1464 passed, six failed. Direct two-file reproduction repeats all six; source-bound old-addon regression comparison remains unavailable."
+        ],
+        "blocker": "Full native TUI contracts fail in OSC 66 resize, partial escape buffering and ConPTY/kitty ownership. Establish isolated root failures and source-bound baseline, then implement the confirmed bounded prerequisite without weakening the suite."
       }
     ]
   }

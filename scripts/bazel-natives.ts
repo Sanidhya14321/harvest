@@ -234,7 +234,10 @@ async function buildLocalHostAddon(host: HostInfo, destDir: string): Promise<voi
 	const exitCode = await proc.exited;
 	if (exitCode !== 0) process.exit(exitCode || 1);
 
-	const hostDetect = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-detect"], { cwd: repoRoot, encoding: "utf8" });
+	const hostDetect = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-detect"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
 	if (hostDetect.status !== 0) throw new Error(hostDetect.stderr || "host-detect failed");
 	const detected = JSON.parse(hostDetect.stdout.trim()) as { filename: string };
 	const filename = detected.filename;
@@ -248,8 +251,12 @@ async function buildLocalHostAddon(host: HostInfo, destDir: string): Promise<voi
 
 async function main(): Promise<void> {
 	const options = parseCliArgs(process.argv.slice(2));
-	const hostDetect2 = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-detect"], { cwd: repoRoot, encoding: "utf8" });
-	const host = { platform: process.platform, arch: process.arch, avx2: hostDetect2.status === 0 ? JSON.parse(hostDetect2.stdout.trim()).avx2 : false };
+	const hostDetect2 = spawnSync("cargo", ["run", "-q", "-p", "xtask", "--", "host-detect"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	if (hostDetect2.status !== 0) throw new Error(hostDetect2.stderr || "host-detect failed");
+	const host = JSON.parse(hostDetect2.stdout.trim()) as HostInfo;
 	const destDir = options.dest ? path.resolve(options.dest) : path.join(repoRoot, "packages/natives/native");
 
 	const backend = Bun.env.OMP_NATIVE_BUILD_BACKEND?.trim();

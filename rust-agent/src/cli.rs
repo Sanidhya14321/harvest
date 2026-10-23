@@ -27,6 +27,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(about = "Convert a DOCX document to HTML, Markdown or JSON using Rust")]
+	Document(DocumentArgs),
 	#[command(name = "browser-relay", hide = true, disable_help_flag = true)]
 	RetiredBrowserRelay {
 		#[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -57,6 +59,15 @@ enum Commands {
 		alias = "/orgnize-skills"
 	)]
 	Organize(crate::brain_cli::OrganizationArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct DocumentArgs {
+	#[arg(short, long, default_value = ".")]
+	workspace: PathBuf,
+	#[arg(long, default_value = "markdown", value_parser = ["html", "markdown", "json"])]
+	format:    String,
+	file:      PathBuf,
 }
 
 #[derive(Debug, clap::Args)]
@@ -182,6 +193,24 @@ pub(crate) fn execute() -> Result<u8> {
 
 fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
+		Commands::Document(args) => {
+			let fs = harvest_runtime::JailedFs::open(&args.workspace)?;
+			let input = fs.read(&args.file, harvest_media::docx::INPUT_LIMIT)?;
+			let cancel = Default::default();
+			let text = match args.format.as_str() {
+				"markdown" => harvest_media::docx::markdown(&input, &cancel)?,
+				format => {
+					let result = harvest_media::docx::convert(&input, &Default::default(), &cancel)?;
+					if format == "json" {
+						serde_json::to_string(&result)?
+					} else {
+						result.value
+					}
+				},
+			};
+			io::stdout().lock().write_all(text.as_bytes())?;
+			Ok(0)
+		},
 		Commands::RetiredBrowserRelay { .. } => bail!(
 			"The Chrome extension relay has been removed. Use the native harvest browser --chrome \
 			 PATH --profile NEW_DIRECTORY controller. Sign in separately in that dedicated profile; \

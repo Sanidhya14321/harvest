@@ -51,10 +51,10 @@
     },
     {
       "path": "crates/pi-natives/tools/bench-natives.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -63,14 +63,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/check-glm-rankmerge.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -79,7 +79,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/gen-ctok-vocab.ts",
@@ -131,10 +131,10 @@
     },
     {
       "path": "crates/pi-natives/tools/gen-kimi-fixtures.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -143,14 +143,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/gen-openai-fixtures.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -159,7 +159,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/gen-qwen-fixtures.py",
@@ -195,10 +195,10 @@
     },
     {
       "path": "crates/pi-natives/tools/pack-deepseek.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -207,14 +207,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/pack-glm.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -223,14 +223,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/pack-kimi.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -239,14 +239,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/pack-openai.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -255,7 +255,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused native tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:primitives"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "crates/pi-natives/tools/pack-qwen.ts",
@@ -77331,35 +77331,35 @@
     },
     {
       "path": "packages/utils/src/docx/converter.ts",
-      "disposition": "review-required",
-      "implementation": "absent",
-      "behavioral_verification": "unverified",
-      "installed_verification": "unverified",
-      "legacy_removal": "retained",
-      "contract": null,
-      "consumers": null,
-      "persisted_formats": null,
-      "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "disposition": "replace",
+      "implementation": "complete",
+      "behavioral_verification": "verified",
+      "installed_verification": "verified",
+      "legacy_removal": "removed",
+      "contract": "Preserve normal DOCX HTML/diagnostics, headings, run formatting, styles, numbering, links, merged tables, footnotes and image callbacks. Explicit bounded input/ZIP/XML/render/output policy; malformed input, cancellation and invalid callback attribute names fail.",
+      "consumers": "Public packages/utils/src/docx.ts transports to the shared Rust engine for the existing Markit converter. Native CLI document command, jailed read tool and public Rust SDK call that engine directly. Private TS renderer/XML helper have no remaining consumers.",
+      "persisted_formats": "Read-only DOCX ZIP input is preserved byte-for-byte; no external relationship fetching or extraction to disk by the engine. Image callback side effects remain caller-owned.",
+      "external_dependencies": "Rust zip/roxmltree/base64 and existing Markdown engine; native candidate has no Bun/Node/Python dependency. Existing Markit still requires its tracked temporary TS/N-API callback bridge.",
+      "rust_destination": "crates/harvest-media/src/docx.rs; crates/pi-natives/src/docx.rs; rust-agent/src/{cli,tools,lib}.rs",
+      "verification_requirements": "Captured 043709e fixtures and exact HTML/diagnostics; Rust failure/bounds/cancellation tests; copied native CLI with empty PATH; jailed read tests; rebuilt addon DOCX/Markit image extraction tests and coding-agent typecheck. MEDIA-DOCX.md records commands and limitations.",
       "retirement_reason": null,
-      "task_id": "migrate:application"
+      "task_id": "media:docx"
     },
     {
       "path": "packages/utils/src/docx/xml.ts",
-      "disposition": "review-required",
-      "implementation": "absent",
-      "behavioral_verification": "unverified",
-      "installed_verification": "unverified",
-      "legacy_removal": "retained",
-      "contract": null,
-      "consumers": null,
-      "persisted_formats": null,
-      "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "disposition": "replace",
+      "implementation": "complete",
+      "behavioral_verification": "verified",
+      "installed_verification": "verified",
+      "legacy_removal": "removed",
+      "contract": "Preserve normal DOCX HTML/diagnostics, headings, run formatting, styles, numbering, links, merged tables, footnotes and image callbacks. Explicit bounded input/ZIP/XML/render/output policy; malformed input, cancellation and invalid callback attribute names fail.",
+      "consumers": "Public packages/utils/src/docx.ts transports to the shared Rust engine for the existing Markit converter. Native CLI document command, jailed read tool and public Rust SDK call that engine directly. Private TS renderer/XML helper have no remaining consumers.",
+      "persisted_formats": "Read-only DOCX ZIP input is preserved byte-for-byte; no external relationship fetching or extraction to disk by the engine. Image callback side effects remain caller-owned.",
+      "external_dependencies": "Rust zip/roxmltree/base64 and existing Markdown engine; native candidate has no Bun/Node/Python dependency. Existing Markit still requires its tracked temporary TS/N-API callback bridge.",
+      "rust_destination": "crates/harvest-media/src/docx.rs; crates/pi-natives/src/docx.rs; rust-agent/src/{cli,tools,lib}.rs",
+      "verification_requirements": "Captured 043709e fixtures and exact HTML/diagnostics; Rust failure/bounds/cancellation tests; copied native CLI with empty PATH; jailed read tests; rebuilt addon DOCX/Markit image extraction tests and coding-agent typecheck. MEDIA-DOCX.md records commands and limitations.",
       "retirement_reason": null,
-      "task_id": "migrate:application"
+      "task_id": "media:docx"
     },
     {
       "path": "packages/utils/src/dom.ts",
@@ -80671,7 +80671,7 @@
       "rust_destination": null,
       "verification_requirements": null,
       "retirement_reason": null,
-      "task_id": "migrate:browser"
+      "task_id": "migrate:protocol"
     },
     {
       "path": "packages/wire/test/constants.test.ts",
@@ -80687,7 +80687,7 @@
       "rust_destination": null,
       "verification_requirements": null,
       "retirement_reason": null,
-      "task_id": "migrate:browser"
+      "task_id": "migrate:protocol"
     },
     {
       "path": "python/omp-rpc/src/omp_rpc/__init__.py",
@@ -82387,10 +82387,10 @@
     },
     {
       "path": "scratch/benchmark_logging_event_loop.ts",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82399,14 +82399,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed scratch analysis file; no consumers.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scratch/compare_criteria_formats.ts",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82415,14 +82415,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed scratch analysis file; no consumers.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scratch/isolated_step1_benchmark.py",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82431,14 +82431,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed scratch analysis file; no consumers.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scratch/live_http_benchmark.py",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82447,14 +82447,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed scratch analysis file; no consumers.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scratch/test_live_scout.py",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82463,14 +82463,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed scratch analysis file; no consumers.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scratch/threshold_sweep.py",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82479,7 +82479,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed scratch analysis file; no consumers.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/__init__.py",
@@ -82499,10 +82499,10 @@
     },
     {
       "path": "scripts/analyze_small_edits.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82511,14 +82511,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/bash_corpus_stats.jl",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82527,7 +82527,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/bazel-natives.ts",
@@ -82739,10 +82739,10 @@
     },
     {
       "path": "scripts/ci-update-brew-formula.test.ts",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "partial",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82751,14 +82751,14 @@
       "rust_destination": "xtask/src/homebrew_tap.rs",
       "verification_requirements": "Replaced by cargo xtask tap-update; removed TS implementation and tests.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/ci-update-brew-formula.ts",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "partial",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82767,7 +82767,7 @@
       "rust_destination": "xtask/src/homebrew_tap.rs",
       "verification_requirements": "Replaced by cargo xtask tap-update; removed TS implementation and tests.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/claude-trace.ts",
@@ -82835,10 +82835,10 @@
     },
     {
       "path": "scripts/eval-bench-runs.ts",
-      "disposition": "replace",
-      "implementation": "complete",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82847,7 +82847,7 @@
       "rust_destination": "rust (pending; no current consumer)",
       "verification_requirements": "Removed unused TS analysis script; no references found.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/fix-changelogs.test.ts",
@@ -82931,10 +82931,10 @@
     },
     {
       "path": "scripts/fix-test-imports.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82943,7 +82943,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/gen-clippy-bazelrc.ts",
@@ -82963,10 +82963,10 @@
     },
     {
       "path": "scripts/gen-nix-bun.test.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "partial",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82975,14 +82975,14 @@
       "rust_destination": "xtask/src/gen_nix.rs",
       "verification_requirements": "Replaced by cargo xtask gen-nix.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/gen-nix-bun.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "partial",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -82991,23 +82991,23 @@
       "rust_destination": "xtask/src/gen_nix.rs",
       "verification_requirements": "Replaced by cargo xtask gen-nix.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/host-detect.ts",
       "disposition": "replace",
-      "implementation": "verified",
+      "implementation": "complete",
       "behavioral_verification": "verified",
       "installed_verification": "verified",
       "legacy_removal": "removed",
-      "contract": null,
-      "consumers": null,
-      "persisted_formats": null,
-      "external_dependencies": null,
+      "contract": "Emit Node platform/architecture spellings, camelCase x64Variant, AVX2 flag and exact local addon filename; reject unsupported hosts. Native runtime CPU detection also checks OS instruction support.",
+      "consumers": "scripts/bazel-natives.ts host target selection and packages/natives/scripts/build-bindings.ts addon naming consume cargo xtask host-detect JSON. Actual rebuilt addon must load successfully.",
+      "persisted_formats": "No persisted user data. JSON field names are the transitional build protocol; x64/arm64 and platform spellings preserve the prior filename contract.",
+      "external_dependencies": "Rust standard-library CPU detection; no shell helpers or Bun runtime needed to execute the compiled detector. Existing transitional build wrappers still use Bun.",
       "rust_destination": "xtask/src/host_detect.rs",
-      "verification_requirements": "Replaced by cargo xtask host-detect; build-bindings and bazel-natives updated.",
+      "verification_requirements": "Rust serialization cases for supported OS/architecture/ISA branches, unsupported-host errors, compiled detector with empty PATH, actual native builder/loader and strict Clippy. HOST-DETECT.md.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "tooling:host-detect"
     },
     {
       "path": "scripts/inline-functions.test.ts",
@@ -83075,10 +83075,10 @@
     },
     {
       "path": "scripts/merge-pr.test.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83087,14 +83087,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused merge-pr tooling.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/merge-pr.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83103,7 +83103,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused merge-pr tooling.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/musl-release.test.ts",
@@ -83123,10 +83123,10 @@
     },
     {
       "path": "scripts/rate-edit-tool.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83135,7 +83135,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/release.test.ts",
@@ -83187,10 +83187,10 @@
     },
     {
       "path": "scripts/rewrite-system-prompt.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83199,7 +83199,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/run-rs-task.ts",
@@ -83235,10 +83235,10 @@
     },
     {
       "path": "scripts/session-stats/analyze_search_relevance.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83247,7 +83247,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/session-stats/analyze_selector_reads.py",
@@ -83299,10 +83299,10 @@
     },
     {
       "path": "scripts/session-stats/harmony_backtest.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83311,14 +83311,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/session-stats/optimize_read_config.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83327,14 +83327,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/session-stats/plot_read_summarizer.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83343,14 +83343,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/session-stats/plot_tools.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83359,14 +83359,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/session-stats/read_optimizer.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83375,7 +83375,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused analysis script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/session-stats/sync.py",
@@ -83395,10 +83395,10 @@
     },
     {
       "path": "scripts/setup-npm-trust.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83407,7 +83407,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused npm trust setup script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/setup.ts",
@@ -83459,10 +83459,10 @@
     },
     {
       "path": "scripts/test-loader.mjs",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83471,14 +83471,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/tool-prompt-usage.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83487,14 +83487,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/tool_io.py",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83503,14 +83503,14 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused Python tool I/O helper.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "scripts/trace-loader.ts",
-      "disposition": "replace",
-      "implementation": "verified",
-      "behavioral_verification": "verified",
-      "installed_verification": "verified",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
       "legacy_removal": "removed",
       "contract": null,
       "consumers": null,
@@ -83519,7 +83519,7 @@
       "rust_destination": null,
       "verification_requirements": "Removed unused tooling script.",
       "retirement_reason": null,
-      "task_id": "migrate:tooling"
+      "task_id": "control:concurrent-removals"
     },
     {
       "path": "types/assets/index.d.ts",

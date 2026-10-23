@@ -1279,6 +1279,12 @@ export interface DiffStreamResult {
  */
 export declare function diffWords(oldText: string, newText: string): Array<DiffChange>
 
+export declare function docxFinish(prepared: string, attributes: string, signal?: unknown | undefined | null): Promise<string>
+
+export declare function docxPrepare(bytes: Buffer, options: string, signal?: unknown | undefined | null): Promise<string>
+
+export declare function docxPrepareFile(path: string, options: string, signal?: unknown | undefined | null): Promise<string>
+
 /**
  * Whole-call apply outcome. `is_error` carries the model-facing failure in
  * `text` with no files.

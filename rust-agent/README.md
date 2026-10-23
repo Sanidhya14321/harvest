@@ -154,3 +154,25 @@ are reached. Transient application/build directories remain excluded.
 This is a partial grep port: archive/SSH/internal URL inputs, selectors,
 PCRE-specific matching, pagination and the legacy renderer still need their
 own compatibility work. Tool descriptions live in static Markdown assets.
+
+## DOCX documents
+
+`harvest document --workspace /path/to/workspace --format markdown relative.docx`
+converts a workspace-confined document without a language runtime. Formats are
+`markdown` (default), `html`, and `json` (HTML plus diagnostics). Native agent
+`read` also recognizes `.docx`, including uppercase extensions. Markdown omits
+embedded image bytes and retains alt text with an omission link. HTML/JSON keep
+inline images. Inputs and workspace files are never modified.
+
+The Rust SDK exposes `harvest_omp::docx::{convert, prepare, markdown, Options}`;
+operations accept `harvest_runtime::cancel::CancelToken`. `prepare`/`finish`
+allow callers to supply image attributes without reimplementing document parsing.
+ZIP input is limited to 64 MiB, expanded data to 256 MiB, each member to 64 MiB,
+XML parts to 16 MiB, XML nodes to 200,000 per part, nesting to 64, and final HTML
+to 64 MiB. Archive entries, images and table columns are each limited to 4,096.
+External relationships are never fetched. Malformed XML, DTDs, invalid archives,
+limit violations and cancellation return errors rather than partial success.
+
+The legacy Markit importer currently uses a temporary native callback bridge.
+Its TypeScript API remains pending migration; this does not complete all media
+or document-import capabilities.

@@ -7,16 +7,26 @@ exports_files(["Cargo.toml"])
 rust_library(
     name = "harvest-media",
     srcs = glob(["src/**/*.rs"]),
-    compile_data = glob(["tests/fixtures/*.json"]),
+    compile_data = glob(["tests/fixtures/*.json", "tests/fixtures/docx/**"]),
     aliases = aliases(),
+    proc_macro_deps = all_crate_deps(proc_macro = True),
     crate_name = "harvest_media",
     edition = "2024",
     version = "0.1.0",
-    deps = all_crate_deps(normal = True),
+    deps = all_crate_deps(normal = True) + ["//crates/harvest-runtime"],
 )
 
 rust_test(
     name = "media_test",
     crate = ":harvest-media",
     deps = all_crate_deps(normal = True, normal_dev = True),
+)
+
+rust_test(
+    name = "docx_test",
+    srcs = ["tests/docx.rs"],
+    compile_data = glob(["tests/fixtures/docx/**"]),
+    crate_name = "docx_test",
+    edition = "2024",
+    deps = all_crate_deps(normal = True, normal_dev = True) + [":harvest-media", "//crates/harvest-runtime"],
 )

@@ -1,79 +1,83 @@
-//! Host CPU/addon detection for native builds.
-use std::{
-	env,
-	fs,
-	process::Command,
-};
+//! Native host identity consumed by the transitional addon builders.
+use std::env;
 
-#[derive(serde::Serialize)]
+use anyhow::{Result, bail};
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct HostAddon {
-	filename:     String,
-	x64_variant:  Option<&'static str>,
-	avx2:         bool,
+	platform:    &'static str,
+	arch:        &'static str,
+	filename:    String,
+	x64_variant: Option<&'static str>,
+	avx2:        bool,
 }
 
 pub fn detect_avx2() -> bool {
-	if env::consts::ARCH != "x86_64" {
-		return false;
+	#[cfg(target_arch = "x86_64")]
+	{
+		std::arch::is_x86_feature_detected!("avx2")
 	}
-	match env::consts::OS {
-		"linux" => fs::read_to_string("/proc/cpuinfo")
-			.map(|info| info.lines().any(|line| line.split_whitespace().any(|token| token.eq_ignore_ascii_case("avx2"))))
-			.unwrap_or(false),
-		"macos" => {
-			if let Ok(output) = Command::new("sysctl").args(["-n", "machdep.cpu.leaf7_features"]).output()
-				&& output.status.success()
-				&& String::from_utf8_lossy(&output.stdout).to_uppercase().contains("AVX2")
-			{
-				return true;
-			}
-			Command::new("sysctl")
-				.args(["-n", "machdep.cpu.features"])
-				.output()
-				.ok()
-				.filter(|output| output.status.success())
-				.map(|output| String::from_utf8_lossy(&output.stdout).to_uppercase().contains("AVX2"))
-				.unwrap_or(false)
-		},
-		"windows" => {
-			#[cfg(target_os = "windows")]
-			{
-				#[link(name = "kernel32")]
-				unsafe extern "system" {
-					fn IsProcessorFeaturePresent(feature: u32) -> i32;
-				}
-				// SAFETY: calling a documented Win32 function.
-				unsafe { IsProcessorFeaturePresent(40) != 0 }
-			}
-			#[cfg(not(target_os = "windows"))]
-			{
-				false
-			}
-		},
-		_ => false,
+	#[cfg(not(target_arch = "x86_64"))]
+	{
+		false
 	}
 }
 
-pub fn execute() -> anyhow::Result<()> {
-	let avx2 = detect_avx2();
-	let x64_variant = if env::consts::ARCH == "x86_64" {
-		Some(if avx2 { "modern" } else { "baseline" })
-	} else {
-		None
-	};
-	let suffix = x64_variant.map(|v| format!("-{v}")).unwrap_or_default();
-	let platform = match env::consts::OS {
+fn resolve(os: &str, arch: &str, avx2: bool) -> Result<HostAddon> {
+	let platform = match os {
 		"linux" => "linux",
 		"macos" => "darwin",
 		"windows" => "win32",
-		other => other,
+		_ => bail!("unsupported native addon operating system: {os}"),
 	};
-	let filename = format!("pi_natives.{platform}-{}{suffix}.node", env::consts::ARCH);
-	let addon = HostAddon {
-		filename,
-		x64_variant,
-		avx2,
+	let arch = match arch {
+		"x86_64" => "x64",
+		"aarch64" => "arm64",
+		_ => bail!("unsupported native addon architecture: {arch}"),
 	};
+	let avx2 = arch == "x64" && avx2;
+	let x64_variant = (arch == "x64").then_some(if avx2 { "modern" } else { "baseline" });
+	let suffix = x64_variant.map(|v| format!("-{v}")).unwrap_or_default();
+	let filename = format!("pi_natives.{platform}-{arch}{suffix}.node");
+	Ok(HostAddon { platform, arch, filename, x64_variant, avx2 })
+}
+
+pub fn execute() -> Result<()> {
+	let addon = resolve(env::consts::OS, env::consts::ARCH, detect_avx2())?;
 	println!("{}", serde_json::to_string(&addon)?);
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::resolve;
+
+	#[test]
+	fn native_builders_receive_node_platform_arch_variant_and_exact_addon_filename() {
+		for (os, platform) in [("linux", "linux"), ("macos", "darwin"), ("windows", "win32")] {
+			for (rust_arch, node_arch, avx2, variant) in [
+				("x86_64", "x64", false, Some("baseline")),
+				("x86_64", "x64", true, Some("modern")),
+				("aarch64", "arm64", true, None),
+			] {
+				let output = serde_json::to_value(resolve(os, rust_arch, avx2).unwrap()).unwrap();
+				let suffix = variant.map(|v| format!("-{v}")).unwrap_or_default();
+				assert_eq!(
+					output,
+					serde_json::json!({
+						 "platform": platform, "arch": node_arch,
+						 "filename": format!("pi_natives.{platform}-{node_arch}{suffix}.node"),
+						 "x64Variant": variant, "avx2": node_arch == "x64" && avx2,
+					})
+				);
+			}
+		}
+	}
+
+	#[test]
+	fn unsupported_hosts_fail_instead_of_emitting_an_unloadable_addon_name() {
+		assert!(resolve("freebsd", "x86_64", true).is_err());
+		assert!(resolve("linux", "riscv64", false).is_err());
+	}
 }

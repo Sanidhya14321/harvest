@@ -201,4 +201,32 @@ describe("DOCX to HTML", () => {
 			messages: [],
 		});
 	});
+	it("propagates callback failures and cancellation instead of returning partial HTML", async () => {
+		const buffer = await fs.readFile(
+			new URL("../../../crates/harvest-media/tests/fixtures/docx/images.docx", import.meta.url),
+		);
+		await expect(
+			convertToHtml(
+				{ buffer },
+				{
+					convertImage: images.imgElement(async () => {
+						throw new Error("image storage failed");
+					}),
+				},
+			),
+		).rejects.toThrow("image storage failed");
+		const controller = new AbortController();
+		await expect(
+			convertToHtml(
+				{ buffer },
+				{
+					signal: controller.signal,
+					convertImage: images.imgElement(async () => {
+						controller.abort(new Error("conversion cancelled"));
+						return { src: "unused" };
+					}),
+				},
+			),
+		).rejects.toThrow("conversion cancelled");
+	});
 });

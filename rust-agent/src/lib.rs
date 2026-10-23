@@ -43,3 +43,6 @@ pub mod usage;
 pub use harvest_browser as browser;
 
 mod browser_cli;
+
+/// Ordinary document conversion API, without JavaScript or native bindings.
+pub use harvest_media::docx;
