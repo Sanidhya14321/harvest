@@ -99,6 +99,8 @@ struct ReplayArgs {
 
 #[derive(Debug, clap::Args)]
 struct ConfigArgs {
+	#[command(subcommand)]
+	command:   Option<ConfigCommand>,
 	#[arg(short, long, default_value = ".")]
 	workspace: PathBuf,
 	#[arg(long)]
@@ -109,8 +111,35 @@ struct ConfigArgs {
 	#[arg(long = "config")]
 	overlays:  Vec<PathBuf>,
 }
+#[derive(Debug, clap::Subcommand)]
+enum ConfigCommand {
+	/// Convert same-stem JSON/JSONC content to YAML without replacing existing
+	/// data.
+	Migrate {
+		/// Destination .yml/.yaml path within --workspace; source is same-stem
+		/// .json.
+		#[arg(long)]
+		file: PathBuf,
+	},
+}
 fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 	let root = args.workspace.canonicalize()?;
+	if let Some(ConfigCommand::Migrate { file }) = args.command {
+		if args.agent_dir.is_some() || args.profile.is_some() || !args.overlays.is_empty() {
+			bail!("config migrate uses --workspace and --file; inspection options are not supported");
+		}
+		if !file
+			.extension()
+			.is_some_and(|extension| extension == "yml" || extension == "yaml")
+		{
+			bail!("config migrate --file must name a .yml or .yaml destination");
+		}
+		let mut file = crate::configuration::ConfigFile::<serde_json::Value>::open(&root, &file)?;
+		let result = file.migrate_json(&Default::default())?;
+		serde_json::to_writer(io::stdout().lock(), &result)?;
+		writeln!(io::stdout().lock())?;
+		return Ok(0);
+	}
 	let environment = config::environment_from(|key| env::var(key).ok())?;
 	let resolved = crate::configuration::load(
 		&root,

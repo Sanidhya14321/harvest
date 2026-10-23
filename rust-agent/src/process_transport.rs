@@ -199,29 +199,12 @@ pub(crate) fn read_frame<T: DeserializeOwned>(reader: &mut impl BufRead) -> Resu
 	Ok(Some(value))
 }
 pub(crate) fn encode(value: &impl Serialize) -> Result<Vec<u8>> {
-	struct Bounded(Vec<u8>);
-	impl Write for Bounded {
-		fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-			if bytes.len()
-				> MAX_FRAME_BYTES
-					.saturating_sub(1)
-					.saturating_sub(self.0.len())
-			{
-				return Err(std::io::Error::other("native process frame exceeds limit"));
-			}
-			self.0.extend_from_slice(bytes);
-			Ok(bytes.len())
-		}
-
-		fn flush(&mut self) -> std::io::Result<()> {
-			Ok(())
-		}
-	}
-	let mut output = Bounded(Vec::new());
+	let mut output = harvest_runtime::BoundedWriter::new(MAX_FRAME_BYTES.saturating_sub(1));
 	serde_json::to_writer(&mut output, value)
 		.map_err(|_| anyhow::anyhow!("cannot encode native frame within byte limit"))?;
-	output.0.push(b'\n');
-	Ok(output.0)
+	let mut bytes = output.into_inner();
+	bytes.push(b'\n');
+	Ok(bytes)
 }
 
 fn encode_for(value: &impl Serialize, framing: Framing) -> Result<Vec<u8>> {

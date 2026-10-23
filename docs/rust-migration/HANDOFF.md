@@ -51,15 +51,21 @@ Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
 
-Configuration-format continuation base `7f06083`: native `--config` and SDK
-explicit overlays now decode JSON/JSONC/YAML through the existing resolver and
-profile precedence. JSONC comments/trailing commas preserve string contents and
-positions. YAML/JSONC structures and alias expansion are bounded during decoding;
-errors discard source/scalars/chains. Native TOML discovery is preserved. Read
-NATIVE-CONFIGURATION.md and the common card before expanding schemas/discovery.
-TS config-file.ts is partial/retained: its schema/migration/persistence/cache and
-current consumers still need conversion. Compiler/format/ownership checks only;
-behavioral/installed/platform checks remain deferred.
+Configuration-file continuation base `5341753`: native layered reads now use
+shared `configuration::ConfigFile<T>` with primary/fallback paths, cached
+success/missing/error results, invalidation/mtime/relocation and validation/default
+APIs. Explicit `config --workspace ROOT migrate --file NAME.yml` converts same-stem
+JSON through bounded typed validation, object round trip, source fingerprint check
+and writer-owned create-only publication. JSON remains; either existing YAML name
+causes a skipped result. Native reads never migrate automatically. The bounded
+output writer is shared with existing process frames and fixture gzip export.
+Read NATIVE-CONFIGURATION.md and the common card for exact limits and gaps.
+
+TS config-file.ts remains partial/retained: full settings schemas/discovery,
+implicit/async startup migration, durable conflicting-edit/quarantine/retry/UI and
+actual TS consumers still need conversion. Do not introduce a blind settings save
+that loses generation/pending-path contracts. Compiler/format/ownership checks
+only; behavioral/installed/platform checks and verified counters stay pending.
 
 Mutation-producer continuation base `e29f5cd`: shared pi-ast now has code paths
 for all 23 named mutation families. Regex changes use the existing Regex grammar;

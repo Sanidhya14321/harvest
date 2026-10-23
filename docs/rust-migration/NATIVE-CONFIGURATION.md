@@ -46,8 +46,7 @@ programs. `--plugin PATH` selects a native executable directly. See the executab
 protocol document. API/model/host selection is explicit; no provider policy is
 inferred from a model name.
 
-Pending conversion: full existing settings discovery/migration and schema, settings
-schema and validation, external config-source precedence, profile interoperability,
+Pending conversion: full existing settings discovery/schema/migration and validation, external config-source precedence, profile interoperability,
 settings UI/edit persistence, credential ownership/OAuth, and KDL catalog policy.
 Retain TS settings sources and consumers until these contracts move.
 
@@ -103,3 +102,64 @@ wrong types and credential-bearing parse failures. Preserve input bytes and
 existing TOML behavior. Legacy JSON-to-YAML migration, source fallback selection,
 full settings schemas, cache/invalidation/relocation and persistent editing remain
 tracked prerequisites before deleting `config/config-file.ts`.
+
+## Typed file ownership and explicit migration
+
+Continuation base `5341753`; code-written/connected, not behaviorally verified.
+`configuration::ConfigFile<T>` is the shared native file owner, backed by the same
+bounded decoder and jailed filesystem. Native layered loading now uses this API;
+SDK consumers may retain an instance across loads. `try_load` distinguishes a
+present immutable `Arc<T>`, a missing file and a sanitized `ConfigError`. All three
+results are cached until `invalidate`, relocation or adding a validator. Ordinary
+reads never migrate, write, or fall back after invalid/unreadable primary content.
+For a `.yml` primary, a missing primary may read the same-stem `.yaml`; other
+extensions have no alternate read path. Path/mtime inspection resolves the live
+path independently of cached contents. No automatic mtime refresh is claimed.
+
+`relocate` preserves the opened root capability and validation chain, clears the
+cache only when the path changes, and cannot authorize another root. Up to 16
+auxiliary validators run after typed decoding, before default return and before
+migration publication; their error contents/chains are discarded. `create_default`
+uses the Rust type's `Default` plus validators. `load_or_default` explicitly uses
+that default for missing **or failed** loads; normal layered loading uses strict
+`try_load` and does not mask an error. Rust type defaults do not substitute for
+unported TS schema defaults. API debug output omits cached values and paths.
+
+```text
+harvest config --workspace /path/to/config-directory migrate --file settings.yml
+```
+
+The source is same-stem `settings.json` (JSONC syntax supported); output must be
+`.yml`/`.yaml` within the selected root. This command performs only format
+migration, preserving unknown object fields, not settings-schema interpretation.
+It does not inspect environment credentials or start configured services. Profile,
+agent-dir and overlay inspection flags cannot be mixed into a migration command.
+Existing primary/alternate YAML or missing JSON returns an explicit skipped
+status. SDK migration also reports a non-applicable destination type. Original
+JSON stays untouched; existing YAML is never replaced. Automatic legacy migration
+is intentionally not connected until its startup/discovery consumers are ported.
+
+Migration takes the shared source-JSON ownership lock, rechecks both YAML names,
+reads a bounded snapshot, validates the selected Rust schema/auxiliary contracts,
+serializes through `harvest_runtime::BoundedWriter` (256 KiB), and decodes it again
+to check exact object equivalence. It rechecks the source SHA-256 before atomic
+create and checks cancellation between stages. Native migrations to either YAML
+spelling share the same lock. CLI output contains status, output length/hash only.
+Failures retain original input and cannot publish partial YAML. External programs
+must respect ownership or remain quiescent: a hash recheck is not a transaction
+against an uncooperative writer between the final check and publication.
+
+The bounded serializer is now shared with existing native process JSONL frames
+and fixture gzip export. Their established byte limits, newline and error handling
+remain; there is no third serializer-specific buffering implementation.
+
+Stabilization must cover cached success/missing/read/parse/validator failures,
+explicit reload and relocation, validation order, live path/mtime, defaults and
+primary-vs-fallback precedence. Cover migration skip/error/success/idempotency,
+unknown fields and original bytes, simultaneous `.yml`/`.yaml` migrations, writer
+conflicts, source changes, schema failures, cancellation, output budgets and
+interrupted publication. Regress existing TOML identity/redaction plus bounded
+process-frame/newline and archive round trips. Current-host compilation does not
+certify these behaviors. Full TS settings discovery/schema defaults, implicit
+startup migration, async scheduling, conflict-aware edits, symlink/quarantine
+recovery, settings UI and durable mutation retries remain pending.

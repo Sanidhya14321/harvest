@@ -25,7 +25,9 @@ through this table and the machine task before editing a shared interface.
 | Native plugin v1 host | `rust-agent/src/plugins/{protocol,host}.rs` | `ToolRuntime`, `AgentSession`, `SessionEngineOptions`, run/RPC `--plugin` | cancellation/exit/queue/approval tests; graceful draining and descendant cleanup | Written/connected; unverified |
 | Rust plugin SDK | `rust-agent/src/plugins/sdk.rs`, `examples/native-plugin.rs` | protocol authoring, host callbacks, cancellation, typed UI events | copied external consumer; version/malformed/process-exit tests; installed platforms | Written/connected; unverified |
 | Plugin UI | same protocol Event enum; SDK callback | direct host SDK callback | session/TUI forwarding and interactive choice responses | Partial; unfinished |
-| Native settings/profiles | `rust-agent/src/configuration.rs`, `configuration/document.rs`, `config.rs` | sync/async run, RPC, SDK, redacted `harvest config`; TOML/JSONC/YAML overlays | legacy settings schema/discovery/external-source parity, settings persistence/UI, credential ownership | Written/connected foundation; unfinished parity |
+| Native settings/profiles | `rust-agent/src/configuration.rs`, `configuration/{document,file}.rs`, `config.rs` | sync/async run, RPC, SDK, redacted `harvest config`; TOML/JSONC/YAML overlays | legacy settings schema/discovery/external-source parity, settings persistence/UI, credential ownership | Written/connected foundation; unfinished parity |
+| Typed config file owner | `rust-agent/src/configuration/file.rs` | layered native loader, persistent SDK owner, explicit CLI config migrate | full settings/default/discovery and implicit startup migration; cache/validation/migration/installed behavior | Written/connected; unverified |
+| Bounded serialized output | `crates/harvest-runtime/src/limits.rs` | config migration, existing process JSONL encoding and fixture archive export | byte-boundary/error/newline/round-trip regressions | Written/connected; unverified |
 | Rust edit scoring | `rust-agent/src/edit_benchmark` | native CLI list/compare/apply and ordinary Rust APIs | normalization/patch/file-set bounds tests; actual model runs and usage integration | Written/connected; unverified |
 | Shared process owner | `rust-agent/src/process_transport.rs` | native plugins, MCP stdio, LSP and DAP | platform descendant/console cleanup, cancellation/failure/queue regressions | Written/connected; unverified |
 | MCP client and tool bridge | `rust-agent/src/mcp`, shared HTTP/SSE owner | native sync/async sessions, RPC, direct SDK, `harvest mcp`, `--enable-mcp`/`--mcp-config` | OAuth/discovery/legacy SSE/reconnect, idle event delivery, hot reload and installed/platform parity | Written/connected; unverified |
@@ -217,39 +219,43 @@ phase. Current-host compiler/format/ownership receipts are ignored under
 `target/migration/conversion-mutation-extensions-*`; behavioral/installed/platform
 checks stay deferred. Export expects quiescent source data, not concurrent editing.
 
-## Current configuration-format continuation
+## Current configuration-file continuation
 
-Owner: `application:conversion-first`; base `7f06083`. Reviewed bounded work:
-port native read-only JSONC/YAML decoding into the existing configuration owner,
-connect all `--config`/SDK consumers, preserve precedence/redaction and retain
-legacy discovery/migration/persistence until separately ported. Inputs are
-`packages/coding-agent/src/config/config-file.ts`, native `configuration.rs`,
-`config.rs`, current profiles and explicit overlay callers. Destination is
-`configuration/document.rs`; no second resolver, settings inventory or cache.
+Owner: `application:conversion-first`; base `5341753`. Inputs/contracts reviewed:
+`config/config-file.ts` constructors, YAML fallback, schema/default/auxiliary
+validation, success/error/missing caching, invalidation/mtime, relocation and JSON
+migration; native configuration resolver and existing format decoder. Sole owner:
+`configuration/file.rs`, using existing `document.rs` and jailed runtime. Do not
+build another resolver/cache/serializer beside these owners.
 
-Implementation written: source-preserving JSONC comment/trailing-comma handling;
-bounded typed data deserialization for JSONC and single-document YAML; generic
-schema error redaction and location-only parse errors; native CLI help and shared
-reader delegation. YAML uses the existing locked serde_yaml_ng dependency. The
-same load result reaches sync/async run, RPC, config inspection, benchmark run and
-SDK. Native discovery still uses TOML paths. See NATIVE-CONFIGURATION.md for exact
-bounds, accepted forms, unsupported merge/tagged keys and remaining contracts.
+Written/connections: shared public `ConfigFile<T>` API -> native layered reads ->
+config inspection/run/RPC/benchmark/SDK. Explicit `config migrate` -> same owner ->
+validated JSON snapshot -> bounded YAML serialization and round trip -> source
+fingerprint recheck -> jailed atomic create. Native reads remain read-only; retain
+legacy implicit startup migration until its real discovery/schema callers move.
+`BoundedWriter` in shared runtime replaces duplicate process-frame/archive buffers
+and also bounds migration output. See NATIVE-CONFIGURATION.md for exact cache,
+default/fallback, relocation, error, locking/cancellation and publication contracts.
 
-TS config-file ownership transfers to this task as partial/unverified/retained.
-Do not delete it: current TS settings/model/service configuration and migration,
-serialization, cache/invalidation and relocation still depend on it. Next work
-must review those retained consumers and map their real settings schema and
-fallback precedence, not treat alternate syntax as schema compatibility.
+No TS sources are deleted. ConfigFile's source row stays partial/unverified and
+retained. Remaining prerequisites: full settings schema/defaults and discovery,
+legacy implicit/async startup, persistent mutation conflict detection, symlink/
+quarantine handling, failed-mutation retry, UI and actual legacy consumer cutover.
+The current Settings source records file generations, pending paths/base values,
+quarantine targets and retry sets; do not replace that with a blind full-file save.
+Rust migration's source recheck is not a transaction against uncooperative writers.
 
-Recovery: revert this continuation to 7f06083; existing native TOML and full TS
-settings remain. Acceptance during stabilization: equivalent documents and mixed
-format/profile precedence through SDK/CLI/run/RPC; malformed inputs and redacted
-credentials; comments/strings/trailing commas; YAML documents/aliases/cycles and
-complex/duplicate/merge/tagged keys; source/structure/text limits and input
-immutability. Run `cargo xtask test -p harvest-omp` once consolidated stabilization
-begins. Current-host compiler/format/ownership logs use ignored
-`target/migration/conversion-config-formats-*`; all behavioral/installed/platform
-evidence remains deferred. No verified capability or source removal is advanced.
+Recovery: revert this continuation to 5341753. Existing native TOML and full TS
+settings remain. Consolidated acceptance: cached success/missing/errors and
+explicit invalidation/relocation/validation/defaults/mtime; primary/fallback and
+invalid-primary behavior; same-stem migration with either YAML spelling, existing
+outputs, missing/invalid/schema-failed inputs, unknown fields/byte preservation,
+source races/native writer conflict, bounds/cancellation/interrupted publication;
+SDK/native CLI/run/RPC consumers; existing frame/newline/archive contracts. Use
+`cargo xtask test -p harvest-runtime -p harvest-omp` during stabilization. Current
+compiler/format/ownership evidence uses ignored
+`target/migration/conversion-config-owner-*`; no behavioral/installed/platform or
+complete-source/capability claim is made.
 
 ## Stabilization queue (deferred, not passed)
 

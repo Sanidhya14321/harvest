@@ -10,6 +10,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
 mod document;
+mod file;
+pub use file::{ConfigError, ConfigFile, ErrorStage, LoadResult, MigrationOutcome};
 
 use crate::{
 	config::{self, Environment, FileSettings, Overrides, Settings},
@@ -83,7 +85,7 @@ struct Profile {
 	#[serde(flatten)]
 	layer:   Layer,
 }
-#[derive(Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 struct Document {
 	#[serde(flatten)]
 	layer:    Layer,
@@ -92,21 +94,12 @@ struct Document {
 	profiles: BTreeMap<String, Profile>,
 }
 fn read(root: &Path, path: &Path, required: bool) -> Result<Option<Document>> {
-	let filesystem = harvest_runtime::JailedFs::open(root)?;
-	let Some(bytes) = filesystem.read_optional(path, 256 * 1024)? else {
-		if required {
-			bail!("explicit configuration overlay is missing");
-		}
-		return Ok(None);
-	};
-	let source = std::str::from_utf8(&bytes).context("configuration is not UTF-8")?;
-	// Preserve diagnostic identity without retaining source excerpts or values.
-	let label = if path == Path::new(".omp/config.toml") {
-		".omp/config.toml"
-	} else {
-		"native configuration"
-	};
-	document::parse(source, path, label).map(Some)
+	let mut file = ConfigFile::<Document>::open(root, path)?;
+	let result = file.try_load()?;
+	if required && result.is_none() {
+		bail!("explicit configuration overlay is missing");
+	}
+	Ok(result.map(|value| (*value).clone()))
 }
 fn merge_document(target: &mut Document, newer: Document) {
 	target.layer.merge(newer.layer);

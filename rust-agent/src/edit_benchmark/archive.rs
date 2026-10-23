@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
-use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken, read_bounded};
+use harvest_runtime::{BoundedWriter, JailedFs, MAX_FILE_BYTES, cancel::CancelToken, read_bounded};
 use serde::Serialize;
 
 const MAX_COMPRESSED: u64 = 32 * 1024 * 1024;
@@ -212,22 +212,6 @@ pub struct PackedArchive {
 	pub compressed_bytes: usize,
 	pub sha256:           String,
 }
-struct BoundedWriter {
-	bytes: Vec<u8>,
-}
-impl io::Write for BoundedWriter {
-	fn write(&mut self, input: &[u8]) -> io::Result<usize> {
-		if input.len() > MAX_COMPRESSED as usize - self.bytes.len() {
-			return Err(io::Error::other("compressed fixture archive exceeds limit"));
-		}
-		self.bytes.extend_from_slice(input);
-		Ok(input.len())
-	}
-
-	fn flush(&mut self) -> io::Result<()> {
-		Ok(())
-	}
-}
 /// Export inert fixture data through the same portable path policy as import.
 /// Publication is create-only; a failed export never replaces an existing file.
 /// Stable entry order, modes, timestamps and gzip headers make unchanged input
@@ -255,7 +239,7 @@ pub fn pack_fixtures(
 	let paths = super::list_files(&source, Path::new(""))?;
 	let gzip = flate2::GzBuilder::new()
 		.mtime(0)
-		.write(BoundedWriter { bytes: Vec::new() }, flate2::Compression::default());
+		.write(BoundedWriter::new(MAX_COMPRESSED as usize), flate2::Compression::default());
 	let mut tar = tar::Builder::new(gzip);
 	let mut aliases = BTreeMap::new();
 	let mut files = 0;
@@ -290,7 +274,7 @@ pub fn pack_fixtures(
 		tar.append_data(&mut header, archived, bytes.as_slice())?;
 		files += 1;
 	}
-	let bytes = tar.into_inner()?.finish()?.bytes;
+	let bytes = tar.into_inner()?.finish()?.into_inner();
 	cancellation.heartbeat()?;
 	let sha256 = harvest_runtime::content_hash(&bytes);
 	destination.atomic_create(Path::new(name), &bytes)?;
