@@ -51,25 +51,30 @@ Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
 
-Fixture-tooling base `b49ba10`: native edit-shape calibration, fixture validation,
-exact pi-diff hunk preparation/re-solve and paired-tree task production now connect
-to the shared native CLI/SDK. `RUST-BENCHMARK.md` lists limits and retained gaps.
-The package edit-shapes launcher now calls Rust; its 355-line TS analyzer is
-removed. The ledger records actual removal with replacement verification pending.
-Hunk/task TS modules remain for the existing mutation generator/metaharness.
-No capability is marked verified/done. Behavioral and installed tests stay deferred.
+Benchmark integration base `1e12aa2`: actual staged edit diff/no-op/error metadata
+now flows through typed ToolOutput and the existing durable writer into both
+native session hosts/RPC. The analyzer can measure native edits. Benchmark runs
+use actual committed tool evidence, optional successful read/edit requirements and
+lossless messages.json export. Native tar.gz input materializes through one
+FixtureSource owner into the existing loader/list/validate/run path; explicit
+unpack is available. No source is executed. See RUST-BENCHMARK.md for bounds,
+compatibility choices and every remaining contract.
 
-The source gate retains its 35 inherited unsupported removals and now also needs
-verification evidence for this explicitly recorded analyzer replacement. Its code,
-consumer, restoration base and checks are in the common card. Do not weaken gates
-or label an unverified deletion complete. Native session edit-result diff metadata,
-language-specific mutation selection, archive handling and metaharness cutover
-remain pending. Continue through those named consumers/owners.
+No TS sources are deleted in this batch. The earlier 355-line analyzer removal
+stays pending verification; remaining generator/metaharness consumers still use TS.
+The source gate retains 35 inherited unsupported removals plus that unverified
+analyzer replacement. Zero retained capabilities have verified complete parity.
+All behavioral/installed/platform checks remain deferred; compiler/metadata
+connection checks alone do not advance completion. Next: native mutation selection,
+metaharness orchestration/retry/early-stop and native views through these owners,
+then consolidated stabilization. Keep failures and receipts honest.
 
-`LANGUAGE-PROGRESS.md` records the previous GitHub/default-branch audit. This batch
-actually removes one TS file (13,617 bytes), bringing net baseline TS/TSX deletions
-to 61. GitHub's repository bar still follows main; source reduction and feature
-verification remain separate measures.
+The user explicitly requests minimal interaction: continue across ready batches
+within active execution, push coherent checkpoints and do not ask for another
+`continue` after a commit. The autonomy rule is persisted in PLAYBOOK.md. This
+chat cannot run an unattended background coding session after its turn ends.
+Progress percentages must distinguish verified capability parity, partial code
+and verified source removal; never describe partial-code ratios as completion.
 
 ## Open blockers
 

@@ -153,6 +153,7 @@ pub struct ShapeReport {
 	pub malformed_records: usize,
 	pub skipped_diffs:     usize,
 	pub missing_diffs:     usize,
+	pub unchanged_edits:   usize,
 	pub parsed_diffs:      usize,
 	pub formats:           BTreeMap<&'static str, usize>,
 	pub per_call:          Distribution,
@@ -231,6 +232,10 @@ fn handle_record(
 				&& message["isError"] != true =>
 		{
 			let details = &message["details"];
+			if details["noop"] == true {
+				report.unchanged_edits += 1;
+				return Ok(());
+			}
 			let Some(diff) = details["diff"].as_str().filter(|s| !s.is_empty()) else {
 				report.missing_diffs += 1;
 				return Ok(());
@@ -352,10 +357,12 @@ impl ShapeReport {
 		)?;
 		writeln!(
 			output,
-			"Failed files: {}; malformed records: {}; successful edit results without diff: {}",
+			"Failed files: {}; malformed records: {}; successful edit results without diff: {}; \
+			 unchanged edits: {}",
 			self.failed_files.len(),
 			self.malformed_records,
-			self.missing_diffs
+			self.missing_diffs,
+			self.unchanged_edits
 		)?;
 		for (label, counters) in [
 			("per tool call (calibration reference)", &self.per_call),

@@ -4,7 +4,7 @@ Native task loading, patch application, scoring and model-run orchestration are
 written and connected; behavioral and installed verification are pending. The legacy metaharness runner
 still uses its historical scoring. No existing score is converted or relabeled.
 
-`harvest edit-benchmark list --fixtures DIRECTORY` loads unpacked tasks with
+`harvest edit-benchmark list --fixtures DIRECTORY_OR_TAR_GZ` loads tasks with
 `prompt.md`, `input/`, `expected/` and optional `metadata.json`. Traversal is
 sorted, bounded and rejects symlinks. Owned benchmark inputs remain inert data;
 the preserved fixture tarball and historical result file are unchanged.
@@ -60,8 +60,8 @@ Fixture symlinks are rejected; input copies use bounded reads and atomic creates
 Artifacts: `run-plan.json`, per-run `workspace/`, `session.jsonl`, bounded
 `events.jsonl`, `usage.json`, `score.json` on successful execution,
 `outcome.json`, and final `summary.json`. Exact output matching remains independent
-of provider usage. Model-run scores retain `patch_applied: null`; ordered manifest
-application remains the source of explicit patch-application outcomes. Sessions
+of provider usage. Model-run patch evidence now comes from actual persisted edit calls/results as
+described below; ordered manifest application retains per-operation outcomes. Sessions
 retain actual tool results. No attempt is made to infer patch success from a
 model's prose. Unknown/missing/overflowing usage and failed turns remain unavailable;
 partial raw response usage is retained. Cache accounting distinctions are retained
@@ -69,10 +69,9 @@ in measured token totals. Prices remain unavailable. A completed output mismatch
 is unsuccessful, distinct from cancellation, timeout and failed execution. CLI
 returns nonzero if any run is unsuccessful. No expected fixture is executed.
 
-Pending: Rust mutation/fixture generation, archive materialization, edit-shape
-analysis, retries/guided mutations, connection/early-stop policies, tool-use
-requirements, conversation exports, interactive benchmark views and metaharness
-consumer cutover. Global artifact/disk quotas, crash resume and custom-model
+Pending: language-specific mutation selection, retries/guided mutations,
+connection/early-stop policies, formatted conversation exports, interactive
+benchmark views and metaharness consumer cutover. Global artifact/disk quotas, crash resume and custom-model
 cancellation enforcement also need explicit contracts and stabilization evidence. Babel/Prettier historical scores retain their old meanings.
 No TS benchmark source is removed before those remaining consumers move.
 
@@ -99,9 +98,9 @@ are calibration references; per-request/file totals include retries and reversal
 and remain activity upper bounds. Size/hunk/operation buckets and the historical
 upper median are preserved. Text and JSON expose parse coverage, missing diffs,
 malformed records and failed files; zero observations and incomplete file scans
-return nonzero. No NaN percentages are emitted for empty buckets. Successful
-native edits currently lack persisted diff details; they count as missing diffs,
-not measured edits. Adding structured native edit-result metadata is still pending.
+return nonzero. No NaN percentages are emitted for empty buckets. Native edit results now persist bounded staged diff details through both native
+session hosts. Missing/oversized diffs remain counted separately; unchanged
+operations have their own count and never become measured changed runs.
 
 Session selection is newest filename first. `--max-sessions 0` scans all within
 the explicit 10,000-file budget. Per-record limit is 1 MiB, per-file 64 MiB, total
@@ -134,8 +133,77 @@ Limits: 256 KiB per changed source, 4,000 combined input/expected lines and at m
 1,000,000 line-pair work budget; 128 MiB copied data, 256 KiB prompt and metadata.
 Unrepresentable changes, including some final-newline-only changes, fail explicitly.
 This is a deterministic paired-tree producer, not the unported language-specific
-mutation selector. Native mutation selection, archive handling and guided/retry/
-metaharness workflows remain pending. Stabilization must exercise real legacy
+mutation selector. Native mutation selection and guided/retry/metaharness workflows remain pending;
+archive materialization is now connected as described below. Stabilization must exercise real legacy
 fixtures, parser failure/coverage, grouping, empty cases, source immutability,
 ambiguous/overlapping hunks, exact final-newline behavior, cancellation and copied
 installed commands before source removal is marked verified.
+
+
+## Connected native result evidence and fixture archives
+
+This continuation connects the previously named metadata/packaging prerequisites.
+It remains **unverified conversion work**, with consolidated behavioral, installed
+and platform checks pending.
+
+The edit engine already computes the staged diff. `ToolOutput` now carries that
+host-produced metadata separately from model text, plus an explicit error status.
+Both synchronous and asynchronous session drivers commit details and error status
+in the same durable tool-result record. Read results beginning with `error:` are
+still successful reads when the actual invocation succeeded. Raw message export
+and native RPC committed records retain these fields; provider replay text keeps
+its existing shape. Existing string-returning tool SDK entrypoints remain usable.
+No-op edits return unchanged success without writing. Diffs over 32 KiB remain
+unavailable with an explicit reason; they are never silently truncated into valid
+calibration input. Metadata is bounded to 256 KiB before edit mutation and again
+at persistence. Denied/failed edits have no successful staged metadata.
+
+`--require-read-tool` and `--require-edit-tool` require at least one successful
+read and changed edit respectively. Defaults remain off. Every run outcome
+separates requirements, read/edit calls, successful/failed/unresolved results and
+unchanged edits. Model-run `patch_applied` is unavailable with no edit calls,
+false with unresolved/failed edits or only no-ops, and true when at least one
+changed edit succeeded and no edit result failed/remains unresolved. Exact output
+matching remains a separate property. An earlier failed attempt can coexist with
+matching final output; the report retains both facts. `--export-messages` writes
+a bounded, lossless `messages.json` alongside the durable session; it preserves
+raw provider fields. Partial usage is saved before observation/export errors.
+
+```text
+harvest edit-benchmark unpack --archive fixtures.tar.gz --output /path/to/new-extraction
+harvest edit-benchmark validate --fixtures fixtures.tar.gz
+harvest edit-benchmark run --fixtures fixtures.tar.gz --output /path/to/new-run --approve-fixture-edits --require-read-tool --require-edit-tool --export-messages
+```
+
+The ordinary `FixtureSource` SDK owner accepts an unpacked tree or tar.gz file.
+Temporary extraction stays alive through loading and all run workers, then is
+removed by its owner. For durable extracted paths use `unpack`. Archive listings
+identify the archive and task IDs and omit temporary filesystem paths. Directory
+listings retain input/expected paths. Validation issues and archived fixture source
+are inert data; no archived source is executed.
+
+Extraction uses native Rust tar/gzip libraries and the existing jailed filesystem.
+Only directories and regular files are accepted. Paths reject traversal, absolute
+prefixes, backslashes/ADS/device aliases, case aliases (including directory
+prefixes), duplicates, excessive nesting and oversized names. The optional top
+`fixtures/` directory is stripped. Every file is atomically created; no tar
+ambient-unpack or shell helper is used. Output must be empty and owned by one
+writer. Explicit extraction preserves partial files on failure; retry into a new
+directory. gzip CRC/footer is read through EOF, and non-padding data after the
+tar terminator is rejected.
+
+Bounds: 32 MiB compressed input, 256 MiB decompressed stream, 128 MiB payload,
+10,000 entries, 64 path components, 4,096-byte paths, 255-byte components and the
+shared 4 MiB per-file limit. Cancellation reaches compressed/decompressed reads
+and entry writes. Fixture loading validates the resulting task structure. The
+new tar dependency and cached gzip/temp-directory dependencies are Rust-only.
+
+Stabilization must cover actual distributed fixtures, PAX/long-name metadata,
+truncation/CRC/trailing members, links/devices/sparse entries, duplicate and
+case-alias paths, file/directory collisions, cancellation/cleanup and bounded
+allocation on all promised platforms. Also cover real edits/no-ops/denials,
+read-content error prefixes, metadata bounds, both session hosts and RPC replay,
+missing/failed/unresolved results, requirement flags and exported raw numeric
+usage. Session persistence failure after a successful filesystem mutation retains
+the existing recovery limitation; journaling is still pending. The analyzer's
+full-record JSON projection also needs unknown numeric-usage compatibility tests.

@@ -75,6 +75,14 @@ impl FileSource for WorkspaceFiles<'_> {
 }
 
 pub(crate) fn replace(root: &Path, args: &EditArgs, cancellation: &CancelToken) -> Result<String> {
+	Ok(replace_detailed(root, args, cancellation)?.content)
+}
+
+pub(crate) fn replace_detailed(
+	root: &Path,
+	args: &EditArgs,
+	cancellation: &CancelToken,
+) -> Result<crate::tools::ToolOutput> {
 	let fs = JailedFs::open(root)?;
 	let policy = PathPolicy {
 		cwd:                  fs.root().to_owned(),
@@ -95,6 +103,26 @@ pub(crate) fn replace(root: &Path, args: &EditArgs, cancellation: &CancelToken) 
 	let engine = ReplaceEngine { allow_fuzzy: false, fuzzy_threshold: 1.0 };
 	let staged = engine.stage(&snapshot, &mut files, &EditStore::default())?;
 	let file = staged.first().context("edit produced no staged file")?;
+	// Reuse the engine's actual staged diff, not the requested old/new strings.
+	// Never publish truncated diffs as complete calibration data.
+	let noop = file.op == pi_edit::FileOp::Noop;
+	let diff_available = !noop && !file.diff.is_empty() && file.diff.len() <= 32 * 1024;
+	let details = serde_json::json!({
+		 "op":file.op.as_str(),"path":file.display,"noop":noop,
+		 "diff":if diff_available {Some(file.diff.as_str())} else {None},
+		 "diffUnavailable":if noop {Some("no_change")} else if file.diff.is_empty() {Some("not_reported")} else if !diff_available {Some("exceeds_limit")} else {None},
+	});
+	if serde_json::to_vec(&details)?.len() > crate::tools::MAX_TOOL_DETAILS_BYTES {
+		bail!("edit metadata exceeds limit");
+	}
+	if noop {
+		cancellation.heartbeat()?;
+		return Ok(crate::tools::ToolOutput {
+			is_error: false,
+			content:  format!("unchanged {}", file.display),
+			details:  Some(details),
+		});
+	}
 	let content = file
 		.persisted
 		.as_deref()
@@ -104,5 +132,9 @@ pub(crate) fn replace(root: &Path, args: &EditArgs, cancellation: &CancelToken) 
 	}
 	cancellation.heartbeat()?;
 	files.fs.atomic_write(&file.absolute, content.as_bytes())?;
-	Ok(format!("edited {}", file.display))
+	Ok(crate::tools::ToolOutput {
+		is_error: false,
+		content:  format!("edited {}", file.display),
+		details:  Some(details),
+	})
 }

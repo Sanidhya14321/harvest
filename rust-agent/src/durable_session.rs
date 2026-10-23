@@ -166,9 +166,39 @@ impl DurableSession {
 		model: &str,
 		usage: Option<&crate::usage::UsageReport>,
 	) -> Result<CommitReceipt> {
+		self.commit_with_metadata_receipt(message, model, usage, None, None)
+	}
+
+	/// Attach host-produced tool metadata in the same durable record as its
+	/// result. Replay text and provider messages retain their existing shape.
+	pub fn commit_with_metadata_receipt(
+		&mut self,
+		message: &ChatMessage,
+		model: &str,
+		usage: Option<&crate::usage::UsageReport>,
+		details: Option<&Value>,
+		tool_error: Option<bool>,
+	) -> Result<CommitReceipt> {
+		if let Some(details) = details {
+			if message.role != "tool" || !details.is_object() {
+				bail!("structured details require a tool result object");
+			}
+			if serde_json::to_vec(details)?.len() > crate::tools::MAX_TOOL_DETAILS_BYTES {
+				bail!("tool metadata exceeds limit");
+			}
+		}
 		validate_pairs(self.messages.iter().chain(std::iter::once(message)), false)?;
+		if tool_error.is_some() && message.role != "tool" {
+			bail!("tool error status requires a tool result");
+		}
 		let timestamp = chrono::Utc::now();
 		let mut stored = stored_message(message, model, timestamp.timestamp_millis())?;
+		if let Some(is_error) = tool_error {
+			stored["isError"] = json!(is_error);
+		}
+		if let Some(details) = details {
+			stored["details"] = details.clone();
+		}
 		if let Some(usage) = usage {
 			if message.role != "assistant" {
 				bail!("only assistant messages can contain provider usage");

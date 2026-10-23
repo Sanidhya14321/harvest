@@ -58,6 +58,34 @@ pub fn invoke_with_cancellation(
 	policy: &dyn Approval,
 	cancellation: &harvest_runtime::cancel::CancelToken,
 ) -> Result<String> {
+	Ok(invoke_detailed(root, call, policy, cancellation)?.content)
+}
+
+pub const MAX_TOOL_DETAILS_BYTES: usize = 256 * 1024;
+
+/// Host-produced structured metadata stays separate from model-facing text.
+#[derive(Debug)]
+pub struct ToolOutput {
+	pub is_error: bool,
+	pub content:  String,
+	pub details:  Option<serde_json::Value>,
+}
+impl ToolOutput {
+	pub fn failure(content: String) -> Self {
+		Self { content, details: None, is_error: true }
+	}
+
+	pub fn text(content: String) -> Self {
+		Self { content, details: None, is_error: false }
+	}
+}
+
+pub fn invoke_detailed(
+	root: &Path,
+	call: &ToolCall,
+	policy: &dyn Approval,
+	cancellation: &harvest_runtime::cancel::CancelToken,
+) -> Result<ToolOutput> {
 	cancellation.heartbeat()?;
 	let name = call.function.name.as_str();
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
@@ -77,32 +105,34 @@ pub fn invoke_with_cancellation(
 		bail!("tool {name} requires human approval");
 	}
 	cancellation.heartbeat()?;
-	invoke_authorized(root, call, cancellation)
+	invoke_authorized_detailed(root, call, cancellation)
 }
 
 pub const PYTHON_EVAL_RETIRED: &str = include_str!("assets/python-eval-retired.md");
 
 #[cfg(test)]
 fn invoke_approved(root: &Path, call: &ToolCall) -> Result<String> {
-	invoke_authorized(root, call, &Default::default())
+	Ok(invoke_authorized_detailed(root, call, &Default::default())?.content)
 }
 
-fn invoke_authorized(
+fn invoke_authorized_detailed(
 	root: &Path,
 	call: &ToolCall,
 	cancellation: &harvest_runtime::cancel::CancelToken,
-) -> Result<String> {
+) -> Result<ToolOutput> {
 	let name = call.function.name.as_str();
 	let arguments = call.function.arguments.as_str();
 	let output = match name {
 		"read" => read_file(root, &parse::<ReadArgs>(arguments)?, cancellation)?,
 		"write" => write_file(root, &parse::<WriteArgs>(arguments)?)?,
-		"edit" => crate::edit::replace(root, &parse::<EditArgs>(arguments)?, cancellation)?,
+		"edit" => {
+			return crate::edit::replace_detailed(root, &parse::<EditArgs>(arguments)?, cancellation);
+		},
 		"grep" => crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, cancellation)?,
 		"bash" => bash(root, &parse::<BashArgs>(arguments)?, cancellation)?,
 		_ => bail!("unknown tool {name}"),
 	};
-	Ok(bounded(&output))
+	Ok(ToolOutput::text(bounded(&output)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -402,6 +432,21 @@ pub struct ToolRuntime {
 }
 
 impl ToolRuntime {
+	/// Stateful services retain their existing owners. Builtin edits return
+	/// trusted staged metadata for persistence, without exposing it as text.
+	pub fn invoke_detailed(
+		&mut self,
+		root: &Path,
+		call: &ToolCall,
+		policy: &dyn Approval,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<ToolOutput> {
+		if call.function.name == "edit" {
+			return invoke_detailed(root, call, policy, cancellation);
+		}
+		Ok(ToolOutput::text(self.invoke(root, call, policy, cancellation)?))
+	}
+
 	pub fn configure_plugins(
 		&mut self,
 		root: &Path,

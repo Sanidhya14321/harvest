@@ -27,35 +27,43 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct RunConfiguration {
-	pub repetitions: u32,
-	pub concurrency: usize,
-	pub max_steps:   u32,
-	pub timeout:     Duration,
+	pub repetitions:       u32,
+	pub concurrency:       usize,
+	pub max_steps:         u32,
+	pub timeout:           Duration,
 	/// An empty list selects all tasks, otherwise require exact existing IDs.
-	pub task_ids:    Vec<String>,
+	pub task_ids:          Vec<String>,
+	pub require_edit_tool: bool,
+	pub require_read_tool: bool,
+	pub export_messages:   bool,
 }
 impl Default for RunConfiguration {
 	fn default() -> Self {
 		Self {
-			repetitions: 1,
-			concurrency: 1,
-			max_steps:   16,
-			timeout:     Duration::from_secs(300),
-			task_ids:    Vec::new(),
+			repetitions:       1,
+			concurrency:       1,
+			max_steps:         16,
+			timeout:           Duration::from_secs(300),
+			task_ids:          Vec::new(),
+			require_edit_tool: false,
+			require_read_tool: false,
+			export_messages:   false,
 		}
 	}
 }
 #[derive(Debug, Serialize)]
 pub struct RunOutcome {
-	pub index:          usize,
-	pub task_id:        String,
-	pub repetition:     u32,
-	pub state:          &'static str,
-	pub success:        bool,
-	pub elapsed_micros: u128,
+	pub tool_evidence:          Option<super::ToolEvidence>,
+	pub requirements_satisfied: Option<bool>,
+	pub index:                  usize,
+	pub task_id:                String,
+	pub repetition:             u32,
+	pub state:                  &'static str,
+	pub success:                bool,
+	pub elapsed_micros:         u128,
 	/// Relative to the explicitly selected output directory.
-	pub artifacts:      Option<PathBuf>,
-	pub error:          Option<&'static str>,
+	pub artifacts:              Option<PathBuf>,
+	pub error:                  Option<&'static str>,
 }
 #[derive(Debug, Serialize)]
 pub struct RunSummary {
@@ -183,6 +191,8 @@ pub fn run_tasks<M: Model>(
 		"run timeout must be positive and at most one hour"
 	);
 	cancellation.heartbeat()?;
+	let fixture_source = super::FixtureSource::open(fixtures, cancellation)?;
+	let fixtures = fixture_source.directory();
 	let mut tasks = load_tasks(fixtures)?;
 	let selected: std::collections::BTreeSet<_> = configuration.task_ids.iter().collect();
 	ensure!(selected.len() == configuration.task_ids.len(), "duplicate task selection");
@@ -220,7 +230,9 @@ pub fn run_tasks<M: Model>(
 		&serde_json::json!({
 			 "scoring_version":SCORING_VERSION,"runs":count,"repetitions":configuration.repetitions,
 			 "concurrency":configuration.concurrency,"max_steps":configuration.max_steps,
-			 "timeout_ms":configuration.timeout.as_millis(),"tasks":tasks.iter().map(|t| &t.id).collect::<Vec<_>>()
+			 "timeout_ms":configuration.timeout.as_millis(),
+			"require_edit_tool":configuration.require_edit_tool,"require_read_tool":configuration.require_read_tool,
+			"export_messages":configuration.export_messages,"tasks":tasks.iter().map(|t| &t.id).collect::<Vec<_>>()
 		}),
 	)?;
 	let next = AtomicUsize::new(0);
@@ -287,6 +299,8 @@ fn run_one<M: Model>(
 ) -> Result<RunOutcome> {
 	let started = Instant::now();
 	let mut outcome = RunOutcome {
+		tool_evidence: None,
+		requirements_satisfied: None,
 		index,
 		task_id: task.id.clone(),
 		repetition,
@@ -353,9 +367,22 @@ fn run_one<M: Model>(
 				 "complete":answer.is_ok(), "usage_unavailable":usage_unavailable, "measurement":measurements
 			}),
 		)?;
+		// Derive observations from committed records, including failed and
+		// unresolved results, before propagating a turn error.
+		let evidence = super::tool_evidence(session.stored_messages())?;
+		if configuration.export_messages {
+			persist(&artifacts, Path::new("messages.json"), &session.stored_messages())?;
+		}
+		let requirements = (!configuration.require_read_tool || evidence.successful_reads > 0)
+			&& (!configuration.require_edit_tool || evidence.successful_edits > 0);
+		outcome.requirements_satisfied = Some(requirements);
+		let patch_applied = evidence.patch_applied();
+		outcome.tool_evidence = Some(evidence);
 		answer?;
 		token.heartbeat()?;
-		let report = compare(&task.expected_directory, workspace.root(), &token)?;
+		let mut report = compare(&task.expected_directory, workspace.root(), &token)?;
+		report.patch_applied = patch_applied;
+		report.success &= requirements;
 		outcome.success = report.success;
 		persist(&artifacts, Path::new("score.json"), &report)?;
 		Ok(())

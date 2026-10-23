@@ -1,6 +1,10 @@
 //! Separately versioned Rust edit scoring. Historical Babel/Prettier scores are
 //! never loaded as rust-v1 results. Fixture source text is inert input data.
+mod archive;
 pub(crate) mod cli;
+pub use archive::{ArchiveReport, FixtureSource, unpack_fixtures};
+mod evidence;
+pub use evidence::{ToolEvidence, tool_evidence};
 pub mod hunks;
 mod prepare;
 mod runner;

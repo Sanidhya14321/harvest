@@ -107,6 +107,11 @@ impl AgentSession {
 		self.tools.configure_browser(options);
 	}
 
+	/// Immutable persisted payloads, including host tool details and raw usage.
+	pub fn stored_messages(&self) -> &[Box<serde_json::value::RawValue>] {
+		self.log.stored_messages()
+	}
+
 	pub fn session_id(&self) -> &str {
 		self.log.id()
 	}
@@ -195,9 +200,22 @@ impl AgentSession {
 		usage: Option<&crate::usage::UsageReport>,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
 	) -> Result<()> {
+		self.commit_details(message, model, usage, None, None, sink)
+	}
+
+	fn commit_details(
+		&mut self,
+		message: &chat::ChatMessage,
+		model: &dyn Model,
+		usage: Option<&crate::usage::UsageReport>,
+		details: Option<&serde_json::Value>,
+		tool_error: Option<bool>,
+		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+	) -> Result<()> {
 		let entry_id = self
 			.log
-			.commit_with_usage(message, model.model_id(), usage)?;
+			.commit_with_metadata_receipt(message, model.model_id(), usage, details, tool_error)?
+			.entry_id;
 		self.emit(EventKind::Committed { entry_id, role: message.role.clone() }, sink)
 	}
 
@@ -246,12 +264,22 @@ impl AgentSession {
 			}
 			for call in calls {
 				cancellation.heartbeat()?;
-				let output = match self.tools.invoke(&self.root, &call, approval, cancellation) {
+				let output = match self
+					.tools
+					.invoke_detailed(&self.root, &call, approval, cancellation)
+				{
 					Ok(output) => output,
-					Err(error) => format!("error: {error:#}"),
+					Err(error) => tools::ToolOutput::failure(format!("error: {error:#}")),
 				};
-				let result = chat::tool_result(&call.id, output);
-				self.commit(&result, model, None, sink)?;
+				let result = chat::tool_result(&call.id, output.content);
+				self.commit_details(
+					&result,
+					model,
+					None,
+					output.details.as_ref(),
+					Some(output.is_error),
+					sink,
+				)?;
 				messages.push(result);
 			}
 		}

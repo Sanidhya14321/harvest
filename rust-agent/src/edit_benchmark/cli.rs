@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 #[derive(Debug, clap::Args)]
@@ -26,6 +26,12 @@ enum Command {
 		max_sessions: usize,
 		#[arg(long)]
 		json:         bool,
+	},
+	Unpack {
+		#[arg(long)]
+		archive: PathBuf,
+		#[arg(long)]
+		output:  PathBuf,
 	},
 	Validate {
 		#[arg(long)]
@@ -62,6 +68,12 @@ enum Command {
 }
 #[derive(Debug, clap::Args)]
 struct RunArguments {
+	#[arg(long)]
+	require_read_tool:     bool,
+	#[arg(long)]
+	require_edit_tool:     bool,
+	#[arg(long)]
+	export_messages:       bool,
 	#[arg(long)]
 	fixtures:              PathBuf,
 	#[arg(long)]
@@ -136,6 +148,9 @@ fn run(arguments: RunArguments) -> Result<u8> {
 		&arguments.output,
 		&super::RunConfiguration {
 			repetitions: arguments.repetitions,
+			require_read_tool: arguments.require_read_tool,
+			require_edit_tool: arguments.require_edit_tool,
+			export_messages: arguments.export_messages,
 			concurrency: arguments.concurrency,
 			max_steps,
 			timeout: std::time::Duration::from_secs(arguments.timeout_seconds),
@@ -148,6 +163,20 @@ fn run(arguments: RunArguments) -> Result<u8> {
 	serde_json::to_writer(io::stdout().lock(), &summary)?;
 	writeln!(io::stdout().lock())?;
 	Ok(if summary.unsuccessful == 0 { 0 } else { 1 })
+}
+#[derive(Serialize)]
+struct ListedTask<'a> {
+	id:                 &'a str,
+	prompt:             &'a str,
+	files:              &'a [PathBuf],
+	#[serde(skip_serializing_if = "Option::is_none")]
+	metadata:           Option<&'a RawValue>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	input_directory:    Option<&'a std::path::Path>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	expected_directory: Option<&'a std::path::Path>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	archive:            Option<&'a std::path::Path>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -184,7 +213,8 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 			);
 		},
 		Command::Validate { fixtures } => {
-			let issues = super::validate_fixtures(&fixtures, &cancellation)?;
+			let source = super::FixtureSource::open(&fixtures, &cancellation)?;
+			let issues = super::validate_fixtures(source.directory(), &cancellation)?;
 			serde_json::to_writer(io::stdout().lock(), &issues)?;
 			writeln!(io::stdout().lock())?;
 			return Ok(if issues.is_empty() { 0 } else { 1 });
@@ -195,8 +225,30 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 			writeln!(io::stdout().lock())?;
 			return Ok(0);
 		},
+		Command::Unpack { archive, output } => {
+			let report = super::unpack_fixtures(&archive, &output, &cancellation)?;
+			serde_json::to_writer(io::stdout().lock(), &report)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(0);
+		},
 		Command::List { fixtures } => {
-			serde_json::to_writer(io::stdout().lock(), &super::load_tasks(&fixtures)?)?;
+			let source = super::FixtureSource::open(&fixtures, &cancellation)?;
+			let tasks = super::load_tasks(source.directory())?;
+			let listed: Vec<_> = tasks
+				.iter()
+				.map(|task| ListedTask {
+					id:                 &task.id,
+					prompt:             &task.prompt,
+					files:              &task.files,
+					metadata:           task.metadata.as_deref(),
+					input_directory:    (!source.is_temporary())
+						.then_some(task.input_directory.as_path()),
+					expected_directory: (!source.is_temporary())
+						.then_some(task.expected_directory.as_path()),
+					archive:            source.is_temporary().then_some(fixtures.as_path()),
+				})
+				.collect();
+			serde_json::to_writer(io::stdout().lock(), &listed)?;
 			writeln!(io::stdout().lock())?;
 			return Ok(0);
 		},

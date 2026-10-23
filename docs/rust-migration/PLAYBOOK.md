@@ -40,6 +40,25 @@ profile override remains available when a future shared-engine cutover needs it.
 Direct implementation is active again at the user's request. The unsuccessful
 OpenCode assignment is historical; no external model connection blocks execution.
 
+## Autonomous continuation (latest user instruction)
+
+The user requests minimal interaction and does not want to send `continue` after
+each checkpoint. Existing authorization covers migration edits, ledger/card
+updates, commits and pushes to `ts-to-rust`. During an active execution, keep
+working across dependency-ready batches and push coherent checkpoints; do not
+end a turn merely because one small batch is committed. Keep concise progress
+updates while working. Choose the next named pending connection from the common
+card and inspect its real consumers; mark missing-contract tasks blocked and
+continue independent work. Ask only for essential input unavailable from the
+checkout or connected sources. Preserve user changes and scope boundaries.
+
+Do not promise unattended work after execution ends: this chat cannot create a
+persistent background coding session by itself. At a resource/environment or
+execution limit, save a concrete checkpoint and next actions. Never manufacture
+completion percentages to satisfy a progress request. Report verified retained
+capabilities, partial implementations and verified source removals separately;
+the user explicitly requested percentages, which must identify their denominators.
+
 ## Start a fresh session
 
 1. Read root `AGENTS.md`, this file, `SCOPE.md`, and `HANDOFF.md`.

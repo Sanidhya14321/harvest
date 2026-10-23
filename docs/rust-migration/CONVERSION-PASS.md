@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current fixture-tooling continuation base: `b49ba10`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current benchmark integration continuation base: `1e12aa2`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -31,9 +31,11 @@ through this table and the machine task before editing a shared interface.
 | MCP client and tool bridge | `rust-agent/src/mcp`, shared HTTP/SSE owner | native sync/async sessions, RPC, direct SDK, `harvest mcp`, `--enable-mcp`/`--mcp-config` | OAuth/discovery/legacy SSE/reconnect, idle event delivery, hot reload and installed/platform parity | Written/connected; unverified |
 | LSP client and text edits | `rust-agent/src/language_services/{lsp,edits,runtime}.rs` | native tool registry, sync/async sessions, RPC, SDK, CLI | resource operations, full diagnostics/sync/discovery/linters/editorconfig, recovery/performance/platform tests | Written/connected; unverified |
 | Debug adapter and session state | `rust-agent/src/language_services/{dap,runtime}.rs` | same host owner/config/tool/session/CLI boundaries | socket/discovery/reverse terminal/advanced breakpoint workflows, cleanup and behavioral/platform tests | Written/connected; unverified |
-| Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, retries/guided/early-stop/tool-use policies, exports, native views, metaharness cutover | Written/connected; unverified |
-| Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | mutation selection, archive handling, compatibility/behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
-| Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native edit-result diff metadata | Written/connected; removal verification pending |
+| Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, retries/guided/early-stop policies, formatted exports, native views, metaharness cutover | Written/connected; unverified |
+| Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | mutation selection and compatibility/behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
+| Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native bounded/unchanged metadata cases | Written/connected; removal verification pending |
+| Native tool-result metadata | `rust-agent/src/{edit,tools,durable_session,agent_session,session_engine}.rs` | shared native SDK/sync/async/RPC committed records and benchmark analyzer | actual result/error/no-op/metadata bounds and persistence/replay regressions | Written/connected; unverified |
+| Fixture archives | `rust-agent/src/edit_benchmark/archive.rs` | SDK FixtureSource, CLI unpack/list/validate/run and shared task loader | malformed/CRC/path/alias/budget/cancellation/platform and installed contracts | Written/connected; unverified |
 
 ## Inputs, connections and deletion rules
 
@@ -131,6 +133,46 @@ to preserve conversion-first scheduling; it is interrupted/unverified, not passe
 Use `source-audit verify --scope affected --base b49ba10 --plan` for the reproducible
 stabilization plan. The migration gate still fails at the first inherited missing
 replacement receipt (`crates/pi-natives/tools/bench-natives.ts`).
+
+## Current benchmark integration batch
+
+Base `1e12aa2`. Continue under the autonomy rule in PLAYBOOK.md: no per-batch
+`continue` request is needed. Native result metadata and archive input now connect
+the previously named prerequisite gaps. `RUST-BENCHMARK.md` defines exact inputs,
+public interfaces, limits, failure behavior and outstanding stabilization.
+
+Connections: pi-edit staged diff -> typed ToolOutput -> shared durable writer ->
+sync and async/RPC committed records -> shape analyzer and benchmark ToolEvidence.
+Explicit invocation error status prevents successful read text starting `error:`
+from becoming a failed result. `AgentSession::stored_messages` exposes immutable
+lossless records. Run requirements and optional messages.json export use that same
+owner; raw usage is saved before observation/export failure. No separate tool
+registry, provider replay codec or persistence writer is introduced.
+
+Archive connections: ordinary FixtureSource/unpack_fixtures -> native Rust tar/gzip
+and jailed atomic creates -> shared task loader -> list/validate/run workers.
+Automatic temporary ownership spans all consumers. Directory listing paths stay
+stable; archive listings expose source/task identifiers without dead temporary
+paths. Explicit output extraction retains a partial directory on failure. No
+archive source is executed. Native libraries replace external shell/runtime glue.
+
+Deletion: zero TS sources are removed in this integration batch. The analyzer
+removed in `1e12aa2` stays pending verification; native mutation selection and
+metaharness consumers still own the remaining benchmark TS sources. No feature or
+source verification counter advances. Recover by reverting this batch to
+`1e12aa2`; retained TS generator/metaharness behavior and original fixture archives
+remain available. New public SDK configuration fields are a conversion checkpoint.
+
+Stabilization: actual edits/no-ops/denials/read-prefixes, bounded metadata,
+lossless sync/async/RPC replay, failed/unresolved tool observations, requirements,
+exports/partial usage; distributed tar.gz fixtures, long/PAX headers, CRC/trailing
+members, link/device/sparse rejection, path/case aliases, payload/allocation budgets,
+cancellation/cleanup and installed eight-target behavior. Native shape projection
+of unknown numeric usage and persistence recovery still need explicit coverage.
+Run the consolidated contracts through `cargo xtask test -p harvest-omp`, followed
+by installed checks and the unchanged migration/source-removal gates. All remain
+deferred. Compiler connection and metadata logs/receipt use ignored
+`target/migration/conversion-benchmark-integrations-*`; no addon rebuild is needed.
 
 ## Stabilization queue (deferred, not passed)
 

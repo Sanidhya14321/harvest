@@ -729,9 +729,21 @@ impl Driver {
 		events: &mpsc::Sender<WorkerPacket>,
 		usage: Option<&crate::usage::UsageReport>,
 	) -> Result<()> {
+		self.commit_with_details(run, message, events, usage, None, None)
+	}
+
+	fn commit_with_details(
+		&mut self,
+		run: RunId,
+		message: ChatMessage,
+		events: &mpsc::Sender<WorkerPacket>,
+		usage: Option<&crate::usage::UsageReport>,
+		details: Option<&serde_json::Value>,
+		tool_error: Option<bool>,
+	) -> Result<()> {
 		let receipt = self
 			.log
-			.commit_with_usage_receipt(&message, self.model.model_id(), usage)
+			.commit_with_metadata_receipt(&message, self.model.model_id(), usage, details, tool_error)
 			.map_err(PersistenceFailure)?;
 		events
 			.blocking_send(WorkerPacket::Committed {
@@ -820,10 +832,17 @@ impl Driver {
 			for call in calls {
 				let output = self
 					.tools
-					.invoke(&self.root, &call, self.approval.as_ref(), cancellation)
-					.unwrap_or_else(|error| format!("error: {error:#}"));
-				let message = chat::tool_result(&call.id, output);
-				self.commit(run, message.clone(), events)?;
+					.invoke_detailed(&self.root, &call, self.approval.as_ref(), cancellation)
+					.unwrap_or_else(|error| tools::ToolOutput::failure(format!("error: {error:#}")));
+				let message = chat::tool_result(&call.id, output.content);
+				self.commit_with_details(
+					run,
+					message.clone(),
+					events,
+					None,
+					output.details.as_ref(),
+					Some(output.is_error),
+				)?;
 				messages.push(message);
 			}
 			cancellation.heartbeat()?;
