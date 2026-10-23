@@ -23267,19 +23267,19 @@
     },
     {
       "path": "packages/coding-agent/src/extensibility/extensions/types.ts",
-      "disposition": "review-required",
-      "implementation": "absent",
+      "disposition": "replace",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
-      "contract": null,
-      "consumers": null,
-      "persisted_formats": null,
-      "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "contract": "Shared extension/public UI contracts. Reviewed subset: notification/progress/status and selection-data contracts plus executable callback retirement boundary. Native plugin protocol v1 emits bounded declarative progress/notification/choices through SDK, sync/async session and RPC event consumers. Other extension types/hooks/widgets/settings and actual interactive choice response behavior remain unported/unreviewed and must not be inferred complete.",
+      "consumers": "Native Rust executable plugin author/host -> ToolRuntime event callbacks -> sync AgentSession and async owner/worker -> SDK/CLI --events and RPC v1/v2. Existing TS extension loader/runner/wrapper/UI and SDK imports still consume this file; no legacy cutover or deletion.",
+      "persisted_formats": "Existing extension configuration and historical sessions remain unchanged. Native plugin UI events are provisional typed data associated with session/run/sequence/model call ID, not persisted model messages or executable callbacks. Reconnect UI state/replay remains pending.",
+      "external_dependencies": "Existing Rust plugin JSONL SDK/host, shared bounded process/runtime and session/RPC owners; no JS runtime in native event forwarding. Retained TS extension/UI consumers still require legacy infrastructure.",
+      "rust_destination": "rust-agent/src/plugins/{protocol,host,sdk}.rs; tools.rs; agent_session.rs; session_engine.rs; rpc.rs",
+      "verification_requirements": "Consolidated external Rust plugin events across SDK/sync/async/RPC v1/v2, exact parent/sequence/order, unchanged durable/model histories, admission/event/choice/ID/byte limits, lag/backpressure/cancellation/callback failure/process shutdown and host approval. Full type/API/hooks/widget/TUI/choice-response contracts and legacy consumers before eligible deletion. All behavioral/installed/platform checks deferred.",
       "retirement_reason": null,
-      "task_id": "migrate:plugins"
+      "task_id": "application:conversion-first"
     },
     {
       "path": "packages/coding-agent/src/extensibility/extensions/wrapper.ts",

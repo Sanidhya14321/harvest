@@ -46,3 +46,17 @@ pub(crate) fn read(reader: &mut impl std::io::BufRead) -> anyhow::Result<Option<
 pub(crate) fn encode(frame: &Frame) -> anyhow::Result<Vec<u8>> {
 	crate::process_transport::encode(frame)
 }
+
+pub const MAX_EVENT_BYTES: usize = 16 * 1024;
+pub const MAX_EVENT_TOTAL_BYTES: usize = 1024 * 1024;
+/// Shared author/host admission rule. Limits are applied before enqueueing or
+/// rendering data; this validates declarative data, never executable UI code.
+pub(crate) fn event_bytes(event: &Event) -> anyhow::Result<usize> {
+	if let Event::Choices { choices, .. } = event {
+		anyhow::ensure!(choices.len() <= 64, "too many plugin choices");
+	}
+	let mut output = harvest_runtime::BoundedWriter::new(MAX_EVENT_BYTES);
+	serde_json::to_writer(&mut output, event)
+		.map_err(|_| anyhow::anyhow!("plugin event exceeds byte limit"))?;
+	Ok(output.into_inner().len())
+}

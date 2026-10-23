@@ -31,12 +31,18 @@ pub struct Context<'a> {
 	output:           &'a mut dyn Write,
 	next_host_id:     u64,
 	events:           usize,
+	event_bytes:      usize,
 }
 impl Context<'_> {
 	pub fn event(&mut self, event: Event) -> Result<()> {
 		self.cancellation.heartbeat()?;
 		self.events += 1;
 		ensure!(self.events <= protocol::MAX_EVENTS, "too many plugin events");
+		self.event_bytes += protocol::event_bytes(&event)?;
+		ensure!(
+			self.event_bytes <= protocol::MAX_EVENT_TOTAL_BYTES,
+			"plugin event stream exceeds byte limit"
+		);
 		write_frame(self.output, &Frame::Event { id: self.id, event })
 	}
 
@@ -178,6 +184,7 @@ pub fn serve(
 					output: &mut output,
 					next_host_id: 0,
 					events: 0,
+					event_bytes: 0,
 				};
 				let result = if tools.iter().any(|tool| tool.name() == name) && arguments.is_object() {
 					handler.call(&name, arguments, &mut context)

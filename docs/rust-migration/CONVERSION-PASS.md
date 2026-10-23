@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current mutation-producer continuation base: `aedb5d3`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current plugin-event continuation base: `165827d`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -24,7 +24,7 @@ through this table and the machine task before editing a shared interface.
 | Tool schemas/registration | `rust-agent/src/chat.rs`, `tools.rs` | OpenAI/Anthropic model requests; sync/async session tool runtime | schema/collision regressions and dynamic registry integration tests | Written/connected; unverified |
 | Native plugin v1 host | `rust-agent/src/plugins/{protocol,host}.rs` | `ToolRuntime`, `AgentSession`, `SessionEngineOptions`, run/RPC `--plugin` | cancellation/exit/queue/approval tests; graceful draining and descendant cleanup | Written/connected; unverified |
 | Rust plugin SDK | `rust-agent/src/plugins/sdk.rs`, `examples/native-plugin.rs` | protocol authoring, host callbacks, cancellation, typed UI events | copied external consumer; version/malformed/process-exit tests; installed platforms | Written/connected; unverified |
-| Plugin UI | same protocol Event enum; SDK callback | direct host SDK callback | session/TUI forwarding and interactive choice responses | Partial; unfinished |
+| Plugin UI | same protocol Event enum; SDK callback | direct SDK, sync/async session, CLI --events and RPC v1/v2 event streams | native TUI rendering, durable UI/reconnect state and interactive choice responses | Partial; unfinished |
 | Native settings/profiles | `rust-agent/src/configuration.rs`, `configuration/{document,file}.rs`, `config.rs` | sync/async run, RPC, SDK, redacted `harvest config`; TOML/JSONC/YAML overlays | legacy settings schema/discovery/external-source parity, settings persistence/UI, credential ownership | Written/connected foundation; unfinished parity |
 | Typed config file owner | `rust-agent/src/configuration/file.rs` | layered native loader, persistent SDK owner, explicit CLI config migrate | full settings/default/discovery and implicit startup migration; cache/validation/migration/installed behavior | Written/connected; unverified |
 | Bounded serialized output | `crates/harvest-runtime/src/limits.rs` | config migration, existing process JSONL encoding and fixture archive export | byte-boundary/error/newline/round-trip regressions | Written/connected; unverified |
@@ -332,6 +332,41 @@ streaming usage, tool approval/session lifecycle and core-build diagnostics. Use
 `cargo xtask test -p harvest-omp` in consolidated stabilization. Compiler/format/
 ownership receipts use ignored `target/migration/conversion-provider-values-*`;
 behavioral/installed/platform/performance checks remain deferred.
+
+## Current plugin-event continuation
+
+Owner: `application:conversion-first`; base `165827d`. Reviewed input subset:
+extension UI notify/progress/selection data in `extensibility/extensions/types.ts`,
+existing native plugin host/SDK protocol event callback, ToolRuntime invocation,
+sync/async session event/writer ownership and RPC adapter. Sole owner remains the
+same plugin protocol and session event infrastructure. Other extension types and
+interaction callbacks are explicitly not reviewed/ported by this subset.
+
+Written/connections: shared author/host event admission -> ToolRuntime event-aware
+methods -> sync AgentSession / bounded async worker packets -> existing owner
+sequences / SDK / CLI --events / RPC v1/v2. Native output carries session/run/
+sequence/tool-call correlation; no plugin data becomes a model message or another
+durable writer. Limits: 16 KiB serialized event, 1 MiB total event data, 1,024
+per-call events, 64 choices, nonempty parent call ID <=256 bytes. Old SDK methods
+retain explicit ignored-event behavior; sessions use the event-aware methods.
+
+Remaining prerequisites: native TUI rendering, widget/status persistence and
+reconnect state, interactive choice request/response protocol, full extension hooks
+and actual TS loader/UI consumer replacement. The existing response-exchange byte
+counter re-encodes frames, so raw whitespace/ignored-field wire accounting needs
+an explicit shared process-transport follow-up before certifying that quota.
+Payload admission limits above do not claim to solve this separate raw-wire gap.
+Keep types.ts retained/partial, with full remaining API review owned here.
+
+Recovery: revert this continuation to 165827d. Consolidated acceptance: external
+Rust author/host SDK progress/notification/choice events through sync/async/CLI/RPC;
+parent/session/run/sequence and commit ordering; unchanged stored/model histories;
+author/host size/count/ID/choices bounds; lag/backpressure/reconnect, cancellation,
+callback failure, unexpected exit and shutdown; unchanged final-argument approval.
+Use `cargo xtask test -p harvest-omp` during stabilization. See
+`docs/rust-plugin-protocol.md`; receipts/logs use ignored
+`target/migration/conversion-plugin-events-*`. No source deletion, verified
+capability or completed interactive workflow is claimed.
 
 ## Stabilization queue (deferred, not passed)
 

@@ -441,10 +441,22 @@ impl ToolRuntime {
 		policy: &dyn Approval,
 		cancellation: &harvest_runtime::cancel::CancelToken,
 	) -> Result<ToolOutput> {
+		self.invoke_detailed_with_events(root, call, policy, cancellation, &mut |_| Ok(()))
+	}
+
+	/// Plugin data is provisional session UI, never model-visible tool output.
+	pub fn invoke_detailed_with_events(
+		&mut self,
+		root: &Path,
+		call: &ToolCall,
+		policy: &dyn Approval,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_event: &mut dyn FnMut(crate::plugins::protocol::Event) -> Result<()>,
+	) -> Result<ToolOutput> {
 		if call.function.name == "edit" {
 			return invoke_detailed(root, call, policy, cancellation);
 		}
-		Ok(ToolOutput::text(self.invoke(root, call, policy, cancellation)?))
+		Ok(ToolOutput::text(self.invoke_with_events(root, call, policy, cancellation, on_event)?))
 	}
 
 	pub fn configure_plugins(
@@ -560,6 +572,17 @@ impl ToolRuntime {
 		policy: &dyn Approval,
 		cancellation: &harvest_runtime::cancel::CancelToken,
 	) -> Result<String> {
+		self.invoke_with_events(root, call, policy, cancellation, &mut |_| Ok(()))
+	}
+
+	pub fn invoke_with_events(
+		&mut self,
+		root: &Path,
+		call: &ToolCall,
+		policy: &dyn Approval,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_event: &mut dyn FnMut(crate::plugins::protocol::Event) -> Result<()>,
+	) -> Result<String> {
 		if matches!(call.function.name.as_str(), "lsp" | "debug") {
 			return self.language_services.invoke(call, policy, cancellation);
 		}
@@ -578,7 +601,7 @@ impl ToolRuntime {
 				.iter()
 				.any(|tool| tool.name() == call.function.name)
 		}) {
-			return plugin.invoke(root, call, policy, cancellation, &mut |_| Ok(()));
+			return plugin.invoke(root, call, policy, cancellation, on_event);
 		}
 		if call.function.name != "browser" {
 			return invoke_with_cancellation(root, call, policy, cancellation);

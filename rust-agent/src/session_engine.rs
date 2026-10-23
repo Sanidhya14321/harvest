@@ -172,6 +172,7 @@ pub enum SessionEngineEventKind {
 	Queued,
 	Started,
 	TextDelta { text: String },
+	PluginEvent { tool_call_id: String, event: crate::plugins::protocol::Event },
 	Committed { entry_id: String, role: String, message: Box<RawValue> },
 	Completed,
 	Cancelled,
@@ -405,6 +406,11 @@ struct Driver {
 }
 
 enum WorkerPacket {
+	PluginEvent {
+		run:          RunId,
+		tool_call_id: String,
+		event:        crate::plugins::protocol::Event,
+	},
 	Delta {
 		run:  RunId,
 		text: String,
@@ -649,6 +655,9 @@ impl Owner {
 
 	async fn packet(&mut self, packet: WorkerPacket) -> Result<()> {
 		match packet {
+			WorkerPacket::PluginEvent { run, tool_call_id, event } => {
+				self.emit(Some(run), SessionEngineEventKind::PluginEvent { tool_call_id, event })?;
+			},
 			WorkerPacket::Delta { run, text } => {
 				self.emit(Some(run), SessionEngineEventKind::TextDelta { text })?;
 			},
@@ -832,7 +841,22 @@ impl Driver {
 			for call in calls {
 				let output = self
 					.tools
-					.invoke_detailed(&self.root, &call, self.approval.as_ref(), cancellation)
+					.invoke_detailed_with_events(
+						&self.root,
+						&call,
+						self.approval.as_ref(),
+						cancellation,
+						&mut |event| {
+							cancellation.heartbeat()?;
+							events
+								.blocking_send(WorkerPacket::PluginEvent {
+									run,
+									tool_call_id: call.id.clone(),
+									event,
+								})
+								.map_err(|_| anyhow::anyhow!("session event owner closed"))
+						},
+					)
 					.unwrap_or_else(|error| tools::ToolOutput::failure(format!("error: {error:#}")));
 				let message = chat::tool_result(&call.id, output.content);
 				self.commit_with_details(

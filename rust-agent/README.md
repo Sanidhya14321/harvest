@@ -96,7 +96,9 @@ harvest run --workspace /path/to/workspace --session sessions/current.jsonl \
 ```
 
 `--events` emits JSON lines with session ID, run generation and monotonic sequence.
-Text deltas are provisional; committed events follow synced writes. The synchronous
+Text deltas and bounded declarative plugin events are provisional; committed events
+follow synced writes. Plugin events include parent tool-call correlation and also
+reach RPC v1/v2; TUI rendering and interactive choice replies remain unfinished. The synchronous
 SDK exposes `AgentSession::open`, `begin`, `execute` and `submit`, with cancellation
 handles tied to each run. A writer lock protects cooperating Rust processes;
 compare-and-append also detects changes by outside writers holding the file lock.

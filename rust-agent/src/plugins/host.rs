@@ -175,6 +175,10 @@ impl Plugin {
 		let arguments: Value = serde_json::from_str(&call.function.arguments)
 			.map_err(|_| anyhow::anyhow!("invalid plugin tool arguments"))?;
 		ensure!(arguments.is_object(), "plugin arguments must be an object");
+		ensure!(
+			!call.id.is_empty() && call.id.len() <= 256,
+			"plugin tool call identity exceeds limit"
+		);
 		cancellation.heartbeat()?;
 		// All external execution needs final-argument host approval. Plugin metadata
 		// cannot grant readonly privileges or authorize nested host mutations.
@@ -205,6 +209,7 @@ impl Plugin {
 	) -> Result<String> {
 		self.send(&Frame::Call { id, name: call.function.name.clone(), arguments }, deadline)?;
 		let mut events = 0;
+		let mut event_bytes = 0;
 		let mut host_ids = BTreeSet::new();
 		let mut bytes = 0;
 		loop {
@@ -222,6 +227,11 @@ impl Plugin {
 				Frame::Event { id: response_id, event } if response_id == id => {
 					events += 1;
 					ensure!(events <= protocol::MAX_EVENTS, "too many plugin events");
+					event_bytes += protocol::event_bytes(&event)?;
+					ensure!(
+						event_bytes <= protocol::MAX_EVENT_TOTAL_BYTES,
+						"plugin event stream exceeds byte limit"
+					);
 					on_event(event)?;
 				},
 				Frame::HostCall { id: host_id, parent_id, call } if parent_id == id => {

@@ -40,14 +40,54 @@ and known interpreter executables produce migration guidance.
 
 Queues are bounded (8 outbound, 16 inbound frames). Calls have a host timeout
 (default 30 seconds, maximum 10 minutes), at most 1024 events, 64 host callbacks
-and 16 MiB of response frames. Requests and callbacks must match their owner IDs.
+and a 16 MiB canonical response-data budget. Requests and callbacks must match
+their owner IDs. This existing aggregate counter measures re-encoded decoded
+frames; raw whitespace/unknown-field wire accounting still needs a bounded
+process-transport follow-up before certifying a raw-wire quota.
 
 Declarative events are progress, notification and choice data. The host SDK
-exposes an event callback. Native session/TUI event delivery and interactive
-choice responses are unfinished; no executable UI callback compatibility exists.
-Do not advertise those unfinished interaction workflows as supported.
+exposes an event callback. Native sync/async session streams now forward them as
+provisional `plugin_event` data, tagged with the parent model tool-call ID and the
+existing session/run/sequence envelope. They are not committed as model messages
+or persisted as executable/prompt content. Rust SDK callers can use
+`ToolRuntime::invoke_with_events` / `invoke_detailed_with_events`; the older
+methods retain no-event-callback behavior.
+
+The RPC v1/v2 adapter emits an additive `plugin_event` notification containing
+`sessionId`, `run`, `runGeneration`, `sequence`, `toolCallId` and the declarative
+`event` object. It goes through the same bounded output queue/chunking owner.
+Native CLI --events and the SDK serialize the same typed session events. The
+async worker sends through the existing bounded worker channel, and its owner
+assigns sequence numbers. Parent assistant commit precedes plugin events; the
+tool-result commit follows them. This does not introduce another durable writer.
+
+Both author SDK and host enforce at most 16 KiB of serialized event data, 1 MiB
+aggregate event data and 1,024 events per call, with at most 64 choices in a choice
+event. Parent model call IDs must be nonempty and no more than 256 bytes. These
+payload limits apply before session enqueueing and are separate from the raw
+frame limit. Invalid/excessive plugin events fail the call and terminate the
+ambiguous exchange; callbacks retain existing cancellation/error ownership.
+
+Native TUI rendering, widget/status persistence, reconnect UI replay and
+interactive choice replies are unfinished. Choices are currently display data:
+sending one does not wait for or return a user answer. No executable UI callback
+compatibility exists. Event subscribers must handle broadcast lag/reconnect via
+the existing committed snapshot contract; UI events themselves are provisional.
+Do not advertise the unfinished interaction workflows as supported.
 
 Implement `harvest_omp::plugins::sdk::Handler` and call `sdk::serve_stdio` from a
 Rust executable. `rust-agent/examples/native-plugin.rs` demonstrates a jailed
 host read through this same protocol. Configuration arguments/environment are
 trusted host inputs and omitted from Debug; do not put credentials on argv.
+
+## Event-connection stabilization
+
+Continuation base `165827d`; code-written/connected, unverified. Consolidate an
+external Rust plugin emitting progress/notifications/choice data through direct
+SDK, sync run --events, async session and RPC v1/v2. Verify parent IDs and monotonic
+sequence/order, unchanged model transcript and durable records, bounded/adversarial
+events, author/host admission agreement, slow/lagged/closed subscribers, malformed
+IDs, cancellation/callback failure/process exit, final-argument nested approvals
+and writer shutdown. Cover raw incoming-byte accounting separately in the shared
+process owner, including whitespace and ignored fields. Behavioral/installed/
+platform evidence remains deferred; compilation is connection evidence only.

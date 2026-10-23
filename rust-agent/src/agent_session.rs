@@ -31,6 +31,7 @@ impl RunHandle {
 pub enum EventKind {
 	Started,
 	TextDelta { text: String },
+	PluginEvent { tool_call_id: String, event: crate::plugins::protocol::Event },
 	Committed { entry_id: String, role: String },
 	Completed,
 	Failed,
@@ -264,10 +265,21 @@ impl AgentSession {
 			}
 			for call in calls {
 				cancellation.heartbeat()?;
-				let output = match self
-					.tools
-					.invoke_detailed(&self.root, &call, approval, cancellation)
-				{
+				// Temporarily move the sole runtime owner so the event callback may
+				// use the session's existing sequence/sink without aliasing tools.
+				let mut runtime = std::mem::take(&mut self.tools);
+				let root = self.root.clone();
+				let result = runtime.invoke_detailed_with_events(
+					&root,
+					&call,
+					approval,
+					cancellation,
+					&mut |event| {
+						self.emit(EventKind::PluginEvent { tool_call_id: call.id.clone(), event }, sink)
+					},
+				);
+				self.tools = runtime;
+				let output = match result {
 					Ok(output) => output,
 					Err(error) => tools::ToolOutput::failure(format!("error: {error:#}")),
 				};

@@ -99,7 +99,7 @@ where
 				event = subscription.events.recv() => {
 					let event = event.context("RPC session event stream interrupted; reconnect for a committed snapshot")?;
 					if matches!(event.event, SessionEngineEventKind::Closed) { break; }
-					if let Some(run) = event.run { adapter.event(run.generation, &event.event).await?; }
+					if let Some(run) = event.run { adapter.event(run.generation, &event).await?; }
 				},
 				changed = failed.changed() => {
 					changed.context("RPC output task stopped")?;
@@ -558,7 +558,12 @@ impl Adapter<'_> {
 			"todoPhases":[], "runGeneration":snapshot.active.map_or(self.generation, |run| run.generation)})
 	}
 
-	async fn event(&mut self, generation: u64, event: &SessionEngineEventKind) -> Result<()> {
+	async fn event(
+		&mut self,
+		generation: u64,
+		frame: &crate::session_engine::SessionEngineEvent,
+	) -> Result<()> {
+		let event = &frame.event;
 		let has_other_runs = self.runs.keys().any(|other| *other != generation);
 		let Some(run) = self.runs.get_mut(&generation) else {
 			return Ok(());
@@ -572,6 +577,12 @@ impl Adapter<'_> {
 			SessionEngineEventKind::TextDelta { text } => {
 				run.progress
 					.delta(self.sink, &self.options.model, text)
+					.await?;
+			},
+			SessionEngineEventKind::PluginEvent { tool_call_id, event } => {
+				self
+					.sink
+					.send(&json!({"type":"plugin_event", "sessionId":frame.session_id, "run":frame.run, "runGeneration":generation, "sequence":frame.sequence, "toolCallId":tool_call_id, "event":event}))
 					.await?;
 			},
 			SessionEngineEventKind::Committed { role, message, .. } => {

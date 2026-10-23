@@ -1,157 +1,75 @@
-# Current migration handoff
+# Current Rust migration handoff
 
-Work on **`ts-to-rust`**. Find the actual checkpoint with `git log -1` and preserve
-user/other-agent changes. The original baseline is `d811cb2`; never modify the
-immutable source baseline. The imported other-agent history through `6eefffc`
-is preserved. Historical continuation narratives are in
-`archive/HANDOFF-2026-10-23-before-python-retirement.md`.
+Use existing `ts-to-rust`; obtain the actual remote tip and preserve history,
+user changes and other writers. Original immutable baseline: `d811cb2`. Imported
+other-agent history through `6eefffc` remains preserved. Prior checkpoint detail:
+[archived handoff](archive/HANDOFF-2026-10-24-before-context-refresh.md).
 
-## Continuing rule
+## Execution rule and ownership
 
-**Conversion first, stabilization/tests later** is the latest explicit user
-instruction. Read `PLAYBOOK.md` and the active shared task/card
-`CONVERSION-PASS.md` first. It reserves interfaces and lists all features,
-written/connected code, unfinished contracts and deferred verification. Avoid
-per-file tests, repeated legacy suites and addon rebuilds. Commit coherent
-in-progress conversion checkpoints without claiming verified feature completion.
+Active task: `application:conversion-first`, in progress. Read root AGENTS.md,
+PLAYBOOK.md, SCOPE.md, CONVERSION-PASS.md and authoritative ledgers. The user wants
+connected Rust conversion batches first, consolidated behavioral/installed/platform
+stabilization later. Avoid per-file tests, repeated addon builds and unsupported
+completion claims. Commit/push coherent unverified checkpoints; keep advancing
+without requesting another continue. Do not merge to main or publish releases.
+An hourly continuation automation is configured; inspect actual run state and
+avoid duplicate writers rather than assuming schedule creation proves execution.
 
-## Active checkpoint
+## Current checkpoint
 
-`application:conversion-first` is in_progress and has scheduling priority. Native
-owned tool schemas, executable plugin protocol/host/Rust SDK, layered native
-configuration/profiles, rust-v1 edit scoring, native MCP and language/debug services are written and connected across
-native APIs/CLI/sync/async/RPC. The example plugin uses host-jailed reads. Startup
-is explicitly host-enabled. The redacted config inspector starts no plugins.
+Provider values (`165827d`): configuration/values.rs and values/command.rs connect
+live env/literal and explicitly authorized shell credential/header sources to the
+shared HttpModel::from_configuration builder. Sync/async run, RPC, SDK and benchmark
+use it for OpenAI-compatible and Messages requests. Cache/budget/refresh/redaction
+contracts and unported registry/OAuth/retry work are in NATIVE-PROVIDER-VALUES.md.
 
-MCP now uses a shared bounded process owner with plugins, and the existing
-cancellable HTTP/SSE owner for streamable HTTP. Client initialization, bounded
-pagination, tool/resource/prompt APIs, host approval, native config and CLI are
-connected. See `NATIVE-MCP.md` for unfinished OAuth/discovery/legacy SSE,
-notifications/reconnect and platform process cleanup. Legacy MCP sources remain.
+Plugin-event continuation base `165827d`: native author/host admission, ToolRuntime,
+sync/async session owners, CLI --events and RPC v1/v2 now forward bounded declarative
+progress/notification/choice data with session/run/sequence/tool-call correlation.
+These events never enter durable model history. Interactive choice replies, TUI
+rendering and persistent UI/reconnect state remain unfinished. See
+../rust-plugin-protocol.md and the common conversion card.
 
-The previous language-services continuation added bounded Content-Length framing, LSP initialization/
-queries/document sync/UTF-16 text edits and DAP adapter/session state. Both share
-the existing process/tool/config/approval owners. Native run/RPC host flags are
---enable-lsp/--enable-debug; direct SDK and terminal CLI connections are present.
-See NATIVE-LSP-DAP.md for incomplete discovery/diagnostics/resource operations/
-recovery/socket/reverse-request/platform behavior. Legacy consumers remain.
+Compiler, format and ownership checks only; behavioral/installed/platform evidence
+is deferred. No TS source is deleted and no verified capability/removal counter
+advances in these continuations. Generate counts from `cargo xtask playbook status
+--json`; partial Rust code and raw language bytes are not engineering completion.
+Ignored receipts/logs: target/migration/conversion-provider-values-* and
+conversion-plugin-events-*. Prior source hashes/evidence remain historical.
 
-Compiler connection results are under
-`target/migration/conversion-lsp-dap-connections*.log`. Behavioral tests, Clippy,
-installation, performance and legacy cutover checks remain **deferred**. No new
-capability is verified/done or legacy-removed. Continue broad code conversion via
-the shared task/card, then consolidate stabilization. Source inventories and the
-generated feature snapshot retain honest pending ownership.
+## Next dependency-ready work
 
-Default application and consumers still use TS. Do not delete their sources or
-replace the product with the experimental native subset. Preserve final Rust-only
-acceptance gates. Whole-source conversion remains unfinished; the common card
-contains the generated full feature snapshot. Previous validated Anthropic and
-Python-retirement checkpoints are in the archived handoff and their cards.
+- Plugin raw-wire accounting: existing exchange budget re-encodes decoded frames;
+  inspect shared process_transport reader/Process receive ownership and count actual
+  incoming bytes, including whitespace/ignored fields. Current event-body bounds
+  do not certify a raw-wire quota. Preserve one process and session event owner.
+- Plugin TUI/state/choice-response work needs explicit request/reply and reconnect
+  contracts; do not invent executable callbacks or claim choices are interactive.
+- Providers: full models schema/discovery/override/KDL consumers, stored credentials,
+  OAuth refresh, account stickiness/usage backoff/rotation and automatic auth retry.
+  Reuse current value resolver/invalidation and cancellable transport.
+- Benchmark: shared AST has partial paths for 23 mutation names, paired preparation,
+  exact hunks, rust-v1 scoring, native archive export/import and orchestration.
+  Finish corpus/difficulty/dedup/calibration/prompts, retries/early-stop/native views
+  and actual metaharness cutover. See RUST-BENCHMARK.md and the common card.
+- Settings: ConfigFile<T> owns typed bounded decoding/cache/default/fallback/
+  relocation and explicit JSON-to-YAML creation. Full schemas/discovery, implicit
+  startup migration and conflict/quarantine/retry-aware persistent editing remain.
 
-## Current continuation
+## Preserve pending consumers and blockers
 
-Provider-value continuation base `cb4216d`: native configuration retains live
-file API-key/header sources. Shared HttpModel::from_configuration connects
-OpenAI-compatible and Messages requests across sync/async run, RPC, Rust SDK and
-benchmark hosts. Exact env/literal resolution, explicitly enabled native shell
-credentials, bounded per-workspace success/negative cache, one-pass header folding
-and complete command-source invalidation are written. Async mode reuses the
-configured model. Inspection/migration do not execute values. See
-NATIVE-PROVIDER-VALUES.md and the common card for limits and supported semantics.
+Default product still launches TS. Never replace it with the partial candidate.
+Keep shared TS until its final consumer moves. In particular JS eval workers still
+serve browser/computer; their retirement stays blocked on native consumers. Native
+shell completion/bootstrap generation is retired, but TS generation and owned
+installer/test scripts remain pending; in-application completion is still absent.
 
-Next provider prerequisites: model registry/override/KDL and live-proxy consumers,
-credential accounts/OAuth/usage/session rotation plus automatic auth retry. TS
-model-config-values.ts stays retained/partial. No TS is deleted or capability
-verified by this continuation; aggregate compiler/format/ownership only, with
-behavioral/installed/platform checks deferred. Old application incremental caches
-were cleaned to regain space; sources/evidence/engine/dependency caches remain.
-
-Native completion retirement base `c4aef9a`: the candidate now rejects all
-`completions` invocations with migration guidance, emits no scripts and installs
-no shell files/wrappers. Generator dependency and shell.rs are removed. Both
-transitional native installers no longer call that retired command; checksum,
-artifact selection, real native aliases and PATH handling remain. Changed CLI and
-installer tests are queued, not run. See distribution.md and the common card.
-Native interactive completion is still absent; the old generator no longer counts
-as partial implementation. TS completion generation and owned installer/test
-scripts remain pending final Rust replacement/removal; no TS is deleted here.
-JavaScript-eval removal remains blocked on shared browser/computer consumers,
-confirmed by direct source review. Do not delete that shared worker/runtime.
-
-Configuration-file continuation base `5341753`: native layered reads now use
-shared `configuration::ConfigFile<T>` with primary/fallback paths, cached
-success/missing/error results, invalidation/mtime/relocation and validation/default
-APIs. Explicit `config --workspace ROOT migrate --file NAME.yml` converts same-stem
-JSON through bounded typed validation, object round trip, source fingerprint check
-and writer-owned create-only publication. JSON remains; either existing YAML name
-causes a skipped result. Native reads never migrate automatically. The bounded
-output writer is shared with existing process frames and fixture gzip export.
-Read NATIVE-CONFIGURATION.md and the common card for exact limits and gaps.
-
-TS config-file.ts remains partial/retained: full settings schemas/discovery,
-implicit/async startup migration, durable conflicting-edit/quarantine/retry/UI and
-actual TS consumers still need conversion. Do not introduce a blind settings save
-that loses generation/pending-path contracts. Compiler/format/ownership checks
-only; behavioral/installed/platform checks and verified counters stay pending.
-
-Mutation-producer continuation base `e29f5cd`: shared pi-ast now has code paths
-for all 23 named mutation families. Regex changes use the existing Regex grammar;
-composites combine non-overlapping edits from distinct families; identifier edits
-use a conservative JavaScript lexical binding resolver. Full binding/grammar
-eligibility remains partial. Native generation now reports bounded rejection
-examples. SDK/CLI `pack` exports validated inert fixtures through the same portable
-archive/path rules consumed by native unpack/list/validate/run. See
-RUST-BENCHMARK.md and the common card for supported forms, limits and policies.
-
-No TS source is deleted: mutations.ts/generate.ts still serve the legacy generator.
-Next: complete reviewed binding/grammar eligibility, corpus/difficulty/dedup/
-calibration and specialized prompts, then actual generator/metaharness cutover.
-Behavioral/installed/platform checks remain deferred; compiler/format/ownership
-checks do not establish parity. Verified capability/removal counters do not advance.
-
-The user explicitly requests minimal interaction: continue across ready batches
-within active execution, push coherent checkpoints and do not ask for another
-`continue` after a commit. The autonomy rule is persisted in PLAYBOOK.md. An enabled hourly automation
-("Continue Harvest Rust migration") now schedules coding resumptions for this
-task. This supersedes the earlier statement that no scheduling option existed.
-Creation is confirmed; actual automated coding/run results must be verified from
-the service and remote commits. Do not create duplicate writers. Read the current
-remote tip and save checkpoints for later resumptions without asking the user to
-type continue. Pause scheduling on user cancellation or verified completion.
-Progress percentages must distinguish verified capability parity, partial code
-and verified source removal; never describe partial-code ratios as completion.
-
-## Open blockers
-
-- Normal application launch is still TypeScript. The Rust candidate is opt-in.
-- 35 inherited deleted sources lack verified replacements/retirements. The source
-  gate first rejects `crates/pi-natives/tools/bench-natives.ts`. See
-  `tasks/CONCURRENT-REMOVALS.md`; preserve failed evidence and never weaken gates.
-- Legacy session/runtime failures need bounded contract review. Existing singleton
-  failures are in `tasks/LEGACY-SESSION-CONTRACTS.md`; current runtime results stay
-  failed even when the retirement-specific checks pass.
-- Whole-addon strict Clippy has 14 existing diagnostics; do not suppress them.
-  Native addon tests/terminal failures were repaired separately.
-- Platform CI, actual installed parity and release checks remain pending/failed.
-  `tasks/PORTABILITY.md` and `tasks/ARTIFACT-SIZE.md` record known blockers; the
-  measured release binary exceeds the unchanged 20 MiB budget.
-
-## Resume and evidence
-
-```sh
-cargo xtask playbook status --json
-cargo xtask playbook next --json
-cargo xtask migration
-cargo xtask capabilities
-```
-
-Use generated counts, not manual percentages. Native RPC transport is implemented
-but its production commands/consumers and v1 display behavior remain partial.
-Reuse existing Rust engines; preserve approval, cancellation, persistence and
-shutdown contracts. Keep shared sources until their last consumer moves.
-
-Use `cargo xtask test` (nextest plus doctests), not direct `cargo test`. Frozen
-verification receipts belong under ignored `target/migration/`. Push coherent
-in-progress conversion checkpoints to `ts-to-rust`; only stabilization evidence
-can establish verified migration. Publishing/merging remains separate.
+35 inherited removals lack evidence; the source gate first rejects
+crates/pi-natives/tools/bench-natives.ts. Additional recent removal evidence stays
+pending. See tasks/CONCURRENT-REMOVALS.md. Legacy session/runtime failures reproduce
+baseline 2ff0193; whole-addon Clippy has 14 existing diagnostics. Release binary
+exceeds the unchanged 20 MiB budget; eight-platform installed/release evidence is
+pending. Preserve failures and gates. Use cargo xtask test (nextest + doctests)
+when stabilization starts. Ordinary build caches may be reclaimed; sources,
+immutable baseline, evidence and native-engine/dependency caches are preserved.
