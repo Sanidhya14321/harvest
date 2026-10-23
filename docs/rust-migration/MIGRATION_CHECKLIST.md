@@ -56,3 +56,9 @@ for counts and task state; this checklist does not maintain manual percentages.
 The full native TUI suite also has unresolved contracts; see
 `tasks/LEGACY-TERMINAL-CONTRACTS.md`. Keep that failure and whole-addon lint
 failures visible alongside passing DOCX/host checks.
+
+Execution split: the supervising agent selects/contracts/reviews bounded slices;
+OpenCode performs their code edits and scoped tests in an isolated worktree.
+The first assignment is `tasks/GEN-NIX.md`; it owns the two inherited Nix source
+rows. Review the resulting diff before final commits/pushes. No model output or
+claimed test result alone advances the source-removal gate.

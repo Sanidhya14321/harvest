@@ -82975,7 +82975,7 @@
       "rust_destination": "xtask/src/gen_nix.rs",
       "verification_requirements": "Replaced by cargo xtask gen-nix.",
       "retirement_reason": null,
-      "task_id": "control:concurrent-removals"
+      "task_id": "tooling:gen-nix"
     },
     {
       "path": "scripts/gen-nix-bun.ts",
@@ -82991,7 +82991,7 @@
       "rust_destination": "xtask/src/gen_nix.rs",
       "verification_requirements": "Replaced by cargo xtask gen-nix.",
       "retirement_reason": null,
-      "task_id": "control:concurrent-removals"
+      "task_id": "tooling:gen-nix"
     },
     {
       "path": "scripts/host-detect.ts",

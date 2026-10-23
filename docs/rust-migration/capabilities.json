@@ -6892,6 +6892,25 @@
           "Full native run passed three chunks and failed TUI: 1464 passed, six failed. Direct two-file reproduction repeats all six; source-bound old-addon regression comparison remains unavailable."
         ],
         "blocker": "Full native TUI contracts fail in OSC 66 resize, partial escape buffering and ConPTY/kitty ownership. Establish isolated root failures and source-bound baseline, then implement the confirmed bounded prerequisite without weakening the suite."
+      },
+      {
+        "id": "tooling:gen-nix",
+        "kind": "migration",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook",
+          "tooling:host-detect"
+        ],
+        "card": "docs/rust-migration/tasks/GEN-NIX.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": []
       }
     ]
   }

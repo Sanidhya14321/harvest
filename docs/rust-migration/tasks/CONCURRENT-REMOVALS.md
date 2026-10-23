@@ -74,3 +74,7 @@ contract and the shared migration gate; compiling new Rust types does not suffic
 Recovery restores the individual source and consumer together from Git, preserving
 user data and unrelated migration work. The new Rust host-detection replacement
 has its own direct builder verification and is handled separately from this list.
+
+Delegated bounded prerequisite: the two Nix generation rows are now owned by
+`tooling:gen-nix` / GEN-NIX.md for OpenCode implementation and supervised review.
+They remain unverified until that task's behavioral and installed checks pass.
