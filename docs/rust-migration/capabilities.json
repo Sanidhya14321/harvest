@@ -6876,7 +6876,7 @@
       {
         "id": "control:legacy-terminal-contracts",
         "kind": "control",
-        "state": "blocked",
+        "state": "done",
         "review": "reviewed",
         "work_unit": "terminal",
         "depends_on": [
@@ -6889,9 +6889,12 @@
           "playbook-check"
         ],
         "evidence": [
-          "Full native run passed three chunks and failed TUI: 1464 passed, six failed. Direct two-file reproduction repeats all six; source-bound old-addon regression comparison remains unavailable."
-        ],
-        "blocker": "Full native TUI contracts fail in OSC 66 resize, partial escape buffering and ConPTY/kitty ownership. Establish isolated root failures and source-bound baseline, then implement the confirmed bounded prerequisite without weakening the suite."
+          "The prior six failures reproduce in the full native suite and focused files; isolated ConPTY passes while partial OSC buffering fails. Rust Instant did not advance with the host timer clock.",
+          "Explicit monotonic host-clock selection/time validation connects the timer owner to existing Rust InputBuffer deadlines; native callers keep their default clock and no TS framing engine is introduced.",
+          "The resize fixture now checks the last settled full paint instead of an immediate heading-only probe; all existing reserved-column/erase assertions remain.",
+          "One optimized addon rebuild for the batch, 141 focused checks, all four full native groups, 127 Rust terminal contracts plus four doctests, and TUI/coding-agent typechecks pass.",
+          "Strict whole-addon Clippy remains failed with the same 14 prior diagnostic messages outside the changed stdin bridge; no diagnostic was suppressed."
+        ]
       },
       {
         "id": "tooling:gen-nix",

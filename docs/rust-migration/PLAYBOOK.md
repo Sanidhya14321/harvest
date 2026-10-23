@@ -17,7 +17,10 @@ scheduling, not acceptance or approved retirements.
 2. Implement against ordinary Rust engines and the native CLI/session/SDK first.
    Add a transitional binding only when the batch's identified legacy consumer
    actually needs one. Preserve unmoved consumers and their sources.
-3. Use focused checks while editing. Deduplicate the same Cargo/package checks
+3. Use focused checks while editing. The existing `OMP_NATIVE_CARGO_PROFILE=dev`
+   override is available for a warm development cache; reserve the candidate
+   optimized build for batch acceptance and never call a dev build release or
+   performance evidence. Deduplicate the same Cargo/package checks
    across the batch. Rebuild the addon once at the end only if its consumed Rust
    engine or binding changed; xtask-only changes do not rebuild it.
 4. Finalize tracked contracts, ledgers and handoff before the final verification

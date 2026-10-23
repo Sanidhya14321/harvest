@@ -262,6 +262,11 @@ export declare class NativeOAuthCallback {
 
 export declare class NativeStdinBuffer {
   constructor(options?: NativeStdinBufferOptions | undefined | null)
+  /**
+   * Advance a host-owned monotonic clock; timers and framing share its
+   * domain.
+   */
+  setTime(elapsedMs: number): void
   get chunkBytes(): number
   process(bytes: Buffer, kittyActive: boolean, endOfRead: boolean): Array<string | NativePasteEvent>
   tick(kittyActive: boolean): Array<string | NativePasteEvent>
@@ -2293,6 +2298,8 @@ export interface NativeSgrMouseEvent {
 
 export interface NativeStdinBufferOptions {
   timeout?: number
+  /** Explicit monotonic host clock, selected before the first input. */
+  hostTime?: number
   partialHoldTimeout?: number
   pasteTimeout?: number
   pasteByteLimit?: number

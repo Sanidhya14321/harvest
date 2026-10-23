@@ -53,12 +53,16 @@ The strict source-removal gate remains blocked until those contracts are resolve
 consumer connections completed by this continuation. Use the live status commands
 for counts and task state; this checklist does not maintain manual percentages.
 
-The full native TUI suite also has unresolved contracts; see
-`tasks/LEGACY-TERMINAL-CONTRACTS.md`. Keep that failure and whole-addon lint
-failures visible alongside passing DOCX/host checks.
+The former full native TUI failures are resolved in
+`tasks/LEGACY-TERMINAL-CONTRACTS.md`. Whole-addon lint failures remain visible
+alongside the passing native, DOCX and host checks.
 
 Execution mode: direct implementation, per the user's latest instruction.
 Use PLAYBOOK.md's execution-batch rules: connected native Rust behavior, shared
 engines, deduplicated focused checks and one final verification per frozen batch.
 The OpenCode request failed before edits and that execution approach is cancelled;
 its network connection is no longer a migration blocker.
+
+Verified runtime batch: `control:legacy-terminal-contracts` resolves the six prior
+native-suite failures together. All four native test groups pass; see its task
+card for the clock boundary, retained assertions and remaining independent gates.

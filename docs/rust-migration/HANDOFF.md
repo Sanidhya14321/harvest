@@ -8,6 +8,17 @@ The normal application still starts in TypeScript. No whole-product parity or
 distribution cutover is claimed. Existing browser/WASM proofs do not satisfy the
 new zero-JavaScript target.
 
+Completed **`control:legacy-terminal-contracts`** as one connected runtime batch:
+the native input bridge and host timers now share an explicitly selected monotonic
+clock, with validated timestamps and native-clock defaults for direct callers.
+The OSC 66 capture checks the settled full paint instead of the heading-only
+resize probe. Existing arrow, keyboard-push/pop and glyph-preservation assertions
+remain. One optimized addon rebuild, 141 focused tests, all four full native
+chunks, 127 Rust terminal contracts/four doctests and both affected typechecks
+pass. The former six full-native failures are resolved; the separate 14 existing
+whole-addon Clippy diagnostics remain unchanged and failed. No whole-product
+parity or source deletion is inferred from this control fix.
+
 Direct implementation resumed at the user's request; the OpenCode approach is
 cancelled. Use the execution-batch rules in PLAYBOOK.md to avoid per-file binding
 rebuilds and repeated whole-workspace tests. Scope and acceptance remain strict.
@@ -57,10 +68,10 @@ Verification logs/receipts are under `target/migration/docx-*`,
 `host-detect-*` and `merged-control-tests.log`. The optional strict whole-addon
 Clippy check still fails in unchanged PTY/portable-terminal/Wayland/OAuth code;
 `docx-napi-clippy.log` retains all 14 diagnostics. No lint was disabled. The media,
-application and xtask strict checks are separate. The full native run also fails six TUI contracts (reproduced in two files); see
-`tasks/LEGACY-TERMINAL-CONTRACTS.md`. Regression status is unproven; do not call
-them baseline-matched. The older full transition and its 22 singleton failures
-remain failed; targeted DOCX checks do not replace them.
+application and xtask strict checks are separate. The historical full native run failed six TUI contracts; that batch is now
+resolved as recorded above and in `tasks/LEGACY-TERMINAL-CONTRACTS.md`. The
+older full transition and its 22 singleton failures remain failed; passing
+native/targeted checks do not replace that transition.
 
 Completed **`browser:cdp-core`**: `harvest-browser` provides bounded native CDP
 control of a marked, locked persistent Chrome profile. Native CLI, public SDK,

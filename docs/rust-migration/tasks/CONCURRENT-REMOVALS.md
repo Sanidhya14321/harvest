@@ -78,3 +78,7 @@ has its own direct builder verification and is handled separately from this list
 Delegated bounded prerequisite: the two Nix generation rows are now owned by
 `tooling:gen-nix` / GEN-NIX.md for OpenCode implementation and supervised review.
 They remain unverified until that task's behavioral and installed checks pass.
+
+The user cancelled OpenCode delegation; `tooling:gen-nix` is now completed by
+direct implementation with 125 Rust tooling tests and native CLI fixture proof.
+Its two rows are verified. The other 35 inherited removals remain unverified.

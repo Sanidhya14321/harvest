@@ -42,3 +42,39 @@ Initial isolated observations: the partial-OSC up-arrow case still fails alone;
 ConPTY disambiguation passes alone. Preserve the complete group failure and
 investigate failed-test cleanup cascades before changing keyboard production
 flags. No baseline equivalence claim is made from these observations.
+
+## Confirmed batch and implementation boundary
+
+The native input bridge used Rust Instant while the host scheduled timers with
+its performance clock. Bun fake timers advance performance.now but not Instant;
+therefore a delivered host timer did not advance native framing deadlines. Select
+an explicit host-clock domain at construction and pass monotonic elapsed time
+through the adapter before input/deadline operations. Validate finite bounded
+nonnegative timestamps and reject backward movement or switching an active native
+clock. Ordinary Rust InputBuffer keeps its existing explicit Duration API; direct
+native consumers keep Instant by default. Do not copy framing logic into TS.
+
+The resize capture selected the immediate absolute-addressed heading-only probe,
+although this contract waits for the settled full paint and inspects CRLF spacer
+rows. Select that full paint; retain every glyph-column/erase assertion. The four
+resize cases pass with this fixture correction alone. Validate the combined input
+and resize batch with the full native suite; keep failure-cleanup cascades visible.
+One addon rebuild covers the whole batch. Recovery restores bridge and host clock
+connection together; no user/session data changes.
+
+## Completed connected batch
+
+The addon exposes optional hostTime selection and monotonic setTime validation;
+the StdinBuffer adapter supplies elapsed performance.now time before input and
+timer operations. Native callers retain Instant by default. A clock cannot be
+switched after construction, move backwards, or accept non-finite/negative values.
+An executable binding test covers deadline expiry, I/O deferral, subsequent arrow
+framing and clock errors. The renderer fixture selects the last settled full paint;
+its glyph-column/erase assertions all remain. No keyboard flags were weakened.
+
+One optimized addon rebuild serves the entire batch. All 141 focused host tests,
+all four full native chunks, 127 Rust terminal tests plus four doctests and both
+TUI/coding-agent typechecks pass. The previous six failures are resolved together.
+The strict whole-addon Clippy still fails with the same 14 prior messages outside
+the changed bridge; this task does not certify that separate lint gate or whole
+terminal/application parity. Logs: `target/migration/terminal-batch-*`.
