@@ -75,3 +75,67 @@ requirements, conversation exports, interactive benchmark views and metaharness
 consumer cutover. Global artifact/disk quotas, crash resume and custom-model
 cancellation enforcement also need explicit contracts and stabilization evidence. Babel/Prettier historical scores retain their old meanings.
 No TS benchmark source is removed before those remaining consumers move.
+
+## Native fixture tooling and edit-shape continuation
+
+```text
+harvest edit-benchmark edit-shapes --sessions-dir /path/to/sessions --max-sessions 2000 --json
+harvest edit-benchmark validate --fixtures /path/to/unpacked/tasks
+harvest edit-benchmark prepare --input /path/to/input --expected /path/to/expected --output /path/to/new-fixtures --task-id reviewed-case
+```
+
+These are conversion interfaces, with behavioral/installed verification pending.
+They share the existing task loader, filesystem jail and pi-diff line engine.
+No new parser/diff implementation or external language runtime is introduced.
+The `edit-shapes` package command now invokes the Rust CLI; the standalone
+355-line `src/edit-shape-stats.ts` is deleted. Its ledger row remains pending
+verification, with the actual removal recorded. Other benchmark TS sources stay
+because the generator and metaharness still use them.
+
+Edit-shape analysis reads bounded JSONL records, correlates edit/apply_patch IDs
+with paths, and parses numbered pipe/older space and unified diffs. Context and
+elisions close runs. Changed lines sum max(old,new) per run. Per-call distributions
+are calibration references; per-request/file totals include retries and reversals
+and remain activity upper bounds. Size/hunk/operation buckets and the historical
+upper median are preserved. Text and JSON expose parse coverage, missing diffs,
+malformed records and failed files; zero observations and incomplete file scans
+return nonzero. No NaN percentages are emitted for empty buckets. Successful
+native edits currently lack persisted diff details; they count as missing diffs,
+not measured edits. Adding structured native edit-result metadata is still pending.
+
+Session selection is newest filename first. `--max-sessions 0` scans all within
+the explicit 10,000-file budget. Per-record limit is 1 MiB, per-file 64 MiB, total
+scan 1 GiB, and samples/pending request runs are bounded. The CLI retains `--repo`
+for read-only default-directory discovery using canonical home/temp/absolute and
+historical hashed names, profile/agent-dir and existing XDG data roots. Ambiguous
+or missing layouts require explicit `--sessions-dir`. Unlike the old utility's
+application storage opener, analysis never creates, merges or migrates stored
+session roots. Session storage migrations remain application-owned.
+
+Fixture validation collects structured per-task issues for prompts, input and
+expected trees, nonempty files, JSON metadata and metadata target presence.
+Missing metadata remains a validation issue even though the general loader allows
+it. Reads and traversal are bounded; symlinks and special inputs are rejected.
+It never repairs or executes fixture data.
+
+Paired-tree preparation accepts identical nonempty file sets with at least one
+changed UTF-8 file. Unchanged binary files remain inert copies. It generates
+placements using pi-diff, merges nearby changes, anchors insertion/deletion
+blocks, extends repeated blocks or supplies an explicit starting line, and
+re-solves every hunk to require exact expected bytes. Fences exceed embedded
+backtick runs. Prompt instructions live in the static Handlebars Markdown asset.
+Source fingerprints and producer `rust-paired-tree-v1` are recorded in metadata;
+no old mutation IDs/scores are relabeled. Prompt publication is last, output has
+one writer and must be empty/disjoint, and every copied file is created atomically.
+A cancelled/failed partial directory is retained for inspection and must be
+replaced with a fresh destination before retrying.
+
+Limits: 256 KiB per changed source, 4,000 combined input/expected lines and at most
+1,000,000 line-pair work budget; 128 MiB copied data, 256 KiB prompt and metadata.
+Unrepresentable changes, including some final-newline-only changes, fail explicitly.
+This is a deterministic paired-tree producer, not the unported language-specific
+mutation selector. Native mutation selection, archive handling and guided/retry/
+metaharness workflows remain pending. Stabilization must exercise real legacy
+fixtures, parser failure/coverage, grouping, empty cases, source immutability,
+ambiguous/overlapping hunks, exact final-newline behavior, cancellation and copied
+installed commands before source removal is marked verified.

@@ -79,6 +79,7 @@ harvest-runtime = { path = "../crates/harvest-runtime" }
 harvest-tui = { path = "../crates/harvest-tui" }
 harvest-media = { path = "../crates/harvest-media" }
 harvest-tokenizer = { path = "../crates/harvest-tokenizer" }
+pi-diff = { path = "../crates/pi-diff" }
 pi-edit = { path = "../crates/pi-edit" }
 pi-walker = { path = "../crates/pi-walker" }
 pi-shell = { path = "../crates/pi-shell", optional = true }

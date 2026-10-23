@@ -16,6 +16,31 @@ pub(crate) struct Arguments {
 enum Command {
 	/// Execute isolated native model runs and write rust-v1 artifacts.
 	Run(RunArguments),
+	/// Calibrate edit shapes from existing session logs, without running models.
+	EditShapes {
+		#[arg(long)]
+		sessions_dir: Option<PathBuf>,
+		#[arg(long, default_value = ".")]
+		repo:         PathBuf,
+		#[arg(long, default_value_t = 2000)]
+		max_sessions: usize,
+		#[arg(long)]
+		json:         bool,
+	},
+	Validate {
+		#[arg(long)]
+		fixtures: PathBuf,
+	},
+	Prepare {
+		#[arg(long)]
+		input:    PathBuf,
+		#[arg(long)]
+		expected: PathBuf,
+		#[arg(long)]
+		output:   PathBuf,
+		#[arg(long)]
+		task_id:  String,
+	},
 	List {
 		#[arg(long)]
 		fixtures: PathBuf,
@@ -135,6 +160,41 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 	let cancellation = Default::default();
 	let report = match arguments.command {
 		Command::Run(arguments) => return run(arguments),
+		Command::EditShapes { sessions_dir, repo, max_sessions, json } => {
+			let sessions = match sessions_dir {
+				Some(path) => path,
+				None => super::shapes::discover_sessions(&repo)?,
+			};
+			let report = super::analyze_shapes(&sessions, max_sessions, &cancellation)?;
+			if json {
+				serde_json::to_writer(io::stdout().lock(), &report)?;
+				writeln!(io::stdout().lock())?;
+			} else {
+				report.write_text(&mut io::stdout().lock())?;
+			}
+			return Ok(
+				if report.parsed_diffs == 0
+					|| !report.failed_files.is_empty()
+					|| report.malformed_records > 0
+				{
+					1
+				} else {
+					0
+				},
+			);
+		},
+		Command::Validate { fixtures } => {
+			let issues = super::validate_fixtures(&fixtures, &cancellation)?;
+			serde_json::to_writer(io::stdout().lock(), &issues)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(if issues.is_empty() { 0 } else { 1 });
+		},
+		Command::Prepare { input, expected, output, task_id } => {
+			let report = super::prepare_task(&input, &expected, &output, &task_id, &cancellation)?;
+			serde_json::to_writer(io::stdout().lock(), &report)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(0);
+		},
 		Command::List { fixtures } => {
 			serde_json::to_writer(io::stdout().lock(), &super::load_tasks(&fixtures)?)?;
 			writeln!(io::stdout().lock())?;

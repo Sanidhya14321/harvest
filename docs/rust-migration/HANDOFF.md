@@ -29,7 +29,7 @@ pagination, tool/resource/prompt APIs, host approval, native config and CLI are
 connected. See `NATIVE-MCP.md` for unfinished OAuth/discovery/legacy SSE,
 notifications/reconnect and platform process cleanup. Legacy MCP sources remain.
 
-The current continuation adds bounded Content-Length framing, LSP initialization/
+The previous language-services continuation added bounded Content-Length framing, LSP initialization/
 queries/document sync/UTF-16 text edits and DAP adapter/session state. Both share
 the existing process/tool/config/approval owners. Native run/RPC host flags are
 --enable-lsp/--enable-debug; direct SDK and terminal CLI connections are present.
@@ -51,20 +51,25 @@ Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
 
-Native `edit-benchmark run` and `run_tasks` SDK now connect the existing scorer,
-configuration/provider and agent-session owners: isolated fixture copies, bounded
-workers/repetitions, cancellation/deadlines, scoped final-argument approval,
-external session/events, usage capture and ordered durable outcomes. See
-`RUST-BENCHMARK.md` and the shared card for unfinished metaharness workflows.
-Behavioral/installed checks remain deferred; no verified/done claims advance.
+Fixture-tooling base `b49ba10`: native edit-shape calibration, fixture validation,
+exact pi-diff hunk preparation/re-solve and paired-tree task production now connect
+to the shared native CLI/SDK. `RUST-BENCHMARK.md` lists limits and retained gaps.
+The package edit-shapes launcher now calls Rust; its 355-line TS analyzer is
+removed. The ledger records actual removal with replacement verification pending.
+Hunk/task TS modules remain for the existing mutation generator/metaharness.
+No capability is marked verified/done. Behavioral and installed tests stay deferred.
 
-The user requested language/deletion verification. `LANGUAGE-PROGRESS.md` records
-GitHub default branch `main`; direct language bytes were inaccessible. At
-`bee9356`, 4,955 tracked TS/TSX files contain 55,484,591 raw blob bytes. There are
-60 deletion paths since `d811cb2`, but zero in the previous four commits. This
-continuation also deletes zero TS sources because metaharness consumers remain.
-Report source reductions separately from native additions. Do not change Linguist
-settings or default branch to change the display.
+The source gate retains its 35 inherited unsupported removals and now also needs
+verification evidence for this explicitly recorded analyzer replacement. Its code,
+consumer, restoration base and checks are in the common card. Do not weaken gates
+or label an unverified deletion complete. Native session edit-result diff metadata,
+language-specific mutation selection, archive handling and metaharness cutover
+remain pending. Continue through those named consumers/owners.
+
+`LANGUAGE-PROGRESS.md` records the previous GitHub/default-branch audit. This batch
+actually removes one TS file (13,617 bytes), bringing net baseline TS/TSX deletions
+to 61. GitHub's repository bar still follows main; source reduction and feature
+verification remain separate measures.
 
 ## Open blockers
 

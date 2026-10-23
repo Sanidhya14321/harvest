@@ -5616,7 +5616,8 @@
           "Task stays in_progress; no feature is marked verified/done or legacy-removed. Detailed ownership and remaining contracts are recorded in the Markdown card.",
           "MCP stdio/streamable HTTP client, pagination, tools/resources/prompts, config/CLI and shared process/HTTP ownership are written and connected. Behavioral/installed checks stay deferred; OAuth, legacy SSE, idle notifications/reconnect and platform cleanup remain unfinished in NATIVE-MCP.md.",
           "Native LSP/DAP clients, bounded Content-Length framing, UTF-16 workspace text edits, shared tool/config/session/CLI connections are written. Behavioral/installed/performance/platform checks stay deferred; full retained gaps are listed in NATIVE-LSP-DAP.md.",
-          "Native benchmark model orchestration is written and connected through shared sessions/configuration/provider/approval, isolated workspaces and bounded workers. Tests/installed/metaharness cutover remain pending. LANGUAGE-PROGRESS.md audits actual deletions separately from Rust additions."
+          "Native benchmark model orchestration is written and connected through shared sessions/configuration/provider/approval, isolated workspaces and bounded workers. Tests/installed/metaharness cutover remain pending. LANGUAGE-PROGRESS.md audits actual deletions separately from Rust additions.",
+          "Native fixture validation, pi-diff hunk preparation/re-solve, paired-tree task producer and bounded edit-shape calibration are written and connected. Package edit-shapes command moves to Rust and its TS script is removed, with verification explicitly pending. Hunk/task TS modules remain for live generator/metaharness consumers."
         ]
       },
       {

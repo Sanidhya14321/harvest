@@ -52,3 +52,12 @@ sum the blob size and count for exact `.ts`, `.tsx` and `.rs` suffixes. Report n
 checkpoints' additions and deletions separately. Do not imply source reduction
 from a Rust code-written checkpoint. Delete superseded implementations when their
 last retained consumer moves, with the shared ledger/removal evidence updated.
+
+## Following fixture-tooling checkpoint (base b49ba10)
+
+The edit-shapes package launcher moves to Rust and its standalone TS analyzer is
+deleted: **1 file, 355 lines, 13,617 bytes**. No TS sources are added. Net baseline
+TS/TSX deletion paths become 61; raw tracked TS/TSX files become 4,954 with
+55,470,974 blob bytes. These are source changes, not verified capability progress.
+The source ledger records removal with partial/unverified replacement. Remaining
+generator and metaharness consumers retain their TS hunk/task modules.

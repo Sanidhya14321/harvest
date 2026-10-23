@@ -23,9 +23,12 @@ pub fn list_files(filesystem: &JailedFs, directory: &Path) -> Result<Vec<PathBuf
 	let mut pending = vec![(directory.to_path_buf(), 0_u32)];
 	let mut files = Vec::new();
 	let mut total = 0_u64;
+	let mut visited = 0_usize;
 	while let Some((path, depth)) = pending.pop() {
 		ensure!(depth <= 64, "benchmark directory nesting exceeds limit");
 		for entry in filesystem.entries(&path, MAX_FILES)? {
+			visited += 1;
+			ensure!(visited <= MAX_FILES, "benchmark traversal entry count exceeds limit");
 			ensure!(!entry.is_symlink, "benchmark fixtures cannot contain symlinks");
 			let path = path.join(&entry.name);
 			if entry.is_directory {
@@ -84,4 +87,96 @@ pub fn load_tasks(fixtures: &Path) -> Result<Vec<Task>> {
 	// entries() is sorted already; explicitly preserve task ordering in the API.
 	tasks.sort_by(|a, b| a.id.cmp(&b.id));
 	Ok(tasks)
+}
+
+#[derive(Debug, Serialize)]
+pub struct FixtureIssue {
+	pub task_id: String,
+	pub path:    Option<PathBuf>,
+	pub code:    &'static str,
+}
+/// Collect actionable per-task issues instead of stopping at the first bad
+/// task. JSON metadata stays lossless in the loader; validation only inspects
+/// fields actually required by fixture consumers. This function never repairs
+/// inputs.
+pub fn validate_fixtures(
+	fixtures: &Path,
+	cancellation: &harvest_runtime::cancel::CancelToken,
+) -> Result<Vec<FixtureIssue>> {
+	let fs = JailedFs::open(fixtures)?;
+	let mut issues = Vec::new();
+	for entry in fs.entries(Path::new(""), MAX_FILES)? {
+		cancellation.heartbeat()?;
+		if !entry.is_directory && !entry.is_symlink {
+			continue;
+		}
+		let id = entry.name;
+		let root = PathBuf::from(&id);
+		let mut issue = |path: Option<PathBuf>, code| {
+			issues.push(FixtureIssue { task_id: id.clone(), path, code });
+		};
+		if entry.is_symlink {
+			issue(None, "task_symlink");
+			continue;
+		}
+		match fs.read(&root.join("prompt.md"), 256 * 1024) {
+			Ok(bytes) => match std::str::from_utf8(&bytes) {
+				Ok(prompt) if !prompt.trim().is_empty() => {},
+				Ok(_) => issue(Some("prompt.md".into()), "empty_prompt"),
+				Err(_) => issue(Some("prompt.md".into()), "invalid_prompt_utf8"),
+			},
+			Err(_) => issue(Some("prompt.md".into()), "missing_or_unreadable_prompt"),
+		}
+		let mut trees = Vec::new();
+		for tree in ["input", "expected"] {
+			match list_files(&fs, &root.join(tree)) {
+				Ok(files) => {
+					if files.is_empty() {
+						issue(Some(tree.into()), "empty_tree");
+					}
+					for path in &files {
+						cancellation.heartbeat()?;
+						match fs.read(&root.join(tree).join(path), MAX_FILE_BYTES) {
+							Ok(bytes) if bytes.is_empty() => {
+								issue(Some(Path::new(tree).join(path)), "empty_file")
+							},
+							Ok(_) => {},
+							Err(_) => issue(Some(Path::new(tree).join(path)), "unreadable_file"),
+						}
+					}
+					trees.push(files);
+				},
+				Err(_) => {
+					issue(Some(tree.into()), "missing_or_invalid_tree");
+					trees.push(Vec::new());
+				},
+			}
+		}
+		match fs.read(&root.join("metadata.json"), 256 * 1024) {
+			Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+				Ok(metadata) if metadata.is_object() => {
+					if let Some(path) = metadata["file_path"]
+						.as_str()
+						.filter(|s| !s.trim().is_empty())
+					{
+						let basename = path.rsplit(['/', '\\']).next().unwrap_or("");
+						for (tree, files) in ["input", "expected"].into_iter().zip(&trees) {
+							if !files
+								.iter()
+								.any(|f| f.file_name().is_some_and(|n| n == basename))
+							{
+								issue(Some(tree.into()), "metadata_target_missing");
+							}
+						}
+					} else {
+						issue(Some("metadata.json".into()), "metadata_file_path_missing");
+					}
+				},
+				_ => issue(Some("metadata.json".into()), "invalid_metadata_object"),
+			},
+			Err(_) => issue(Some("metadata.json".into()), "missing_or_unreadable_metadata"),
+		}
+		ensure!(issues.len() <= 100_000, "fixture validation issue limit exceeded");
+	}
+	Ok(issues)
 }

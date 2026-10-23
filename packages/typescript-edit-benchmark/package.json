@@ -21,7 +21,7 @@
     "fix": "oxlint --fix --fix-suggestions . && bun run fmt",
     "fmt": "oxfmt --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts'",
     "generate": "bun run src/generate.ts --typescript-dir /tmp/pi-mono-source",
-    "edit-shapes": "bun run src/edit-shape-stats.ts"
+    "edit-shapes": "cargo run --manifest-path ../../Cargo.toml --locked -p harvest-omp --bin harvest -- edit-benchmark edit-shapes --repo ../.."
   },
   "dependencies": {
     "@babel/generator": "catalog:",

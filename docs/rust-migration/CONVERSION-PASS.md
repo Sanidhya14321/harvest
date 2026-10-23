@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current benchmark continuation base: `bee9356`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current fixture-tooling continuation base: `b49ba10`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -32,7 +32,8 @@ through this table and the machine task before editing a shared interface.
 | LSP client and text edits | `rust-agent/src/language_services/{lsp,edits,runtime}.rs` | native tool registry, sync/async sessions, RPC, SDK, CLI | resource operations, full diagnostics/sync/discovery/linters/editorconfig, recovery/performance/platform tests | Written/connected; unverified |
 | Debug adapter and session state | `rust-agent/src/language_services/{dap,runtime}.rs` | same host owner/config/tool/session/CLI boundaries | socket/discovery/reverse terminal/advanced breakpoint workflows, cleanup and behavioral/platform tests | Written/connected; unverified |
 | Benchmark model orchestration | `rust-agent/src/edit_benchmark/runner.rs` | `run_tasks` SDK and native `edit-benchmark run`; shared model/session/config/approval | behavioral/installed checks, retries/guided/early-stop/tool-use policies, exports, native views, metaharness cutover | Written/connected; unverified |
-| Benchmark generation | same Rust edit-benchmark owner | existing TS generator still active | mutation generation, archive handling and shape analysis | Not converted |
+| Benchmark fixture preparation | `rust-agent/src/edit_benchmark/{hunks,prepare,tasks}.rs` | native prepare/validate CLI and SDK; shared pi-diff/jail | mutation selection, archive handling, compatibility/behavioral/installed verification; legacy generator still active | Written/connected foundation; unfinished |
+| Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native edit-result diff metadata | Written/connected; removal verification pending |
 
 ## Inputs, connections and deletion rules
 
@@ -55,7 +56,7 @@ framing, LSP/DAP clients/state, UTF-16 text edits and native host connections. A
 written before the consolidated stabilization phase. Reuse existing jailed file,
 edit, transport, provider and session engines. No new dependency or N-API adapter.
 
-No TS source is deleted in this checkpoint: the production application, plugin
+The initial plugin/config/scoring checkpoint (`2c2078c`) deleted no TS: the production application, plugin
 loader, settings implementation and metaharness still consume them. Default
 launchers remain on the current product until retained behavior is connected and
 installed verification passes. Legacy language plugin loading is retired by the
@@ -66,7 +67,7 @@ native ABI; the old TS application's retirement diagnostic/cutover is unfinished
 [LANGUAGE-PROGRESS.md](LANGUAGE-PROGRESS.md) binds counts to `bee9356` and records
 GitHub's default branch `main`, live language-endpoint access limitations, 60
 TS/TSX deletions since baseline and zero in the previous four commits. Do not
-claim Rust additions reduced TS. This benchmark continuation also removes zero TS
+claim Rust additions reduced TS. The model-run checkpoint (`b49ba10`) also removed zero TS
 files: the metaharness adapter/package consumers remain active.
 
 Native orchestration now owns sorted task selection, independent input copies,
@@ -87,6 +88,49 @@ timeout/queue cleanup and copied installed CLI model requests. Verify interrupte
 artifacts and session cwd/replay. Then cover actual retained metaharness workflows
 before moving/deleting their consumers. Recovery: revert this checkpoint; the
 production TS runner remains active and historical scores/data are untouched.
+
+## Current fixture tooling batch
+
+Base `b49ba10`. Native shape analysis, fixture validation and paired-tree task
+preparation/hunk solving are connected as documented in `RUST-BENCHMARK.md`.
+The only owned launcher of `edit-shape-stats.ts` now calls Rust, so that standalone
+script is deleted (355 lines, 13,617 bytes). The source ledger records actual
+removal and **unverified partial replacement**. Hunk/task TS sources still serve
+the legacy generator/metaharness; their rows now have explicit native destinations
+and unfinished contracts under this task. Do not mark the analyzer verified or
+claim the parent benchmark capability complete from the deletion.
+
+Inputs: original `b49ba10:packages/typescript-edit-benchmark/src/edit-shape-stats.ts`,
+retained `hunks.ts`, `tasks.ts`, real historical session records and fixture tree.
+Connections: package edit-shapes command -> native CLI/SDK shape owner;
+prepare -> shared pi-diff/jailed copy/static Markdown template -> ordinary native
+load/validate/run; no runtime loading of TS. Public SDK data and failure contracts
+are described beside each Rust API. Read-only discovery now requires explicit
+sessions-dir for ambiguous layouts instead of migrating application storage.
+
+Acceptance/recovery: consolidate numbered/unified/malformed/bounded parser,
+ID/request/file grouping, calibration distributions and raw session immutability
+with exact hunk reconstruction, uniqueness/anchors/overlap/fences/final-newline,
+fixture metadata and cancellation/writer/output tests. Exercise copied installed
+native CLI and package launcher. Only then advance analyzer replacement/removal
+verification. Run `cargo xtask migration` and indexed affected source audit without
+weakening their evidence gates. Restore both analyzer and package launcher from
+`b49ba10` if its replacement fails; retain historical logs/fixtures unchanged.
+Native diff metadata for new session edit results, mutation selection, archive
+materialization and full metaharness cutover remain named prerequisites here.
+
+The aggregate compiler connection check passes for this fixture-tooling tree:
+`cargo check --locked -p harvest-omp --all-targets --all-features`. Formatting and
+playbook metadata checks pass. Logs/receipt use the ignored
+`target/migration/conversion-benchmark-preparation-*` prefix. A missing internal
+pending-run counter was corrected after its compile diagnostic; the failed log is
+retained. No behavioral, installed or platform verification is claimed. The
+source-removal gate must remain failed until deferred evidence exists. An affected
+source-audit invocation began its registered broad contract build and was stopped
+to preserve conversion-first scheduling; it is interrupted/unverified, not passed.
+Use `source-audit verify --scope affected --base b49ba10 --plan` for the reproducible
+stabilization plan. The migration gate still fails at the first inherited missing
+replacement receipt (`crates/pi-natives/tools/bench-natives.ts`).
 
 ## Stabilization queue (deferred, not passed)
 
@@ -142,7 +186,7 @@ passes on the current host; log `target/migration/conversion-benchmark-connectio
 Formatting and playbook ownership metadata validation pass. This is compiler and
 metadata evidence only. Behavioral, installed, performance and platform checks
 remain deferred. Receipt: `target/migration/conversion-benchmark-receipt.json`.
-No source-removal claim or completed capability count changes.
+That model-run checkpoint made no source-removal or completed-capability claims.
 
 ## Checkpoint evidence and recovery
 
