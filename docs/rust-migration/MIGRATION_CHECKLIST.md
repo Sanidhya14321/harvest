@@ -72,3 +72,7 @@ Production RPC and the overall application remain pending Rust cutover.
 
 Native versioned RPC transport and client progress is recorded in
 `tasks/RPC-TRANSPORT.md`; keep the subsystem batching rule in PLAYBOOK.md.
+
+Approved Python evaluation engine retirement is recorded in
+`tasks/PYTHON-EVAL-RETIREMENT.md`. JS retirement still requires native
+browser/computer consumer migration; the full application remains incomplete.

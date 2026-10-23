@@ -9,7 +9,6 @@ import type { EvalPreludeDefinition } from "../eval/preludes";
 import type { PromptTemplate } from "../config/prompt-templates";
 import type { Settings } from "../config/settings";
 import { EditTool } from "../edit";
-import { checkPythonKernelAvailability } from "../eval/py/kernel";
 import type { ToolPathWithSource } from "../extensibility/custom-tools";
 import type { PreparedExtension } from "../extensibility/extensions/types";
 import type { Skill } from "../extensibility/skills";
@@ -583,33 +582,7 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		requestedTools.push("goal");
 	}
 	const backends = resolveEvalBackends(session);
-	const allowPython = backends.python;
-	const allowJs = backends.js;
-	const skipEvalPreflight = session.skipPythonPreflight === true;
-	// Eval tool is enabled if ANY backend is reachable. JS needs no preflight, so
-	// we only probe Python when JS is disabled — otherwise allowEval is
-	// already true and per-backend availability is checked at first invocation.
-	let pythonAvailable = true;
-	const evalRequested = requestedTools === undefined || requestedTools.includes("eval");
-	if (!skipEvalPreflight && !allowJs && evalRequested) {
-		if (allowPython) {
-			const availability = await logger.time(
-				"createTools:pythonCheck",
-				checkPythonKernelAvailability,
-				session.cwd,
-				session.settings.get("python.interpreter")?.trim() || undefined,
-			);
-			pythonAvailable = availability.ok;
-			if (!availability.ok) {
-				logger.warn("Python kernel unavailable and JS backend disabled", { reason: availability.reason });
-			}
-		}
-	}
-
-	const effectivePythonAllowed = allowPython && pythonAvailable;
-	// Eval is exposed whenever any backend is reachable. A backend may be
-	// unreachable, in which case eval dispatches exclusively to the others.
-	const allowEval = effectivePythonAllowed || allowJs;
+	const allowEval = backends.js;
 
 	// Checkpoint and rewind are a pair: listing one without the other strands
 	// the agent (it can checkpoint but not rewind, or vice versa). Auto-include

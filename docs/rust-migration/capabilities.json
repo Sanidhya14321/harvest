@@ -5677,7 +5677,8 @@
           "playbook-check"
         ],
         "evidence": [
-          "Source-bound transition receipt at 747421f: 452 Rust contracts/doctests and workspace pass; singleton bucket fails 22 contracts. Receipt remains failed."
+          "Source-bound transition receipt at 747421f: 452 Rust contracts/doctests and workspace pass; singleton bucket fails 22 contracts. Receipt remains failed.",
+          "Python retirement continuation: 40 additional/current runtime contracts reproduce on unchanged 2ff0193 using exact failing chunk commands. See the runtime comparison section of LEGACY-SESSION-CONTRACTS.md and target/migration/python-retirement-runtime-comparison.json; no passing transition claim."
         ],
         "blocker": "Reproduce the writer-lease, discovery/path and error/label failure families against the baseline; review intended contracts and split bounded prerequisite cards before changing production semantics."
       },
@@ -6989,6 +6990,32 @@
           "Legacy encoder fixture hashes match exact physical lines at the v1/v2 boundary and across multibyte text. Native decoder rejects malformed metadata/base64/UTF-8/JSON, interrupted chunks and incomplete EOF. Native owner/installed CLI contracts cover v1 rejection followed by complete v2 history, pagination, provider streaming and writer shutdown.",
           "Existing TypeScript RpcFrameDecoder successfully reads five physical chunks from the native server with no language runtime on the child PATH; two exact messages returned and session bytes unchanged. All 21 retained legacy frame/pagination contracts pass.",
           "Affected Rust integration, strict lint/format and source-bound receipts are recorded under target/migration/rpc-transport-*. Full RPC capability remains partial: production commands/consumers, v1 display shortening and terminal compaction remain pending; no source removal or full transition is claimed."
+        ]
+      },
+      {
+        "id": "application:python-eval-retirement",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application"
+        ],
+        "card": "docs/rust-migration/tasks/PYTHON-EVAL-RETIREMENT.md",
+        "capabilities": [
+          "tool:eval"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Removed 25 reviewed executable kernel/prelude/private-test sources under the approved remove-language-eval policy; legacy Python execution interfaces now reject without probes, hooks, subprocesses or JS fallback.",
+          "74 focused contracts and 38 JS/schema/connection contracts pass. Historical display, JS owner isolation, cancellation, registry and ordinary setup behavior remain covered. Two native SDK/copied-CLI retirement checks pass with no language runtime on the candidate PATH.",
+          "JavaScript evaluation retirement remains blocked on native browser/computer consumers; tool:eval retirement stays pending. Transitional rejection/type facades and historical records remain pending Rust application cutover. Final source-bound results are recorded under target/migration/python-retirement-*.",
+          "All 49 legacy workspace groups and 125 Rust contracts pass. Runtime/session run failed 19/34 groups with 43 contracts: three retired Python-hook expectations corrected and targeted tests pass; all 40 others reproduce on unchanged 2ff0193 in exact chunk replay. The full runtime and migration gates remain failed; source-bound receipt preserves both results."
         ]
       }
     ]

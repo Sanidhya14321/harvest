@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { Settings } from "@harvest/pi-coding-agent/config/settings";
 import * as evalIndex from "@harvest/pi-coding-agent/eval";
-import * as pyKernel from "@harvest/pi-coding-agent/eval/py/kernel";
 import type { ToolSession } from "@harvest/pi-coding-agent/tools";
+import { EvalRunner, type EvalRunnerHost } from "../../src/session/eval-runner";
 import { EvalTool } from "@harvest/pi-coding-agent/tools/eval";
 import { resolveEvalBackends } from "@harvest/pi-coding-agent/tools/eval-backends";
-import { ToolAbortError } from "@harvest/pi-coding-agent/tools/tool-errors";
 
 let originalPiPy: string | undefined;
 let originalPiJs: string | undefined;
@@ -68,73 +67,20 @@ describe("EvalTool language dispatch", () => {
 		expect(pythonExecuteSpy).not.toHaveBeenCalled();
 	});
 
-	it('dispatches to the Python backend when cell.language === "py"', async () => {
-		vi.spyOn(pyKernel, "checkPythonKernelAvailability").mockResolvedValue({ ok: true });
-		vi.spyOn(evalIndex.pythonBackend, "isAvailable").mockResolvedValue(true);
-		const pythonExecuteSpy = vi.spyOn(evalIndex.pythonBackend, "execute").mockResolvedValue(mockResult);
-		const jsExecuteSpy = vi.spyOn(evalIndex.jsBackend, "execute");
-
-		const tool = new EvalTool(makeSession());
-		await tool.execute("call-py", {
-			language: "py",
-			code: "print('hi')",
-		});
-
-		expect(pythonExecuteSpy).toHaveBeenCalledTimes(1);
-		expect(jsExecuteSpy).not.toHaveBeenCalled();
-	});
-
-	it("bounds backend probing by the effective global eval timeout", async () => {
-		const settings = Settings.isolated();
-		settings.set("tools.maxTimeout", 1);
-		const probeSpy = vi.spyOn(evalIndex.pythonBackend, "isAvailable").mockResolvedValue(false);
-
+	it("rejects Python cells even when settings and environment request a kernel", async () => {
+		Bun.env.PI_PY = "1";
+		const settings = Settings.isolated({ "eval.py": true });
+		const python = vi.spyOn(evalIndex.pythonBackend, "execute");
+		const js = vi.spyOn(evalIndex.jsBackend, "execute");
+		const probe = vi.spyOn(evalIndex.pythonBackend, "isAvailable");
 		const tool = new EvalTool(makeSession(settings));
-		await expect(tool.execute("call-py-probe-timeout", { language: "py", code: "never runs" })).rejects.toThrow(
-			/Python backend is unavailable/,
+		await expect(tool.execute("retired", { language: "py", code: "never run" })).rejects.toThrow(
+			"Python evaluation was retired",
 		);
-
-		expect(probeSpy.mock.calls[0]?.[1]).toMatchObject({ timeoutMs: 1_000 });
-	});
-
-	it("preserves caller cancellation during py availability probing", async () => {
-		const settings = Settings.isolated();
-		const controller = new AbortController();
-		vi.spyOn(evalIndex.pythonBackend, "isAvailable").mockImplementation(async () => {
-			controller.abort();
-			return false;
-		});
-
-		const tool = new EvalTool(makeSession(settings));
-		await expect(
-			tool.execute("call-py-abort", { language: "py", code: "never runs" }, controller.signal),
-		).rejects.toBeInstanceOf(ToolAbortError);
-	});
-
-	it("dispatches each call to the backend named by its language", async () => {
-		vi.spyOn(pyKernel, "checkPythonKernelAvailability").mockResolvedValue({ ok: true });
-		vi.spyOn(evalIndex.pythonBackend, "isAvailable").mockResolvedValue(true);
-		const pythonExecuteSpy = vi.spyOn(evalIndex.pythonBackend, "execute").mockResolvedValue(mockResult);
-		const jsExecuteSpy = vi.spyOn(evalIndex.jsBackend, "execute").mockResolvedValue(mockResult);
-
-		const tool = new EvalTool(makeSession());
-		await tool.execute("call-py", { language: "py", code: "x = 1" });
-		await tool.execute("call-js", { language: "js", code: "const y = 2;" });
-
-		expect(pythonExecuteSpy).toHaveBeenCalledTimes(1);
-		expect(jsExecuteSpy).toHaveBeenCalledTimes(1);
-	});
-
-	it("rejects py cells when eval.py is disabled", async () => {
-		const settings = Settings.isolated();
-		settings.set("eval.py", false);
-		const tool = new EvalTool(makeSession(settings));
-		await expect(
-			tool.execute("call-py-disabled", {
-				language: "py",
-				code: "print('hi')",
-			}),
-		).rejects.toThrow(/eval\.py = false/);
+		expect(python).not.toHaveBeenCalled();
+		expect(js).not.toHaveBeenCalled();
+		expect(probe).not.toHaveBeenCalled();
+		expect(resolveEvalBackends(makeSession(settings)).python).toBe(false);
 	});
 
 	it("rejects js cells when eval.js is disabled", async () => {
@@ -156,7 +102,7 @@ describe("EvalTool language dispatch", () => {
 		settings.set("eval.js", false);
 
 		expect(resolveEvalBackends(makeSession(settings))).toEqual({
-			python: true,
+			python: false,
 			js: false,
 		});
 	});
@@ -174,4 +120,20 @@ describe("EvalTool language dispatch", () => {
 			}),
 		).rejects.toThrow(/PI_JS=0/);
 	});
+});
+
+it("direct session Python rejects before hooks, callbacks or transcript writes", async () => {
+	const hook = vi.fn();
+	const append = vi.fn();
+	const chunk = vi.fn();
+	const host = { extensionRunner: hook, appendSessionMessage: append } as unknown as EvalRunnerHost;
+	const runner = new EvalRunner(host, { kernelOwnerId: "retired", parentSessionId: undefined });
+	await expect(runner.executePython("opaque retired request", chunk)).rejects.toThrow("Python evaluation was retired");
+	runner.beginDispose();
+	await expect(runner.executePython("opaque retired request", chunk)).rejects.toThrow("Python evaluation was retired");
+	expect(hook).not.toHaveBeenCalled();
+	expect(append).not.toHaveBeenCalled();
+	expect(chunk).not.toHaveBeenCalled();
+	expect(runner.isRunning).toBe(false);
+	expect(runner.hasPendingMessages).toBe(false);
 });

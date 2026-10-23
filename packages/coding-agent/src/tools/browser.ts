@@ -9,7 +9,6 @@ import { enforceInlineByteCap } from "../session/streaming-output";
 import browserDeclarations from "./browser/declarations.d.ts" with { type: "text" };
 // @ts-expect-error Bun imports this JavaScript source as text instead of evaluating its module shape.
 import browserJavascript from "./browser/prelude.js" with { type: "text" };
-import browserPython from "./browser/prelude.py" with { type: "text" };
 import { resolveCmuxKind } from "./browser/cmux/rpc";
 import {
 	acquireBrowser,
@@ -124,7 +123,6 @@ export function createBrowserPrelude(session: ToolSession): EvalPreludeDefinitio
 		name: "browser",
 		documentation: browserDescription,
 		javascript: browserJavascript,
-		python: browserPython,
 		exports: ["browser"],
 		codeModeDeclarations: browserDeclarations,
 		approval: "exec",

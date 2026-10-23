@@ -6,7 +6,6 @@ import { resolveOutputMaxColumns, resolveOutputSinkHeadBytes } from "../tools/ou
 import { EVAL_TIMEOUT_PAUSE_OP, EVAL_TIMEOUT_RESUME_OP, isEvalTimeoutControlEvent } from "./bridge-timeout";
 import type { JsStatusEvent } from "./js/shared/types";
 import type { KernelDisplayOutput } from "./py/display";
-import { registerPyToolBridge } from "./py/tool-bridge";
 
 /**
  * Constructor for a language executor's cancellation error. Each backend
@@ -491,18 +490,6 @@ export async function executeWithKernelBase<
 	// the cell open across a critical phase (isolation worktree setup,
 	// merge/cherry-pick) so a cancel can't settle it on top of a half-applied
 	// git operation.
-	const unregisterBridge =
-		options?.toolSession && options?.bridgeSessionId
-			? registerPyToolBridge(options.bridgeSessionId, runId, {
-					toolSession: options.toolSession,
-					signal: options.signal,
-					shieldedSignal: abortShield.signal,
-					emitStatus,
-					abortRequested: () => {
-						return abortShield.abortRequested;
-					},
-				})
-			: null;
 
 	try {
 		if (remainingMs !== undefined && remainingMs <= 0) {
@@ -596,7 +583,6 @@ export async function executeWithKernelBase<
 		throw error;
 	} finally {
 		await sink.dispose();
-		unregisterBridge?.();
 		abortShield.dispose?.();
 	}
 }

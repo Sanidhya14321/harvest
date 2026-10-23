@@ -27,6 +27,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(name = "setup", hide = true, disable_help_flag = true)]
+	RetiredSetup {
+		component: String,
+		#[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+		arguments: Vec<std::ffi::OsString>,
+	},
 	#[command(about = "Convert a DOCX document to HTML, Markdown or JSON using Rust")]
 	Document(DocumentArgs),
 	#[command(name = "browser-relay", hide = true, disable_help_flag = true)]
@@ -210,6 +216,17 @@ fn dispatch(cli: Cli) -> Result<u8> {
 			};
 			io::stdout().lock().write_all(text.as_bytes())?;
 			Ok(0)
+		},
+		Commands::RetiredSetup { component, arguments } => {
+			if component != "python" {
+				bail!("setup component {component} is not implemented in the native application");
+			}
+			let reason = crate::tools::PYTHON_EVAL_RETIRED.trim();
+			if arguments.iter().any(|arg| arg == "--json") {
+				println!("{}", serde_json::json!({"available":false,"retired":true,"reason":reason}));
+				return Ok(1);
+			}
+			bail!("{reason}");
 		},
 		Commands::RetiredBrowserRelay { .. } => bail!(
 			"The Chrome extension relay has been removed. Use the native harvest browser --chrome \

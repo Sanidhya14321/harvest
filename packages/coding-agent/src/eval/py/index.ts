@@ -1,19 +1,12 @@
 import type { ToolSession } from "../../tools";
+import { type ExecutorBackend, type ExecutorBackendExecOptions, type ExecutorBackendResult } from "../backend";
 import {
-	type ExecutorBackend,
-	type ExecutorBackendExecOptions,
-	type ExecutorBackendResult,
-	resolveEvalUrlRoots,
-} from "../backend";
-import {
-	readSetting,
 	namespaceSessionId as sharedNamespace,
 	readInterpreterSetting as sharedReadInterpreterSetting,
-	toExecutorBackendResult,
 } from "../backend-helpers";
 import type { BackendProbeOptions } from "../probe";
 import { defaultEvalSessionId } from "../session-id";
-import { executePython, type PythonExecutorOptions } from "./executor";
+import { PYTHON_EVAL_RETIRED } from "./executor";
 import { checkPythonKernelAvailability } from "./kernel";
 
 const PYTHON_SESSION_PREFIX = "python:";
@@ -51,26 +44,7 @@ export default {
 		return availability.ok;
 	},
 
-	async execute(code: string, opts: ExecutorBackendExecOptions): Promise<ExecutorBackendResult> {
-		const kernelMode = readSetting<PythonExecutorOptions["kernelMode"]>(opts.session, "python.kernelMode");
-		const identity = resolvePythonKernelIdentity(opts.session);
-		const executorOptions: PythonExecutorOptions = {
-			cwd: identity.cwd,
-			idleTimeoutMs: opts.idleTimeoutMs,
-			signal: opts.signal,
-			sessionId: identity.sessionId,
-			kernelMode,
-			interpreter: identity.interpreter,
-			sessionFile: opts.sessionFile,
-			artifactsDir: opts.session.getArtifactsDir?.() ?? undefined,
-			localRoots: resolveEvalUrlRoots(opts.session),
-			kernelOwnerId: identity.kernelOwnerId,
-			reset: opts.reset,
-			onChunk: opts.onChunk,
-			onStatus: opts.onStatus,
-			toolSession: opts.session,
-		};
-		const result = await executePython(code, executorOptions);
-		return toExecutorBackendResult(result);
+	async execute(_code: string, _opts: ExecutorBackendExecOptions): Promise<ExecutorBackendResult> {
+		throw new Error(PYTHON_EVAL_RETIRED);
 	},
 } satisfies ExecutorBackend;

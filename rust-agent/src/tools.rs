@@ -63,6 +63,13 @@ pub fn invoke_with_cancellation(
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
 	}
+	if name == "python"
+		|| (name == "eval"
+			&& serde_json::from_str::<serde_json::Value>(&call.function.arguments)
+				.is_ok_and(|args| matches!(args["language"].as_str(), Some("py" | "python"))))
+	{
+		bail!("{}", PYTHON_EVAL_RETIRED.trim());
+	}
 	if !matches!(name, "read" | "write" | "edit" | "grep" | "bash") {
 		bail!("unknown tool {name}");
 	}
@@ -72,6 +79,8 @@ pub fn invoke_with_cancellation(
 	cancellation.heartbeat()?;
 	invoke_authorized(root, call, cancellation)
 }
+
+pub const PYTHON_EVAL_RETIRED: &str = include_str!("assets/python-eval-retired.md");
 
 #[cfg(test)]
 fn invoke_approved(root: &Path, call: &ToolCall) -> Result<String> {

@@ -4067,13 +4067,7 @@ export const SETTINGS_SCHEMA = {
 	// Eval (per-backend toggles; add more as new backends ship, e.g. eval.ts)
 	"eval.py": {
 		type: "boolean",
-		default: true,
-		ui: {
-			tab: "shell",
-			group: "Eval & Runtimes",
-			label: "Python Eval Backend",
-			description: "Allow the eval tool to dispatch Python cells to the IPython kernel",
-		},
+		default: false,
 	},
 
 	"eval.js": {
@@ -4132,25 +4126,11 @@ export const SETTINGS_SCHEMA = {
 		type: "enum",
 		values: ["session", "per-call"] as const,
 		default: "session",
-		ui: {
-			tab: "shell",
-			group: "Eval & Runtimes",
-			label: "Python Kernel Mode",
-			description: "Keep the IPython kernel alive across eval calls or start fresh each time",
-		},
 	},
 	"python.interpreter": {
 		type: "string",
 		default: "",
-		ui: {
-			tab: "shell",
-			group: "Eval & Runtimes",
-			label: "Python Interpreter",
-			description:
-				"Optional path to an exact Python executable. When set, automatic Python runtime discovery is skipped.",
-		},
 	},
-
 	// ────────────────────────────────────────────────────────────────────────
 	// Tools
 	// ────────────────────────────────────────────────────────────────────────
