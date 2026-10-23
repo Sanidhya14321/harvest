@@ -62,3 +62,8 @@ OpenCode performs their code edits and scoped tests in an isolated worktree.
 The first assignment is `tasks/GEN-NIX.md`; it owns the two inherited Nix source
 rows. Review the resulting diff before final commits/pushes. No model output or
 claimed test result alone advances the source-removal gate.
+
+OpenCode connection blocker: the first `tooling:gen-nix` run failed with an HTTP
+proxy 403 before editing. Its reviewed task remains blocked pending access to
+OpenCode's API or an accessible configured server/provider. See GEN-NIX.md for
+the exact execution checkpoint; do not claim that delegation completed the port.

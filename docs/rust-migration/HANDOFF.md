@@ -8,6 +8,14 @@ The normal application still starts in TypeScript. No whole-product parity or
 distribution cutover is claimed. Existing browser/WASM proofs do not satisfy the
 new zero-JavaScript target.
 
+The user now wants the supervisor to own thinking/review and OpenCode to perform
+code changes. `tooling:gen-nix` is the first reviewed assignment; two inherited
+Nix rows were transferred to it. OpenCode 1.19.4 and an isolated worktree are set
+up, but its DeepSeek V4.1 Flash request failed with proxy HTTP 403 before edits.
+No paid-provider credentials are configured. Resume the card once OpenCode API
+access or an accessible configured server/provider is available. Do not bypass
+network policy or silently substitute supervisor code edits for this delegation.
+
 Imported concurrent checkpoint **`6eefffc`**, preserving all 28 intervening commits
 and the new `MIGRATION_CHECKLIST.md` entry point. Rust wire types and tooling ports
 remain available. Protocol is still in progress until `packages/wire` consumers

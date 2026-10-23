@@ -6896,7 +6896,7 @@
       {
         "id": "tooling:gen-nix",
         "kind": "migration",
-        "state": "ready",
+        "state": "blocked",
         "review": "reviewed",
         "work_unit": "tooling",
         "depends_on": [
@@ -6910,7 +6910,10 @@
           "rust-contracts",
           "playbook-check"
         ],
-        "evidence": []
+        "evidence": [
+          "Actual OpenCode session ses_e98a0ea38ffei7LJqyF20APVxl exited 1 with an HTTP proxy 403 before any repository edit. Assignment and JSON/error logs are in /tmp/harvest-opencode; reviewed GEN-NIX.md is persistent."
+        ],
+        "blocker": "OpenCode 1.19.4 installed and assigned to isolated opencode/gen-nix worktree using opencode/deepseek-v4.1-flash-free, but its first model request failed: Proxy refused to open a tunnel: 403 Forbidden. No implementation edits occurred. Enable opencode.ai access or configure an accessible OpenCode server/provider, then resume the reviewed card."
       }
     ]
   }

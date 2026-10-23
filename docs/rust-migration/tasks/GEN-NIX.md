@@ -86,3 +86,25 @@ destination and evidence; update this card/handoff and task state honestly.
 Keep full-native TUI, whole-addon Clippy and singleton failures separate.
 Recovery: revert this coherent generator/consumer slice or restore the two legacy
 sources and their caller together from Git; preserve unrelated user work/data.
+
+## OpenCode execution checkpoint
+
+OpenCode 1.19.4 was installed outside the repository and invoked with
+`opencode/deepseek-v4.1-flash-free` in the isolated `opencode/gen-nix` worktree
+at `/workspace/harvest-opencode` (base `2419a56`). The supervisor supplied this
+complete card, denied commits/pushes/destructive Git operations, disabled external
+plugins/LSP, and shared only the Rust build cache for scoped checks.
+
+The actual first request failed before edits with
+`Proxy refused to open a tunnel: 403 Forbidden` (session
+`ses_e98a0ea38ffei7LJqyF20APVxl`, CLI exit 1). No model output or implementation
+completion is claimed. Logs and the exact prompt are under
+`/tmp/harvest-opencode/gen-nix-*`; those machine-local files are optional aids,
+not authoritative task records. No paid-provider credentials or preconfigured
+OpenCode authentication were found. `opencode.ai` is not in the environment's
+allowed network hosts. Do not bypass the proxy or copy unrelated credentials.
+
+Resume after the environment permits OpenCode's API or the user supplies an
+accessible authenticated OpenCode server/provider. Keep architecture/review with
+the supervisor and code changes with OpenCode as requested; inspect the diff and
+independently rerun the card's checks before advancing the two source rows.
