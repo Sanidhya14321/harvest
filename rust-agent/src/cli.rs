@@ -27,6 +27,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(about = "Inspect or call an explicitly configured native MCP server")]
+	Mcp(crate::mcp::cli::Arguments),
 	#[command(about = "Show redacted resolved native configuration and profile selection")]
 	Config(ConfigArgs),
 	#[command(about = "List fixtures or score edits using the separate rust-v1 baseline")]
@@ -117,7 +119,7 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 			..Default::default()
 		},
 	)?;
-	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredPlugins":resolved.plugins.len()});
+	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredPlugins":resolved.plugins.len(),"configuredMcpServers":resolved.mcp.len()});
 	serde_json::to_writer(io::stdout().lock(), &output)?;
 	writeln!(io::stdout().lock())?;
 	Ok(0)
@@ -125,6 +127,13 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 
 #[derive(Debug, Default, clap::Args)]
 struct ConfigurationArgs {
+	#[arg(long, help = "Connect MCP servers declared in native configuration")]
+	enable_mcp:     bool,
+	#[arg(
+		long = "mcp-config",
+		help = "Connect enabled servers from an explicitly selected MCP JSON file"
+	)]
+	mcp_configs:    Vec<PathBuf>,
 	#[arg(long)]
 	profile:        Option<String>,
 	#[arg(long = "config")]
@@ -164,6 +173,22 @@ impl ConfigurationArgs {
 				max_output_tokens,
 			},
 		)?;
+		if !resolved.mcp.is_empty() && !self.enable_mcp {
+			bail!("MCP servers in native configuration require --enable-mcp");
+		}
+		for path in &self.mcp_configs {
+			resolved.mcp.extend(crate::mcp::load_file(root, path)?);
+		}
+		if resolved.mcp.len() > 32 {
+			bail!("too many MCP servers");
+		}
+		let mut mcp_names = std::collections::BTreeSet::new();
+		for server in &resolved.mcp {
+			if !mcp_names.insert(&server.name) {
+				bail!("duplicate MCP server name across selected configurations");
+			}
+		}
+
 		if !resolved.plugins.is_empty() && !self.enable_plugins {
 			bail!("native plugins in configuration require --enable-plugins");
 		}
@@ -308,6 +333,7 @@ pub(crate) fn execute() -> Result<u8> {
 
 fn dispatch(cli: Cli) -> Result<u8> {
 	match cli.command {
+		Commands::Mcp(arguments) => crate::mcp::cli::execute(arguments),
 		Commands::Config(args) => inspect_configuration(args),
 		Commands::EditBenchmark(arguments) => crate::edit_benchmark::cli::execute(arguments),
 		Commands::Document(args) => {
@@ -479,6 +505,7 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 			SessionEngineOptions {
 				max_model_turns,
 				plugins: resolved.plugins,
+				mcp: resolved.mcp,
 				user_agent_dir,
 				tags: args.tag.into_iter().collect(),
 				event_capacity: 256,
@@ -530,6 +557,7 @@ fn run(args: RunArgs) -> Result<u8> {
 			resolved.api,
 			resolved.max_output_tokens,
 			resolved.plugins,
+			resolved.mcp,
 		);
 	}
 	let configured_browser = browser_options(&args);
@@ -542,6 +570,7 @@ fn run(args: RunArgs) -> Result<u8> {
 	let mut session =
 		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
 	session.configure_plugins(&resolved.plugins, &Default::default())?;
+	session.configure_mcp(&resolved.mcp, &Default::default())?;
 	if let Some(options) = configured_browser {
 		session.configure_browser(options);
 	}
@@ -588,6 +617,7 @@ fn run_async_session(
 	api: crate::configuration::Api,
 	max_output_tokens: u32,
 	plugins: Vec<crate::plugins::Configuration>,
+	mcp: Vec<crate::mcp::Configuration>,
 ) -> Result<u8> {
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.worker_threads(2)
@@ -605,6 +635,7 @@ fn run_async_session(
 				browser: browser_options(args),
 				max_model_turns,
 				plugins,
+				mcp,
 				user_agent_dir,
 				tags: args.tag.iter().cloned().collect(),
 				..Default::default()

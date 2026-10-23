@@ -1,14 +1,7 @@
 //! One process owner, bounded reader/writer queues, deadline and cancellation.
 use std::{
 	collections::{BTreeMap, BTreeSet},
-	io::{BufReader, Read, Write},
 	path::{Path, PathBuf},
-	process::{Child, Command, Stdio},
-	sync::{
-		Arc, Mutex,
-		mpsc::{self, Receiver, SyncSender, TrySendError},
-	},
-	thread,
 	time::Duration,
 };
 
@@ -49,15 +42,12 @@ impl std::fmt::Debug for Configuration {
 }
 
 pub struct Plugin {
-	child:   Child,
-	input:   Option<SyncSender<Vec<u8>>>,
-	output:  Receiver<Result<Frame>>,
-	stderr:  Arc<Mutex<Vec<u8>>>,
+	process: crate::process_transport::Process<Frame>,
 	tools:   Vec<ToolSpec>,
 	next_id: u64,
 	timeout: Duration,
-	closed:  bool,
 }
+
 impl Plugin {
 	pub fn launch(
 		root: &Path,
@@ -107,75 +97,18 @@ impl Plugin {
 			"language plugins are retired; build a native executable using Harvest's Rust plugin SDK \
 			 (docs/rust-plugin-protocol.md)"
 		);
-		let mut child = Command::new(executable)
-			.args(&configuration.arguments)
-			.envs(&configuration.environment)
-			.current_dir(root)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.stderr(Stdio::piped())
-			.spawn()
-			.context("cannot start native plugin")?;
-		let mut stdin = child.stdin.take().context("plugin stdin unavailable")?;
-		let stdout = child.stdout.take().context("plugin stdout unavailable")?;
-		let mut error_stream = child.stderr.take().context("plugin stderr unavailable")?;
-		let (input, incoming) = mpsc::sync_channel::<Vec<u8>>(8);
-		let (outgoing, output) = mpsc::sync_channel(16);
-		thread::spawn(move || {
-			while let Ok(bytes) = incoming.recv() {
-				if stdin
-					.write_all(&bytes)
-					.and_then(|()| stdin.flush())
-					.is_err()
-				{
-					break;
-				}
-			}
-		});
-		thread::spawn(move || {
-			let mut reader = BufReader::new(stdout);
-			loop {
-				match protocol::read(&mut reader) {
-					Ok(Some(frame)) => {
-						if outgoing.send(Ok(frame)).is_err() {
-							break;
-						}
-					},
-					Ok(None) => break,
-					Err(error) => {
-						let _ = outgoing.send(Err(error));
-						break;
-					},
-				}
-			}
-		});
-		let stderr = Arc::new(Mutex::new(Vec::new()));
-		let tail = stderr.clone();
-		thread::spawn(move || {
-			let mut bytes = [0; 4096];
-			while let Ok(count) = error_stream.read(&mut bytes) {
-				if count == 0 {
-					break;
-				}
-				let Ok(mut tail) = tail.lock() else {
-					break;
-				};
-				tail.extend_from_slice(&bytes[..count]);
-				if tail.len() > 8192 {
-					let excess = tail.len() - 8192;
-					tail.drain(..excess);
-				}
-			}
-		});
+		let process = crate::process_transport::Process::launch(
+			root,
+			&executable,
+			&configuration.arguments,
+			&configuration.environment,
+			cancellation,
+		)?;
 		let mut plugin = Self {
-			child,
-			input: Some(input),
-			output,
-			stderr,
+			process,
 			tools: Vec::new(),
 			next_id: 1,
 			timeout: Duration::from_millis(u64::from(configuration.timeout_ms)),
-			closed: false,
 		};
 		let deadline = cancellation.child_with_timeout(plugin.timeout);
 		let initialize = plugin
@@ -208,36 +141,15 @@ impl Plugin {
 
 	/// Host diagnostics only; never insert stderr into model output or stdout.
 	pub fn stderr_tail(&self) -> Vec<u8> {
-		self
-			.stderr
-			.lock()
-			.map(|tail| tail.clone())
-			.unwrap_or_default()
+		self.process.stderr_tail()
 	}
 
 	fn send(&mut self, frame: &Frame, cancellation: &CancelToken) -> Result<()> {
-		let mut bytes = protocol::encode(frame)?;
-		let input = self.input.as_ref().context("plugin is closed")?;
-		loop {
-			cancellation.heartbeat()?;
-			match input.try_send(bytes) {
-				Ok(()) => return Ok(()),
-				Err(TrySendError::Disconnected(_)) => bail!("plugin input closed"),
-				Err(TrySendError::Full(pending)) => bytes = pending,
-			}
-			thread::sleep(Duration::from_millis(10));
-		}
+		self.process.send(frame, cancellation)
 	}
 
 	fn receive(&mut self, cancellation: &CancelToken) -> Result<Frame> {
-		loop {
-			cancellation.heartbeat()?;
-			match self.output.recv_timeout(Duration::from_millis(10)) {
-				Ok(frame) => return frame,
-				Err(mpsc::RecvTimeoutError::Disconnected) => bail!("plugin exited before its response"),
-				Err(mpsc::RecvTimeoutError::Timeout) => {},
-			}
-		}
+		self.process.receive(cancellation)
 	}
 
 	pub fn invoke(
@@ -249,7 +161,7 @@ impl Plugin {
 		on_event: &mut dyn FnMut(Event) -> Result<()>,
 	) -> Result<String> {
 		ensure!(
-			!self.closed
+			!self.process.closed()
 				&& self
 					.tools
 					.iter()
@@ -275,9 +187,7 @@ impl Plugin {
 		let deadline = cancellation.child_with_timeout(self.timeout);
 		let result = self.exchange(root, id, call, arguments, approval, &deadline, on_event);
 		if result.is_err() {
-			if let Some(input) = &self.input {
-				let _ = input.try_send(protocol::encode(&Frame::Cancel { id })?);
-			}
+			self.process.try_send(&Frame::Cancel { id });
 			self.terminate();
 		}
 		result
@@ -341,21 +251,11 @@ impl Plugin {
 	}
 
 	fn terminate(&mut self) {
-		if !self.closed {
-			self.closed = true;
-			self.input.take();
-			let _ = self.child.kill();
-			let _ = self.child.wait();
-		}
+		self.process.terminate();
 	}
 }
 impl Drop for Plugin {
 	fn drop(&mut self) {
-		if let Some(input) = &self.input {
-			if let Ok(bytes) = protocol::encode(&Frame::Shutdown) {
-				let _ = input.try_send(bytes);
-			}
-		}
-		self.terminate();
+		self.process.try_send(&Frame::Shutdown);
 	}
 }

@@ -33,7 +33,9 @@ and known interpreter executables produce migration guidance.
 6. Host cancellation sends `cancel` and terminates the process on a failed or
    interrupted exchange. No ambiguous late response is reused. The Rust SDK
    delivers cancellation to the handler while its reader owns stdin.
-7. Host sends `shutdown` on disposal and reaps the process. Graceful exit/draining
+7. Host sends `shutdown` on disposal and reaps the process. The shared process
+   owner also serves MCP and offers a 100 ms stdin-close drain before direct-child
+   termination. Full graceful exit/draining
    behavior and descendant-process cleanup still need stabilization review.
 
 Queues are bounded (8 outbound, 16 inbound frames). Calls have a host timeout

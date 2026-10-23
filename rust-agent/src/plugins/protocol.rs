@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::chat::{ToolCall, ToolSpec};
 
 pub const VERSION: u32 = 1;
-pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub const MAX_FRAME_BYTES: usize = crate::process_transport::MAX_FRAME_BYTES;
 pub const MAX_TOOLS: usize = 128;
 pub const MAX_EVENTS: usize = 1024;
 pub const MAX_HOST_CALLS: usize = 64;
@@ -41,27 +41,8 @@ pub enum Frame {
 }
 
 pub(crate) fn read(reader: &mut impl std::io::BufRead) -> anyhow::Result<Option<Frame>> {
-	use std::io::{BufRead, Read};
-
-	use anyhow::ensure;
-	let mut bytes = Vec::new();
-	let count = reader
-		.take(MAX_FRAME_BYTES as u64 + 1)
-		.read_until(b'\n', &mut bytes)?;
-	if count == 0 {
-		return Ok(None);
-	}
-	ensure!(count <= MAX_FRAME_BYTES, "plugin frame exceeds limit");
-	ensure!(bytes.last() == Some(&b'\n'), "plugin exited inside a frame");
-	// Never retain serde's untrusted source excerpts in diagnostics.
-	let frame =
-		serde_json::from_slice(&bytes).map_err(|_| anyhow::anyhow!("invalid plugin JSONL frame"))?;
-	Ok(Some(frame))
+	crate::process_transport::read_frame(reader)
 }
-
 pub(crate) fn encode(frame: &Frame) -> anyhow::Result<Vec<u8>> {
-	let mut bytes = serde_json::to_vec(frame)?;
-	anyhow::ensure!(bytes.len() < MAX_FRAME_BYTES, "plugin frame exceeds limit");
-	bytes.push(b'\n');
-	Ok(bytes)
+	crate::process_transport::encode(frame)
 }

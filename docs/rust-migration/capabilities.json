@@ -3886,7 +3886,13 @@
     {
       "id": "surface:mcp",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/mcp",
+          "rust-agent/src/process_transport.rs",
+          "rust-agent/src/transport.rs",
+          "rust-agent/src/tools.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -3902,7 +3908,14 @@
         "promotion": {
           "status": "pending"
         }
-      }
+      },
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/mcp"
+        ],
+        "removable": false
+      },
+      "installation": "experimental-rust-cli"
     },
     {
       "id": "surface:lsp-dap",
@@ -5562,14 +5575,16 @@
           "review:application",
           "review:plugins",
           "review:tooling",
-          "review:catalog-providers"
+          "review:catalog-providers",
+          "review:services"
         ],
         "card": "docs/rust-migration/CONVERSION-PASS.md",
         "capabilities": [
           "surface:extension-process-abi-v1",
           "surface:settings-profiles",
           "surface:benchmarks",
-          "command:config"
+          "command:config",
+          "surface:mcp"
         ],
         "checks": [
           "rust-format",
@@ -5579,7 +5594,8 @@
         "evidence": [
           "User-directed conversion-first checkpoint: native plugin host/SDK, dynamic tool schemas, layered configuration/profiles and rust-v1 edit scoring are written and connected.",
           "Aggregate cargo check --locked -p harvest-omp --all-targets --all-features passes; behavioral tests, Clippy, installation and full legacy cutover verification are deliberately deferred.",
-          "Task stays in_progress; no feature is marked verified/done or legacy-removed. Detailed ownership and remaining contracts are recorded in the Markdown card."
+          "Task stays in_progress; no feature is marked verified/done or legacy-removed. Detailed ownership and remaining contracts are recorded in the Markdown card.",
+          "MCP stdio/streamable HTTP client, pagination, tools/resources/prompts, config/CLI and shared process/HTTP ownership are written and connected. Behavioral/installed checks stay deferred; OAuth, legacy SSE, idle notifications/reconnect and platform cleanup remain unfinished in NATIVE-MCP.md."
         ]
       },
       {

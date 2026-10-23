@@ -50,7 +50,8 @@ OpenCode assignment is historical; no external model connection blocks execution
    progress. File counts do not measure remaining engineering effort.
 4. Run `cargo xtask playbook next --json`; read the returned task card and all
    referenced contracts before editing. Resume an `in_progress` task first.
-5. Verify the relevant baseline behavior before changing it. If a required
+5. Inspect the baseline contracts before changing them; behavioral execution is
+   deferred during the active conversion-first phase. If a required
    dependency is missing, record an actionable blocker and work on another ready
    task. Never claim a missing environment, credential or platform check passed.
 

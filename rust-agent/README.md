@@ -232,3 +232,13 @@ Text/tool calls, matched results, streaming cancellation and raw usage are
 supported. Thinking/signatures, images, OAuth, beta/server tools, retry policy
 and catalog configuration remain pending. Unsupported response blocks fail
 explicitly. This opt-in candidate does not replace the default application yet.
+
+### Native MCP conversion checkpoint
+
+The Rust candidate has an opt-in MCP stdio/streamable HTTP client shared by
+sync/async sessions, RPC and the Rust SDK. Native config uses `[[mcp]]` with
+`--enable-mcp`; explicit JSON files use `--mcp-config PATH`. The `harvest mcp`
+command lists tools/resources/prompts and performs explicit calls. Model calls
+still require host approval. See [native MCP migration status](../docs/rust-migration/NATIVE-MCP.md)
+for configuration, APIs and unfinished OAuth/legacy SSE/event/platform behavior.
+This conversion checkpoint compiles; behavioral and installed checks are deferred.

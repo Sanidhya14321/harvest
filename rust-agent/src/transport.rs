@@ -22,7 +22,7 @@ const CHUNK_BYTES: usize = 16 * 1024;
 const CANCEL_POLL: Duration = Duration::from_millis(10);
 
 enum Packet {
-	Headers(bool),
+	Headers { sse: bool, session_id: Option<String> },
 	Data(Vec<u8>),
 	Failure(anyhow::Error),
 }
@@ -59,6 +59,7 @@ async fn send(sender: &SyncSender<Packet>, cancellation: &CancelToken, mut packe
 }
 
 async fn request(
+	method: reqwest::Method,
 	url: String,
 	headers: Vec<(String, String)>,
 	body: Vec<u8>,
@@ -85,7 +86,7 @@ async fn request(
 		.build()
 		.map_err(|_| crate::provider::ProviderRequestError::Transport(ureq::ErrorKind::Io))?;
 	let mut request = client
-		.post(&url)
+		.request(method, &url)
 		.header("Content-Type", "application/json")
 		.body(body);
 	if stream {
@@ -111,7 +112,23 @@ async fn request(
 				.next()
 				.is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
 		});
-	if !send(sender, cancellation, Packet::Headers(sse)).await {
+	let session_id = response
+		.headers()
+		.get("mcp-session-id")
+		.map(|value| {
+			let value = value
+				.to_str()
+				.map_err(|_| anyhow::anyhow!("invalid HTTP session header"))?;
+			anyhow::ensure!(
+				!value.is_empty()
+					&& value.len() <= 256
+					&& value.bytes().all(|byte| (0x21..=0x7e).contains(&byte)),
+				"invalid HTTP session header"
+			);
+			Ok::<_, anyhow::Error>(value.to_owned())
+		})
+		.transpose()?;
+	if !send(sender, cancellation, Packet::Headers { sse, session_id }).await {
 		return Ok(());
 	}
 	let mut consumed = 0_usize;
@@ -138,16 +155,28 @@ async fn request(
 }
 
 pub struct Response {
-	pub sse:      bool,
-	receiver:     Receiver<Packet>,
-	cancellation: CancelToken,
-	worker:       JoinHandle<()>,
-	pending:      Vec<u8>,
-	position:     usize,
+	pub sse:        bool,
+	pub session_id: Option<String>,
+	receiver:       Receiver<Packet>,
+	cancellation:   CancelToken,
+	worker:         JoinHandle<()>,
+	pending:        Vec<u8>,
+	position:       usize,
 }
 
 impl Response {
 	pub fn open(
+		url: String,
+		headers: Vec<(String, String)>,
+		body: Vec<u8>,
+		stream: bool,
+		cancellation: &CancelToken,
+	) -> Result<Self> {
+		Self::open_with_method(reqwest::Method::POST, url, headers, body, stream, cancellation)
+	}
+
+	pub fn open_with_method(
+		method: reqwest::Method,
 		url: String,
 		headers: Vec<(String, String)>,
 		body: Vec<u8>,
@@ -161,12 +190,13 @@ impl Response {
 		let (sender, receiver) = mpsc::sync_channel(CHANNEL_DEPTH);
 		let token = cancellation.clone();
 		let worker = runtime()?.spawn(async move {
-			if let Err(error) = request(url, headers, body, stream, &token, &sender).await {
+			if let Err(error) = request(method, url, headers, body, stream, &token, &sender).await {
 				let _ = send(&sender, &token, Packet::Failure(error)).await;
 			}
 		});
 		let mut response = Self {
 			sse: false,
+			session_id: None,
 			receiver,
 			cancellation: cancellation.clone(),
 			worker,
@@ -174,7 +204,10 @@ impl Response {
 			position: 0,
 		};
 		match response.receive()? {
-			Some(Packet::Headers(sse)) => response.sse = sse,
+			Some(Packet::Headers { sse, session_id }) => {
+				response.sse = sse;
+				response.session_id = session_id;
+			},
 			_ => bail!("provider response ended before headers"),
 		}
 		Ok(response)
@@ -208,7 +241,9 @@ impl Read for Response {
 					self.pending = bytes;
 					self.position = 0;
 				},
-				Some(Packet::Headers(_)) => return Err(io::Error::other("duplicate provider headers")),
+				Some(Packet::Headers { .. }) => {
+					return Err(io::Error::other("duplicate provider headers"));
+				},
 				Some(Packet::Failure(message)) => return Err(io::Error::other(message)),
 				None => return Ok(0),
 			}

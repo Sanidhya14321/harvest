@@ -44,6 +44,7 @@ static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 /// default.
 #[derive(Debug, Clone)]
 pub struct SessionEngineOptions {
+	pub mcp:                Vec<crate::mcp::Configuration>,
 	pub plugins:            Vec<crate::plugins::Configuration>,
 	pub browser:            Option<harvest_browser::Options>,
 	pub command_capacity:   usize,
@@ -59,6 +60,7 @@ impl Default for SessionEngineOptions {
 		Self {
 			browser:            None,
 			plugins:            Vec::new(),
+			mcp:                Vec::new(),
 			command_capacity:   32,
 			event_capacity:     64,
 			follow_up_capacity: 16,
@@ -309,6 +311,7 @@ impl SessionEngine {
 			let log = DurableSession::open(&root, &path, leaf.as_deref())?;
 			let mut tools = tools::ToolRuntime::default();
 			tools.configure_plugins(&root, &options.plugins, &CancelToken::default())?;
+			tools.configure_mcp(&root, &options.mcp, &CancelToken::default())?;
 			if let Some(browser) = &options.browser {
 				tools.configure_browser(browser.clone());
 			}

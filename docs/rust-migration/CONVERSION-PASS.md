@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Base: `64f3dd7`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current MCP continuation base: `2c2078c`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -27,6 +27,8 @@ through this table and the machine task before editing a shared interface.
 | Plugin UI | same protocol Event enum; SDK callback | direct host SDK callback | session/TUI forwarding and interactive choice responses | Partial; unfinished |
 | Native settings/profiles | `rust-agent/src/configuration.rs`, `config.rs` | sync/async run, RPC, SDK, redacted `harvest config` | legacy YAML/JSONC/schema/external-source parity, settings persistence/UI, credential ownership | Written/connected foundation; unfinished parity |
 | Rust edit scoring | `rust-agent/src/edit_benchmark` | native CLI list/compare/apply and ordinary Rust APIs | normalization/patch/file-set bounds tests; actual model runs and usage integration | Written/connected; unverified |
+| Shared process owner | `rust-agent/src/process_transport.rs` | native plugins and MCP stdio | platform descendant/console cleanup, cancellation/failure/queue regressions | Written/connected; unverified |
+| MCP client and tool bridge | `rust-agent/src/mcp`, shared HTTP/SSE owner | native sync/async sessions, RPC, direct SDK, `harvest mcp`, `--enable-mcp`/`--mcp-config` | OAuth/discovery/legacy SSE/reconnect, idle event delivery, hot reload and installed/platform parity | Written/connected; unverified |
 | Benchmark generation/orchestration | same Rust edit-benchmark module and future native metaharness owner | existing TS runner still active | mutation generation, archive handling, shape analysis, orchestration and consumer cutover | Not converted |
 
 ## Inputs, connections and deletion rules
@@ -34,14 +36,16 @@ through this table and the machine task before editing a shared interface.
 Inputs: existing plugin/extension interfaces under
 `packages/coding-agent/src/extensibility`, config/config-file/settings sources,
 `packages/typescript-edit-benchmark/src/{tasks,verify,in-process-client}.ts`,
-metaharness edit adapter, current native tools/provider/session engines.
+metaharness edit adapter, MCP client/types/transports/config/tool bridge under
+`packages/coding-agent/src/mcp`, current native tools/provider/session engines.
 The source ledger continues owning every retained legacy path through its parent
 migration task. This leaf reserves native destination interfaces; it does not
 certify the unported parent or move a source row to verified removal.
 
 Implementation order: owned tool schemas; executable protocol/host/SDK; connect
 session ownership and host approval; shared configuration/profile selection;
-connect native launchers; versioned benchmark loader/apply/scorer/CLI. All are
+connect native launchers; versioned benchmark loader/apply/scorer/CLI; shared
+process owner and MCP transports/client/config/tool bridge/CLI. All are
 written before the consolidated stabilization phase. Reuse existing jailed file,
 edit, transport, provider and session engines. No new dependency or N-API adapter.
 
@@ -73,6 +77,16 @@ native ABI; the old TS application's retirement diagnostic/cutover is unfinished
       interrupted/failed/skipped edits, isolated workspace writes, usage unknown
       versus zero, score version isolation, inert historical fixture retention.
 - [ ] Complete benchmark generation/archive/orchestration and metaharness cutover.
+- [ ] MCP initialization/version/ID envelopes, cursor bounds, tools/resources/
+      prompts, server roots/ping callbacks and unsupported methods.
+- [ ] MCP stdio and HTTP JSON/SSE, owned headers/session identity, cancellation,
+      DELETE cleanup, origin-locked credentials, process exit/queues and approval.
+- [ ] MCP OAuth, external discovery/JSONC/config precedence and expansion,
+      legacy SSE GET/endpoint transport, reconnect/idempotency and pooling.
+- [ ] Idle resource/progress/log subscriptions, HTTP resumption, session/TUI
+      delivery and atomic dynamic-tool refresh across the shared host registry.
+- [ ] Platform process/console/session ownership and descendant cleanup for both
+      plugin and MCP users of the shared process owner.
 - [ ] Run consolidated behavioral, installed-platform and full transition checks;
       update receipts and only then update done/verified/removal claims.
 
@@ -84,6 +98,13 @@ import was corrected. Logs: `target/migration/conversion-pass-connections*.log`.
 Formatting ran once for the final tree. No tests, Clippy, native addon rebuild,
 legacy suites or installed product verification were run for this checkpoint.
 Machine ownership/card validation is metadata validation only.
+
+MCP continuation writes and connects the stdio/streamable HTTP boundary and
+refactors plugin process ownership into the same ordinary Rust implementation.
+Its aggregate all-target/all-feature compiler connection check passes, recorded under
+`target/migration/conversion-mcp-connections*.log`. No tests, Clippy, addon rebuild
+or installed verification is claimed for this continuation. See `NATIVE-MCP.md`
+for implemented contracts and the remaining retained behavior.
 
 Future stabilization commands: `cargo xtask test -p harvest-omp`, affected strict
 Clippy/format, actual native plugin/CLI installation workflows, and the existing
@@ -99,6 +120,16 @@ is host opt-in, and configuration inspection does not start processes.
 Completion: implement every retained contract above, connect the final consumers,
 run consolidated checks, record exact evidence, then delete eligible superseded
 sources. Until then this task stays in_progress and capabilities stay unverified.
+
+## Next conversion frontier
+
+Continue the services work with native LSP/DAP framing, lifecycle and tool
+connections. Extend the shared process owner with their required framing; do not
+create another child-process implementation. Host-applied workspace edits must
+retain the jailed filesystem and final-argument approval owner. These features
+remain absent/unconverted in the snapshot until actual code is written. Existing
+provider, plugin, MCP, configuration and session interfaces keep their current
+owners; broaden the shared registry without duplicating it.
 
 ## Full feature snapshot from capabilities.json
 
@@ -323,7 +354,7 @@ retirements are listed separately from implemented features.
 | `slash:mcp` | absent | unverified | `migrate:services` |
 | `surface:rpc-v1-v2` | partial | unverified | `migrate:services` |
 | `surface:acp-v1` | absent | unverified | `migrate:services` |
-| `surface:mcp` | absent | unverified | `migrate:services` |
+| `surface:mcp` | partial | unverified | `application:conversion-first` |
 | `surface:lsp-dap` | absent | unverified | `migrate:services` |
 | `surface:eval-ssh` | absent | unverified | `migrate:services` |
 | `surface:native-browser-control` | partial | unverified | `migrate:services` |

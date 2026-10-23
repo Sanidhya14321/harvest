@@ -394,6 +394,7 @@ mod tests {
 /// final-argument approval.
 #[derive(Default)]
 pub struct ToolRuntime {
+	mcp:             Vec<crate::mcp::Client>,
 	plugins:         Vec<crate::plugins::Plugin>,
 	browser_options: Option<harvest_browser::Options>,
 	browser:         Option<harvest_browser::Browser>,
@@ -414,6 +415,11 @@ impl ToolRuntime {
 			.map(|spec| spec.name().to_owned())
 			.collect();
 		names.insert("browser".into());
+		for server in &self.mcp {
+			for tool in server.tools() {
+				names.insert(tool.spec.name().to_owned());
+			}
+		}
 		let mut plugins = Vec::new();
 		for configuration in configurations {
 			let plugin = crate::plugins::Plugin::launch(root, configuration, cancellation)?;
@@ -428,6 +434,46 @@ impl ToolRuntime {
 		Ok(())
 	}
 
+	pub fn configure_mcp(
+		&mut self,
+		root: &Path,
+		configurations: &[crate::mcp::Configuration],
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		if configurations.len() > 32 {
+			bail!("too many MCP servers");
+		}
+		let mut names: std::collections::BTreeSet<String> = crate::chat::specs()
+			.iter()
+			.map(|spec| spec.name().to_owned())
+			.collect();
+		names.insert("browser".into());
+		for plugin in &self.plugins {
+			for tool in plugin.tools() {
+				names.insert(tool.name().into());
+			}
+		}
+		let mut server_names = std::collections::BTreeSet::new();
+		let mut servers = Vec::new();
+		for configuration in configurations {
+			if !server_names.insert(&configuration.name) {
+				bail!("duplicate MCP server name");
+			}
+			if !configuration.enabled {
+				continue;
+			}
+			let client = crate::mcp::Client::connect(root, configuration, cancellation)?;
+			for tool in client.tools() {
+				if !names.insert(tool.spec.name().into()) {
+					bail!("MCP tool collides with an existing tool");
+				}
+			}
+			servers.push(client);
+		}
+		self.mcp = servers;
+		Ok(())
+	}
+
 	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
 		self.browser = None;
 		self.browser_options = Some(options);
@@ -435,6 +481,9 @@ impl ToolRuntime {
 
 	pub fn specs(&self) -> Vec<crate::chat::ToolSpec> {
 		let mut specs = crate::chat::specs();
+		for server in &self.mcp {
+			specs.extend(server.tools().iter().map(|tool| tool.spec.clone()));
+		}
 		for plugin in &self.plugins {
 			specs.extend_from_slice(plugin.tools());
 		}
@@ -451,6 +500,14 @@ impl ToolRuntime {
 		policy: &dyn Approval,
 		cancellation: &harvest_runtime::cancel::CancelToken,
 	) -> Result<String> {
+		if let Some(server) = self.mcp.iter_mut().find(|server| {
+			server
+				.tools()
+				.iter()
+				.any(|tool| tool.spec.name() == call.function.name)
+		}) {
+			return server.invoke(call, policy, cancellation);
+		}
 		if let Some(plugin) = self.plugins.iter_mut().find(|plugin| {
 			plugin
 				.tools()

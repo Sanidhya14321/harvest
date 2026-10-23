@@ -50,3 +50,9 @@ Pending conversion: full existing YAML/JSONC settings loading/migration, setting
 schema and validation, external config-source precedence, profile interoperability,
 settings UI/edit persistence, credential ownership/OAuth, and KDL catalog policy.
 Retain TS settings sources and consumers until these contracts move.
+
+Native MCP configuration and CLI now use this same resolver; `[[mcp]]` arrays
+replace earlier layers, like plugins. Runtime startup requires `--enable-mcp`,
+while explicit `--mcp-config` JSON files are host-selected inputs. Duplicate names
+are errors. Inspection reports a server count and never connects. See
+[NATIVE-MCP.md](NATIVE-MCP.md) for pending discovery/OAuth/legacy format behavior.

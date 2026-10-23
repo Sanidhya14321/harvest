@@ -37,6 +37,7 @@ pub struct Resolved {
 	pub api:               Api,
 	pub max_output_tokens: u32,
 	pub plugins:           Vec<Configuration>,
+	pub mcp:               Vec<crate::mcp::Configuration>,
 }
 
 #[derive(Clone, Default, Deserialize)]
@@ -46,6 +47,7 @@ struct Layer {
 	api:               Option<Api>,
 	max_output_tokens: Option<u32>,
 	plugins:           Option<Vec<Configuration>>,
+	mcp:               Option<Vec<crate::mcp::Configuration>>,
 }
 impl Layer {
 	fn merge(&mut self, newer: Self) {
@@ -63,6 +65,7 @@ impl Layer {
 		field!(self.api, newer.api);
 		field!(self.max_output_tokens, newer.max_output_tokens);
 		field!(self.plugins, newer.plugins);
+		field!(self.mcp, newer.mcp);
 	}
 }
 #[derive(Clone, Default, Deserialize)]
@@ -205,10 +208,18 @@ pub fn load(
 	ensure!(max_output_tokens > 0, "max output tokens must be at least 1");
 	let plugins = document.layer.plugins.unwrap_or_default();
 	ensure!(plugins.len() <= 16, "too many configured plugins");
+	let mcp = document.layer.mcp.unwrap_or_default();
+	ensure!(mcp.len() <= 32, "too many MCP servers");
+	let mut mcp_names = BTreeSet::new();
+	for server in &mcp {
+		server.validate()?;
+		ensure!(mcp_names.insert(&server.name), "duplicate MCP server name in native configuration");
+	}
 	Ok(Resolved {
 		settings: config::resolve_file_values(flags, environment, document.layer.settings)?,
 		api,
 		max_output_tokens,
 		plugins,
+		mcp,
 	})
 }

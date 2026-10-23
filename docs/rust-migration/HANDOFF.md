@@ -19,11 +19,18 @@ in-progress conversion checkpoints without claiming verified feature completion.
 
 `application:conversion-first` is in_progress and has scheduling priority. Native
 owned tool schemas, executable plugin protocol/host/Rust SDK, layered TOML
-configuration/profiles and rust-v1 edit scoring are written and connected across
+configuration/profiles, rust-v1 edit scoring and native MCP are written and connected across
 native APIs/CLI/sync/async/RPC. The example plugin uses host-jailed reads. Startup
 is explicitly host-enabled. The redacted config inspector starts no plugins.
 
-An aggregate all-target/all-feature compiler connection check passes. Behavioral
+MCP now uses a shared bounded process owner with plugins, and the existing
+cancellable HTTP/SSE owner for streamable HTTP. Client initialization, bounded
+pagination, tool/resource/prompt APIs, host approval, native config and CLI are
+connected. See `NATIVE-MCP.md` for unfinished OAuth/discovery/legacy SSE,
+notifications/reconnect and platform process cleanup. Legacy MCP sources remain.
+
+An aggregate all-target/all-feature compiler connection check passes, recorded in
+`target/migration/conversion-mcp-connections*.log`. Behavioral
 tests, Clippy, installation and legacy cutover checks are **deferred** at the
 user's instruction; no new capability is verified/done or legacy-removed. The
 common card identifies remaining plugin lifecycle/UI/marketplace, full legacy
@@ -66,5 +73,6 @@ Reuse existing Rust engines; preserve approval, cancellation, persistence and
 shutdown contracts. Keep shared sources until their last consumer moves.
 
 Use `cargo xtask test` (nextest plus doctests), not direct `cargo test`. Frozen
-verification receipts belong under ignored `target/migration/`. Push verified
-migration batches to `ts-to-rust`; publishing/merging remains separate.
+verification receipts belong under ignored `target/migration/`. Push coherent
+in-progress conversion checkpoints to `ts-to-rust`; only stabilization evidence
+can establish verified migration. Publishing/merging remains separate.
