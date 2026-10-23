@@ -190,5 +190,27 @@ wait or restart pagination. Messages retain their original provider fields.
 available. It combines only text blocks from the most recent eligible assistant.
 The full history query `get_messages` remains available. An individually oversized
 message produces an explicit v1 frame-limit error; history is never truncated.
-Protocol v2, steering, compaction and the other production RPC commands remain
-pending. This opt-in adapter has not replaced the production TypeScript RPC mode.
+Steering, compaction and other production RPC commands remain pending. This
+opt-in adapter has not replaced the production TypeScript RPC mode.
+
+### Native RPC transport and clients
+
+The initial `ready` frame advertises versions 1 and 2. Send
+`{"id":"version","type":"negotiate_protocol","protocolVersion":2}` and wait for
+its successful response before accepting v2 chunks. Physical JSONL lines remain
+limited to 1 MiB including the newline. Negotiated v2 carries logical JSON objects
+up to 64 MiB using ordered `rpc_chunk` frames with 256 KiB base64 payloads.
+Large histories and events retain their complete contents. Commands sent to the
+server remain limited to one physical line, matching the legacy command input.
+
+Rust clients can use `harvest_omp::rpc::reader::Reader::new(stdout)` and its async
+`next()` method. After acknowledgement, call
+`set_version(harvest_omp::protocol::rpc_frame::Version::V2)`. The reader bounds
+physical reads, reassembles logical messages and preserves partial input if a
+read future is cancelled. Invalid/interrupted chunks and incomplete messages at
+EOF terminate the reader; reconnect after a transport error. The portable
+`protocol::rpc_frame::{encode, Decoder}` APIs support other native I/O hosts.
+
+The server uses one ordered writer, a 64 MiB queued-byte budget and a 10-second
+deadline for each complete logical write. Serialization itself enforces the
+negotiated size limit; chunks are encoded lazily as output drains.

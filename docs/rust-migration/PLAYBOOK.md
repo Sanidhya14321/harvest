@@ -6,6 +6,12 @@ part of migration work. [SCOPE.md](SCOPE.md) records the user-approved target.
 
 ## Execution batches for throughput
 
+The user's continuing preference is complete subsystem/consumer batches rather
+than isolated file or small query ports. Prioritize work that closes an entire
+runtime boundary and enables consumer cutover. Use focused checks while editing
+and one integration pass for the finalized batch; repeat only checks affected by
+an actual correction. Preserve these instructions across session handoffs.
+
 Use the existing dependency graph to group connected behavior into bounded
 subsystem batches. Prefer a complete native Rust consumer path using existing
 engines; avoid introducing a new N-API adapter for each source. Keep the complete

@@ -1,25 +1,30 @@
 use std::{path::Path, process::Stdio, time::Duration};
 
 use anyhow::{Context, Result, bail};
-use harvest_omp::durable_session::DurableSession;
+use harvest_omp::{
+	durable_session::DurableSession, protocol::rpc_frame::Version, rpc::reader::Reader,
+};
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-async fn frame<R: tokio::io::AsyncBufRead + Unpin>(output: &mut R) -> Result<Value> {
-	let mut bytes = Vec::new();
-	if tokio::time::timeout(Duration::from_secs(10), output.read_until(b'\n', &mut bytes)).await??
-		== 0
-	{
-		bail!("RPC executable closed stdout early");
-	}
-	assert!(bytes.len() <= harvest_runtime::MAX_EVENT_BYTES);
-	Ok(serde_json::from_slice(&bytes)?)
+async fn frame<R: tokio::io::AsyncRead + Unpin>(output: &mut Reader<R>) -> Result<Value> {
+	tokio::time::timeout(Duration::from_secs(10), output.next())
+		.await??
+		.context("RPC executable closed stdout early")
 }
 
 #[tokio::test]
 async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_stdin_eof()
 -> Result<()> {
 	let root = tempfile::tempdir()?;
+	let mut seed = DurableSession::open(root.path(), Path::new("rpc.jsonl"), None)?;
+	for index in 0..2 {
+		seed.commit(
+			&harvest_omp::chat::user(format!("{index}:{}", "🦀".repeat(160_000))),
+			"fixture",
+		)?;
+	}
+	drop(seed);
 	let installation = tempfile::tempdir()?;
 	let candidate = installation
 		.path()
@@ -37,7 +42,7 @@ async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_st
 				bail!("provider request closed early");
 			}
 			request.extend_from_slice(&chunk[..count]);
-			if request.len() > 64 * 1024 {
+			if request.len() > 4 * 1024 * 1024 {
 				bail!("fixture request exceeds bound");
 			}
 			if let Some(end) = request.windows(4).position(|value| value == b"\r\n\r\n") {
@@ -105,8 +110,21 @@ async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_st
 		.kill_on_drop(true)
 		.spawn()?;
 	let mut input = child.stdin.take().context("missing RPC stdin")?;
-	let mut output = BufReader::new(child.stdout.take().context("missing RPC stdout")?);
-	assert_eq!(frame(&mut output).await?["type"], "ready");
+	let mut output = Reader::new(child.stdout.take().context("missing RPC stdout")?);
+	let ready = frame(&mut output).await?;
+	assert_eq!(ready["type"], "ready");
+	assert_eq!(ready["supportedProtocolVersions"], json!([1, 2]));
+	input
+		.write_all(b"{\"id\":\"large-v1\",\"type\":\"get_messages\"}\n")
+		.await?;
+	assert_eq!(frame(&mut output).await?["success"], false);
+	input
+		.write_all(b"{\"id\":\"negotiate\",\"type\":\"negotiate_protocol\",\"protocolVersion\":2}\n")
+		.await?;
+	let negotiated = frame(&mut output).await?;
+	assert_eq!(negotiated["id"], "negotiate");
+	assert_eq!(negotiated["data"]["protocolVersion"], 2);
+	output.set_version(Version::V2)?;
 	input
 		.write_all(b"{\"id\":\"prompt\",\"type\":\"prompt\",\"message\":\"wire prompt\"}\n")
 		.await?;
@@ -135,22 +153,38 @@ async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_st
 		.await?;
 	let history = frame(&mut output).await?;
 	assert_eq!(history["id"], "history");
-	assert_eq!(history["data"]["messages"][1], assistant);
-	for (request, expected) in [
-		(json!({"id":"copy","type":"get_last_assistant_text"}), json!({"text":"from Rust"})),
-		(
-			json!({"id":"page","type":"get_messages_page","limit":256}),
-			json!({"messages":history["data"]["messages"],"totalMessages":2}),
-		),
-	] {
+	assert_eq!(history["data"]["messages"][3], assistant);
+	input
+		.write_all(b"{\"id\":\"copy\",\"type\":\"get_last_assistant_text\"}\n")
+		.await?;
+	assert_eq!(frame(&mut output).await?["data"], json!({"text":"from Rust"}));
+	let mut cursor = None;
+	let mut collected = Vec::new();
+	loop {
+		let mut request = json!({"id":"page","type":"get_messages_page","limit":256});
+		if let Some(cursor) = &cursor {
+			request["cursor"] = json!(cursor);
+		}
 		let mut bytes = serde_json::to_vec(&request)?;
 		bytes.push(b'\n');
 		input.write_all(&bytes).await?;
 		let response = frame(&mut output).await?;
-		assert_eq!(response["id"], request["id"]);
 		assert_eq!(response["success"], true);
-		assert_eq!(response["data"], expected);
+		assert_eq!(response["data"]["totalMessages"], 4);
+		collected.extend(
+			response["data"]["messages"]
+				.as_array()
+				.unwrap()
+				.iter()
+				.cloned(),
+		);
+		cursor = response["data"]["nextCursor"].as_str().map(str::to_owned);
+		if cursor.is_none() {
+			break;
+		}
 	}
+	assert_eq!(json!(collected), history["data"]["messages"]);
+
 	input.shutdown().await?;
 	drop(input);
 	let status = tokio::time::timeout(Duration::from_secs(10), child.wait()).await??;
@@ -167,8 +201,8 @@ async fn executable_rpc_streams_real_provider_bytes_and_closes_its_session_on_st
 	}
 	provider.await??;
 	let reopened = DurableSession::open(root.path(), Path::new("rpc.jsonl"), None)?;
-	assert_eq!(reopened.messages().len(), 2);
-	assert_eq!(reopened.messages()[1].content.as_deref(), Some("from Rust"));
+	assert_eq!(reopened.messages().len(), 4);
+	assert_eq!(reopened.messages()[3].content.as_deref(), Some("from Rust"));
 	assert_eq!(json!(reopened.leaf().is_some()), true);
 	Ok(())
 }

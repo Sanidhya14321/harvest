@@ -69,3 +69,6 @@ card for the clock boundary, retained assertions and remaining independent gates
 
 Native RPC transcript query progress is recorded in `tasks/RPC-TRANSCRIPT.md`.
 Production RPC and the overall application remain pending Rust cutover.
+
+Native versioned RPC transport and client progress is recorded in
+`tasks/RPC-TRANSPORT.md`; keep the subsystem batching rule in PLAYBOOK.md.

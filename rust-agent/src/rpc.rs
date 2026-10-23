@@ -1,18 +1,30 @@
-//! Experimental, bounded JSONL v1 adapter for the asynchronous Rust owner.
+//! Experimental, bounded JSONL v1/v2 adapter for the asynchronous Rust owner.
 //!
 //! This is an opt-in subset, not a replacement for the production RPC mode.
 //! Unsupported commands fail explicitly. The caller owns approval policy;
 //! the CLI denies mutations because stdin belongs exclusively to this protocol.
-use std::{collections::BTreeMap, io, path::PathBuf, time::Duration};
+pub mod reader;
+use std::{
+	collections::BTreeMap,
+	path::PathBuf,
+	sync::{
+		Arc,
+		atomic::{AtomicBool, AtomicU64, Ordering},
+	},
+	time::Duration,
+};
 
 use anyhow::{Context, Result, bail};
-use harvest_protocol::transcript::{self, Snapshot, StaleCursor};
+use harvest_protocol::{
+	rpc_frame::{self, Frames, MAX_LOGICAL_BYTES, Version},
+	transcript::{self, Snapshot, StaleCursor},
+};
 use harvest_runtime::MAX_EVENT_BYTES;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json, value::RawValue};
 use tokio::{
-	io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-	sync::{mpsc, watch},
+	io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+	sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch},
 };
 
 use crate::{
@@ -24,6 +36,7 @@ use crate::{
 };
 
 const IO_CAPACITY: usize = 32;
+const _: () = assert!(MAX_EVENT_BYTES == rpc_frame::MAX_FRAME_BYTES);
 const MAX_PENDING_ABORTS: usize = 64;
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -60,12 +73,17 @@ where
 		}
 		result
 	});
-	let sink = Sink(output_tx);
+	let sink = Sink {
+		output:  output_tx,
+		v2:      AtomicBool::new(false),
+		counter: AtomicU64::new(0),
+		budget:  Arc::new(Semaphore::new(MAX_LOGICAL_BYTES)),
+	};
 	let result = async {
 		let mut subscription = session.subscribe().await?;
 		sink.send(&json!({"type":"ready", "protocolVersion":1,
-			"supportedProtocolVersions":[1], "maxFrameBytes":MAX_EVENT_BYTES,
-			"maxReassembledFrameBytes":MAX_EVENT_BYTES})).await?;
+			"supportedProtocolVersions":[1,2], "maxFrameBytes":MAX_EVENT_BYTES,
+			"maxReassembledFrameBytes":MAX_LOGICAL_BYTES})).await?;
 		let mut adapter = Adapter { session: &session, sink: &sink, options, runs: BTreeMap::new(), generation: 0, pending_aborts: Vec::new() };
 		loop {
 			tokio::select! {
@@ -126,14 +144,39 @@ struct Response<'a, T> {
 	code:    Option<&'a str>,
 }
 
-struct Sink(mpsc::Sender<Vec<u8>>);
+struct Output {
+	frames:  Frames,
+	_permit: OwnedSemaphorePermit,
+}
+struct Sink {
+	output:  mpsc::Sender<Output>,
+	v2:      AtomicBool,
+	counter: AtomicU64,
+	budget:  Arc<Semaphore>,
+}
 impl Sink {
-	async fn send<T: Serialize + Sync>(&self, value: &T) -> Result<()> {
+	fn encode(&self, value: &impl Serialize) -> Result<Frames> {
+		let version = if self.v2.load(Ordering::Relaxed) {
+			Version::V2
+		} else {
+			Version::V1
+		};
+		let id = self.counter.fetch_add(1, Ordering::Relaxed);
+		rpc_frame::encode(value, version, format!("rpc-{id}"))
+	}
+
+	async fn enqueue(&self, frames: Frames) -> Result<()> {
+		let bytes = u32::try_from(frames.retained_bytes())?;
+		let permit = self.budget.clone().acquire_many_owned(bytes).await?;
 		self
-			.0
-			.send(encode(value)?)
+			.output
+			.send(Output { frames, _permit: permit })
 			.await
 			.context("RPC output closed")
+	}
+
+	async fn send<T: Serialize + Sync>(&self, value: &T) -> Result<()> {
+		self.enqueue(self.encode(value)?).await
 	}
 
 	async fn success<T: Serialize + Send + Sync>(
@@ -144,11 +187,15 @@ impl Sink {
 	) -> Result<()> {
 		let response =
 			Response { id, kind: "response", command, success: true, data, error: None, code: None };
-		match encode(&response) {
-			Ok(bytes) => self.0.send(bytes).await.context("RPC output closed"),
+		match self.encode(&response) {
+			Ok(frames) => self.enqueue(frames).await,
 			Err(_) => {
 				self
-					.error(id, command, "response exceeds the v1 frame limit; no history was truncated")
+					.error(
+						id,
+						command,
+						"response exceeds the negotiated frame limit; no history was truncated",
+					)
 					.await
 			},
 		}
@@ -179,35 +226,17 @@ impl Sink {
 	}
 }
 
-struct LimitedFrame(Vec<u8>);
-impl io::Write for LimitedFrame {
-	fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-		if bytes.len() > (MAX_EVENT_BYTES - 1).saturating_sub(self.0.len()) {
-			return Err(io::Error::other("RPC output exceeds frame limit"));
-		}
-		self.0.extend_from_slice(bytes);
-		Ok(bytes.len())
-	}
-
-	fn flush(&mut self) -> io::Result<()> {
-		Ok(())
-	}
-}
-fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-	let mut bytes = LimitedFrame(Vec::new());
-	serde_json::to_writer(&mut bytes, value)?;
-	bytes.0.push(b'\n');
-	Ok(bytes.0)
-}
-
 async fn write_frames<W: AsyncWrite + Unpin>(
 	mut output: W,
-	mut frames: mpsc::Receiver<Vec<u8>>,
+	mut frames: mpsc::Receiver<Output>,
 ) -> Result<()> {
-	while let Some(frame) = frames.recv().await {
+	while let Some(message) = frames.recv().await {
 		tokio::time::timeout(WRITE_TIMEOUT, async {
-			output.write_all(&frame).await?;
-			output.flush().await
+			for frame in message.frames {
+				output.write_all(&frame?).await?;
+			}
+			output.flush().await?;
+			Ok::<(), anyhow::Error>(())
 		})
 		.await
 		.context("RPC output backpressure deadline exceeded")??;
@@ -232,42 +261,15 @@ async fn read_frames_inner<R: AsyncRead + Unpin>(
 	input: R,
 	frames: &mpsc::Sender<Input>,
 ) -> Result<()> {
-	let mut input = BufReader::new(input);
-	let mut frame = Vec::new();
-	let mut oversized = false;
-	loop {
-		let buffer = input.fill_buf().await?;
-		if buffer.is_empty() {
-			if oversized {
-				frames
-					.send(Input::Invalid("RPC input exceeds frame limit".into()))
-					.await?;
-			} else if !frame.is_empty() {
-				frames.send(Input::Frame(frame)).await?;
-			}
-			return Ok(());
-		}
-		let newline = buffer.iter().position(|byte| *byte == b'\n');
-		let count = newline.map_or(buffer.len(), |index| index + 1);
-		if !oversized {
-			if count > MAX_EVENT_BYTES.saturating_sub(frame.len()) {
-				oversized = true;
-				frame.clear();
-			} else {
-				frame.extend_from_slice(&buffer[..count]);
-			}
-		}
-		input.consume(count);
-		if newline.is_some() {
-			let next = if oversized {
-				Input::Invalid("RPC input exceeds frame limit".into())
-			} else {
-				Input::Frame(std::mem::take(&mut frame))
-			};
-			frames.send(next).await?;
-			oversized = false;
-		}
+	let mut input = reader::PhysicalReader::new(input);
+	while let Some(frame) = input.next().await? {
+		let frame = match frame {
+			reader::Physical::Frame(bytes) => Input::Frame(bytes),
+			reader::Physical::Invalid => Input::Invalid("RPC input exceeds frame limit".into()),
+		};
+		frames.send(frame).await?;
 	}
+	Ok(())
 }
 
 struct Accepted {
@@ -508,10 +510,24 @@ impl Adapter<'_> {
 					.await?;
 			},
 			"negotiate_protocol" => {
-				self
-					.sink
-					.error(id, command, "experimental Rust RPC supports protocol v1 only")
-					.await?;
+				if request
+					.fields
+					.get("protocolVersion")
+					.and_then(transcript::safe_integer)
+					== Some(2)
+				{
+					// Queue acknowledgement before switching the ordered writer.
+					self
+						.sink
+						.success(id, command, Some(json!({"protocolVersion":2})))
+						.await?;
+					self.sink.v2.store(true, Ordering::Relaxed);
+				} else {
+					self
+						.sink
+						.error(id, command, "Unsupported RPC protocol version; expected 2")
+						.await?;
+				}
 			},
 			_ if known_command(command) => {
 				self
@@ -845,6 +861,90 @@ impl Progress {
 			self.assistant = Some(partial);
 			self.streaming = false;
 		}
+		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod transport_tests {
+	use std::{
+		io,
+		pin::Pin,
+		task::{Context, Poll},
+	};
+
+	use anyhow::Context as _;
+
+	use super::*;
+
+	fn bounded_sink(bytes: usize) -> (Sink, mpsc::Receiver<Output>) {
+		let (output, receiver) = mpsc::channel(IO_CAPACITY);
+		(
+			Sink {
+				output,
+				v2: AtomicBool::new(true),
+				counter: AtomicU64::new(0),
+				budget: Arc::new(Semaphore::new(bytes)),
+			},
+			receiver,
+		)
+	}
+
+	#[tokio::test]
+	async fn output_queue_waits_for_bytes_even_when_message_slots_are_available() -> Result<()> {
+		let (sink, mut receiver) = bounded_sink(2);
+		let value = json!({});
+		sink.send(&value).await?;
+		let send = sink.send(&value);
+		tokio::pin!(send);
+		assert!(
+			tokio::time::timeout(Duration::from_millis(20), send.as_mut())
+				.await
+				.is_err()
+		);
+		assert_eq!(sink.budget.available_permits(), 0);
+		drop(receiver.recv().await.context("first queued message")?);
+		tokio::time::timeout(Duration::from_secs(1), send).await??;
+		drop(receiver.recv().await.context("second queued message")?);
+		assert_eq!(sink.budget.available_permits(), 2);
+		Ok(())
+	}
+
+	struct BlockedOutput;
+	impl AsyncWrite for BlockedOutput {
+		fn poll_write(
+			self: Pin<&mut Self>,
+			_: &mut Context<'_>,
+			_: &[u8],
+		) -> Poll<io::Result<usize>> {
+			Poll::Pending
+		}
+
+		fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+			Poll::Ready(Ok(()))
+		}
+
+		fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+			Poll::Ready(Ok(()))
+		}
+	}
+
+	#[tokio::test]
+	async fn stalled_writer_times_out_and_releases_all_queued_byte_permits() -> Result<()> {
+		let (sink, receiver) = bounded_sink(4);
+		sink.send(&json!({})).await?;
+		sink.send(&json!({})).await?;
+		let failure =
+			tokio::time::timeout(Duration::from_secs(12), write_frames(BlockedOutput, receiver))
+				.await?
+				.unwrap_err();
+		assert!(
+			failure
+				.to_string()
+				.contains("backpressure deadline exceeded")
+		);
+		assert_eq!(sink.budget.available_permits(), 4);
+		assert!(sink.send(&json!({})).await.is_err());
 		Ok(())
 	}
 }

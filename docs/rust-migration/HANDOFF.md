@@ -8,6 +8,26 @@ The normal application still starts in TypeScript. No whole-product parity or
 distribution cutover is claimed. Existing browser/WASM proofs do not satisfy the
 new zero-JavaScript target.
 
+Completed **`services:rpc-transport`** as one connected server/client batch:
+native RPC advertises and negotiates v2, lazily emits lossless large-message
+chunks and uses one ordered writer with a 64 MiB queue-byte budget. A shared
+bounded physical reader serves both server input and the public Rust SDK reader;
+partial reads survive cancellation, invalid chunks fail explicitly and incomplete
+EOF is rejected. Exact legacy wire hashes and actual legacy decoder/native-server
+interoperability pass. The copied native CLI verifies v1 refusal then complete v2
+history, paginated reconstruction, real provider streaming and durable reopening
+with no language runtime on PATH. Affected Rust integration includes queue-byte
+backpressure and stalled-writer deadline/permit release. Strict Clippy and the
+21 legacy frame/pagination contracts pass. Logs/receipts and the unexecuted full
+transition plan are under `target/migration/rpc-transport-*`.
+
+Production RPC commands/clients still need migration; the capability remains
+partial/unverified and no legacy source is removed by this transport batch.
+Legacy v1 display shortening and oversized terminal-frame compaction remain
+pending. See `tasks/RPC-TRANSPORT.md`. The user's continuing preference for
+complete subsystem/consumer batches and one final integration pass is recorded
+in PLAYBOOK.md; avoid returning to isolated query/file ports.
+
 Completed **`services:rpc-transcript`**: native RPC now serves committed
 `get_messages_page` and `get_last_assistant_text` through shared portable Rust
 queries. Exact legacy cursor fixtures, bounded lossless history reconstruction,

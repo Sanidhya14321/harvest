@@ -5,22 +5,21 @@ use std::{
 	time::Duration,
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use harvest_omp::{
 	chat::{ChatMessage, FunctionCall, ToolCall, ToolSpec},
 	durable_session::DurableSession,
 	provider::Model,
-	rpc::{RpcOptions, serve},
+	rpc::{RpcOptions, reader::Reader, serve},
 	session_engine::{SessionEngine, SessionEngineOptions, SessionHandle},
 	session_format::SessionDocument,
 	tools::DenyMutations,
 };
+use harvest_protocol::rpc_frame::Version;
 use harvest_runtime::{MAX_EVENT_BYTES, cancel::CancelToken};
 use serde_json::{Value, json};
 use tokio::{
-	io::{
-		AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf,
-	},
+	io::{AsyncWriteExt, DuplexStream, ReadHalf, WriteHalf},
 	sync::{Notify, Semaphore},
 	task::JoinHandle,
 };
@@ -78,7 +77,7 @@ fn immediate(text: &str) -> Reply {
 
 struct Connection {
 	input:  WriteHalf<DuplexStream>,
-	output: BufReader<ReadHalf<DuplexStream>>,
+	output: Reader<ReadHalf<DuplexStream>>,
 	task:   JoinHandle<Result<()>>,
 	frames: Vec<Value>,
 }
@@ -104,10 +103,11 @@ impl Connection {
 		let task = tokio::spawn(serve(session, input, output, options));
 		let (read, write) = tokio::io::split(client);
 		let mut connection =
-			Self { input: write, output: BufReader::new(read), task, frames: Vec::new() };
+			Self { input: write, output: Reader::new(read), task, frames: Vec::new() };
 		let ready = connection.next().await?;
 		assert_eq!(ready["type"], "ready");
-		assert_eq!(ready["supportedProtocolVersions"], json!([1]));
+		assert_eq!(ready["supportedProtocolVersions"], json!([1, 2]));
+		assert_eq!(ready["maxReassembledFrameBytes"], 64 * 1024 * 1024);
 		Ok(connection)
 	}
 
@@ -119,15 +119,9 @@ impl Connection {
 	}
 
 	async fn next(&mut self) -> Result<Value> {
-		let mut bytes = Vec::new();
-		let count =
-			tokio::time::timeout(Duration::from_secs(10), self.output.read_until(b'\n', &mut bytes))
-				.await??;
-		if count == 0 {
-			bail!("RPC output closed before expected frame");
-		}
-		assert!(bytes.len() <= MAX_EVENT_BYTES, "client receives bounded physical frames");
-		let frame: Value = serde_json::from_slice(&bytes)?;
+		let frame = tokio::time::timeout(Duration::from_secs(10), self.output.next())
+			.await??
+			.context("RPC output closed before expected frame")?;
 		self.frames.push(frame.clone());
 		Ok(frame)
 	}
@@ -152,13 +146,10 @@ impl Connection {
 
 	async fn close(mut self) -> Result<Vec<Value>> {
 		self.input.shutdown().await?;
-		let mut tail = Vec::new();
-		tokio::time::timeout(Duration::from_secs(10), self.output.read_to_end(&mut tail)).await??;
-		for line in tail
-			.split(|byte| *byte == b'\n')
-			.filter(|line| !line.is_empty())
+		while let Some(frame) =
+			tokio::time::timeout(Duration::from_secs(10), self.output.next()).await??
 		{
-			self.frames.push(serde_json::from_slice(line)?);
+			self.frames.push(frame);
 		}
 		tokio::time::timeout(Duration::from_secs(10), self.task).await???;
 		Ok(self.frames)
@@ -427,7 +418,7 @@ async fn rpc_recovers_from_malformed_and_oversized_frames_and_never_acknowledges
 		json!({"id":"images","type":"prompt","message":"image","images":[{"type":"image","data":"AA==","mimeType":"image/png"}]}),
 		json!({"id":"steer","type":"prompt","message":"steer","streamingBehavior":"steer"}),
 		json!({"id":"slash","type":"prompt","message":"/clear"}),
-		json!({"id":"v2","type":"negotiate_protocol","protocolVersion":2}),
+		json!({"id":"v3","type":"negotiate_protocol","protocolVersion":3}),
 	] {
 		let id = request["id"].as_str().unwrap().to_owned();
 		client.send(request).await?;
@@ -482,6 +473,23 @@ async fn rpc_refuses_oversized_history_without_truncation_and_keeps_serving_stat
 	assert_eq!(first["data"]["messages"][0], expected[0]);
 	assert_eq!(second["data"]["messages"][0], expected[1]);
 	assert!(second["data"].get("nextCursor").is_none());
+	client
+		.send(json!({"id":"negotiate","type":"negotiate_protocol","protocolVersion":2}))
+		.await?;
+	assert_eq!(client.response("negotiate").await?["data"]["protocolVersion"], 2);
+	client.output.set_version(Version::V2)?;
+	// The exact same history refused in v1 now crosses the physical ceiling
+	// losslessly, decoded by the public SDK reader rather than test-only glue.
+	client
+		.send(json!({"id":"whole-v2","type":"get_messages"}))
+		.await?;
+	let whole = client.response("whole-v2").await?;
+	assert_eq!(whole["success"], true);
+	assert_eq!(whole["data"]["messages"], expected);
+	client
+		.send(json!({"id":"repeat-negotiation","type":"negotiate_protocol","protocolVersion":2.0}))
+		.await?;
+	assert_eq!(client.response("repeat-negotiation").await?["success"], true);
 	client
 		.send(json!({"id":"count","type":"get_state"}))
 		.await?;

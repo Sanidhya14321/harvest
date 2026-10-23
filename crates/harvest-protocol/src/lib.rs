@@ -6,6 +6,7 @@
 //! remain responsible for terminal sanitization and safe DOM output.
 pub mod digest;
 pub mod display;
+pub mod rpc_frame;
 pub mod session;
 pub mod transcript;
 pub mod wire;

@@ -57,3 +57,6 @@ as unexecuted rather than claiming the focused checks certify a full transition.
 Deletion: none in this leaf. Production TS RPC and its SDK clients still consume
 the legacy module. Remove it only after their complete protocol and application
 consumers move. Recovery: revert the bounded query commit; preserve sessions.
+
+Subsequent transport work is owned by `services:rpc-transport` in
+`RPC-TRANSPORT.md`, including the v2 work recorded as pending at this checkpoint.

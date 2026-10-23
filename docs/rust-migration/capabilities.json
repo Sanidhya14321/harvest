@@ -3611,7 +3611,9 @@
         "paths": [
           "rust-agent/src/rpc.rs",
           "rust-agent/src/session_engine.rs",
-          "crates/harvest-protocol/src/transcript.rs"
+          "crates/harvest-protocol/src/transcript.rs",
+          "crates/harvest-protocol/src/rpc_frame.rs",
+          "rust-agent/src/rpc/reader.rs"
         ]
       },
       "verification": {
@@ -3619,7 +3621,9 @@
         "contract_suites": [
           "rust-agent/tests/rpc.rs",
           "crates/harvest-protocol/tests/transcript.rs",
-          "rust-agent/tests/rpc_cli.rs"
+          "rust-agent/tests/rpc_cli.rs",
+          "crates/harvest-protocol/tests/rpc_frame.rs",
+          "rust-agent/tests/rpc_reader.rs"
         ]
       },
       "work_unit": "services",
@@ -6959,6 +6963,32 @@
           "Eight captured legacy pagination fixtures match exact cursor strings, messages and errors; shared Rust contracts cover large-history reconstruction, malformed/unsafe cursors, oversized messages and assistant copy semantics.",
           "All 138 harvest-protocol/harvest-omp tests pass, including live owner busy/stale cursor behavior, lossless bounded pages when whole history exceeds v1 limits, and a copied native executable serving real loopback provider bytes with only its installation directory on PATH. Strict Clippy and formatting pass; three existing legacy pagination tests pass.",
           "No legacy source deleted: production TS RPC consumers remain pending, and surface:rpc-v1-v2 remains partial/unverified. The source-bound plan selects a full transition, which was not rerun; inherited removal, singleton, whole-addon lint and platform gates remain unresolved."
+        ]
+      },
+      {
+        "id": "services:rpc-transport",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "services",
+        "depends_on": [
+          "control:playbook",
+          "review:services",
+          "services:rpc-transcript"
+        ],
+        "card": "docs/rust-migration/tasks/RPC-TRANSPORT.md",
+        "capabilities": [
+          "surface:rpc-v1-v2"
+        ],
+        "checks": [
+          "rpc-transcript-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Completed native server/client transport boundary: negotiated v1/v2, lazy 256 KiB chunk emission, 64 MiB logical ceiling, shared bounded physical reader, cancellation-safe SDK reads, ordered output and byte-budget backpressure.",
+          "Legacy encoder fixture hashes match exact physical lines at the v1/v2 boundary and across multibyte text. Native decoder rejects malformed metadata/base64/UTF-8/JSON, interrupted chunks and incomplete EOF. Native owner/installed CLI contracts cover v1 rejection followed by complete v2 history, pagination, provider streaming and writer shutdown.",
+          "Existing TypeScript RpcFrameDecoder successfully reads five physical chunks from the native server with no language runtime on the child PATH; two exact messages returned and session bytes unchanged. All 21 retained legacy frame/pagination contracts pass.",
+          "Affected Rust integration, strict lint/format and source-bound receipts are recorded under target/migration/rpc-transport-*. Full RPC capability remains partial: production commands/consumers, v1 display shortening and terminal compaction remain pending; no source removal or full transition is claimed."
         ]
       }
     ]
