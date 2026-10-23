@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current plugin-event continuation base: `165827d`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current process-byte continuation base: `34e1876`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -352,10 +352,10 @@ retain explicit ignored-event behavior; sessions use the event-aware methods.
 
 Remaining prerequisites: native TUI rendering, widget/status persistence and
 reconnect state, interactive choice request/response protocol, full extension hooks
-and actual TS loader/UI consumer replacement. The existing response-exchange byte
-counter re-encodes frames, so raw whitespace/ignored-field wire accounting needs
-an explicit shared process-transport follow-up before certifying that quota.
-Payload admission limits above do not claim to solve this separate raw-wire gap.
+and actual TS loader/UI consumer replacement. The raw-wire accounting follow-up
+below now retains consumed frame sizes instead of re-encoding frames. That code
+still needs behavioral boundary evidence; event-data limits and wire limits are
+separate contracts.
 Keep types.ts retained/partial, with full remaining API review owned here.
 
 Recovery: revert this continuation to 165827d. Consolidated acceptance: external
@@ -367,6 +367,33 @@ Use `cargo xtask test -p harvest-omp` during stabilization. See
 `docs/rust-plugin-protocol.md`; receipts/logs use ignored
 `target/migration/conversion-plugin-events-*`. No source deletion, verified
 capability or completed interactive workflow is claimed.
+
+## Current process-byte accounting continuation
+
+Owner: `application:conversion-first`; base `34e1876`. Observed gap: plugin host
+exchange quota used serialized decoded frames, losing whitespace and unknown
+fields. Inputs are the shared Process<T> JSONL/Content-Length readers, receive/
+try_receive APIs, plugin host exchange and other MCP/LSP/DAP/SDK consumers. The
+same transport remains the sole owner; do not add another framing reader.
+
+Written/connections: internal Received<T> carries typed value plus exact consumed
+wire bytes through the existing bounded channel. Value-only receive/try_receive
+and SDK framing APIs preserve their interfaces. Plugin exchange uses the new
+receive_with_size path and checked addition before dispatch/result. Counts include
+JSONL newline/whitespace/ignored fields or Content-Length headers plus body. The
+16 MiB limit admits consumed frames; bounded queue prefetch may already hold more
+bytes. It is not an OS/process total-output limit. No decoded frame re-encoding is
+used to charge incoming plugin traffic.
+
+Recovery: revert to 34e1876. Consolidated acceptance: large ignored fields and
+whitespace frames retain decoded values but charge raw bytes; aggregate exact/
+over-limit boundaries, repeated calls/cancellation/failure and no event/result
+admission after exhaustion; Content-Length optional/extra headers, embedded
+newlines, malformed/truncated data; unchanged MCP/LSP/DAP typed receive and SDK
+stdio behavior. Use `cargo xtask test -p harvest-omp` during stabilization.
+Compiler/format/ownership evidence only under ignored
+`target/migration/conversion-process-byte-count-*`. No TS deletion or verified
+capability/retirement/removal advances.
 
 ## Stabilization queue (deferred, not passed)
 

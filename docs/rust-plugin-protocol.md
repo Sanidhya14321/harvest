@@ -40,10 +40,14 @@ and known interpreter executables produce migration guidance.
 
 Queues are bounded (8 outbound, 16 inbound frames). Calls have a host timeout
 (default 30 seconds, maximum 10 minutes), at most 1024 events, 64 host callbacks
-and a 16 MiB canonical response-data budget. Requests and callbacks must match
-their owner IDs. This existing aggregate counter measures re-encoded decoded
-frames; raw whitespace/unknown-field wire accounting still needs a bounded
-process-transport follow-up before certifying a raw-wire quota.
+and a 16 MiB consumed response-wire budget. Requests and callbacks must match
+their owner IDs. The shared reader now retains each incoming frame's actual byte
+count before decoding; whitespace, newline and ignored fields count toward the
+plugin exchange limit. Admission is checked before dispatching that frame's event,
+host call or result. Prefetch remains bounded by the existing reader/output queues;
+this is a consumed-frame admission quota, not a cap on what an external process
+may write or on bytes already prefetched by those queues. Runtime boundary tests
+are still pending.
 
 Declarative events are progress, notification and choice data. The host SDK
 exposes an event callback. Native sync/async session streams now forward them as
@@ -88,6 +92,17 @@ SDK, sync run --events, async session and RPC v1/v2. Verify parent IDs and monot
 sequence/order, unchanged model transcript and durable records, bounded/adversarial
 events, author/host admission agreement, slow/lagged/closed subscribers, malformed
 IDs, cancellation/callback failure/process exit, final-argument nested approvals
-and writer shutdown. Cover raw incoming-byte accounting separately in the shared
-process owner, including whitespace and ignored fields. Behavioral/installed/
+and writer shutdown. Cover raw incoming-byte accounting in the shared process
+owner, including whitespace and ignored fields. Behavioral/installed/
 platform evidence remains deferred; compilation is connection evidence only.
+
+Raw-byte continuation base `34e1876`: `Process::receive_with_size` preserves exact
+JSONL frame bytes or Content-Length header-plus-body bytes while ordinary receive
+and try_receive callers retain their typed-value APIs. Plugin exchange admission
+now uses that count instead of re-serializing a frame. The SDK stdin reader keeps
+the existing value-only helper and per-frame limit. No second reader/queue/process
+owner or retained-data buffer is introduced. Verify near/at/over aggregate limits,
+ignored large fields, whitespace-heavy frames, consecutive calls, malformed frames,
+Content-Length extra headers, exact round trips, cancellation and the existing
+MCP/LSP/DAP consumers during consolidated stabilization. Compiler evidence alone
+does not verify this corrected accounting contract.

@@ -211,10 +211,12 @@ impl Plugin {
 		let mut events = 0;
 		let mut event_bytes = 0;
 		let mut host_ids = BTreeSet::new();
-		let mut bytes = 0;
+		let mut bytes = 0_usize;
 		loop {
-			let frame = self.receive(deadline)?;
-			bytes += protocol::encode(&frame)?.len();
+			let (frame, wire_bytes) = self.process.receive_with_size(deadline)?;
+			bytes = bytes
+				.checked_add(wire_bytes)
+				.context("plugin exchange byte count overflow")?;
 			ensure!(bytes <= 16 * 1024 * 1024, "plugin response exchange exceeds limit");
 			match frame {
 				Frame::Result { id: response_id, value } if response_id == id => {

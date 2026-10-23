@@ -31,19 +31,25 @@ These events never enter durable model history. Interactive choice replies, TUI
 rendering and persistent UI/reconnect state remain unfinished. See
 ../rust-plugin-protocol.md and the common conversion card.
 
+Raw-byte continuation base `34e1876`: shared process readers now retain actual
+incoming byte counts (JSONL or Content-Length headers/body), and plugin exchange
+admission uses them instead of re-encoding decoded frames. Existing typed receive/
+SDK consumers keep their APIs and bounded queues. Whitespace/ignored fields count;
+queue prefetch is separate from the consumed-frame quota. Boundary/cancellation/
+framing and MCP/LSP/DAP/SDK runtime regressions are still pending.
+
 Compiler, format and ownership checks only; behavioral/installed/platform evidence
 is deferred. No TS source is deleted and no verified capability/removal counter
 advances in these continuations. Generate counts from `cargo xtask playbook status
 --json`; partial Rust code and raw language bytes are not engineering completion.
-Ignored receipts/logs: target/migration/conversion-provider-values-* and
-conversion-plugin-events-*. Prior source hashes/evidence remain historical.
+Ignored receipts/logs: target/migration/conversion-provider-values-*,
+conversion-plugin-events-* and conversion-process-byte-count-*. Prior source hashes/evidence remain historical.
 
 ## Next dependency-ready work
 
-- Plugin raw-wire accounting: existing exchange budget re-encodes decoded frames;
-  inspect shared process_transport reader/Process receive ownership and count actual
-  incoming bytes, including whitespace/ignored fields. Current event-body bounds
-  do not certify a raw-wire quota. Preserve one process and session event owner.
+- Plugin raw-wire accounting code is connected; retain exact boundary, whitespace,
+  ignored-field, queue-prefetch and framed-client checks for stabilization. Preserve
+  one process and session event owner; do not infer runtime evidence from compilation.
 - Plugin TUI/state/choice-response work needs explicit request/reply and reconnect
   contracts; do not invent executable callbacks or claim choices are interactive.
 - Providers: full models schema/discovery/override/KDL consumers, stored credentials,

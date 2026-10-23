@@ -23,10 +23,15 @@ pub(crate) enum Framing {
 	ContentLength,
 }
 
+struct Received<T> {
+	value:      T,
+	wire_bytes: usize,
+}
+
 pub(crate) struct Process<T> {
 	child:   Child,
 	input:   Option<SyncSender<Vec<u8>>>,
-	output:  Receiver<Result<T>>,
+	output:  Receiver<Result<Received<T>>>,
 	stderr:  Arc<Mutex<Vec<u8>>>,
 	closed:  bool,
 	framing: Framing,
@@ -84,8 +89,8 @@ impl<T: DeserializeOwned + Send + 'static> Process<T> {
 			let mut reader = BufReader::new(stdout);
 			loop {
 				let received = match framing {
-					Framing::JsonLines => read_frame(&mut reader),
-					Framing::ContentLength => read_content_length(&mut reader),
+					Framing::JsonLines => read_frame_counted(&mut reader),
+					Framing::ContentLength => read_content_length_counted(&mut reader),
 				};
 				match received {
 					Ok(Some(value)) => {
@@ -145,10 +150,16 @@ impl<T: DeserializeOwned + Send + 'static> Process<T> {
 	}
 
 	pub fn receive(&mut self, cancellation: &CancelToken) -> Result<T> {
+		self.receive_with_size(cancellation).map(|(value, _)| value)
+	}
+
+	/// Actual consumed bytes, including framing, whitespace and ignored fields.
+	/// Decoding or re-encoding a value must not reduce an exchange's wire quota.
+	pub fn receive_with_size(&mut self, cancellation: &CancelToken) -> Result<(T, usize)> {
 		loop {
 			cancellation.heartbeat()?;
 			match self.output.recv_timeout(Duration::from_millis(10)) {
-				Ok(value) => return value,
+				Ok(value) => return value.map(|received| (received.value, received.wire_bytes)),
 				Err(mpsc::RecvTimeoutError::Disconnected) => {
 					bail!("native process exited before its response")
 				},
@@ -159,7 +170,7 @@ impl<T: DeserializeOwned + Send + 'static> Process<T> {
 
 	pub fn try_receive(&mut self) -> Result<Option<T>> {
 		match self.output.try_recv() {
-			Ok(value) => value.map(Some),
+			Ok(value) => value.map(|received| Some(received.value)),
 			Err(mpsc::TryRecvError::Empty) => Ok(None),
 			Err(mpsc::TryRecvError::Disconnected) => Ok(None),
 		}
@@ -183,6 +194,11 @@ impl<T: DeserializeOwned + Send + 'static> Process<T> {
 }
 /// Shared framing also serves the Rust executable-plugin SDK's stdio reader.
 pub(crate) fn read_frame<T: DeserializeOwned>(reader: &mut impl BufRead) -> Result<Option<T>> {
+	Ok(read_frame_counted(reader)?.map(|received| received.value))
+}
+fn read_frame_counted<T: DeserializeOwned>(
+	reader: &mut impl BufRead,
+) -> Result<Option<Received<T>>> {
 	let mut bytes = Vec::new();
 	let count = reader
 		.take(MAX_FRAME_BYTES as u64 + 1)
@@ -196,7 +212,7 @@ pub(crate) fn read_frame<T: DeserializeOwned>(reader: &mut impl BufRead) -> Resu
 	);
 	let value =
 		serde_json::from_slice(&bytes).map_err(|_| anyhow::anyhow!("invalid native JSONL value"))?;
-	Ok(Some(value))
+	Ok(Some(Received { value, wire_bytes: count }))
 }
 pub(crate) fn encode(value: &impl Serialize) -> Result<Vec<u8>> {
 	let mut output = harvest_runtime::BoundedWriter::new(MAX_FRAME_BYTES.saturating_sub(1));
@@ -219,7 +235,9 @@ fn encode_for(value: &impl Serialize, framing: Framing) -> Result<Vec<u8>> {
 	frame.extend_from_slice(&payload);
 	Ok(frame)
 }
-fn read_content_length<T: DeserializeOwned>(reader: &mut impl BufRead) -> Result<Option<T>> {
+fn read_content_length_counted<T: DeserializeOwned>(
+	reader: &mut impl BufRead,
+) -> Result<Option<Received<T>>> {
 	let mut length = None;
 	let mut header_bytes = 0;
 	loop {
@@ -261,10 +279,11 @@ fn read_content_length<T: DeserializeOwned>(reader: &mut impl BufRead) -> Result
 	ensure!(length > 0 && length < MAX_FRAME_BYTES, "protocol body exceeds frame limit");
 	let mut body = vec![0; length];
 	reader.read_exact(&mut body)?;
-	Ok(Some(
-		serde_json::from_slice(&body)
+	Ok(Some(Received {
+		value:      serde_json::from_slice(&body)
 			.map_err(|_| anyhow::anyhow!("invalid Content-Length JSON body"))?,
-	))
+		wire_bytes: header_bytes + length,
+	}))
 }
 
 fn terminate(child: &mut Child, input: &mut Option<SyncSender<Vec<u8>>>, closed: &mut bool) {
