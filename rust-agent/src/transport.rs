@@ -84,7 +84,7 @@ async fn request(
 			}
 		}))
 		.build()
-		.map_err(|_| crate::provider::ProviderRequestError::Transport(ureq::ErrorKind::Io))?;
+		.map_err(classify_error)?;
 	let mut request = client
 		.request(method, &url)
 		.header("Content-Type", "application/json")
@@ -97,7 +97,7 @@ async fn request(
 	}
 	let mut response = tokio::select! {
 		_ = cancellation.wait() => return Ok(()),
-		response = request.send() => response.map_err(|_| crate::provider::ProviderRequestError::Transport(ureq::ErrorKind::Io))?,
+		response = request.send() => response.map_err(classify_error)?,
 	};
 	if !response.status().is_success() {
 		return Err(crate::provider::ProviderRequestError::Status(response.status().as_u16()).into());
@@ -135,7 +135,7 @@ async fn request(
 	loop {
 		let chunk = tokio::select! {
 			_ = cancellation.wait() => return Ok(()),
-			chunk = response.chunk() => chunk.map_err(|_| crate::provider::ProviderRequestError::Transport(ureq::ErrorKind::Io))?,
+			chunk = response.chunk() => chunk.map_err(classify_error)?,
 		};
 		let Some(chunk) = chunk else {
 			return Ok(());
@@ -258,5 +258,17 @@ impl Read for Response {
 impl Drop for Response {
 	fn drop(&mut self) {
 		self.worker.abort();
+	}
+}
+
+// Retain redacted typed distinctions for recovery owners. Configuration and
+// decoding failures must not become retryable transport IO by string matching.
+fn classify_error(error: reqwest::Error) -> crate::provider::ProviderRequestError {
+	if error.is_builder() {
+		crate::provider::ProviderRequestError::InvalidRequest
+	} else if error.is_decode() {
+		crate::provider::ProviderRequestError::InvalidResponse
+	} else {
+		crate::provider::ProviderRequestError::Transport(ureq::ErrorKind::Io)
 	}
 }

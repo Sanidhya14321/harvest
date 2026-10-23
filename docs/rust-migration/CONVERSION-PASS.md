@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current benchmark-attempt continuation base: `91ee52d`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current benchmark-provider continuation base: `6dfa7cb`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -828,3 +828,62 @@ cargo check --locked -p harvest-omp --all-targets --all-features;
 existing xtask playbook check. Ignored receipt/log prefix:
 target/migration/conversion-benchmark-retries-. No behavioral/installed/platform
 verification, completed capability or verified source removal is claimed.
+
+## Typed benchmark provider recovery continuation
+
+Owner `application:conversion-first`; base `6dfa7cb`. Prerequisite discovery:
+provider.rs already exposes typed ProviderRequestError, so no new transport owner
+or string error classifier is needed. Inputs: legacy detectProviderFailure,
+pre-mutation guard and exponential retry loop; shared native transport/model,
+command credential invalidation, attempt evidence and native view. Same source
+subset/capability/consumers as the preceding card remain partial and retained.
+
+Connections: existing benchmark submit loop -> typed error downcast -> same
+session/model/workspace and original deadline; Model's default no-op cancellable
+invalidate_command_credentials seam -> HttpModel's existing command-source
+invalidation -> shared config resolver. MeasuredModel forwards the seam. Other
+model implementations remain compatible; this is not general session retry,
+OAuth, account rotation or a new permission to execute credential commands.
+
+Rules written: CLI/SDK provider_retries defaults 3, range 0..16. Only typed
+HTTP 401/403, 408/425/429, 5xx and transport IO qualify. No read-only turn with
+an edit/write/unknown mutation call qualifies, even if that call failed or was
+denied. All non-read/grep calls conservatively count as mutation attempts.
+Auth retries invalidate all command-backed keys/headers through existing owner;
+next request resolves normally and still honors explicit command opt-in.
+Backoff 1/2/4/8/10 seconds, capped 10, checks cancellation/deadline every 20 ms.
+No retry consumes a scored or no-edit slot; total submits now at most 48.
+Timeout/session/malformed/body/unknown errors, other statuses, post-mutation
+failures and exhausted budgets still fail. No automatic auth refresh in ordinary
+session clients is claimed.
+
+Persist redacted provider-retry-NN.json with kind/status/attempt/count/delay,
+without server text/URL/headers/secrets. Outcomes and summary view expose provider
+retry count; older summaries retain unavailable. Failed request count is distinct
+from received responses; any failed request makes usage unavailable even after
+successful recovery, while known partial totals/raw usage remain preserved.
+The static report header now uses explicit fragments so tab escapes cannot be
+rewritten into a broken header by format wrapping.
+
+Guidance discovery: native tools currently expose exact replacement, while the
+retained guided path specifically requires hashline read provenance and session
+snapshot ownership. Do not emit hashline prompts for an incompatible native tool.
+Bounded prerequisite `application:hashline-host-bridge` is planned/review pending
+in tasks/HASHLINE-HOST-BRIDGE.md; same shared files remain reserved to this owner.
+First-event/attempt-timeout telemetry/recovery remains a separate prerequisite.
+
+Acceptance during consolidated stabilization: fake/local HTTP SDK and installed
+runs for each selected/nonselected status, transport error versus malformed data,
+mutating/denied/unknown calls preventing retry, budgets/deadline/backoff cancellation,
+command cache/header refresh with opt-in disabled/enabled, shared model clones,
+partial stream/failed request usage availability, redacted artifacts and summary
+compatibility. Commands as preceding card, with cargo xtask test -p harvest-omp
+and installed run/view later. Conversion: compiler/fmt/playbook only; ignored
+receipt prefix target/migration/conversion-benchmark-provider-retries-.
+Recovery: revert this continuation to 6dfa7cb. Zero TS deletion or verified count
+advance; full metaharness and credential consumers still need to move.
+
+Shared transport refinement in this continuation: request-builder/configuration
+and response-decoding errors retain distinct redacted InvalidRequest/InvalidResponse
+types and cannot enter the selected IO retry path. MCP and other transport
+consumers preserve their existing owner; regression evidence is pending.

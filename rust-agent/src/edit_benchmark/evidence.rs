@@ -9,6 +9,8 @@ use serde_json::value::RawValue;
 
 #[derive(Debug, Default, Serialize)]
 pub struct ToolEvidence {
+	/// Conservative: every call except read/grep, including unknown tool names.
+	pub mutation_calls:   usize,
 	pub write_calls:      usize,
 	pub read_calls:       usize,
 	pub edit_calls:       usize,
@@ -61,6 +63,9 @@ pub fn tool_evidence(messages: &[Box<RawValue>]) -> Result<ToolEvidence> {
 						continue;
 					}
 					if let (Some(id), Some(name)) = (block.id, block.name) {
+						if !matches!(name.as_str(), "read" | "grep") {
+							result.mutation_calls += 1;
+						}
 						match name.as_str() {
 							"read" => result.read_calls += 1,
 							"edit" => result.edit_calls += 1,

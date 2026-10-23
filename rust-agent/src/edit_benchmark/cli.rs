@@ -103,6 +103,8 @@ struct RunArguments {
 	max_attempts:              u32,
 	#[arg(long, default_value_t = 2)]
 	no_edit_retries:           u32,
+	#[arg(long, default_value_t = 3)]
+	provider_retries:          u32,
 	/// Authorize configured !credential commands in the invocation workspace.
 	#[arg(long)]
 	allow_credential_commands: bool,
@@ -189,6 +191,7 @@ fn run(arguments: RunArguments) -> Result<u8> {
 			early_stop_on_match: !arguments.no_early_stop_on_match,
 			max_attempts: arguments.max_attempts,
 			no_edit_retries: arguments.no_edit_retries,
+			provider_retries: arguments.provider_retries,
 			repetitions: arguments.repetitions,
 			require_read_tool: arguments.require_read_tool,
 			require_edit_tool: arguments.require_edit_tool,

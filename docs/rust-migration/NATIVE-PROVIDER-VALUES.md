@@ -113,3 +113,11 @@ inspection no-execution and original-file immutability scenarios. Request body,
 streaming/usage and final-argument tool approval regressions remain required.
 Use `cargo xtask test -p harvest-omp` during stabilization. Compiler/format/ownership
 checks only are recorded at this checkpoint; no runtime/performance claim is made.
+
+
+Benchmark recovery continuation (unverified): Model exposes a default cancellable
+invalidate_command_credentials seam; HttpModel delegates to the existing full
+command-source invalidation above. The benchmark owner invokes it for selected
+typed 401/403 failures before a mutation and inside its bounded retry/deadline
+policy. This does not grant command execution or introduce general session auth
+retry, OAuth refresh, account rotation or installed evidence. See RUST-BENCHMARK.md.

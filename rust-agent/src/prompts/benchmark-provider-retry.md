@@ -1,0 +1,1 @@
+The provider request failed before this turn attempted a mutation. Continue the original task in the current workspace and session after the host's bounded retry delay. Inspect the previous committed results as needed and make the requested edit. The failed provider request did not supply a complete assistant response.

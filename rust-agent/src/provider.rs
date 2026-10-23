@@ -24,6 +24,15 @@ pub trait Model {
 	fn model_id(&self) -> &str {
 		"unknown"
 	}
+	/// Invalidate command-backed credentials after a host-classified auth
+	/// failure. Defaults to no refresh for SDK models; never implies
+	/// OAuth/account rotation.
+	fn invalidate_command_credentials(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		cancellation.heartbeat()
+	}
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage>;
 
 	fn complete_response(
@@ -91,12 +100,16 @@ impl fmt::Debug for HttpModel {
 /// Stable error categories; URLs, headers and server reason text are excluded.
 #[derive(Debug)]
 pub enum ProviderRequestError {
+	InvalidRequest,
+	InvalidResponse,
 	Status(u16),
 	Transport(ureq::ErrorKind),
 }
 impl fmt::Display for ProviderRequestError {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
+			Self::InvalidRequest => formatter.write_str("invalid model request configuration"),
+			Self::InvalidResponse => formatter.write_str("invalid model response encoding"),
 			Self::Status(code) => write!(formatter, "model request failed with HTTP {code}"),
 			Self::Transport(kind) => write!(formatter, "model transport failed ({kind:?})"),
 		}
@@ -148,7 +161,7 @@ impl HttpModel {
 		Ok(self)
 	}
 
-	/// A future auth-retry owner can invalidate ALL command-backed secrets,
+	/// Auth-retry owners can invalidate ALL command-backed secrets,
 	/// including headers; invalidation itself never runs a command or request.
 	pub fn invalidate_config_commands(
 		&self,
@@ -267,6 +280,13 @@ struct Choice {
 }
 
 impl Model for HttpModel {
+	fn invalidate_command_credentials(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		self.invalidate_config_commands(cancellation)
+	}
+
 	fn model_id(&self) -> &str {
 		&self.settings.model
 	}

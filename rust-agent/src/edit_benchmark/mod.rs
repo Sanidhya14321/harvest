@@ -10,6 +10,7 @@ pub use generate::{GenerationReport, RejectedSource, generate_task};
 pub use pi_ast::mutations::MutationKind;
 pub mod hunks;
 mod prepare;
+mod retry;
 mod runner;
 mod score;
 mod shapes;

@@ -32,6 +32,7 @@ pub struct RunConfiguration {
 	/// Scored attempts per run, excluding bounded no-edit retries.
 	pub max_attempts:        u32,
 	pub no_edit_retries:     u32,
+	pub provider_retries:    u32,
 	pub repetitions:         u32,
 	pub concurrency:         usize,
 	pub max_steps:           u32,
@@ -48,6 +49,7 @@ impl Default for RunConfiguration {
 			early_stop_on_match: true,
 			max_attempts:        1,
 			no_edit_retries:     2,
+			provider_retries:    3,
 			repetitions:         1,
 			concurrency:         1,
 			max_steps:           16,
@@ -63,6 +65,7 @@ impl Default for RunConfiguration {
 pub struct RunOutcome {
 	pub early_stopped:          bool,
 	pub attempts:               u32,
+	pub provider_retries:       u32,
 	pub no_edit_retries:        u32,
 	pub tool_evidence:          Option<super::ToolEvidence>,
 	pub requirements_satisfied: Option<bool>,
@@ -85,12 +88,13 @@ pub struct RunSummary {
 }
 #[derive(Default, Serialize)]
 struct Measurements {
-	calls:  usize,
+	calls:        usize,
+	failed_calls: usize,
 	/// None if any response lacks valid accounting, or checked sums overflow.
-	tokens: Option<TokenUsage>,
-	raw:    Vec<Option<Box<RawValue>>>,
+	tokens:       Option<TokenUsage>,
+	raw:          Vec<Option<Box<RawValue>>>,
 	#[serde(skip)]
-	bytes:  usize,
+	bytes:        usize,
 }
 impl Measurements {
 	fn record(&mut self, response: &ModelResponse) -> Result<()> {
@@ -132,13 +136,23 @@ impl<M: Model> Model for MeasuredModel<M> {
 		self.inner.model_id()
 	}
 
+	fn invalidate_command_credentials(&self, cancellation: &CancelToken) -> Result<()> {
+		self.inner.invalidate_command_credentials(cancellation)
+	}
+
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage> {
 		let tools: Vec<_> = tools
 			.iter()
 			.filter(|t| matches!(t.name(), "read" | "write" | "edit" | "grep"))
 			.cloned()
 			.collect();
-		let response = self.inner.complete_response(messages, &tools)?;
+		let response = match self.inner.complete_response(messages, &tools) {
+			Ok(response) => response,
+			Err(error) => {
+				self.measurements.borrow_mut().failed_calls += 1;
+				return Err(error);
+			},
+		};
 		self.measurements.borrow_mut().record(&response)?;
 		Ok(response.message)
 	}
@@ -155,9 +169,16 @@ impl<M: Model> Model for MeasuredModel<M> {
 			.filter(|t| matches!(t.name(), "read" | "write" | "edit" | "grep"))
 			.cloned()
 			.collect();
-		let response = self
+		let response = match self
 			.inner
-			.stream_response(messages, &tools, cancellation, on_text)?;
+			.stream_response(messages, &tools, cancellation, on_text)
+		{
+			Ok(response) => response,
+			Err(error) => {
+				self.measurements.borrow_mut().failed_calls += 1;
+				return Err(error);
+			},
+		};
 		self.measurements.borrow_mut().record(&response)?;
 		Ok(response)
 	}
@@ -196,6 +217,7 @@ pub fn run_tasks<M: Model>(
 ) -> Result<RunSummary> {
 	ensure!((1..=16).contains(&configuration.max_attempts), "max attempts must be 1..16");
 	ensure!(configuration.no_edit_retries <= 16, "no-edit retries must be 0..16");
+	ensure!(configuration.provider_retries <= 16, "provider retries must be 0..16");
 	ensure!((1..=100).contains(&configuration.repetitions), "repetitions must be 1..100");
 	ensure!((1..=16).contains(&configuration.concurrency), "concurrency must be 1..16");
 	ensure!((1..=1024).contains(&configuration.max_steps), "max steps must be 1..1024");
@@ -243,7 +265,7 @@ pub fn run_tasks<M: Model>(
 		&serde_json::json!({
 			 "scoring_version":SCORING_VERSION,"runs":count,"repetitions":configuration.repetitions,
 			 "concurrency":configuration.concurrency,"max_steps":configuration.max_steps,
-			 "early_stop_on_match":configuration.early_stop_on_match,"max_attempts":configuration.max_attempts,"no_edit_retries":configuration.no_edit_retries,
+			 "early_stop_on_match":configuration.early_stop_on_match,"max_attempts":configuration.max_attempts,"no_edit_retries":configuration.no_edit_retries,"provider_retries":configuration.provider_retries,
 			 "timeout_ms":configuration.timeout.as_millis(),
 			"require_edit_tool":configuration.require_edit_tool,"require_read_tool":configuration.require_read_tool,
 			"export_messages":configuration.export_messages,"tasks":tasks.iter().map(|t| &t.id).collect::<Vec<_>>()
@@ -313,6 +335,7 @@ fn run_one<M: Model>(
 ) -> Result<RunOutcome> {
 	let started = Instant::now();
 	let mut outcome = RunOutcome {
+		provider_retries: 0,
 		early_stopped: false,
 		attempts: 0,
 		no_edit_retries: 0,
@@ -403,7 +426,7 @@ fn run_one<M: Model>(
 					Path::new(&format!("usage-{:02}.json", outcome.attempts)),
 					&serde_json::json!({
 						"complete":answer.is_ok(),
-						"usage_unavailable":answer.is_err() || measurements.calls == 0 || measurements.tokens.is_none(),
+						"usage_unavailable":answer.is_err() || measurements.calls == 0 || measurements.failed_calls > 0 || measurements.tokens.is_none(),
 						"measurement": &*measurements
 					}),
 				)?;
@@ -429,8 +452,30 @@ fn run_one<M: Model>(
 					&serde_json::json!({"attempt":outcome.attempts,"complete":answer.is_ok(),
 					"tool_evidence":attempt_evidence,"requirements_satisfied":requirements}),
 				)?;
-				// Transport/session/timeout failures are not output mismatches. Do not
-				// retry them until their typed recovery contract is implemented.
+				if let Err(error) = &answer {
+					token.heartbeat()?;
+					if attempt_evidence.mutation_calls == 0
+						&& outcome.provider_retries < configuration.provider_retries
+						&& let Some(failure) = super::retry::Failure::classify(error)
+					{
+						outcome.provider_retries += 1;
+						let delay = super::retry::delay(outcome.provider_retries);
+						persist(
+							&artifacts,
+							Path::new(&format!("provider-retry-{:02}.json", outcome.provider_retries)),
+							&serde_json::json!({"attempt":outcome.attempts,"retry":outcome.provider_retries,
+								"failure":failure,"delay_ms":delay.as_millis()}),
+						)?;
+						if failure.kind == "auth" {
+							model.invalidate_command_credentials(&token)?;
+						}
+						super::retry::wait(delay, &token)?;
+						prompt = include_str!("../prompts/benchmark-provider-retry.md").into();
+						continue;
+					}
+				}
+				// Unknown failures, failures after mutation and exhausted budgets
+				// remain failures, never output mismatches or guessed recoveries.
 				answer?;
 				token.heartbeat()?;
 				let mut report = compare(&task.expected_directory, workspace.root(), &token)?;
@@ -468,7 +513,7 @@ fn run_one<M: Model>(
 			&artifacts,
 			Path::new("usage.json"),
 			&serde_json::json!({
-				"complete":attempts_result.is_ok(),"usage_unavailable":attempts_result.is_err() || model.measurements.borrow().calls == 0 || model.measurements.borrow().tokens.is_none(),
+				"complete":attempts_result.is_ok(),"usage_unavailable":attempts_result.is_err() || model.measurements.borrow().calls == 0 || model.measurements.borrow().failed_calls > 0 || model.measurements.borrow().tokens.is_none(),
 				"measurement": &*model.measurements.borrow()
 			}),
 		)?;

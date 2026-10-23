@@ -317,8 +317,8 @@ setting is capped at 16 (attempts minimum one). A no-edit retry means this turn
 made no persisted edit/write call; it consumes its independent run-wide retry
 budget before spending a scored attempt. Tool success is still taken from actual
 results, not prose or attempted writes. All attempts share one run timeout and
-existing per-run usage/events limits. A transport/session failure ends the run;
-provider and attempt-timeout recovery needs a typed contract first. These retries
+existing per-run usage/events limits. Unknown/session/timeout failures end the run. Selected typed provider recovery
+is described below; first-event/attempt-timeout recovery remains pending. These retries
 are not the full historical adapter policy.
 
 After all calls in a tool batch have durable results, the same session owner may
@@ -345,3 +345,35 @@ ordering/cancellation/usage/artifact contracts, old session API regression check
 and malformed/version/index/totals/control-label summary handling. No runtime or
 installed verification exists for this continuation. Legacy cli.ts still imports
 runner.ts; in-process-client.ts and metaharness orchestration remain active.
+
+## Typed pre-mutation provider retries (written, unverified)
+
+`run --provider-retries 3` (default 3; 0..16) retries only typed HTTP 401/403,
+408/425/429, 5xx and transport IO before this attempt makes any non-read/grep
+call. Unknown tool calls and denied/failed mutations conservatively block retry.
+Other errors/statuses are terminal. Backoff 1/2/4/8/10 seconds capped at 10 stays
+inside the original run deadline and checks cancellation every 20 ms. Budgets are
+separate from scored/no-edit attempts; maximum combined submits is now 48.
+
+Auth retries invalidate existing command-backed key/header cache entries through
+the shared model/value resolver; host command opt-in remains required. SDK models
+may implement the invalidation seam, whose default only checks cancellation.
+No OAuth/account rotation or general session retry is established. Static or
+environment credentials follow their existing resolution rules.
+
+provider-retry-NN.json records only kind/status/index/count/delay. Failure text,
+URLs, bodies and secrets never become retry prompts or artifacts. Failed request
+count stays separate from received model response accounting; any failed request
+keeps usage unavailable after recovery. Known raw/partial totals are retained.
+View/outcome data includes provider retry counts; old summaries show unavailable.
+
+This resolves only the typed HTTP/transport part of the earlier prerequisite.
+First-event/attempt timeout recovery, broad provider policy and installed failure
+contracts are pending. Legacy guided patches require hashline; native tools
+currently expose replacement mode. See tasks/HASHLINE-HOST-BRIDGE.md for the
+bounded host/snapshot/read-provenance prerequisite rather than sending unsupported
+hashline calls. All runtime/installed/platform evidence remains pending.
+
+The shared transport now keeps request-builder/configuration and response-decoding
+errors as separate redacted nonretryable categories, rather than treating them as
+IO. Cancellation and malformed message errors keep their existing failure paths.

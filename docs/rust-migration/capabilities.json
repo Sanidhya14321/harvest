@@ -5615,7 +5615,8 @@
           "Native fixture validation, pi-diff hunk preparation/re-solve, paired-tree task producer and bounded edit-shape calibration are written and connected. Package edit-shapes command moves to Rust and its TS script is removed, with verification explicitly pending. Hunk/task TS modules remain for live generator/metaharness consumers.",
           "Native bounded staged edit-result metadata and explicit error status connect sync/async/RPC durable records to benchmark calibration/tool evidence; successful-tool requirements and lossless message export are connected. Native bounded tar.gz FixtureSource/unpack connects distributed fixtures to list/validate/run. Compiler/ownership only; behavioral/installed/platform checks remain deferred. No TS deletion or verified-completion claim in this batch.",
           "Shared pi-ast mutation engine and native rust-ast-v1 generate/mutations CLI/SDK write 20 family implementations, seeded source/candidate selection, immutable snapshots, syntax revalidation, exact hunk tasks and provenance. Regex/binding/composite/corpus policies and legacy producer/metaharness consumers remain pending. Compiler/metadata only; no verified parity or source removal.",
-          "Benchmark continuation base 91ee52d: bounded same-session verification and no-edit retries, durable full-tool-batch exact-match stopping, numbered attempt/usage/score/message artifacts, and read-only rust-v1 summary CLI/SDK view are written and connected. Provider/timeout retry classification, guided/difficulty/prompts, full native views and metaharness cutover remain explicit pending prerequisites. Compiler/format/ownership only; zero TS deletion and no verified parity."
+          "Benchmark continuation base 91ee52d: bounded same-session verification and no-edit retries, durable full-tool-batch exact-match stopping, numbered attempt/usage/score/message artifacts, and read-only rust-v1 summary CLI/SDK view are written and connected. Provider/timeout retry classification, guided/difficulty/prompts, full native views and metaharness cutover remain explicit pending prerequisites. Compiler/format/ownership only; zero TS deletion and no verified parity.",
+          "Continuation base 6dfa7cb: existing typed ProviderRequestError resolves the HTTP/transport classification prerequisite. Native benchmark retries selected typed pre-mutation failures with bounded shared-deadline backoff, command credential invalidation on auth, redacted retry artifacts and explicitly unavailable usage after failed requests. Attempt/first-event timeouts and broad provider recovery remain pending. Hashline guidance needs native read/edit host integration, tracked as application:hashline-host-bridge. No runtime parity or TS removal evidence."
         ]
       },
       {
@@ -7131,6 +7132,29 @@
           "Bounded SSE/JSON, matched tool replay, additive lossless usage, cancellation and redacted failures checked by native contracts and copied CLI. Source-bound receipt: target/migration/anthropic-receipt.json.",
           "Whole-provider parity and credentialed evidence remain pending; no TS source is eligible for deletion before production consumer cutover."
         ]
+      },
+      {
+        "id": "application:hashline-host-bridge",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application"
+        ],
+        "card": "docs/rust-migration/tasks/HASHLINE-HOST-BRIDGE.md",
+        "capabilities": [
+          "tool:read",
+          "tool:edit",
+          "surface:benchmarks"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": []
       }
     ]
   }

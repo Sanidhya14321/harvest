@@ -42,7 +42,8 @@ Benchmark continuation base `91ee52d`: native run_tasks/CLI now have bounded
 same-session verification/no-edit retries, cumulative per-attempt artifacts and
 exact-match stopping after complete durable tool batches. Native view/SummaryView
 reads completed rust-v1 summaries without providers. Normal session callers keep
-existing behavior. Provider/attempt-timeout recovery, guided policies, interactive
+existing behavior. Selected typed pre-mutation HTTP/IO retries and command-source auth invalidation
+are also connected from base 6dfa7cb. Attempt-timeout/broader provider recovery, guided policies, interactive
 views and metaharness consumer moves remain pending. See RUST-BENCHMARK.md and the
 reviewed common card; runner.ts is partial/retained, no TS deletion.
 
@@ -52,7 +53,7 @@ advances in these continuations. Generate counts from `cargo xtask playbook stat
 --json`; partial Rust code and raw language bytes are not engineering completion.
 Ignored receipts/logs: target/migration/conversion-provider-values-*,
 conversion-plugin-events-*, conversion-process-byte-count-* and
-conversion-benchmark-retries-*. Prior source hashes/evidence remain historical.
+conversion-benchmark-retries-* and conversion-benchmark-provider-retries-*. Prior source hashes/evidence remain historical.
 
 ## Next dependency-ready work
 
@@ -66,8 +67,11 @@ conversion-benchmark-retries-*. Prior source hashes/evidence remain historical.
   Reuse current value resolver/invalidation and cancellable transport.
 - Benchmark: shared AST has partial paths for 23 mutation names, paired preparation,
   exact hunks, rust-v1 scoring, native archive export/import and orchestration.
-  Finish corpus/difficulty/dedup/calibration/prompts, provider/timeout retries and interactive native views
+  Finish corpus/difficulty/dedup/calibration/prompts, attempt-timeout/broader provider recovery and interactive native views
   and actual metaharness cutover. See RUST-BENCHMARK.md and the common card.
+- Guidance prerequisite: application:hashline-host-bridge is planned/review pending;
+  native read provenance/session EditStore/mode/approval must connect before legacy
+  hashline guidance can run. Card: tasks/HASHLINE-HOST-BRIDGE.md.
 - Settings: ConfigFile<T> owns typed bounded decoding/cache/default/fallback/
   relocation and explicit JSON-to-YAML creation. Full schemas/discovery, implicit
   startup migration and conflict/quarantine/retry-aware persistent editing remain.
