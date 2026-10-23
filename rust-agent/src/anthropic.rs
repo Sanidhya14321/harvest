@@ -117,6 +117,7 @@ fn request(
 	tools: &[ToolSpec],
 	streaming: bool,
 	cancellation: &CancelToken,
+	headers: Vec<(String, String)>,
 ) -> Result<crate::transport::Response> {
 	let base = settings.base_url.trim_end_matches('/');
 	let endpoint = if base.ends_with("/messages") {
@@ -126,10 +127,7 @@ fn request(
 	};
 	crate::transport::Response::open(
 		endpoint,
-		vec![
-			("x-api-key".into(), settings.api_key.clone()),
-			("anthropic-version".into(), "2023-06-01".into()),
-		],
+		headers,
 		request_body(settings, tokens, messages, tools, streaming)?,
 		streaming,
 		cancellation,
@@ -221,8 +219,9 @@ pub(crate) fn complete(
 	tokens: u32,
 	messages: &[ChatMessage],
 	tools: &[ToolSpec],
+	headers: Vec<(String, String)>,
 ) -> Result<ModelResponse> {
-	decode_json(request(settings, tokens, messages, tools, false, &CancelToken::default())?)
+	decode_json(request(settings, tokens, messages, tools, false, &CancelToken::default(), headers)?)
 }
 pub(crate) fn stream(
 	settings: &Settings,
@@ -231,9 +230,10 @@ pub(crate) fn stream(
 	tools: &[ToolSpec],
 	cancellation: &CancelToken,
 	on_text: &mut dyn FnMut(&str) -> Result<()>,
+	headers: Vec<(String, String)>,
 ) -> Result<ModelResponse> {
 	cancellation.heartbeat()?;
-	let response = request(settings, tokens, messages, tools, true, cancellation)?;
+	let response = request(settings, tokens, messages, tools, true, cancellation, headers)?;
 	if response.sse {
 		decode_stream(response, cancellation, on_text)
 	} else {

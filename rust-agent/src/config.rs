@@ -92,6 +92,9 @@ pub fn agent_dir_from(
 		.map(|home| PathBuf::from(home).join(".harvest/agent"))
 }
 
+/// Resolve primitive settings only. Native model hosts should retain the full
+/// configuration::Resolved and use HttpModel::from_configuration so live value
+/// sources and configured headers are not discarded.
 pub fn resolve(root: &Path, flags: &Overrides, environment: &Environment) -> Result<Settings> {
 	Ok(crate::configuration::load(root, flags, environment, &Default::default())?.settings)
 }

@@ -51,6 +51,22 @@ Python-retirement checkpoints are in the archived handoff and their cards.
 
 ## Current continuation
 
+Provider-value continuation base `cb4216d`: native configuration retains live
+file API-key/header sources. Shared HttpModel::from_configuration connects
+OpenAI-compatible and Messages requests across sync/async run, RPC, Rust SDK and
+benchmark hosts. Exact env/literal resolution, explicitly enabled native shell
+credentials, bounded per-workspace success/negative cache, one-pass header folding
+and complete command-source invalidation are written. Async mode reuses the
+configured model. Inspection/migration do not execute values. See
+NATIVE-PROVIDER-VALUES.md and the common card for limits and supported semantics.
+
+Next provider prerequisites: model registry/override/KDL and live-proxy consumers,
+credential accounts/OAuth/usage/session rotation plus automatic auth retry. TS
+model-config-values.ts stays retained/partial. No TS is deleted or capability
+verified by this continuation; aggregate compiler/format/ownership only, with
+behavioral/installed/platform checks deferred. Old application incremental caches
+were cleaned to regain space; sources/evidence/engine/dependency caches remain.
+
 Native completion retirement base `c4aef9a`: the candidate now rejects all
 `completions` invocations with migration guidance, emits no scripts and installs
 no shell files/wrappers. Generator dependency and shell.rs are removed. Both

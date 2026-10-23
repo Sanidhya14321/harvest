@@ -88,39 +88,42 @@ enum Command {
 }
 #[derive(Debug, clap::Args)]
 struct RunArguments {
+	/// Authorize configured !credential commands in the invocation workspace.
 	#[arg(long)]
-	require_read_tool:     bool,
+	allow_credential_commands: bool,
 	#[arg(long)]
-	require_edit_tool:     bool,
+	require_read_tool:         bool,
 	#[arg(long)]
-	export_messages:       bool,
+	require_edit_tool:         bool,
 	#[arg(long)]
-	fixtures:              PathBuf,
+	export_messages:           bool,
 	#[arg(long)]
-	output:                PathBuf,
+	fixtures:                  PathBuf,
+	#[arg(long)]
+	output:                    PathBuf,
 	#[arg(long, default_value_t = 1)]
-	repetitions:           u32,
+	repetitions:               u32,
 	#[arg(long, default_value_t = 1)]
-	concurrency:           usize,
+	concurrency:               usize,
 	#[arg(long, default_value_t = 300)]
-	timeout_seconds:       u64,
+	timeout_seconds:           u64,
 	#[arg(long = "task")]
-	task_ids:              Vec<String>,
+	task_ids:                  Vec<String>,
 	#[arg(long)]
-	model:                 Option<String>,
+	model:                     Option<String>,
 	#[arg(long)]
-	base_url:              Option<String>,
+	base_url:                  Option<String>,
 	#[arg(long)]
-	max_steps:             Option<u32>,
+	max_steps:                 Option<u32>,
 	#[arg(long)]
-	profile:               Option<String>,
+	profile:                   Option<String>,
 	/// Ordered native configuration overlay (TOML, JSONC/JSON or YAML).
 	#[arg(long = "config")]
-	overlays:              Vec<PathBuf>,
+	overlays:                  Vec<PathBuf>,
 	/// Explicitly authorize only jailed fixture write/edit calls. No shell,
 	/// plugins, browser or external service mutations are authorized.
 	#[arg(long)]
-	approve_fixture_edits: bool,
+	approve_fixture_edits:     bool,
 }
 struct FixtureApproval;
 impl crate::tools::Approval for FixtureApproval {
@@ -153,12 +156,12 @@ fn run(arguments: RunArguments) -> Result<u8> {
 		},
 	)?;
 	let max_steps = resolved.settings.max_steps;
-	let model = crate::provider::HttpModel::new(resolved.settings).request_usage(true);
-	let model = if resolved.api == crate::configuration::Api::AnthropicMessages {
-		model.anthropic_messages(resolved.max_output_tokens)?
-	} else {
-		model
-	};
+	let model = crate::provider::HttpModel::from_configuration(
+		&root,
+		&resolved,
+		true,
+		arguments.allow_credential_commands,
+	)?;
 	let approval: &(dyn crate::tools::Approval + Sync) = if arguments.approve_fixture_edits {
 		&FixtureApproval
 	} else {

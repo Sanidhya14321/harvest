@@ -255,3 +255,11 @@ sync/async sessions, RPC, SDK users and `harvest lsp`/`harvest debug` CLI comman
 See [native language/debug status](../docs/rust-migration/NATIVE-LSP-DAP.md) for
 approval, configuration and unfinished discovery/recovery/platform contracts.
 Behavioral and installed verification remains deferred for this checkpoint.
+
+Native file `api_key` and `headers` sources can resolve live environment values;
+configured credential commands require explicit `--allow-credential-commands`.
+Sync/async run, RPC, benchmark and SDK `HttpModel::from_configuration` share the
+same resolver. Standalone `HttpModel::new(Settings)` keeps literal credentials.
+See [provider value contracts](../docs/rust-migration/NATIVE-PROVIDER-VALUES.md)
+for cache/size/cancellation limits and pending OAuth/registry/retry work. This
+conversion code has not yet passed consolidated behavioral/installed checks.

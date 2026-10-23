@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, path::Path, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -70,8 +70,13 @@ pub struct HttpModel {
 	settings:       Settings,
 	request_usage:  bool,
 	message_tokens: Option<u32>,
+	values:         Option<Arc<LiveValues>>,
 }
 
+struct LiveValues {
+	sources:  crate::configuration::ProviderValues,
+	resolver: crate::configuration::ValueResolver,
+}
 impl fmt::Debug for HttpModel {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		formatter
@@ -101,7 +106,103 @@ impl std::error::Error for ProviderRequestError {}
 
 impl HttpModel {
 	pub const fn new(settings: Settings) -> Self {
-		Self { settings, request_usage: false, message_tokens: None }
+		Self { settings, request_usage: false, message_tokens: None, values: None }
+	}
+
+	/// Shared native CLI/SDK builder: retain configured value sources, explicit
+	/// wire API and request accounting options instead of reducing to Settings.
+	pub fn from_configuration(
+		root: &Path,
+		resolved: &crate::configuration::Resolved,
+		request_usage: bool,
+		allow_commands: bool,
+	) -> Result<Self> {
+		let model = Self::new(resolved.settings.clone())
+			.request_usage(request_usage)
+			.with_config_values(root, resolved.provider_values.clone(), allow_commands)?;
+		if resolved.api == crate::configuration::Api::AnthropicMessages {
+			model.anthropic_messages(resolved.max_output_tokens)
+		} else {
+			Ok(model)
+		}
+	}
+
+	/// Interpret file credential/header sources at request time. Commands
+	/// require explicit host opt-in; plain Settings API keys remain literal by
+	/// default.
+	pub fn with_config_values(
+		mut self,
+		root: &Path,
+		values: crate::configuration::ProviderValues,
+		allow_commands: bool,
+	) -> Result<Self> {
+		values.validate()?;
+		self.values = if values.is_empty() {
+			None
+		} else {
+			Some(Arc::new(LiveValues {
+				sources:  values,
+				resolver: crate::configuration::ValueResolver::new(root, allow_commands)?,
+			}))
+		};
+		Ok(self)
+	}
+
+	/// A future auth-retry owner can invalidate ALL command-backed secrets,
+	/// including headers; invalidation itself never runs a command or request.
+	pub fn invalidate_config_commands(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		if let Some(values) = &self.values {
+			if let Some(key) = &values.sources.api_key {
+				values.resolver.invalidate(key, cancellation)?;
+			}
+			for source in values.sources.headers.values() {
+				values.resolver.invalidate(source, cancellation)?;
+			}
+		}
+		Ok(())
+	}
+
+	fn headers(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<Vec<(String, String)>> {
+		let Some(values) = &self.values else {
+			return Ok(if self.message_tokens.is_some() {
+				vec![
+					("x-api-key".into(), self.settings.api_key.clone()),
+					("anthropic-version".into(), "2023-06-01".into()),
+				]
+			} else if self.settings.api_key.is_empty() {
+				Vec::new()
+			} else {
+				vec![("Authorization".into(), format!("Bearer {}", self.settings.api_key))]
+			});
+		};
+		let mut headers = values
+			.resolver
+			.headers(&[&values.sources.headers], cancellation)?;
+		let key = match &values.sources.api_key {
+			Some(source) => values
+				.resolver
+				.resolve(source, false, cancellation)?
+				.ok_or_else(|| anyhow::anyhow!("configured provider credential is unavailable"))?,
+			None => self.settings.api_key.clone(),
+		};
+		if self.message_tokens.is_some() {
+			headers
+				.entry("anthropic-version".into())
+				.or_insert_with(|| "2023-06-01".into());
+			if !key.is_empty() {
+				headers.insert("x-api-key".into(), key);
+			}
+		} else if !key.is_empty() {
+			headers.insert("authorization".into(), format!("Bearer {key}"));
+		}
+		crate::configuration::values::check_headers(&headers)?;
+		Ok(headers.into_iter().collect())
 	}
 
 	/// Select the Anthropic Messages wire API explicitly. Endpoint/model policy
@@ -129,11 +230,7 @@ impl HttpModel {
 	) -> Result<crate::transport::Response> {
 		crate::transport::Response::open(
 			endpoint(&self.settings.base_url),
-			if self.settings.api_key.is_empty() {
-				Vec::new()
-			} else {
-				vec![("Authorization".into(), format!("Bearer {}", self.settings.api_key))]
-			},
+			self.headers(cancellation)?,
 			serde_json::to_vec(&request)?,
 			streaming,
 			cancellation,
@@ -184,7 +281,13 @@ impl Model for HttpModel {
 		tools: &[ToolSpec],
 	) -> Result<ModelResponse> {
 		if let Some(tokens) = self.message_tokens {
-			return crate::anthropic::complete(&self.settings, tokens, messages, tools);
+			return crate::anthropic::complete(
+				&self.settings,
+				tokens,
+				messages,
+				tools,
+				self.headers(&Default::default())?,
+			);
 		}
 		let request = CompletionRequest {
 			model: &self.settings.model,
@@ -228,6 +331,7 @@ impl Model for HttpModel {
 				tools,
 				cancellation,
 				on_text,
+				self.headers(cancellation)?,
 			);
 		}
 		cancellation.heartbeat()?;

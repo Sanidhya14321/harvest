@@ -11,7 +11,9 @@ use serde::Deserialize;
 
 mod document;
 mod file;
+pub mod values;
 pub use file::{ConfigError, ConfigFile, ErrorStage, LoadResult, MigrationOutcome};
+pub use values::{ProviderValues, ValueResolver};
 
 use crate::{
 	config::{self, Environment, FileSettings, Overrides, Settings},
@@ -39,6 +41,7 @@ pub struct LoadOptions {
 #[derive(Debug)]
 pub struct Resolved {
 	pub settings:          Settings,
+	pub provider_values:   ProviderValues,
 	pub api:               Api,
 	pub max_output_tokens: u32,
 	pub plugins:           Vec<Configuration>,
@@ -51,6 +54,7 @@ pub struct Resolved {
 struct Layer {
 	#[serde(flatten)]
 	settings:          FileSettings,
+	headers:           Option<BTreeMap<String, String>>,
 	api:               Option<Api>,
 	max_output_tokens: Option<u32>,
 	plugins:           Option<Vec<Configuration>>,
@@ -72,6 +76,7 @@ impl Layer {
 		field!(self.settings.api_key, newer.settings.api_key);
 		field!(self.settings.max_steps, newer.settings.max_steps);
 		field!(self.api, newer.api);
+		field!(self.headers, newer.headers);
 		field!(self.max_output_tokens, newer.max_output_tokens);
 		field!(self.plugins, newer.plugins);
 		field!(self.mcp, newer.mcp);
@@ -223,7 +228,17 @@ pub fn load(
 		ensure!(names.insert(&adapter.process.name), "duplicate debug adapter name");
 	}
 
+	let provider_values = ProviderValues {
+		api_key: if flags.api_key.is_none() && environment.api_key.is_none() {
+			document.layer.settings.api_key.clone()
+		} else {
+			None
+		},
+		headers: document.layer.headers.unwrap_or_default(),
+	};
+	provider_values.validate()?;
 	Ok(Resolved {
+		provider_values,
 		settings: config::resolve_file_values(flags, environment, document.layer.settings)?,
 		api,
 		max_output_tokens,

@@ -154,7 +154,7 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 			..Default::default()
 		},
 	)?;
-	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredPlugins":resolved.plugins.len(),"configuredMcpServers":resolved.mcp.len(),"configuredLanguageServers":resolved.lsp.len(),"configuredDebugAdapters":resolved.dap.len()});
+	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredProviderHeaders":resolved.provider_values.headers.len(),"configuredPlugins":resolved.plugins.len(),"configuredMcpServers":resolved.mcp.len(),"configuredLanguageServers":resolved.lsp.len(),"configuredDebugAdapters":resolved.dap.len()});
 	serde_json::to_writer(io::stdout().lock(), &output)?;
 	writeln!(io::stdout().lock())?;
 	Ok(0)
@@ -162,26 +162,30 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 
 #[derive(Debug, Default, clap::Args)]
 struct ConfigurationArgs {
+	/// Authorize configured !commands to retrieve credentials in the selected
+	/// workspace.
+	#[arg(long)]
+	allow_credential_commands: bool,
 	#[arg(long, help = "Enable configured native language-server tools")]
-	enable_lsp:     bool,
+	enable_lsp:                bool,
 	#[arg(long, help = "Enable configured native debugger tools")]
-	enable_debug:   bool,
+	enable_debug:              bool,
 	#[arg(long, help = "Connect MCP servers declared in native configuration")]
-	enable_mcp:     bool,
+	enable_mcp:                bool,
 	#[arg(
 		long = "mcp-config",
 		help = "Connect enabled servers from an explicitly selected MCP JSON file"
 	)]
-	mcp_configs:    Vec<PathBuf>,
+	mcp_configs:               Vec<PathBuf>,
 	#[arg(long)]
-	profile:        Option<String>,
+	profile:                   Option<String>,
 	/// Ordered native configuration overlay (TOML, JSONC/JSON or YAML).
 	#[arg(long = "config")]
-	overlays:       Vec<PathBuf>,
+	overlays:                  Vec<PathBuf>,
 	#[arg(long, help = "Allow native executables declared in the selected configuration")]
-	enable_plugins: bool,
+	enable_plugins:            bool,
 	#[arg(long = "plugin", help = "Explicit native executable plugin; never a TS/JS module")]
-	plugins:        Vec<PathBuf>,
+	plugins:                   Vec<PathBuf>,
 }
 impl ConfigurationArgs {
 	fn load(
@@ -496,20 +500,6 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 	Ok(0)
 }
 
-fn configured_model(
-	settings: config::Settings,
-	api: crate::configuration::Api,
-	max_tokens: u32,
-	usage: bool,
-) -> Result<HttpModel> {
-	let model = HttpModel::new(settings).request_usage(usage);
-	if api == crate::configuration::Api::AnthropicMessages {
-		model.anthropic_messages(max_tokens)
-	} else {
-		Ok(model)
-	}
-}
-
 fn rpc(args: RpcArgs) -> Result<u8> {
 	let workspace = args
 		.workspace
@@ -529,7 +519,13 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 		args.max_output_tokens,
 		args.agent_dir.clone(),
 	)?;
-	let settings = resolved.settings;
+	let max_model_turns = Some(resolved.settings.max_steps);
+	let model = HttpModel::from_configuration(
+		&workspace,
+		&resolved,
+		false,
+		args.configuration.allow_credential_commands,
+	)?;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
 	let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -539,14 +535,13 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 	let result = runtime.block_on(async {
 		let options = crate::rpc::RpcOptions {
 			session_file: workspace.join(&args.session),
-			model:        settings.model.clone(),
+			model:        model.model_id().to_owned(),
 		};
-		let max_model_turns = Some(settings.max_steps);
 		let session = SessionEngine::open(
 			&workspace,
 			&args.session,
 			args.leaf.as_deref(),
-			Arc::new(configured_model(settings, resolved.api, resolved.max_output_tokens, false)?),
+			Arc::new(model),
 			Arc::new(crate::tools::DenyMutations),
 			SessionEngineOptions {
 				max_model_turns,
@@ -593,17 +588,22 @@ fn run(args: RunArgs) -> Result<u8> {
 		args.max_output_tokens,
 		args.agent_dir.clone(),
 	)?;
-	let settings = resolved.settings;
+	let max_steps = resolved.settings.max_steps;
+	let model = HttpModel::from_configuration(
+		&workspace,
+		&resolved,
+		args.request_usage,
+		args.configuration.allow_credential_commands,
+	)?;
 	if args.async_session {
 		let agent_dir = config::agent_dir_from(args.agent_dir.clone(), |key| env::var_os(key))
 			.filter(|p| p.is_dir());
 		return run_async_session(
 			&args,
 			&workspace,
-			settings,
+			model,
+			max_steps,
 			agent_dir,
-			resolved.api,
-			resolved.max_output_tokens,
 			resolved.plugins,
 			resolved.mcp,
 			resolved.lsp,
@@ -611,9 +611,6 @@ fn run(args: RunArgs) -> Result<u8> {
 		);
 	}
 	let configured_browser = browser_options(&args);
-	let max_steps = settings.max_steps;
-	let model =
-		configured_model(settings, resolved.api, resolved.max_output_tokens, args.request_usage)?;
 	let model_ref: &dyn Model = &model;
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
@@ -663,10 +660,9 @@ fn browser_options(args: &RunArgs) -> Option<harvest_browser::Options> {
 fn run_async_session(
 	args: &RunArgs,
 	workspace: &Path,
-	settings: config::Settings,
+	model: HttpModel,
+	max_steps: u32,
 	user_agent_dir: Option<PathBuf>,
-	api: crate::configuration::Api,
-	max_output_tokens: u32,
 	plugins: Vec<crate::plugins::Configuration>,
 	mcp: Vec<crate::mcp::Configuration>,
 	lsp: Vec<crate::language_services::LspConfiguration>,
@@ -677,12 +673,12 @@ fn run_async_session(
 		.enable_all()
 		.build()?;
 	runtime.block_on(async {
-		let max_model_turns = Some(settings.max_steps);
+		let max_model_turns = Some(max_steps);
 		let session = SessionEngine::open(
 			workspace,
 			&args.session,
 			args.leaf.as_deref(),
-			Arc::new(configured_model(settings, api, max_output_tokens, args.request_usage)?),
+			Arc::new(model),
 			Arc::new(crate::tools::TerminalApproval),
 			SessionEngineOptions {
 				browser: browser_options(args),

@@ -163,3 +163,14 @@ process-frame/newline and archive round trips. Current-host compilation does not
 certify these behaviors. Full TS settings discovery/schema defaults, implicit
 startup migration, async scheduling, conflict-aware edits, symlink/quarantine
 recovery, settings UI and durable mutation retries remain pending.
+
+## Provider value connections
+
+Native resolved configuration now retains a live file API-key source and a
+bounded `headers` map. All native model launchers and SDK
+`HttpModel::from_configuration` use the same request-time resolver, with credential
+commands disabled unless the host opts in. Config inspection shows only a header
+count and never resolves credentials. See [NATIVE-PROVIDER-VALUES.md](NATIVE-PROVIDER-VALUES.md)
+for source/key precedence, exact environment semantics, native shell/cache limits,
+redaction and unported registry/OAuth/auth-retry contracts. This is a partial
+foundation, not complete credential ownership or provider parity.

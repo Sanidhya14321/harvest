@@ -28,6 +28,7 @@ through this table and the machine task before editing a shared interface.
 | Native settings/profiles | `rust-agent/src/configuration.rs`, `configuration/{document,file}.rs`, `config.rs` | sync/async run, RPC, SDK, redacted `harvest config`; TOML/JSONC/YAML overlays | legacy settings schema/discovery/external-source parity, settings persistence/UI, credential ownership | Written/connected foundation; unfinished parity |
 | Typed config file owner | `rust-agent/src/configuration/file.rs` | layered native loader, persistent SDK owner, explicit CLI config migrate | full settings/default/discovery and implicit startup migration; cache/validation/migration/installed behavior | Written/connected; unverified |
 | Bounded serialized output | `crates/harvest-runtime/src/limits.rs` | config migration, existing process JSONL encoding and fixture archive export | byte-boundary/error/newline/round-trip regressions | Written/connected; unverified |
+| Live provider values | `rust-agent/src/configuration/values.rs`, `values/command.rs`; shared provider builder | native config -> OpenAI-compatible/Messages -> sync/async/RPC/SDK/benchmark; existing pi-shell owner | legacy model registry/overrides/live-header mutation, auth retry/OAuth/accounts and installed behavioral contracts | Written/connected foundation; unverified |
 | Rust edit scoring | `rust-agent/src/edit_benchmark` | native CLI list/compare/apply and ordinary Rust APIs | normalization/patch/file-set bounds tests; actual model runs and usage integration | Written/connected; unverified |
 | Shared process owner | `rust-agent/src/process_transport.rs` | native plugins, MCP stdio, LSP and DAP | platform descendant/console cleanup, cancellation/failure/queue regressions | Written/connected; unverified |
 | MCP client and tool bridge | `rust-agent/src/mcp`, shared HTTP/SSE owner | native sync/async sessions, RPC, direct SDK, `harvest mcp`, `--enable-mcp`/`--mcp-config` | OAuth/discovery/legacy SSE/reconnect, idle event delivery, hot reload and installed/platform parity | Written/connected; unverified |
@@ -292,6 +293,45 @@ generator and shell/PowerShell installer/test sources only after native replacem
 are connected and their required evidence exists. Logs/receipt:
 `target/migration/conversion-shell-retirement-*`. No verified source-removal,
 capability or completed retirement claim is advanced.
+
+## Current provider-value continuation
+
+Owner: `application:conversion-first`; base `cb4216d`. Reviewed inputs/contracts:
+`config/model-config-values.ts`, exact env helper, model-registry resolver/header
+consumers, native provider/Messages request code, shared configuration/CLI/benchmark
+builders and pi-shell raw streams/cancellation. Sole destination:
+`configuration/values.rs` and `values/command.rs`, not another process/provider
+registry. NATIVE-PROVIDER-VALUES.md specifies the full bounded supported contract.
+
+Written/connections: retain file API-key/header sources in resolved configuration;
+shared `HttpModel::from_configuration` constructs all native model hosts/SDK;
+request-time env/literal/explicit command resolution and one-pass header folding;
+OpenAI-compatible and Messages auth headers; scoped, bounded command success/
+negative cache, refresh/all-source invalidation; explicit host command opt-in;
+existing shell raw stdout/cancellation owner. The async launcher now receives the
+same configured model rather than reconstructing it and losing value sources.
+Inspection/migration never runs commands. Both native providers use the same owner.
+
+Remaining prerequisites: full models schema/discovery/override/KDL policy, TS live
+proxy mutation consumers, stored accounts/OAuth/session stickiness/usage backoff/
+sibling rotation and actual automatic auth-retry integration. Source ledger row
+stays partial/unverified/retained until those consumers move. No provider family
+or OAuth capability is certified. Native command sources require the full build;
+command timeout/process/fd behavior needs real platform evidence. Stale (>6-hour)
+application incremental cache directories were removed to regain build space;
+sources, evidence, native-engine and dependency caches were preserved.
+
+Recovery: revert this continuation to cb4216d. The production TS registry and
+original settings/account data remain. Consolidated checks: native SDK and CLI
+local HTTP requests for each retained wire API through sync/async/RPC/benchmark;
+key precedence/exact env/casing/live lookup, header folding/bounds/redaction,
+disabled/failed/successful/oversized/non-UTF8 commands, stdout/stderr/stdin/fd/cwd
+isolation, caller cancellation/timeout/descendant cleanup, concurrent cache TTL/
+refresh/invalidation and inspect-without-execution. Regress normal requests,
+streaming usage, tool approval/session lifecycle and core-build diagnostics. Use
+`cargo xtask test -p harvest-omp` in consolidated stabilization. Compiler/format/
+ownership receipts use ignored `target/migration/conversion-provider-values-*`;
+behavioral/installed/platform/performance checks remain deferred.
 
 ## Stabilization queue (deferred, not passed)
 

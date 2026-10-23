@@ -20387,19 +20387,19 @@
     },
     {
       "path": "packages/coding-agent/src/config/model-config-values.ts",
-      "disposition": "review-required",
-      "implementation": "absent",
+      "disposition": "replace",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
-      "contract": null,
-      "consumers": null,
-      "persisted_formats": null,
-      "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "contract": "Resolve live credential/header configuration by exact environment lookup then literal fallback, or explicitly authorized shell command with success cache/30-second negative TTL and force invalidation. Fold header sources once and preserve freshness. Native bounded workspace owner and OpenAI-compatible/Messages request connections are written; full legacy registry/override/live-proxy/auth-retry cutover remains pending.",
+      "consumers": "Native HttpModel::from_configuration and with_config_values -> sync/async run, RPC, Rust SDK and edit-benchmark runs. Existing TS model-registry/custom-provider overrides and auth-retry invalidation still consume this source and must move before deletion.",
+      "persisted_formats": "Existing settings/model/account files are not rewritten. Native api_key and headers sources remain in resolved configuration; host flags/environment API keys remain literal. Cache is process-local/workspace-scoped, with no persisted secrets or generated bindings.",
+      "external_dependencies": "Existing pi-shell streams, shared runtime cancellation/jailed cwd and provider HTTP owner; external user-configured shell commands only after explicit host opt-in and full native shell build. Retained TS resolver still requires Bun/Node until registry consumers move.",
+      "rust_destination": "rust-agent/src/configuration/values.rs and values/command.rs; provider.rs shared native model builder; anthropic.rs; existing CLI/SDK/configuration and benchmark callers",
+      "verification_requirements": "Consolidated native local HTTP OpenAI/Messages contracts across sync/async/RPC/SDK/benchmark, exact env/key precedence/case, header fold/limits/redaction; real command success/failure/non-UTF8/empty/output budgets/cancellation/stdin/stderr/fd isolation/descendant cleanup, concurrent cache TTL/refresh/invalidation; inspect without execution, unchanged source files and retained provider/session contracts. All behavioral/installed/platform checks deferred; full registry/auth-retry cutover before removal.",
       "retirement_reason": null,
-      "task_id": "migrate:application"
+      "task_id": "application:conversion-first"
     },
     {
       "path": "packages/coding-agent/src/config/model-discovery.ts",
