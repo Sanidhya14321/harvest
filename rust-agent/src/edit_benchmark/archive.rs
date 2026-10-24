@@ -69,7 +69,7 @@ impl FixtureSource {
 		self._temporary.is_some()
 	}
 }
-fn normalized(path: &Path) -> Result<PathBuf> {
+pub(super) fn normalized(path: &Path) -> Result<PathBuf> {
 	ensure!(path.as_os_str().len() <= 4096, "archive path exceeds 4096-byte limit");
 	let mut components = Vec::new();
 	for component in path.components() {

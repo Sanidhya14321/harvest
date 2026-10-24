@@ -475,3 +475,48 @@ Full calibration/shape quotas/multi-case orchestration, specialized guidance,
 full syntax eligibility and legacy producer/metaharness cutover remain pending.
 All runtime/installed/platform behavior and old-consumer regression evidence
 remain deferred. No TS source is deleted by this continuation.
+
+## Explicit multi-case collection generation (written, unverified)
+
+`generate-batch --source DIR --output NEW_DIR --plan cases.json` accepts an ordered
+JSON array, for example:
+
+```json
+[
+  {"task_id":"case-001","mutation":"swap-comparison","seed":42},
+  {"task_id":"case-002","mutation":"flip-boolean","seed":43}
+]
+```
+
+Use --source-policy, --difficulty, --min-score and optional --exclude-regions for
+the whole plan, or Rust generate_batch with GenerationOptions. Plans have 1..64
+unique portable task IDs, reject case aliases/unknown kinds, and execute serially
+against one immutable selected corpus snapshot. Hash rechecks reject changed data
+while snapshotting. Later changes to original source do not affect that batch.
+Successful regions are carried into later cases through the existing exclusion
+policy; a case with no eligible candidate fails rather than changing its seed or
+level silently. This is explicit case scheduling, not calibrated shape quotas.
+
+TaskCollection retains the existing fixture resource lock for the full invocation.
+Each case borrows the same publisher, with expected/input copy and prompt-last
+publication; ordinary single-case empty-directory rules remain. Preflight copy/
+metadata estimate <=48 MiB, conservative <=10,000 entries and archive nesting
+limits; actual output bytes across tasks/artifacts <=64 MiB, root JSON <=4 MiB.
+CLI plan/history inputs <=1 MiB. All existing source/AST/history bounds apply.
+
+Task directories stay compatible with list/validate/pack and archive/model runs.
+Batch reports use fixture.output paths relative to the collection root; standalone
+prepare/generate reports keep their existing path behavior. Original source roots
+and temporary snapshot paths are not serialized into successful batch journals.
+Root artifacts generation-plan.json, generation-case-NN.json and generation.json
+use rust-batch-v1 and retain inventory hashes, options, per-case reports and
+complete/partial counts. Stop at a failed/cancelled case; remaining cases are
+not_started. CLI exits 1 for an incomplete plan. Setup or artifact/quota failure
+may return an invocation error; preserve prior artifacts and use a new directory.
+Interrupted task directories are not verified or automatically removed, and pack
+may reject them. No resume, concurrent writer, automatic source acquisition,
+source execution, archive publication or historical generator equivalence.
+
+Runtime/installed/platform and single-case regression evidence remains pending.
+Shape calibration/quotas, whole-content deduplication, full retained grammar and
+specialized prompt/guidance/metaharness consumer cutover remain unfinished.

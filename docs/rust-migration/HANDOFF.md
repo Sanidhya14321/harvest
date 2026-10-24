@@ -28,6 +28,13 @@ See RUST-BENCHMARK.md and the common reviewed card for native versus historical
 semantics, bounds and exact remaining consumers. generate.ts remains retained.
 Ignored receipt/log prefix target/migration/conversion-difficulty-*.
 
+Multi-case continuation base 8c19c66: generate-batch CLI/SDK now executes explicit
+bounded plans against one immutable corpus snapshot. It carries successful regions,
+borrows the existing fixture writer lock/publisher, charges actual output bytes
+and preserves plan/case journals with completed/failed/cancelled/not_started states.
+No resume or shape-quota/calibration policy is claimed. See the same benchmark
+and common card; ignored receipts target/migration/conversion-generation-batch-*.
+
 Existing owners remain: configuration/value and command cache; shared provider
 builder; plugin protocol/process/event forwarding; MCP/LSP/DAP; source corpus,
 AST mutations/hunks/fixture archives; native session/run/scoring/report owners.
@@ -43,7 +50,7 @@ still launches TS; do not cut it over to this partial candidate.
 
 ## Next dependency-ready connections
 
-- Benchmark: multi-case generation, edit-shape quotas/calibration and whole-content
+- Benchmark: edit-shape quotas/calibration and whole-content
   deduplication, specialized prompts, full syntax eligibility, retained metaharness
   run/report/queue workflows and native interactive views; move actual TS consumers.
 - application:hashline-host-bridge remains planned/review pending. Native read

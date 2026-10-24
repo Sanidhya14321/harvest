@@ -34,6 +34,23 @@ enum Command {
 		#[arg(long, value_enum, default_value_t = super::SourcePolicy::ReviewedTree)]
 		policy:     super::SourcePolicy,
 	},
+	GenerateBatch {
+		#[arg(long)]
+		source:          PathBuf,
+		#[arg(long)]
+		output:          PathBuf,
+		/// JSON array of task_id/mutation/seed case records, max 64.
+		#[arg(long)]
+		plan:            PathBuf,
+		#[arg(long, value_enum, default_value_t = super::SourcePolicy::ReviewedTree)]
+		source_policy:   super::SourcePolicy,
+		#[arg(long, value_enum)]
+		difficulty:      Option<super::Difficulty>,
+		#[arg(long, requires = "difficulty")]
+		min_score:       Option<u32>,
+		#[arg(long)]
+		exclude_regions: Option<PathBuf>,
+	},
 	Generate {
 		/// Read-only JSON array of native source-hash-bound region exclusions.
 		#[arg(long)]
@@ -287,6 +304,34 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 			serde_json::to_writer(io::stdout().lock(), &report)?;
 			writeln!(io::stdout().lock())?;
 			return Ok(if report.eligible > 0 { 0 } else { 1 });
+		},
+		Command::GenerateBatch {
+			source,
+			output,
+			plan,
+			source_policy,
+			difficulty,
+			min_score,
+			exclude_regions,
+		} => {
+			let cases: Vec<super::GenerationCase> =
+				serde_json::from_slice(&read_document(&plan, 1024 * 1024)?)?;
+			let excluded_regions = exclude_regions
+				.map(|path| -> Result<Vec<super::MutationRegion>> {
+					Ok(serde_json::from_slice(&read_document(&path, 1024 * 1024)?)?)
+				})
+				.transpose()?
+				.unwrap_or_default();
+			let report = super::generate_batch(
+				&source,
+				&output,
+				&cases,
+				&super::GenerationOptions { source_policy, difficulty, min_score, excluded_regions },
+				&cancellation,
+			)?;
+			serde_json::to_writer(io::stdout().lock(), &report)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(if report.complete { 0 } else { 1 });
 		},
 		Command::Generate {
 			source,

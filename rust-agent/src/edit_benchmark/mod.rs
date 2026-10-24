@@ -5,6 +5,10 @@ pub(crate) mod cli;
 pub use archive::{ArchiveReport, FixtureSource, PackedArchive, pack_fixtures, unpack_fixtures};
 mod evidence;
 pub use evidence::{ToolEvidence, tool_evidence};
+mod batch;
+pub use batch::{
+	BATCH_VERSION, GenerationBatch, GenerationCase, GenerationCaseOutcome, generate_batch,
+};
 mod corpus;
 pub use corpus::{
 	CorpusEntry, CorpusReport, SourcePolicy, inspect_corpus, inspect_corpus_with_difficulty,

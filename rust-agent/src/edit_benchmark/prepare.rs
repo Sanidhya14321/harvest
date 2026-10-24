@@ -82,6 +82,47 @@ pub(crate) fn prepare_task_with_provenance(
 	provenance: Option<&serde_json::Value>,
 	cancellation: &CancelToken,
 ) -> Result<PreparedTask> {
+	prepare_task_owned(input, expected, output, task_id, provenance, cancellation, None)
+}
+
+/// Held only by the native multi-case producer. Reuses the exact same fixture
+/// writer lock as standalone preparation; nested publication borrows this
+/// owner.
+pub(super) struct TaskCollection {
+	pub filesystem: JailedFs,
+	bytes:          std::cell::Cell<usize>,
+	_owner:         harvest_runtime::file_lock::FileLock,
+}
+impl TaskCollection {
+	pub fn open(output: &Path) -> Result<Self> {
+		let filesystem = JailedFs::open_or_create(output)?;
+		let owner = filesystem.resource_lock(Path::new(".fixture-owner"))?;
+		ensure_empty(&filesystem)?;
+		Ok(Self { filesystem, bytes: std::cell::Cell::new(0), _owner: owner })
+	}
+
+	pub fn charge(&self, bytes: usize) -> Result<()> {
+		let total = self
+			.bytes
+			.get()
+			.checked_add(bytes)
+			.ok_or_else(|| anyhow::anyhow!("collection byte count overflow"))?;
+		ensure!(total <= 64 * 1024 * 1024, "collection output exceeds 64 MiB");
+		self.bytes.set(total);
+		Ok(())
+	}
+}
+fn ensure_empty(filesystem: &JailedFs) -> Result<()> {
+	ensure!(
+		filesystem
+			.entries(Path::new(""), 4)?
+			.iter()
+			.all(|entry| entry.name == ".fixture-owner.lock"),
+		"prepared output must be empty"
+	);
+	Ok(())
+}
+pub(super) fn validate_task_id(task_id: &str) -> Result<()> {
 	ensure!(
 		!task_id.is_empty()
 			&& task_id.len() <= 128
@@ -90,6 +131,18 @@ pub(crate) fn prepare_task_with_provenance(
 				.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')),
 		"task id must contain 1..128 ASCII letters, digits, hyphens or underscores"
 	);
+	Ok(())
+}
+pub(super) fn prepare_task_owned(
+	input: &Path,
+	expected: &Path,
+	output: &Path,
+	task_id: &str,
+	provenance: Option<&serde_json::Value>,
+	cancellation: &CancelToken,
+	collection: Option<&TaskCollection>,
+) -> Result<PreparedTask> {
+	validate_task_id(task_id)?;
 	let input = JailedFs::open(input)?;
 	let expected = JailedFs::open(expected)?;
 	let proposed = prospective_output(output)?;
@@ -160,29 +213,47 @@ pub(crate) fn prepare_task_with_provenance(
 	let metadata = serde_json::to_vec(&serde_json::json!({"scoring_version":SCORING_VERSION,
         "producer":if provenance.is_some(){super::generate::PRODUCER_VERSION}else{"rust-paired-tree-v1"},"mutation":provenance,"file_path":prompt_files[0].path,"files":identities}))?;
 	ensure!(metadata.len() <= 256 * 1024, "fixture metadata exceeds 256 KiB");
-	let output = JailedFs::open_or_create(output)?;
+	let local_output = collection
+		.is_none()
+		.then(|| JailedFs::open_or_create(output))
+		.transpose()?;
+	let output = collection
+		.map(|owner| &owner.filesystem)
+		.or(local_output.as_ref())
+		.expect("output owner");
 	for source in [&input, &expected] {
 		ensure!(
 			!output.root().starts_with(source.root()) && !source.root().starts_with(output.root()),
 			"prepared output must be disjoint from source trees"
 		);
 	}
-	let _owner = output.resource_lock(Path::new(".fixture-owner"))?;
-	ensure!(
-		output
-			.entries(Path::new(""), 4)?
-			.iter()
-			.all(|e| e.name == ".fixture-owner.lock"),
-		"prepared output must be empty"
-	);
+	let _local_owner = if collection.is_none() {
+		let owner = output.resource_lock(Path::new(".fixture-owner"))?;
+		ensure_empty(output)?;
+		Some(owner)
+	} else {
+		None
+	};
 	for (path, before, after) in &copies {
 		cancellation.heartbeat()?;
+		if let Some(owner) = collection {
+			owner.charge(before.len())?;
+		}
 		output.atomic_create(&Path::new(task_id).join("input").join(path), before)?;
+		if let Some(owner) = collection {
+			owner.charge(after.len())?;
+		}
 		output.atomic_create(&Path::new(task_id).join("expected").join(path), after)?;
+	}
+	if let Some(owner) = collection {
+		owner.charge(metadata.len())?;
 	}
 	output.atomic_create(&Path::new(task_id).join("metadata.json"), &metadata)?;
 	cancellation.heartbeat()?;
 	// Prompt publication is last: interrupted preparations cannot load as tasks.
+	if let Some(owner) = collection {
+		owner.charge(prompt.len())?;
+	}
 	output.atomic_create(&Path::new(task_id).join("prompt.md"), prompt.as_bytes())?;
 	Ok(PreparedTask {
 		task_id:       task_id.into(),

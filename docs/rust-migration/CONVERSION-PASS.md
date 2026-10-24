@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current difficulty/region continuation base: `518458c`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current multi-case continuation base: `8c19c66`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -1077,3 +1077,74 @@ cargo check --locked -p harvest-omp --all-targets --all-features; existing xtask
 playbook check. Receipts/logs: target/migration/conversion-difficulty-*.
 Compiler/format/ownership only: no verified parity, installed or source-removal
 count advances. Keep this task in progress and the legacy ledger rows retained.
+
+## Native multi-case generation continuation
+
+Owner/task application:conversion-first; base 8c19c66; same generate.ts source and
+surface:benchmarks remain partial/retained/unverified. Inputs: legacy main case
+loop/usedLines and current corpus/difficulty/regions/generator/prepare/archive.
+Prerequisites: these existing engines and publisher. Destinations: batch.rs,
+existing generate/prepare/CLI/mod; existing archive path normalization is reused
+for portable case IDs. No parallel writer, parser, scorer or mutable history DB.
+
+Connections: generate-batch --source DIR --output NEW_DIR --plan FILE and Rust
+generate_batch -> shared source policy/inventory -> immutable temporary snapshot
+-> existing native generate_task_owned/difficulty/region engine -> borrowed shared
+TaskCollection owner -> same task directories, hunks and prompt-last publisher ->
+existing validate/list/pack/archive/run. Normal single-task generation/preparation
+still acquires its original fixture lock and requires an empty output root.
+Collection generation holds that same .fixture-owner resource lease throughout;
+inner case publication borrows it rather than reopening a lock or weakening the
+standalone empty-output rule. Root plan/journals/results use the same jailed owner.
+
+Plan: ordered JSON array, 1..64 records with exact task_id/mutation/seed; IDs use
+existing validation plus archive portability and reject case aliases/duplicates.
+Global GenerationOptions supplies source policy/difficulty/minimum/initial region
+exclusions. Unknown kinds and invalid plans/history fail before output creation.
+CLI plan/history documents <=1 MiB. No automatic random attempts, missing-case
+fallback, shape quotas or historical distribution equivalence is claimed.
+
+One selected source snapshot is captured before output ownership/publication;
+read hashes must match inspected inventory, and output must be disjoint from
+original source. Later cases never reread live original data. Repeated cases use
+the existing generator over that snapshot (not a new mutation implementation).
+Successful selected regions are carried into subsequent cases; the 4096-region
+budget remains explicit. Future quota/calibration/content-dedup/resume work needs
+its own contract. Cases run serially, in plan order, with stable supplied seeds.
+
+Bounds: preflight estimates 2*source bytes +512 KiB/case <=48 MiB, conservative
+entry count <=10,000 and paths fit existing archive depth. Exact create-only
+writes (task inputs/expected/prompt/metadata and root JSON) are charged through
+TaskCollection against an actual 64 MiB limit; each JSON artifact <=4 MiB.
+Snapshot/source byte limits and generation work/candidate/history limits remain.
+Charge is conservative after failed writes and never refunded to fake capacity.
+Cancellation propagates to the existing snapshot/generator/hunk/copy owners.
+
+Artifacts: generation-plan.json includes version rust-batch-v1, explicit cases,
+options, initial exclusions, source inventory hashes and planned bytes;
+generation-case-NN.json is published for every attempted case; generation.json
+reports completed/failed/cancelled/not_started cases and successful/unsuccessful
+counts. A generation failure stops further cases, preserves completed prefix and
+records bounded diagnostics; CLI returns 1 for incomplete plans. Setup/artifact
+I/O or output quota errors can fail the whole invocation, preserving prior files.
+Partial task directories are not certified or silently erased; validation/archive
+may refuse them. Retry into a new directory; there is no crash resume. Prompt is
+still the last per-task publication. No repository/source code is executed.
+
+Deletions: zero. Legacy generate.ts/package scripts/metaharness retain their
+calibration/prompts/grammar/orchestration consumers. Recovery: revert to 8c19c66.
+Consolidated acceptance: scripted/installed generate-batch -> list/validate/pack ->
+archive run against multiple mutations/seeds; immutable original/snapshot source
+and changed-source detection; ID/alias/path/kind/history/memory/disk/entry/depth
+limits, exact quota boundary, mutation-region carry, lock contention with other
+batches/single prepare, partial/cancel/interruption/report failure/no resume and
+unchanged single-case behavior. Run cargo xtask test -p harvest-omp and copied
+installed workflows later. Conversion checks: cargo fmt -p harvest-omp -- --check;
+cargo check --locked -p harvest-omp --all-targets --all-features; existing xtask
+playbook check. Receipt/log prefix target/migration/conversion-generation-batch-.
+Behavioral/installed/platform/source removal remains unverified; no done claims.
+
+Batch report fixture.output is relative to its collection root. Original source
+roots/temporary snapshot paths are omitted from successful journals; standalone
+prepare/generate report paths retain their existing behavior. Cross-machine
+reproducibility and portability still require the recorded installed checks.

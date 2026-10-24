@@ -127,6 +127,18 @@ pub fn generate_task_with_options(
 	options: &GenerationOptions,
 	cancellation: &CancelToken,
 ) -> Result<GenerationReport> {
+	generate_task_owned(source, output, task_id, kind, seed, options, cancellation, None)
+}
+pub(super) fn generate_task_owned(
+	source: &Path,
+	output: &Path,
+	task_id: &str,
+	kind: MutationKind,
+	seed: u64,
+	options: &GenerationOptions,
+	cancellation: &CancelToken,
+	collection: Option<&super::prepare::TaskCollection>,
+) -> Result<GenerationReport> {
 	ensure!(
 		options.difficulty.is_some() || options.min_score.is_none(),
 		"minimum score requires explicit difficulty"
@@ -280,13 +292,14 @@ pub fn generate_task_with_options(
         "target":path,"selected":candidate,"original_sha256":content_hash(&original),
         "mutated_sha256":content_hash(mutated.as_bytes()),"candidates":seen,"rejected_sources":rejected,
         "difficulty":difficulty,"region_policy_version":super::REGION_VERSION,"regions":regions,"excluded_candidates":excluded_candidates,"source_policy":policy,"corpus_policy_version":super::corpus::POLICY_VERSION,"corpus_files":corpus_files,"corpus_scanned":corpus_scanned});
-	let fixture = super::prepare::prepare_task_with_provenance(
+	let fixture = super::prepare::prepare_task_owned(
 		input.root(),
 		expected.root(),
 		output,
 		task_id,
 		Some(&provenance),
 		cancellation,
+		collection,
 	)?;
 	Ok(GenerationReport {
 		region_policy_version: super::REGION_VERSION,
