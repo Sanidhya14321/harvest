@@ -252,7 +252,7 @@ fn bash(
 	})
 }
 
-fn bounded(text: &str) -> String {
+pub(crate) fn bounded(text: &str) -> String {
 	let mut out = String::new();
 	for (index, character) in text.chars().enumerate() {
 		if index >= OUTPUT_LIMIT {
@@ -424,6 +424,9 @@ mod tests {
 /// final-argument approval.
 #[derive(Default)]
 pub struct ToolRuntime {
+	edit_mode:         crate::edit::Mode,
+	edit_store:        pi_edit::EditStore,
+	edit_root:         Option<std::path::PathBuf>,
 	language_services: crate::language_services::Runtime,
 	mcp:               Vec<crate::mcp::Client>,
 	plugins:           Vec<crate::plugins::Plugin>,
@@ -453,10 +456,67 @@ impl ToolRuntime {
 		cancellation: &harvest_runtime::cancel::CancelToken,
 		on_event: &mut dyn FnMut(crate::plugins::protocol::Event) -> Result<()>,
 	) -> Result<ToolOutput> {
-		if call.function.name == "edit" {
-			return invoke_detailed(root, call, policy, cancellation);
+		if matches!(call.function.name.as_str(), "read" | "edit" | "write") {
+			cancellation.heartbeat()?;
+			if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
+				bail!("tool arguments exceed frame limit");
+			}
+			self.bind_edit_root(root)?;
+			match call.function.name.as_str() {
+				"read" => {
+					return crate::edit::read::invoke(
+						root,
+						&call.function.arguments,
+						self.edit_mode,
+						&self.edit_store,
+						cancellation,
+					);
+				},
+				"edit" => {
+					return crate::edit::invoke(
+						root,
+						self.edit_mode,
+						call,
+						self.edit_store.clone(),
+						policy,
+						cancellation,
+					);
+				},
+				_ => {
+					let output = invoke_detailed(root, call, policy, cancellation)?;
+					// A direct write invalidates snapshots rather than granting unseen lines.
+					let args: WriteArgs = parse(&call.function.arguments)?;
+					let key = JailedFs::open(root)?.resource_path(Path::new(&args.path))?;
+					self
+						.edit_store
+						.invalidate(&pi_edit::path_policy::canonical_key(&key));
+					return Ok(output);
+				},
+			}
 		}
 		Ok(ToolOutput::text(self.invoke_with_events(root, call, policy, cancellation, on_event)?))
+	}
+
+	fn bind_edit_root(&mut self, root: &Path) -> Result<()> {
+		let canonical = JailedFs::open(root)?.root().to_owned();
+		if let Some(bound) = &self.edit_root {
+			if bound != &canonical {
+				bail!("session edit state belongs to another workspace");
+			}
+		} else {
+			self.edit_root = Some(canonical);
+		}
+		Ok(())
+	}
+
+	/// State is volatile per live owner. A mode change clears all read
+	/// authority, clipboard registers and no-op state. Resume never trusts
+	/// transcript tags.
+	pub fn configure_edit(&mut self, mode: crate::edit::Mode) {
+		if self.edit_mode != mode {
+			self.edit_store = pi_edit::EditStore::default();
+			self.edit_mode = mode;
+		}
 	}
 
 	pub fn configure_plugins(
@@ -551,7 +611,7 @@ impl ToolRuntime {
 	}
 
 	pub fn specs(&self) -> Vec<crate::chat::ToolSpec> {
-		let mut specs = crate::chat::specs();
+		let mut specs = crate::chat::specs_for_edit(self.edit_mode);
 		specs.extend(self.language_services.specs());
 		for server in &self.mcp {
 			specs.extend(server.tools().iter().map(|tool| tool.spec.clone()));
@@ -583,6 +643,12 @@ impl ToolRuntime {
 		cancellation: &harvest_runtime::cancel::CancelToken,
 		on_event: &mut dyn FnMut(crate::plugins::protocol::Event) -> Result<()>,
 	) -> Result<String> {
+		if matches!(call.function.name.as_str(), "read" | "edit" | "write") {
+			return Ok(self
+				.invoke_detailed_with_events(root, call, policy, cancellation, on_event)?
+				.content);
+		}
+
 		if matches!(call.function.name.as_str(), "lsp" | "debug") {
 			return self.language_services.invoke(call, policy, cancellation);
 		}

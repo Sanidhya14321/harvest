@@ -76,6 +76,16 @@ impl AgentSession {
 		})
 	}
 
+	/// Select before a run. Snapshots remain volatile and are cleared on mode
+	/// changes.
+	pub fn configure_edit(&mut self, mode: crate::edit::Mode) -> Result<()> {
+		if self.active.is_some() {
+			bail!("cannot change edit mode during an active run");
+		}
+		self.tools.configure_edit(mode);
+		Ok(())
+	}
+
 	pub fn configure_plugins(
 		&mut self,
 		configurations: &[crate::plugins::Configuration],

@@ -30,6 +30,7 @@ pub enum Api {
 
 #[derive(Debug, Default)]
 pub struct LoadOptions {
+	pub edit_mode:           Option<crate::edit::Mode>,
 	pub user_directory:      Option<PathBuf>,
 	pub profile:             Option<String>,
 	pub environment_profile: Option<String>,
@@ -40,6 +41,7 @@ pub struct LoadOptions {
 }
 #[derive(Debug)]
 pub struct Resolved {
+	pub edit_mode:         crate::edit::Mode,
 	pub settings:          Settings,
 	pub provider_values:   ProviderValues,
 	pub api:               Api,
@@ -52,6 +54,7 @@ pub struct Resolved {
 
 #[derive(Clone, Default, Deserialize)]
 struct Layer {
+	edit_mode:         Option<crate::edit::Mode>,
 	#[serde(flatten)]
 	settings:          FileSettings,
 	headers:           Option<BTreeMap<String, String>>,
@@ -76,6 +79,7 @@ impl Layer {
 		field!(self.settings.api_key, newer.settings.api_key);
 		field!(self.settings.max_steps, newer.settings.max_steps);
 		field!(self.api, newer.api);
+		field!(self.edit_mode, newer.edit_mode);
 		field!(self.headers, newer.headers);
 		field!(self.max_output_tokens, newer.max_output_tokens);
 		field!(self.plugins, newer.plugins);
@@ -238,6 +242,10 @@ pub fn load(
 	};
 	provider_values.validate()?;
 	Ok(Resolved {
+		edit_mode: options
+			.edit_mode
+			.or(document.layer.edit_mode)
+			.unwrap_or_default(),
 		provider_values,
 		settings: config::resolve_file_values(flags, environment, document.layer.settings)?,
 		api,

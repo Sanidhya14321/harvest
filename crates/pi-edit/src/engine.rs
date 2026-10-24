@@ -197,6 +197,10 @@ pub enum FileOpIntent {
 
 /// A mode engine: pure functions over an argument snapshot.
 pub trait ModeEngine: Send + Sync {
+	/// Opt-in host policy; historical/transitional engines retain their
+	/// defaults.
+	fn require_read_provenance(&mut self) {}
+
 	fn mode(&self) -> EditMode;
 
 	/// Per-file diff previews for a (possibly partial) payload. `streaming`

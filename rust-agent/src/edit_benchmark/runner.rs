@@ -30,6 +30,9 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct RunConfiguration {
+	pub edit_mode:           crate::edit::Mode,
+	/// Explicit oracle-assisted guidance, separately versioned in the run plan.
+	pub guided:              bool,
 	/// Check exact output after all results in a tool batch are durable.
 	pub early_stop_on_match: bool,
 	/// Scored attempts per run, excluding bounded no-edit retries.
@@ -52,6 +55,8 @@ pub struct RunConfiguration {
 impl Default for RunConfiguration {
 	fn default() -> Self {
 		Self {
+			edit_mode:           Default::default(),
+			guided:              false,
 			early_stop_on_match: true,
 			max_attempts:        1,
 			no_edit_retries:     2,
@@ -224,6 +229,10 @@ pub fn run_tasks<M: Model>(
 	model: &(impl Fn(&Task, u32) -> Result<M> + Sync),
 	approval: &(dyn Approval + Sync),
 ) -> Result<RunSummary> {
+	ensure!(
+		!configuration.guided || configuration.edit_mode == crate::edit::Mode::Hashline,
+		"native guidance requires hashline edit mode"
+	);
 	ensure!((1..=16).contains(&configuration.max_attempts), "max attempts must be 1..16");
 	ensure!(configuration.no_edit_retries <= 16, "no-edit retries must be 0..16");
 	ensure!(configuration.provider_retries <= 16, "provider retries must be 0..16");
@@ -279,7 +288,9 @@ pub fn run_tasks<M: Model>(
 		&output,
 		Path::new("run-plan.json"),
 		&serde_json::json!({
-			 "scoring_version":SCORING_VERSION,"runs":count,"repetitions":configuration.repetitions,
+			 "edit_mode":configuration.edit_mode,"guided":configuration.guided,
+				 "guidance_version":if configuration.guided {Some("rust-hashline-guidance-v1")} else {None},
+				 "scoring_version":SCORING_VERSION,"runs":count,"repetitions":configuration.repetitions,
 			 "concurrency":configuration.concurrency,"max_steps":configuration.max_steps,
 			 "early_stop_on_match":configuration.early_stop_on_match,"max_attempts":configuration.max_attempts,"no_edit_retries":configuration.no_edit_retries,"provider_retries":configuration.provider_retries,
 			 "timeout_ms":configuration.timeout.as_millis(),
@@ -395,6 +406,7 @@ fn run_one<M: Model>(
 			Path::new("session.jsonl"),
 			None,
 		)?;
+		session.configure_edit(configuration.edit_mode)?;
 		let model = MeasuredModel {
 			inner:        factory(task, repetition)?,
 			measurements: RefCell::default(),
@@ -413,8 +425,22 @@ fn run_one<M: Model>(
 				let mut event_count = 0_u64;
 				let mut text_deltas = 0_u64;
 				let mut last_event = None;
+				// Recompute from current bytes on every retry. Guidance is data,
+				// never a read/snapshot or a bypass of seen-line enforcement.
+				let delivered_prompt = if configuration.guided {
+					super::guidance::with_guidance(
+						&prompt,
+						task,
+						&workspace,
+						&artifacts,
+						outcome.attempts,
+						&attempt_token,
+					)?
+				} else {
+					prompt.clone()
+				};
 				let answer = session.submit_until_tool_checkpoint(
-					&prompt,
+					&delivered_prompt,
 					&model,
 					&ScopedApproval(approval),
 					&RunOptions {

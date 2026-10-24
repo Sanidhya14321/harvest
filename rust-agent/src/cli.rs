@@ -155,12 +155,17 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 		&crate::configuration::LoadOptions {
 			user_directory: config::agent_dir_from(args.agent_dir, |key| env::var_os(key)),
 			profile: args.profile,
+			edit_mode: env::var("OMP_EDIT_MODE")
+				.ok()
+				.as_deref()
+				.map(crate::edit::Mode::parse)
+				.transpose()?,
 			environment_profile: env::var("OMP_PROFILE").ok(),
 			overlays: args.overlays,
 			..Default::default()
 		},
 	)?;
-	let output = serde_json::json!({"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredProviderHeaders":resolved.provider_values.headers.len(),"configuredPlugins":resolved.plugins.len(),"configuredMcpServers":resolved.mcp.len(),"configuredLanguageServers":resolved.lsp.len(),"configuredDebugAdapters":resolved.dap.len()});
+	let output = serde_json::json!({"editMode":resolved.edit_mode,"model":resolved.settings.model,"maxSteps":resolved.settings.max_steps,"api":match resolved.api { crate::configuration::Api::OpenaiChat=>"openai-chat",crate::configuration::Api::AnthropicMessages=>"anthropic-messages" },"maxOutputTokens":resolved.max_output_tokens,"apiKeyConfigured":!resolved.settings.api_key.is_empty(),"endpointConfigured":!resolved.settings.base_url.is_empty(),"configuredProviderHeaders":resolved.provider_values.headers.len(),"configuredPlugins":resolved.plugins.len(),"configuredMcpServers":resolved.mcp.len(),"configuredLanguageServers":resolved.lsp.len(),"configuredDebugAdapters":resolved.dap.len()});
 	serde_json::to_writer(io::stdout().lock(), &output)?;
 	writeln!(io::stdout().lock())?;
 	Ok(0)
@@ -168,6 +173,8 @@ fn inspect_configuration(args: ConfigArgs) -> Result<u8> {
 
 #[derive(Debug, Default, clap::Args)]
 struct ConfigurationArgs {
+	#[arg(long, value_enum)]
+	edit_mode:                 Option<crate::edit::Mode>,
 	/// Authorize configured !commands to retrieve credentials in the selected
 	/// workspace.
 	#[arg(long)]
@@ -221,6 +228,10 @@ impl ConfigurationArgs {
 				overlays: self.overlays.clone(),
 				api,
 				max_output_tokens,
+				edit_mode: crate::edit::Mode::select(
+					self.edit_mode,
+					env::var("OMP_EDIT_MODE").ok().as_deref(),
+				)?,
 			},
 		)?;
 		// Configurations remain inspectable without launching programs. Runtime
@@ -552,6 +563,7 @@ fn rpc(args: RpcArgs) -> Result<u8> {
 			Arc::new(model),
 			Arc::new(crate::tools::DenyMutations),
 			SessionEngineOptions {
+				edit_mode: resolved.edit_mode,
 				max_model_turns,
 				plugins: resolved.plugins,
 				mcp: resolved.mcp,
@@ -616,6 +628,7 @@ fn run(args: RunArgs) -> Result<u8> {
 			resolved.mcp,
 			resolved.lsp,
 			resolved.dap,
+			resolved.edit_mode,
 		);
 	}
 	let configured_browser = browser_options(&args);
@@ -624,6 +637,7 @@ fn run(args: RunArgs) -> Result<u8> {
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
 	let mut session =
 		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
+	session.configure_edit(resolved.edit_mode)?;
 	session.configure_plugins(&resolved.plugins, &Default::default())?;
 	session.configure_mcp(&resolved.mcp, &Default::default())?;
 	session.configure_language_services(resolved.lsp, resolved.dap)?;
@@ -675,6 +689,7 @@ fn run_async_session(
 	mcp: Vec<crate::mcp::Configuration>,
 	lsp: Vec<crate::language_services::LspConfiguration>,
 	dap: Vec<crate::language_services::DapConfiguration>,
+	edit_mode: crate::edit::Mode,
 ) -> Result<u8> {
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.worker_threads(2)
@@ -689,6 +704,7 @@ fn run_async_session(
 			Arc::new(model),
 			Arc::new(crate::tools::TerminalApproval),
 			SessionEngineOptions {
+				edit_mode,
 				browser: browser_options(args),
 				max_model_turns,
 				plugins,

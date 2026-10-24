@@ -46,3 +46,5 @@ pub use shapes::{ChangeRun, Distribution, ShapeReport, analyze_shapes, change_ru
 pub use tasks::{FixtureIssue, Task, list_files, load_tasks, validate_fixtures};
 pub use view::{RunState, RunView, SummaryView};
 pub const SCORING_VERSION: &str = "rust-v1";
+
+mod guidance;

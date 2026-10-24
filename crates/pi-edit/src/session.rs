@@ -174,6 +174,12 @@ impl Session {
 		}
 	}
 
+	/// Require explicit complete read-line provenance for hashline publication.
+	/// Existing addon callers retain historical permissive snapshot behavior.
+	pub fn require_read_provenance(&mut self) {
+		self.engine.require_read_provenance();
+	}
+
 	pub const fn store(&self) -> &EditStore {
 		&self.store
 	}

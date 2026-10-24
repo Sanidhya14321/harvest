@@ -193,6 +193,51 @@ pub fn specs() -> Vec<ToolSpec> {
 	]
 }
 
+/// Session schemas describe the exact host-selected engine, never a model mode
+/// switch.
+pub fn specs_for_edit(mode: crate::edit::Mode) -> Vec<ToolSpec> {
+	let mut specs = specs();
+	let read = specs
+		.iter_mut()
+		.find(|s| s.name() == "read")
+		.expect("builtin read");
+	read.function.parameters["properties"]["offset"] =
+		serde_json::json!({"type":"integer","minimum":1});
+	read.function.parameters["properties"]["limit"] =
+		serde_json::json!({"type":"integer","minimum":1});
+	if mode == crate::edit::Mode::Hashline {
+		read.function.description = include_str!("prompts/tools/read-hashline.md").trim().into();
+	}
+	let edit = specs
+		.iter_mut()
+		.find(|s| s.name() == "edit")
+		.expect("builtin edit");
+	match mode {
+		crate::edit::Mode::Replace => {},
+		crate::edit::Mode::Patch => {
+			edit.function.description = include_str!("prompts/tools/edit-patch.md").trim().into();
+			edit.function.parameters = serde_json::json!({"type":"object","required":["path","edits"],
+                "properties":{"path":{"type":"string"},"edits":{"type":"array","minItems":1,"maxItems":32,
+                "items":{"type":"object","required":["op"],"properties":{
+                "op":{"type":"string","enum":["create","update","delete"]},
+                "rename":{"type":"string"},"diff":{"type":"string"}}}}}});
+		},
+		mode => {
+			edit.function.description = match mode {
+				crate::edit::Mode::Hashline => include_str!("prompts/tools/edit-hashline.md"),
+				crate::edit::Mode::ApplyPatch => include_str!("prompts/tools/edit-apply-patch.md"),
+				crate::edit::Mode::Sloppy => include_str!("prompts/tools/edit-sloppy.md"),
+				_ => unreachable!(),
+			}
+			.trim()
+			.into();
+			edit.function.parameters = serde_json::json!({"type":"object","required":["input"],
+                "properties":{"input":{"type":"string"}}});
+		},
+	}
+	specs
+}
+
 pub(crate) fn browser_spec() -> ToolSpec {
 	spec(
 		"browser",

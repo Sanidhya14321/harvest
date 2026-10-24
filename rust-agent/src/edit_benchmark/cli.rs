@@ -188,6 +188,11 @@ enum Command {
 }
 #[derive(Debug, clap::Args)]
 struct RunArguments {
+	#[arg(long, value_enum)]
+	edit_mode:                 Option<crate::edit::Mode>,
+	/// Oracle-assisted hashline patches; recorded separately from unguided runs.
+	#[arg(long)]
+	guided:                    bool,
 	/// Bound each model/session submit inside the original run deadline.
 	#[arg(long)]
 	attempt_timeout_seconds:   Option<u64>,
@@ -265,6 +270,10 @@ fn run(arguments: RunArguments) -> Result<u8> {
 		&crate::configuration::LoadOptions {
 			user_directory: crate::config::agent_dir_from(None, |key| std::env::var_os(key)),
 			profile: arguments.profile,
+			edit_mode: crate::edit::Mode::select(
+				arguments.edit_mode,
+				std::env::var("OMP_EDIT_MODE").ok().as_deref(),
+			)?,
 			environment_profile: std::env::var("OMP_PROFILE").ok(),
 			overlays: arguments.overlays,
 			..Default::default()
@@ -286,6 +295,8 @@ fn run(arguments: RunArguments) -> Result<u8> {
 		&arguments.fixtures,
 		&arguments.output,
 		&super::RunConfiguration {
+			edit_mode: resolved.edit_mode,
+			guided: arguments.guided,
 			attempt_timeout: arguments
 				.attempt_timeout_seconds
 				.map(std::time::Duration::from_secs),

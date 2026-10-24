@@ -236,38 +236,63 @@ fn handle_record(
 				report.unchanged_edits += 1;
 				return Ok(());
 			}
-			let Some(diff) = details["diff"].as_str().filter(|s| !s.is_empty()) else {
-				report.missing_diffs += 1;
-				return Ok(());
+			// A multi-file call is one per-call sample, with separate per-file
+			// activity groups. Never merge hunks across file boundaries.
+			let files: Vec<&Value> = if let Some(files) = details["files"].as_array() {
+				ensure!(files.len() <= 32, "edit-shape file result limit exceeded");
+				files.iter().collect()
+			} else {
+				vec![details]
 			};
-			if details["op"]
-				.as_str()
-				.is_some_and(|s| s != "update" && !s.is_empty())
-			{
-				return Ok(());
-			}
-			let Some((format, runs)) = change_runs(diff) else {
-				report.skipped_diffs += 1;
-				return Ok(());
-			};
-			report.per_call.accumulate(&runs)?;
-			report.parsed_diffs += 1;
-			*report.formats.entry(format).or_default() += 1;
 			let id = message["toolCallId"].as_str();
-			let key = id
-				.and_then(|id| paths.get(id).cloned())
-				.map(|path| format!("file:{path}"))
-				.unwrap_or_else(|| {
-					id.map_or_else(|| format!("call:{}", report.parsed_diffs), |id| format!("call:{id}"))
+			let mut call_runs = Vec::new();
+			for (index, file) in files.iter().enumerate() {
+				if file["noop"] == true {
+					continue;
+				}
+				if file["op"]
+					.as_str()
+					.is_some_and(|s| s != "update" && !s.is_empty())
+				{
+					continue;
+				}
+				let Some(diff) = file["diff"].as_str().filter(|s| !s.is_empty()) else {
+					report.missing_diffs += 1;
+					continue;
+				};
+				let Some((format, runs)) = change_runs(diff) else {
+					report.skipped_diffs += 1;
+					continue;
+				};
+				report.parsed_diffs += 1;
+				*report.formats.entry(format).or_default() += 1;
+				let path = file["path"]
+					.as_str()
+					.map(str::to_owned)
+					.or_else(|| id.and_then(|id| paths.get(id).cloned()));
+				if let Some(path) = &path {
+					ensure!(path.len() <= 4096, "edit-shape path exceeds byte limit");
+				}
+				let key = path.map(|path| format!("file:{path}")).unwrap_or_else(|| {
+					id.map_or_else(
+						|| format!("call:{}:file:{index}", report.parsed_diffs),
+						|id| format!("call:{id}:file:{index}"),
+					)
 				});
-			ensure!(
-				report.pending_runs + runs.len() <= MAX_SAMPLES,
-				"request run count exceeds limit"
-			);
-			report.pending_runs += runs.len();
-			let group = groups.entry(key).or_default();
-			ensure!(group.len() + runs.len() <= MAX_SAMPLES, "request/file run limit exceeded");
-			group.extend(runs);
+				ensure!(
+					report.pending_runs + runs.len() <= MAX_SAMPLES,
+					"request run count exceeds limit"
+				);
+				report.pending_runs += runs.len();
+				let group = groups.entry(key).or_default();
+				ensure!(group.len() + runs.len() <= MAX_SAMPLES, "request/file run limit exceeded");
+				group.extend_from_slice(&runs);
+				ensure!(call_runs.len() + runs.len() <= MAX_SAMPLES, "call run limit exceeded");
+				call_runs.extend(runs);
+			}
+			if !call_runs.is_empty() {
+				report.per_call.accumulate(&call_runs)?;
+			}
 		},
 		_ => {},
 	}

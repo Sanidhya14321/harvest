@@ -10,8 +10,8 @@ Read AGENTS.md, PLAYBOOK.md, SCOPE.md, CONVERSION-PASS.md and authoritative sour
 capability manifests. Coordinator application:conversion-first; reviewed leaf
 ownership is in the common card. One writer; inspect actual run/process state.
 Existing hourly continuation does not prove execution and must not overlap runs.
-Work in connected conversion batches; aggregate compiler/format/ownership checks
-at checkpoints, broad behavioral/installed/platform stabilization later. Preserve
+Work in whole connected conversion domains; compiler repair and broad behavioral/
+installed/platform stabilization are deferred to their recorded consolidated passes. Preserve
 unverified/partial states. Commit/push this branch without routine approval or a
 continue prompt; no main merge/publication/default-launcher cutover.
 
@@ -24,6 +24,36 @@ common register. Continue that unfinished domain across runs; do not stop after
 another small primitive or ask for continue. Uncompiled/unverified checkpoints
 are allowed and must record checks not run. No stubs, unsafe bypasses or premature
 source/default-launcher removal. Preserve all final acceptance requirements.
+
+## Latest native editing domain conversion (base ea95e01)
+
+Whole native read → snapshot/seen rows → mode schema/config → approved shared
+engine/writer → sync/async/RPC/SDK/resume → benchmark guidance/evidence graph is
+written and connected. Current code is **uncompiled/unexecuted** by user-directed
+conversion scheduling. Rustfmt syntax/formatting and control-record/diff hygiene
+only; no new receipts, parity, installed evidence or verified removal advances.
+Zero TS files deleted: live production app/SDK/addon/metaharness still need them.
+
+Read the common current checklist and updated HASHLINE-HOST-BRIDGE.md first.
+Session EditStore is bounded/volatile/workspace-bound; changes of mode clear it,
+direct writes invalidate it, reopened logs require fresh reads. Shared strict
+policy is opt-in and preserves addon defaults. It rejects unknown/empty provenance,
+stale tags, unseen resolved blocks and removed rows from boundary repair; move/
+delete require whole-source reads. All five native modes use existing engines.
+Final approval includes original call identity and full args plus host mode.
+
+Native CLI run/RPC/config and benchmark select mode; Rust SDK exposes the same
+ToolRuntime/AgentSession/SessionEngineOptions. Benchmark guidance is explicitly
+oracle-assisted rust-hashline-guidance-v1, regenerated per attempt and recorded
+with skipped reasons; it grants no read authority. Single-file metadata shape is
+retained; multi-file activity aggregates once per call and separately per file.
+
+Next resume continues remaining editing-domain consumers: rich read selectors/
+block-context surfaces and streaming preview/native rendering, LSP/ACP/cache/
+auto-repair contracts and live legacy callers. Core native mode/read/state/guidance
+code already exists. Do not create another engine/store/registry or stop after a
+helper. Formal leaf remains planned/reviewed until prerequisite verification;
+active coordinator owns conversion. Preserve user scheduling and final gates.
 
 ## Current written connections
 

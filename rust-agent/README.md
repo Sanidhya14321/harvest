@@ -265,3 +265,45 @@ same resolver. Standalone `HttpModel::new(Settings)` keeps literal credentials.
 See [provider value contracts](../docs/rust-migration/NATIVE-PROVIDER-VALUES.md)
 for cache/size/cancellation limits and pending OAuth/registry/retry work. This
 conversion code has not yet passed consolidated behavioral/installed checks.
+
+Native editing now has one volatile, bounded `pi_edit::EditStore` per live tool
+session. Select `--edit-mode replace|patch|apply_patch|hashline|sloppy` on native
+`run` or `rpc`, `OMP_EDIT_MODE`, or `edit_mode` in native configuration/profiles.
+Flag/environment selection overrides the selected profile. Exact replacement is
+the default. Model tool schemas describe the selected engine; models cannot switch
+it through arguments. The host approval receives the original call identity and
+`{"mode": ..., "arguments": ...}` containing the complete final model request.
+
+Hashline reads return `[path#TAG]` and complete numbered lines. `offset` and `limit`
+are positive one-based line windows. Output is bounded; truncated rows grant no
+line authority. Use further reads before editing unseen rows. BOM/CRLF and
+notebook cell views use the shared edit decoder. DOCX extraction is read-only.
+Native strict provenance rejects absent/empty state, stale tags, unseen resolved
+block spans and repairs that remove unseen lines. Whole-file moves/deletes require
+all current source lines to have been read. Historical addon defaults are retained.
+
+Rust hosts use `ToolRuntime::configure_edit`, `AgentSession::configure_edit`, or
+`SessionEngineOptions::edit_mode`. This state survives turns/follow-ups within that
+owner; mode changes clear it. Reopening/resuming a durable log creates fresh state:
+replayed tags and metadata grant no read authority. Host config selects the mode
+again on resume. Direct `write` invalidates snapshots. Existing stateless free tool
+functions remain exact-replacement conveniences; use `ToolRuntime` for a read/edit
+workflow. Structured native partial-write progress is persisted by sync/async/RPC
+owners, while writes remain sequential rather than an all-file transaction.
+
+`harvest edit-benchmark run --edit-mode hashline --guided ...` enables explicitly
+oracle-assisted `rust-hashline-guidance-v1`. Each attempt regenerates a bounded
+patch from current workspace bytes, validates it with the shared parser/applicator,
+and records arguments or a skip reason in `guidance-NNNN.json`. Guidance grants no
+read authority; the model must still call `read`. Run plans record mode, policy and
+version. Unguided and historical results remain separate. Conversion code and new
+contracts are uncompiled/unexecuted pending the consolidated integration pass;
+this does not certify full legacy tool parity or change default launchers.
+
+Retained state bounds: snapshot versions/paths/text use EditStore's existing
+limits. No-op path counters now obey the same maximum path count (deterministic
+key eviction; a zero-path store retains none). Native writer preflight admits at
+most 256 named clipboard registers, 256 bytes per register name and 16Mi UTF-16
+units across retained names/rows, before any publication. Anonymous clipboard
+state remains batch-local. Consolidate retention/eviction/clipboard bounds with
+the workflow checks; these conversion changes are uncompiled/unexecuted.

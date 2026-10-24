@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current native edit-writer continuation base: `2538615`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current native editing domain continuation base: `ea95e01`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -19,18 +19,22 @@ application:conversion-first; existing source/writer leaf ownership is retained.
 The prior native source and multi-file writer code is already written; continue
 its missing consumers as one batch:
 
-- [ ] Retain bounded edit state for the session lifetime, with correct root/alias
-  ownership and invalidation; reuse EditStore and existing native writer.
-- [ ] Connect bounded read windows, normalized snapshots, tags and exactly shown
-  seen-line provenance; never authorize undisplayed content or document projections.
-- [ ] Connect explicit native edit mode selection to schemas and runtime dispatch,
-  retaining ordinary exact replacement and host final-argument approval.
-- [ ] Connect the same state/mode through sync/async/RPC/SDK entrypoints and persisted
-  session/resume boundaries; record what is volatile versus durable.
-- [ ] Connect benchmark mode/guidance through the same native read/edit contract;
-  do not emit hashline guidance for an incompatible host.
-- [ ] Move actual applicable callers, remove eligible legacy sources and orphaned
-  dependencies, record exact remaining TS callers, then checkpoint the domain.
+- [x] Write/connect bounded per-session EditStore, canonical workspace binding,
+  mode-change reset and direct-write invalidation using existing owners.
+- [x] Write/connect native read windows, FileRead normalized/notebook snapshots,
+  hashline headers and exactly emitted complete-row provenance. DOCX grants none.
+- [x] Write/connect all five explicit mode schemas/config/runtime dispatch and
+  final-mode/full-original-argument approval; default exact replacement retained.
+- [x] Write/connect sync/async/RPC/SDK/benchmark callers. State is volatile; resumed
+  logs grant no snapshot authority and need fresh reads. No default app cutover.
+- [x] Write/connect opt-in versioned guidance, regenerated per attempt from current
+  bytes and validated by shared parser/applicator, with explicit skipped reasons.
+- [x] Move applicable native callers and multi-file shape evidence consumers;
+  inspect remaining TS dependencies. **Zero eligible TS deletions** in this batch.
+- [ ] Finish retained rich read surfaces and streaming preview/native rendering,
+  LSP/ACP bridge/cache/auto-repair and remaining approval/data edge contracts; run
+  consolidated integration/behavior/addon/installed/platform checks. Keep shared
+  TS edit/read/SDK/metaharness consumers until their replacement actually moves.
 
 These boxes are a conversion checklist, not verified capability states. Resolve
 technical contracts from source before writing; review HASHLINE-HOST-BRIDGE.md
@@ -60,6 +64,7 @@ through this table and the machine task before editing a shared interface.
 |---|---|---|---|---|
 | Metaharness narrative trace report | trace_report modules; shared provider/configuration/HTTP/session/display/cancel owners | native CLI/SDK, package trace:report and README; HTTP/offline/selected session inputs | shared stored/OAuth credential prerequisite; legacy-auth consumer; consolidation/platform/removal gates | Whole pipeline written/connected; partial and unverified |
 | Cleanup discovery | cleanup_scan modules; pi-ast cleanup facts | Rust scan/CLI; both cleanup prompts; package alias | source-bound removal and consolidated/platform gates | Whole feature implemented/cut over; verification pending |
+| Native editing workflow | existing edit/read/tools/session/configuration owners and shared pi-edit strict policy | native sync/async run, RPC/Rust SDK, mode schemas and benchmark mode/guidance; multi-file shape metadata | retained rich read surfaces, preview/UI/LSP/ACP/cache/repair and consolidated integration/installed/platform evidence; live TS app/SDK/metaharness | Domain core written/connected; current code uncompiled/unexecuted |
 | Native edit publication | shared Session preflight; existing edit.rs and edit/writer.rs | all native exact-replace consumers; explicit Rust SDK multi-file modes with seen-line enforcement | normal read provenance/mode/guidance, legacy bridge/cache/repair, consolidated partial/collision/installed/platform checks | Written/connected; partial/unverified |
 | Jailed edit-session source/staging | existing pi-edit Session/FileSource/PathPolicy and native edit.rs | default addon constructor retained; all native exact-replace callers now share fresh session staging and one jailed read/write capability | behavioral/addon/installed checks; separate multi-target write/read-provenance/hashline connections | Written/connected; unverified |
 | Tool schemas/registration | `rust-agent/src/chat.rs`, `tools.rs` | OpenAI/Anthropic model requests; sync/async session tool runtime | schema/collision regressions and dynamic registry integration tests | Written/connected; unverified |
@@ -1359,3 +1364,30 @@ contract scenarios are written/compiled, not executed; native/source shared
 behavior/addon/installed/platform gates remain in consolidation. Aggregate
 pi-edit/application compiler, formatting and ownership only. Receipts/logs under
 target/migration/conversion-edit-writer-*; no tracked edits after frozen receipts.
+
+## Native editing domain conversion from ea95e01
+
+Coordinator application:conversion-first; HASHLINE-HOST-BRIDGE.md now contains
+reviewed native mode/read/session/guidance contracts. The formal leaf remains
+planned because prerequisite behavioral/installed evidence is incomplete. Do not
+fake prerequisite completion or weaken the dependency validator; code conversion
+is owned by the existing active coordinator. This batch includes the domain's
+connected native core, not another detached helper. No compiler/tests/Clippy/addon/
+installed/platform checks were run. Rustfmt only formats/parses syntax; ownership
+and diff hygiene do not establish behavior. No new verification receipt or counter.
+
+Shared strict policy is an explicit opt-in so the addon keeps its historical
+permissive default. Native mode rejects missing/empty provenance and stale tags,
+checks resolved block spans and final removed source lines, and does not record
+error excerpts as new read authority. Whole-file moves/removals require every
+source line read. Partial writer errors retain committed path/op records in tool
+metadata, carried by existing durable sync/async/RPC owners. Writer preflight now
+reserves host metadata envelope space before any write. No all-file rollback claim.
+
+Resume same domain: review retained read selectors/block-context output and native
+streaming preview/render/LSP/ACP/cache/repair consumers in HASHLINE-HOST-BRIDGE.md;
+resolve their real shared contracts before implementation. The fresh native read/
+mode/session/guidance core is already written: do not reimplement it or restart a
+per-helper compiler/test/receipt schedule. Integration later runs aggregate shared
+engine/native/addon checks, then the listed workflow tests and installed/platform
+checks. Current inherited source-removal/platform/provider blockers remain.

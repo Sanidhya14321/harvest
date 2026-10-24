@@ -44,6 +44,7 @@ static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 /// default.
 #[derive(Debug, Clone)]
 pub struct SessionEngineOptions {
+	pub edit_mode:          crate::edit::Mode,
 	pub lsp:                Vec<crate::language_services::LspConfiguration>,
 	pub dap:                Vec<crate::language_services::DapConfiguration>,
 	pub mcp:                Vec<crate::mcp::Configuration>,
@@ -60,6 +61,7 @@ pub struct SessionEngineOptions {
 impl Default for SessionEngineOptions {
 	fn default() -> Self {
 		Self {
+			edit_mode:          Default::default(),
 			browser:            None,
 			plugins:            Vec::new(),
 			mcp:                Vec::new(),
@@ -315,6 +317,7 @@ impl SessionEngine {
 			let root = root.canonicalize()?;
 			let log = DurableSession::open(&root, &path, leaf.as_deref())?;
 			let mut tools = tools::ToolRuntime::default();
+			tools.configure_edit(options.edit_mode);
 			tools.configure_plugins(&root, &options.plugins, &CancelToken::default())?;
 			tools.configure_mcp(&root, &options.mcp, &CancelToken::default())?;
 			tools.configure_language_services(&root, options.lsp.clone(), options.dap.clone())?;

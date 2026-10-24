@@ -97,6 +97,20 @@ impl NativeWriter {
 		let mut bytes = 0usize;
 		for file in staged {
 			self.cancellation.heartbeat()?;
+			if let Some(clipboard) = &file.clipboard_after {
+				if let Some(named) = &clipboard.named {
+					ensure!(named.len() <= 256, "native clipboard register count exceeds limit");
+					let mut units = 0usize;
+					for (name, lines) in named {
+						ensure!(name.len() <= 256, "native clipboard register name exceeds limit");
+						units = units.saturating_add(name.encode_utf16().count());
+						for line in lines {
+							units = units.saturating_add(line.encode_utf16().count() + 1);
+						}
+						ensure!(units <= 16 * 1024 * 1024, "native retained clipboard exceeds limit");
+					}
+				}
+			}
 			let source = self.fs.resource_path(&file.absolute)?;
 			// Retain the resolved target for reads, locks and mutation. Never
 			// validate one path then reopen its unvalidated authored alias.
@@ -135,7 +149,9 @@ impl NativeWriter {
 				content: file.persisted.clone(),
 			});
 		}
-		let mut output = harvest_runtime::BoundedWriter::new(crate::tools::MAX_TOOL_DETAILS_BYTES);
+		// Reserve host envelope space before any publication, not after writes.
+		let mut output =
+			harvest_runtime::BoundedWriter::new(crate::tools::MAX_TOOL_DETAILS_BYTES - 4096);
 		serde_json::to_writer(&mut output, &details)?;
 		let mut locks = Vec::new();
 		for path in paths {

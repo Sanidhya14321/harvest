@@ -17,7 +17,7 @@ async fn patcher_apply_cases() {
 
 #[test]
 fn matcher_paths_accept_partial_sections_and_header_noise() {
-	let engine = HashlineEngine { enforce_seen_lines: false };
+	let engine = HashlineEngine { enforce_seen_lines: false, require_read_provenance: false };
 	let inspected = engine.inspect(&ArgSnapshot {
 		input: Some(
 			"[one.ts#ABCD]\nPUT 1.=1:\n+one\n[*** Update File: dir with spaces/two.ts#1234]\nPUT \
