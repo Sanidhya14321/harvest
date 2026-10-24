@@ -27,24 +27,33 @@ enum Command {
 	/// Inspect candidate source data and exclusions without mutation/model
 	/// access.
 	Corpus {
+		#[arg(long, value_enum)]
+		difficulty: Option<super::Difficulty>,
 		#[arg(long)]
-		source: PathBuf,
+		source:     PathBuf,
 		#[arg(long, value_enum, default_value_t = super::SourcePolicy::ReviewedTree)]
-		policy: super::SourcePolicy,
+		policy:     super::SourcePolicy,
 	},
 	Generate {
+		/// Read-only JSON array of native source-hash-bound region exclusions.
+		#[arg(long)]
+		exclude_regions: Option<PathBuf>,
+		#[arg(long, value_enum)]
+		difficulty:      Option<super::Difficulty>,
+		#[arg(long, requires = "difficulty")]
+		min_score:       Option<u32>,
 		#[arg(long, value_enum, default_value_t = super::SourcePolicy::ReviewedTree)]
-		source_policy: super::SourcePolicy,
+		source_policy:   super::SourcePolicy,
 		#[arg(long)]
-		source:        PathBuf,
+		source:          PathBuf,
 		#[arg(long)]
-		output:        PathBuf,
+		output:          PathBuf,
 		#[arg(long)]
-		task_id:       String,
+		task_id:         String,
 		#[arg(long)]
-		mutation:      String,
+		mutation:        String,
 		#[arg(long, default_value_t = 42)]
-		seed:          u64,
+		seed:            u64,
 	},
 	/// Calibrate edit shapes from existing session logs, without running models.
 	EditShapes {
@@ -268,23 +277,44 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 			writeln!(io::stdout().lock())?;
 			return Ok(0);
 		},
-		Command::Corpus { source, policy } => {
-			let report = super::inspect_corpus(&source, policy, &cancellation)?;
+		Command::Corpus { source, policy, difficulty } => {
+			let report = match difficulty {
+				Some(level) => {
+					super::inspect_corpus_with_difficulty(&source, policy, level, &cancellation)?
+				},
+				None => super::inspect_corpus(&source, policy, &cancellation)?,
+			};
 			serde_json::to_writer(io::stdout().lock(), &report)?;
 			writeln!(io::stdout().lock())?;
 			return Ok(if report.eligible > 0 { 0 } else { 1 });
 		},
-		Command::Generate { source, output, task_id, mutation, seed, source_policy } => {
+		Command::Generate {
+			source,
+			output,
+			task_id,
+			mutation,
+			seed,
+			source_policy,
+			difficulty,
+			min_score,
+			exclude_regions,
+		} => {
 			let kind = super::MutationKind::from_name(&mutation).ok_or_else(|| {
 				anyhow::anyhow!("unsupported native mutation; use edit-benchmark mutations")
 			})?;
-			let report = super::generate_task_with_policy(
+			let excluded_regions = exclude_regions
+				.map(|path| -> Result<Vec<super::MutationRegion>> {
+					Ok(serde_json::from_slice(&read_document(&path, 1024 * 1024)?)?)
+				})
+				.transpose()?
+				.unwrap_or_default();
+			let report = super::generate_task_with_options(
 				&source,
 				&output,
 				&task_id,
 				kind,
 				seed,
-				source_policy,
+				&super::GenerationOptions { source_policy, difficulty, min_score, excluded_regions },
 				&cancellation,
 			)?;
 			serde_json::to_writer(io::stdout().lock(), &report)?;
@@ -362,17 +392,7 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 		},
 		Command::Compare { expected, actual } => super::compare(&expected, &actual, &cancellation)?,
 		Command::Apply { expected, actual, manifest } => {
-			let filesystem = harvest_runtime::JailedFs::open(
-				manifest
-					.parent()
-					.filter(|path| !path.as_os_str().is_empty())
-					.unwrap_or(std::path::Path::new(".")),
-			)?;
-			let filename = manifest
-				.file_name()
-				.ok_or_else(|| anyhow::anyhow!("benchmark manifest has no filename"))?;
-			let bytes =
-				filesystem.read(std::path::Path::new(filename), harvest_runtime::MAX_FILE_BYTES)?;
+			let bytes = read_document(&manifest, harvest_runtime::MAX_FILE_BYTES)?;
 			let manifest: Manifest = serde_json::from_slice(&bytes)?;
 			ensure!(
 				manifest.scoring_version == super::SCORING_VERSION,
@@ -384,4 +404,17 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 	serde_json::to_writer(io::stdout().lock(), &report)?;
 	writeln!(io::stdout().lock())?;
 	Ok(if report.success { 0 } else { 1 })
+}
+
+fn read_document(path: &std::path::Path, limit: usize) -> Result<Vec<u8>> {
+	let filesystem = harvest_runtime::JailedFs::open(
+		path
+			.parent()
+			.filter(|p| !p.as_os_str().is_empty())
+			.unwrap_or(std::path::Path::new(".")),
+	)?;
+	let name = path
+		.file_name()
+		.ok_or_else(|| anyhow::anyhow!("benchmark document has no filename"))?;
+	filesystem.read(std::path::Path::new(name), limit)
 }

@@ -20,15 +20,18 @@ pub enum SourcePolicy {
 }
 #[derive(Debug, Serialize)]
 pub struct CorpusEntry {
-	pub path:     PathBuf,
-	pub sha256:   String,
-	pub bytes:    usize,
-	pub lines:    Option<usize>,
-	pub eligible: bool,
-	pub reason:   Option<&'static str>,
+	pub difficulty_metrics: Option<super::DifficultyMetrics>,
+	pub preferred:          Option<bool>,
+	pub path:               PathBuf,
+	pub sha256:             String,
+	pub bytes:              usize,
+	pub lines:              Option<usize>,
+	pub eligible:           bool,
+	pub reason:             Option<&'static str>,
 }
 #[derive(Debug, Serialize)]
 pub struct CorpusReport {
+	pub difficulty:     Option<super::Difficulty>,
 	pub policy:         SourcePolicy,
 	pub policy_version: &'static str,
 	pub files:          Vec<CorpusEntry>,
@@ -136,6 +139,15 @@ impl SourcePolicy {
 		filesystem: &JailedFs,
 		cancellation: &CancelToken,
 	) -> Result<CorpusReport> {
+		self.inspect_difficulty(filesystem, None, cancellation)
+	}
+
+	pub(super) fn inspect_difficulty(
+		self,
+		filesystem: &JailedFs,
+		difficulty: Option<super::Difficulty>,
+		cancellation: &CancelToken,
+	) -> Result<CorpusReport> {
 		let paths = self.paths(filesystem, cancellation)?;
 		let mut files = Vec::with_capacity(paths.len());
 		let mut total_bytes = 0_usize;
@@ -150,7 +162,17 @@ impl SourcePolicy {
 				.ok()
 				.map(|code| code.split('\n').count());
 			let reason = self.rejection(&path, &bytes);
+			let metrics = if reason.is_none() && difficulty.is_some() {
+				Some(super::difficulty_metrics(std::str::from_utf8(&bytes)?, cancellation)?)
+			} else {
+				None
+			};
+			let preferred = difficulty
+				.zip(metrics.as_ref())
+				.map(|(level, metrics)| level.prefers(metrics));
 			files.push(CorpusEntry {
+				difficulty_metrics: metrics,
+				preferred,
 				sha256: content_hash(&bytes),
 				bytes: bytes.len(),
 				path,
@@ -161,6 +183,7 @@ impl SourcePolicy {
 		}
 		let eligible = files.iter().filter(|file| file.eligible).count();
 		Ok(CorpusReport {
+			difficulty,
 			policy: self,
 			policy_version: POLICY_VERSION,
 			files,
@@ -177,4 +200,15 @@ pub fn inspect_corpus(
 	cancellation: &CancelToken,
 ) -> Result<CorpusReport> {
 	policy.inspect(&JailedFs::open(source)?, cancellation)
+}
+
+/// Add lexical file preferences; coarse eligibility still does not prove a
+/// particular syntax mutation or point-score threshold can be satisfied.
+pub fn inspect_corpus_with_difficulty(
+	source: &Path,
+	policy: SourcePolicy,
+	difficulty: super::Difficulty,
+	cancellation: &CancelToken,
+) -> Result<CorpusReport> {
+	policy.inspect_difficulty(&JailedFs::open(source)?, Some(difficulty), cancellation)
 }

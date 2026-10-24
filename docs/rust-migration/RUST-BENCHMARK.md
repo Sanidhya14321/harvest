@@ -437,3 +437,41 @@ No repository is cloned and no fixture source executed by these commands.
 Difficulty/range/repetition scoring, dedup/calibration/multi-case quotas, repository
 acquisition and specialized guidance remain pending, as do all runtime/installed
 checks and actual legacy producer/metaharness consumer moves. No TS deletion.
+
+## Difficulty preferences and source-bound regions (written, unverified)
+
+`corpus --source DIR --policy legacy-packages --difficulty hard` adds bounded
+lexical metrics and preferred-file flags. `generate --difficulty hard` uses these
+preferences and actual native AST candidates; optional --min-score overrides the
+level's 0/2/5/8 minimum (easy/medium/hard/nightmare). Without --difficulty, no
+metrics/score filter runs and the existing native seed draws stay unchanged.
+Corpus coarse eligibility/exit status does not certify preference or a mutation.
+
+rust-difficulty-v1 ports repeated lines, regex blocks/function ranges, density,
+indentation, middle-of-file/trivial context and similar names, with JS whitespace
+and UTF-16 length semantics. They remain lexical heuristics: raw braces/comments
+and first duplicate function name can affect ranges. They do not replace pi-ast
+binding or parsing. Limits: 256 KiB/4000 lines, 4096 unique identifiers/function,
+one million name comparisons/file; cached and cancellable, explicit failure on
+budget overflow. Native reservoirs prefer passing candidates in matching files,
+falling back to other passing files only if none preferred pass. Counts, selected
+score and fallback are recorded. This is independently versioned native sampling;
+legacy random attempts/distributions and historical benchmark scores are distinct.
+
+`generate --exclude-regions FILE.json` reads a JSON array of previous native
+regions: path, original_sha256, start_line, end_line. SDK GenerationOptions exposes
+the same exclusions. Output regions cover every edit in the chosen candidate,
+including composites, with source SHA-256. Matching source/path spans plus three
+lines are excluded before sampling; changed hashes never suppress new source.
+Insertion and end-exclusive byte ranges map to LF-based original line spans.
+Policy rust-regions-v1, counts and regions enter metadata/report. Input <=1 MiB,
+4096 records; bounded relative UTF-8 paths/hashes/line ranges. The input is read
+only and never used to open named files. It is not a mutable/resumable history
+store, whole-content deduplication or multi-case quota scheduler.
+
+Ordinary Rust APIs include difficulty_metrics, inspect_corpus_with_difficulty,
+GenerationOptions and generate_task_with_options; prior APIs retain defaults.
+Full calibration/shape quotas/multi-case orchestration, specialized guidance,
+full syntax eligibility and legacy producer/metaharness cutover remain pending.
+All runtime/installed/platform behavior and old-consumer regression evidence
+remain deferred. No TS source is deleted by this continuation.

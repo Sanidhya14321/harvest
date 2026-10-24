@@ -31,6 +31,25 @@ impl Random {
 		}
 	}
 }
+#[derive(Debug, Default, Clone)]
+pub struct GenerationOptions {
+	pub source_policy:    super::SourcePolicy,
+	pub difficulty:       Option<super::Difficulty>,
+	/// Override the requested difficulty's default minimum; requires difficulty.
+	pub min_score:        Option<u32>,
+	pub excluded_regions: Vec<super::MutationRegion>,
+}
+#[derive(Debug, Serialize)]
+pub struct DifficultySelection {
+	pub version:              &'static str,
+	pub requested:            super::Difficulty,
+	pub minimum:              u32,
+	pub score:                u32,
+	pub preferred_candidates: usize,
+	pub fallback_candidates:  usize,
+	pub used_fallback:        bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct RejectedSource {
 	pub target: PathBuf,
@@ -38,6 +57,10 @@ pub struct RejectedSource {
 }
 #[derive(Debug, Serialize)]
 pub struct GenerationReport {
+	pub region_policy_version: &'static str,
+	pub regions:               Vec<super::MutationRegion>,
+	pub excluded_candidates:   usize,
+	pub difficulty:            Option<DifficultySelection>,
 	pub source_policy:         super::SourcePolicy,
 	pub corpus_policy_version: &'static str,
 	pub corpus_files:          usize,
@@ -83,6 +106,37 @@ pub fn generate_task_with_policy(
 	policy: super::SourcePolicy,
 	cancellation: &CancelToken,
 ) -> Result<GenerationReport> {
+	generate_task_with_options(
+		source,
+		output,
+		task_id,
+		kind,
+		seed,
+		&GenerationOptions { source_policy: policy, ..Default::default() },
+		cancellation,
+	)
+}
+/// Native preference/fallback sampling remains independently versioned; no
+/// historical random-attempt, formatted-score or case-distribution parity.
+pub fn generate_task_with_options(
+	source: &Path,
+	output: &Path,
+	task_id: &str,
+	kind: MutationKind,
+	seed: u64,
+	options: &GenerationOptions,
+	cancellation: &CancelToken,
+) -> Result<GenerationReport> {
+	ensure!(
+		options.difficulty.is_some() || options.min_score.is_none(),
+		"minimum score requires explicit difficulty"
+	);
+	let exclusions = super::regions::Exclusions::new(&options.excluded_regions, cancellation)?;
+	let mut excluded_candidates = 0;
+	let policy = options.source_policy;
+	let minimum = options
+		.difficulty
+		.map(|level| options.min_score.unwrap_or_else(|| level.minimum()));
 	cancellation.heartbeat()?;
 	let source = JailedFs::open(source)?;
 	let proposed = super::prepare::prospective_output(output)?;
@@ -100,7 +154,10 @@ pub fn generate_task_with_policy(
 	let input = JailedFs::open_or_create(&temporary.path().join("input"))?;
 	let expected = JailedFs::open_or_create(&temporary.path().join("expected"))?;
 	let mut random = Random(seed);
-	let mut selected: Option<(PathBuf, SupportLang, Candidate)> = None;
+	let mut selected: Option<(PathBuf, SupportLang, Candidate, Option<u32>)> = None;
+	let mut fallback = None;
+	let mut preferred_count = 0_usize;
+	let mut fallback_count = 0_usize;
 	let mut seen = 0_usize;
 	let mut rejected = 0;
 	let mut rejected_examples = Vec::new();
@@ -143,6 +200,15 @@ pub fn generate_task_with_policy(
 			reject(&path, "source exceeds 256 KiB");
 			continue;
 		}
+		let excluded = exclusions.for_source(&path, &bytes);
+		let line_index = (!excluded.is_empty()).then(|| super::regions::LineIndex::new(code));
+		let mut analysis = options
+			.difficulty
+			.map(|_| super::difficulty::FileAnalysis::new(code, cancellation))
+			.transpose()?;
+		let preferred = options.difficulty.is_none_or(|level| {
+			level.prefers(&analysis.as_ref().expect("requested analysis").metrics)
+		});
 		let candidates =
 			match mutations::candidates(code, lang, kind, &mut || cancellation.heartbeat()) {
 				Ok(candidates) => candidates,
@@ -155,23 +221,56 @@ pub fn generate_task_with_policy(
 		for candidate in candidates {
 			seen += 1;
 			ensure!(seen <= 100_000, "mutation selection exceeds candidate budget");
-			if random.below(seen as u64) == 0 {
-				selected = Some((path.to_owned(), lang, candidate));
+			if let Some(index) = &line_index
+				&& index.intersects(&candidate, &excluded, cancellation)?
+			{
+				excluded_candidates += 1;
+				continue;
+			}
+			let score = analysis
+				.as_mut()
+				.map(|analysis| analysis.score(candidate.line_number, cancellation))
+				.transpose()?;
+			if minimum.is_some_and(|minimum| score.is_some_and(|score| score < minimum)) {
+				continue;
+			}
+			if preferred {
+				preferred_count += 1;
+				if random.below(preferred_count as u64) == 0 {
+					selected = Some((path.clone(), lang, candidate, score));
+				}
+			} else {
+				fallback_count += 1;
+				if random.below(fallback_count as u64) == 0 {
+					fallback = Some((path.clone(), lang, candidate, score));
+				}
 			}
 		}
 	}
-	let (path, lang, candidate) = selected.ok_or_else(|| {
+	let used_fallback = selected.is_none() && fallback.is_some();
+	let (path, lang, candidate, score) = selected.or(fallback).ok_or_else(|| {
 		let detail = rejected_examples
 			.first()
 			.map(|r| r.reason.as_str())
-			.unwrap_or("no matching syntax");
+			.unwrap_or("no syntax candidate passes the requested selection policy");
 		anyhow::anyhow!(
 			"no eligible {} candidate: {detail} ({rejected} rejected sources)",
 			kind.name()
 		)
 	})?;
+	let difficulty = options.difficulty.map(|requested| DifficultySelection {
+		version: super::DIFFICULTY_VERSION,
+		requested,
+		minimum: minimum.expect("difficulty minimum"),
+		score: score.expect("selected score"),
+		preferred_candidates: preferred_count,
+		fallback_candidates: fallback_count,
+		used_fallback,
+	});
 	let original = expected.read(&path, 256 * 1024)?;
 	let code = std::str::from_utf8(&original)?;
+	let regions =
+		super::regions::LineIndex::new(code).selected(&path, code, &candidate, cancellation)?;
 	let mutated = mutations::apply(code, lang, &candidate, &mut || cancellation.heartbeat())
 		.with_context(|| {
 			format!("selected {} mutation rejected in {}", kind.name(), path.display())
@@ -180,7 +279,7 @@ pub fn generate_task_with_policy(
 	let provenance = serde_json::json!({"producer":PRODUCER_VERSION,"seed":seed,"mutation":kind,
         "target":path,"selected":candidate,"original_sha256":content_hash(&original),
         "mutated_sha256":content_hash(mutated.as_bytes()),"candidates":seen,"rejected_sources":rejected,
-        "source_policy":policy,"corpus_policy_version":super::corpus::POLICY_VERSION,"corpus_files":corpus_files,"corpus_scanned":corpus_scanned});
+        "difficulty":difficulty,"region_policy_version":super::REGION_VERSION,"regions":regions,"excluded_candidates":excluded_candidates,"source_policy":policy,"corpus_policy_version":super::corpus::POLICY_VERSION,"corpus_files":corpus_files,"corpus_scanned":corpus_scanned});
 	let fixture = super::prepare::prepare_task_with_provenance(
 		input.root(),
 		expected.root(),
@@ -190,6 +289,10 @@ pub fn generate_task_with_policy(
 		cancellation,
 	)?;
 	Ok(GenerationReport {
+		region_policy_version: super::REGION_VERSION,
+		regions,
+		excluded_candidates,
+		difficulty,
 		source_policy: policy,
 		corpus_policy_version: super::corpus::POLICY_VERSION,
 		corpus_files,

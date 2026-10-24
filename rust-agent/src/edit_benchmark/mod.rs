@@ -6,9 +6,20 @@ pub use archive::{ArchiveReport, FixtureSource, PackedArchive, pack_fixtures, un
 mod evidence;
 pub use evidence::{ToolEvidence, tool_evidence};
 mod corpus;
-pub use corpus::{CorpusEntry, CorpusReport, SourcePolicy, inspect_corpus};
+pub use corpus::{
+	CorpusEntry, CorpusReport, SourcePolicy, inspect_corpus, inspect_corpus_with_difficulty,
+};
+mod difficulty;
+pub use difficulty::{
+	DIFFICULTY_VERSION, Difficulty, DifficultyMetrics, FunctionRange, difficulty_metrics,
+};
+mod regions;
+pub use regions::{MutationRegion, REGION_VERSION};
 mod generate;
-pub use generate::{GenerationReport, RejectedSource, generate_task, generate_task_with_policy};
+pub use generate::{
+	DifficultySelection, GenerationOptions, GenerationReport, RejectedSource, generate_task,
+	generate_task_with_options, generate_task_with_policy,
+};
 pub use pi_ast::mutations::MutationKind;
 pub mod hunks;
 mod prepare;

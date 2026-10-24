@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current corpus-selection continuation base: `2d80e17`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current difficulty/region continuation base: `518458c`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -1005,3 +1005,75 @@ installed native commands later. Conversion checks: cargo fmt -p harvest-omp --
 --check; cargo check --locked -p harvest-omp --all-targets --all-features; existing
 xtask playbook check. Receipt prefix target/migration/conversion-corpus-selection-.
 No behavioral/installed/source-removal or retained parity evidence yet.
+
+## Native difficulty and region selection continuation
+
+Owner/task `application:conversion-first`; base `518458c`; source generate.ts and
+capability surface:benchmarks remain partial, unverified and retained. Inputs:
+legacy repeated-line, block/density/indent/function-range analysis,
+scoreDifficulty/getCandidatesForDifficulty, regionAvailable/recordRegion and
+current corpus/AST generator. Prerequisites: existing native source policy,
+seeded AST candidates, shared prepare/hunk/archive/run owners. Destinations:
+edit_benchmark/{difficulty,regions}.rs and existing corpus/generate/CLI. No second
+parser, scorer, filesystem owner, random engine or mutable history store.
+
+Connections: corpus --difficulty and inspect_corpus_with_difficulty expose lexical
+metrics/file preference; generate --difficulty/--min-score and
+GenerationOptions/generate_task_with_options filter actual shared AST candidates;
+existing generator -> expected snapshots/mutations/hunks/publication -> archive/
+validation/run stays the sole production path. Old generate_task/with_policy
+callers default to no difficulty/history and preserve their seed draw sequence;
+that compatibility still requires runtime evidence. Corpus eligibility is still
+coarse source eligibility, not named mutation/minimum-score success.
+
+Written difficulty policy rust-difficulty-v1: easy prefers <150 lines and <3
+repeated-line groups; medium 100..300 lines; hard >200 and >=3 regex block matches;
+nightmare >200 with a repeated-line group. Default minimums 0/2/5/8, optionally
+overridden only with an explicit level. Scores retain lexical file-size/middle/
+repetition/block/density/indent/trivial-context/similar-name contributions.
+Whitespace and lengths use ECMAScript whitespace and UTF-16 units; regex names/
+boundaries remain ASCII. Function ranges intentionally retain the legacy raw
+brace-count and first-same-named-range heuristics, not semantic binding claims.
+Shared pi-ast still owns syntax and mutations. Metrics <=256 KiB/4000 lines;
+identifier sets <=4096 and similarity comparisons <=1,000,000 per file, cached by
+function/line and cancellable. Budget failures are explicit, not fake low scores.
+
+Native sampling exhaustively considers bounded AST candidates, counts candidates
+passing the minimum, and keeps separate preferred/fallback reservoirs through the
+existing seeded PRNG. Use fallback only when no preferred candidate passes; report
+that choice and counts. This differs from legacy random attempt limits, fallback
+scheduling and difficulty distributions; no historical seed/result equivalence.
+No policy silently lowers the requested minimum or mutates source data.
+
+Written region policy rust-regions-v1: output all selected edit spans as
+path/original_sha256/start_line/end_line (deduplicated), and accept an explicit
+read-only JSON array via --exclude-regions or SDK excluded_regions. All edits,
+including distant composite/binding edits, participate. Matching relative path
+and exact source hash are required; changed-source history does not exclude the
+new content. Exclude intersections with prior spans plus three lines, including
+insertions. Index/merge intervals per source before candidate sampling. History
+<=4096 records, normalized relative path components, <=4096 UTF-8 bytes/path and
+1 MiB combined paths, lowercase SHA-256 and positive bounded line spans; CLI input
+<=1 MiB. A source-hash/path pair never opens a path from history. No automatic
+history mutation, cross-process persistence, resumable batch owner or complete
+content deduplication is implied. Producer metadata/report carry policy versions,
+selected score, fallback/counts, excluded candidate count and selected regions.
+Existing bounded CLI document reads now serve scoring and region inputs together.
+
+Implementation/deletions: Rust connections written, zero TS removal. Legacy
+package generate.ts, its specialized prompts/formatting/mutation helpers and
+metaharness remain active. Next: multi-case/shape quota/calibration orchestration,
+content deduplication, full retained producer prompts and hashline host bridge,
+then actual consumer moves. Recovery: revert this coherent batch to 518458c.
+Stabilization: scripted/installed corpus/generate/validate/pack/run cases for
+metrics and source boundaries, JS whitespace/astral units, first duplicate-named
+function behavior, preferred/no-preferred/minimum rejection, old seed paths,
+complete multi-edit exclusion/insertion/EOF/newline/changed-hash boundaries,
+malformed/oversized history, unsafe paths, cancellation/work bounds, unchanged
+source bytes, deterministic metadata, immutable original scores and all existing
+source-policy consumers. Run cargo xtask test -p harvest-omp and copied installed
+CLI later. Conversion checks: cargo fmt -p harvest-omp -- --check;
+cargo check --locked -p harvest-omp --all-targets --all-features; existing xtask
+playbook check. Receipts/logs: target/migration/conversion-difficulty-*.
+Compiler/format/ownership only: no verified parity, installed or source-removal
+count advances. Keep this task in progress and the legacy ledger rows retained.
