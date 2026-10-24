@@ -65635,19 +65635,19 @@
     },
     {
       "path": "packages/metaharness/scripts/trace-report.ts",
-      "disposition": "review-required",
-      "implementation": "absent",
+      "disposition": "replace",
+      "implementation": "partial",
       "behavioral_verification": "unverified",
       "installed_verification": "unverified",
       "legacy_removal": "retained",
-      "contract": null,
-      "consumers": null,
-      "persisted_formats": null,
-      "external_dependencies": null,
-      "rust_destination": null,
-      "verification_requirements": null,
+      "contract": "Whole native narrative trace pipeline: ordered turn/result/notice grouping, bounded parallel map, grounded prompt assets, Story Arc/failure analysis, redacted four-attempt recovery and separate token accounting. Legacy stored/OAuth credential discovery/refresh remains a named prerequisite; no native parity or removal claim.",
+      "consumers": "Native CLI/SDK and primary metaharness README plus package trace:report now reach Rust. Explicit trace:report:legacy-auth and retained standalone script still serve legacy stored/OAuth users; no native implicit JS runtime fallback. Shared TS metaharness server remains an optional normalized HTTP producer, while offline JSON and selected persisted session branch work through native owners.",
+      "persisted_formats": "Read-only normalized trace/run JSON and shared native/compatible session JSONL selected branches; original records unchanged. Markdown and rust-trace-report-v1 JSON report/usage/diagnostics; existing legacy cost output remains historical, unknown native pricing/usage explicitly unavailable. Jailed atomic report publication with shared resource ownership.",
+      "external_dependencies": "Existing native provider/configuration/live-value/HTTP/cancellation/session/display/jailed I/O owners and static Handlebars prompts; no new dependency. Legacy AuthStorage/SqliteAuthCredentialStore/catalog remain needed only for retained compatibility path.",
+      "rust_destination": "rust-agent/src/trace_report/{mod,render,cli}.rs; src/prompts/trace-report/*.md; shared provider output-limit option and harvest-runtime cancellation wait; package CLI/README connections",
+      "verification_requirements": "Aggregate compiler/format/playbook checks at conversion checkpoint; six focused scripted Rust contracts are written but execution deferred. tasks/METAHARNESS-TRACE-REPORT.md names consolidated provider/benchmark/runtime, local HTTP, credential, copied installed path/lock/atomic/cancellation and promised platform checks. application:legacy-provider-credentials gates final consumer move/deletion; no verified evidence yet.",
       "retirement_reason": null,
-      "task_id": "migrate:browser"
+      "task_id": "application:metaharness-trace-report"
     },
     {
       "path": "packages/metaharness/src/adapters/snapcompact.py",

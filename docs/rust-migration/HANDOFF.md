@@ -8,8 +8,8 @@ and the earlier context-refresh archive.
 ## Rules and ownership
 
 Read AGENTS.md, PLAYBOOK.md, SCOPE.md, CONVERSION-PASS.md and authoritative source
-and capability manifests. Active sole owner/task: application:conversion-first,
-in progress. Convert connected subsystems first; compiler/format/ownership checks
+and capability manifests. Active conversion coordinator: application:conversion-first; reviewed active
+leaf ownership is recorded in CONVERSION-PASS.md. One writer, no overlapping run. Convert connected subsystems first; compiler/format/ownership checks
 at coherent checkpoints. Consolidated behavioral/installed/platform stabilization
 comes later. Keep code-written and verified states separate. Commit/push on this
 branch without routine approval or another continue request. No main merge or
@@ -17,6 +17,23 @@ publication. An hourly continuation is configured; inspect actual writers/run
 state, never create overlapping runs or infer work from scheduling alone.
 
 ## Current checkpoint
+
+Metaharness narrative trace continuation base dd34b68: reviewed leaf
+application:metaharness-trace-report writes/connects the whole native map/reduce
+report pipeline, normalized HTTP/offline and selected persisted-session branch
+inputs, deterministic tool/error log, bounded concurrent model calls/retries,
+usage/diagnostics and atomic jailed output. Native CLI/SDK, package trace:report
+and primary README move together. Reuse shared providers/config/live credentials,
+HTTP/cancellation/session projection; static prompt assets use existing builds.
+Six scripted contracts are written, execution deferred to consolidation. Compiler/
+format/playbook evidence only; no installed/parity or source-removal advance.
+
+The last trace-report.ts/explicit legacy-auth alias remains for stored/OAuth users.
+application:legacy-provider-credentials is a bounded planned/review-pending
+prerequisite, not permission to invent a leaf-specific auth store. Read both new
+cards for exact contracts/next actions. Zero TS deletions in this continuation;
+cleanup-discovery deletion from the prior checkpoint remains preserved. Ignored
+receipt/log prefix conversion-trace-*.
 
 Difficulty/region continuation base 518458c: corpus CLI/SDK inspection and existing
 native AST generator now share bounded lexical difficulty metrics, level/minimum

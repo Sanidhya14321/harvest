@@ -25,6 +25,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(about = "Summarize a metaharness trace through native model profiles")]
+	TraceReport(crate::trace_report::cli::Arguments),
 	#[command(
 		about = "Discover cleanup candidates using native source analysis; never deletes files"
 	)]
@@ -427,6 +429,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
 			crate::replay_cli::execute(&args.workspace, &args.file, &args.leaf, args.columns)?;
 			Ok(0)
 		},
+		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
 		Commands::Session(args) => inspect_session(args),

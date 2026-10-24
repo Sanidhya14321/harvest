@@ -78,6 +78,7 @@ pub trait Model {
 pub struct HttpModel {
 	settings:       Settings,
 	request_usage:  bool,
+	output_limit:   Option<u32>,
 	message_tokens: Option<u32>,
 	values:         Option<Arc<LiveValues>>,
 }
@@ -119,7 +120,13 @@ impl std::error::Error for ProviderRequestError {}
 
 impl HttpModel {
 	pub const fn new(settings: Settings) -> Self {
-		Self { settings, request_usage: false, message_tokens: None, values: None }
+		Self {
+			settings,
+			request_usage: false,
+			output_limit: None,
+			message_tokens: None,
+			values: None,
+		}
 	}
 
 	/// Shared native CLI/SDK builder: retain configured value sources, explicit
@@ -176,6 +183,20 @@ impl HttpModel {
 			}
 		}
 		Ok(())
+	}
+
+	/// Explicit bounded text-completion output; existing callers keep their
+	/// policy.
+	pub fn with_output_limit(mut self, tokens: u32) -> Result<Self> {
+		if !(1..=65536).contains(&tokens) {
+			bail!("invalid model output limit");
+		}
+		if self.message_tokens.is_some() {
+			self.message_tokens = Some(tokens);
+		} else {
+			self.output_limit = Some(tokens);
+		}
+		Ok(self)
 	}
 
 	fn headers(
@@ -253,6 +274,8 @@ impl HttpModel {
 
 #[derive(Debug, Serialize)]
 struct CompletionRequest<'a> {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	max_tokens:     Option<u32>,
 	model:          &'a str,
 	messages:       &'a [ChatMessage],
 	tools:          &'a [ToolSpec],
@@ -310,6 +333,7 @@ impl Model for HttpModel {
 			);
 		}
 		let request = CompletionRequest {
+			max_tokens: self.output_limit,
 			model: &self.settings.model,
 			messages,
 			tools,
@@ -357,6 +381,7 @@ impl Model for HttpModel {
 		cancellation.heartbeat()?;
 		let response = self.request(
 			CompletionRequest {
+				max_tokens: self.output_limit,
 				model: &self.settings.model,
 				messages,
 				tools,

@@ -4059,7 +4059,8 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/edit_benchmark"
+          "rust-agent/src/edit_benchmark",
+          "rust-agent/src/trace_report"
         ]
       },
       "verification": {
@@ -5546,6 +5547,20 @@
           "harvest-omp",
           "--test",
           "cleanup_scan"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
+      },
+      {
+        "id": "trace-report-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "trace_report"
         ],
         "timeout_seconds": 900,
         "kind": "contracts"
@@ -7223,6 +7238,53 @@
           "Five focused Rust contracts plus doctests pass; copied Linux candidate JSON/text/invalid-top/unsafe-package checks pass without language runtimes in PATH. Legacy/default row sets match across all six reports with stable-order/numeric normalization; detailed receipts and intentional native diagnostics in the card.",
           "Implementation complete is distinct from verification: source-removal validator, consolidated shared consumers/Clippy and all-platform installed artifact evidence remain pending. Task is in progress; no verified capability or removal count claimed."
         ]
+      },
+      {
+        "id": "application:metaharness-trace-report",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "control:playbook",
+          "review:application",
+          "review:browser",
+          "review:catalog-providers"
+        ],
+        "card": "docs/rust-migration/tasks/METAHARNESS-TRACE-REPORT.md",
+        "capabilities": [
+          "surface:benchmarks"
+        ],
+        "checks": [
+          "rust-format",
+          "trace-report-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Whole native narrative report pipeline and HTTP/offline/selected persisted-session branch inputs are written and connected to CLI/SDK/package/README. Compiler/ownership only; six scripted contract scenarios are written for consolidation, not executed.",
+          "Stored/OAuth credential compatibility remains explicit in the old standalone TS reporter and legacy-auth alias; its deletion depends on application:legacy-provider-credentials. No source removal, verified parity or installed evidence claimed."
+        ]
+      },
+      {
+        "id": "application:legacy-provider-credentials",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook",
+          "review:catalog-providers"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-PROVIDER-CREDENTIALS.md",
+        "capabilities": [
+          "surface:oauth-credentials"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": []
       }
     ]
   }

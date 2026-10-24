@@ -56,3 +56,5 @@ pub use harvest_media::docx;
 
 pub mod cleanup_scan;
 mod source_text;
+
+pub mod trace_report;

@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current cleanup-discovery continuation base: `8b30730`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current metaharness trace-report continuation base: `dd34b68`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -23,6 +23,7 @@ through this table and the machine task before editing a shared interface.
 
 | Feature | Sole Rust destination | Consumers connected | Remaining work | State |
 |---|---|---|---|---|
+| Metaharness narrative trace report | trace_report modules; shared provider/configuration/HTTP/session/display/cancel owners | native CLI/SDK, package trace:report and README; HTTP/offline/selected session inputs | shared stored/OAuth credential prerequisite; legacy-auth consumer; consolidation/platform/removal gates | Whole pipeline written/connected; partial and unverified |
 | Cleanup discovery | cleanup_scan modules; pi-ast cleanup facts | Rust scan/CLI; both cleanup prompts; package alias | source-bound removal and consolidated/platform gates | Whole feature implemented/cut over; verification pending |
 | Tool schemas/registration | `rust-agent/src/chat.rs`, `tools.rs` | OpenAI/Anthropic model requests; sync/async session tool runtime | schema/collision regressions and dynamic registry integration tests | Written/connected; unverified |
 | Native plugin v1 host | `rust-agent/src/plugins/{protocol,host}.rs` | `ToolRuntime`, `AgentSession`, `SessionEngineOptions`, run/RPC `--plugin` | cancellation/exit/queue/approval tests; graceful draining and descendant cleanup | Written/connected; unverified |
@@ -1179,3 +1180,31 @@ advance from the deletion alone. Original baseline and inherited missing evidenc
 remain intact. Receipt prefix conversion-cleanup-scan-* and cleanup-oracle/ under
 ignored target/migration. Continue other connected ready features after this
 checkpoint; do not rewrite or abandon this completed code/consumer move.
+
+## Metaharness narrative trace feature continuation
+
+Base dd34b68; sole leaf owner application:metaharness-trace-report. Read its card
+for full inputs/destinations/connections/limits/recovery/stabilization queue. The
+whole pipeline is written together: native normalized trace/metadata fetch,
+offline data, shared persisted-session branch projection, result grouping across
+notices, bounded ordered map workers, static map/reduce prompts, four-attempt
+cancellable requests, Story Arc/failure analysis and separate map/reduce usage.
+CLI/SDK/package trace:report/primary README use existing provider/config/session/
+HTTP/jail owners. Shared provider output limits are opt-in; ordinary callers
+retain absent limits. Benchmark and report retries share runtime cancel::wait.
+No new parser, provider/credential store, process owner or runtime is introduced.
+
+Six scripted contracts are written for consolidation; this conversion checkpoint
+uses compiler/format/ownership checks, not their execution or installed evidence.
+Metadata/trace identity, bounded input/output, tool-call rejection, native branch
+private-data omission, output locking/atomic publication and known native versus
+legacy differences are documented. Model prose is untrusted analysis, not tests.
+
+Legacy trace-report.ts and explicit trace:report:legacy-auth alias remain for
+stored/OAuth consumers. Bounded prerequisite application:legacy-provider-credentials
+is planned/review pending; its card identifies exact shared sources and review
+needed before ready. Do not implement per-leaf auth or delete that last consumer.
+Actual TS deletions zero here. Capability/source states stay partial/unverified/
+retained; compiling a new native report does not certify all metaharness behavior.
+Receipt/log prefix target/migration/conversion-trace-*. Continue other connected
+ready consumers while credential review and consolidation remain pending.

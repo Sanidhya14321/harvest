@@ -215,3 +215,15 @@ mod deadline_tests {
 		assert!(parent.heartbeat().is_err());
 	}
 }
+
+/// Cooperatively wait without extending the caller's deadline.
+pub fn wait(duration: std::time::Duration, cancellation: &CancelToken) -> anyhow::Result<()> {
+	let deadline = std::time::Instant::now() + duration;
+	loop {
+		cancellation.heartbeat()?;
+		let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+			return Ok(());
+		};
+		std::thread::sleep(remaining.min(std::time::Duration::from_millis(20)));
+	}
+}
