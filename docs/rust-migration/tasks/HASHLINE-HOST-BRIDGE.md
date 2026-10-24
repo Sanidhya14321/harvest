@@ -58,3 +58,10 @@ making this task ready. Existing Session does not itself provide all-file rollba
 the earlier reference to a transactional host was a requirement to review, not an
 implemented property. Keep native replace and legacy hashline consumers working;
 no seen-line bypass, ambient FileCache shortcut or invented multi-file guarantee.
+
+Source boundary continuation base fd657c6: application:edit-file-source is now
+reviewed/in progress, with injectable source and native replace staging written.
+Behavioral/addon/installed evidence remains pending. application:edit-write-contract
+separately owns multi-target publication/failure review. Hashline still stays
+planned/review pending; neither prerequisite establishes seen-line/mode/guidance
+connections or a multi-file transaction. Read the updated cards before proceeding.

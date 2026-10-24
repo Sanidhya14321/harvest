@@ -29,7 +29,7 @@ const INTERNAL_PREFIXES: [&str; 9] = [
 ];
 
 /// Session-wide path policy supplied by the host once per tool call.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathPolicy {
 	pub cwd:                  PathBuf,
 	pub home_dir:             PathBuf,

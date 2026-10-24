@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current calibration/quota continuation base: `c99df19`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current edit-source continuation base: `fd657c6`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -25,6 +25,7 @@ through this table and the machine task before editing a shared interface.
 |---|---|---|---|---|
 | Metaharness narrative trace report | trace_report modules; shared provider/configuration/HTTP/session/display/cancel owners | native CLI/SDK, package trace:report and README; HTTP/offline/selected session inputs | shared stored/OAuth credential prerequisite; legacy-auth consumer; consolidation/platform/removal gates | Whole pipeline written/connected; partial and unverified |
 | Cleanup discovery | cleanup_scan modules; pi-ast cleanup facts | Rust scan/CLI; both cleanup prompts; package alias | source-bound removal and consolidated/platform gates | Whole feature implemented/cut over; verification pending |
+| Jailed edit-session source/staging | existing pi-edit Session/FileSource/PathPolicy and native edit.rs | default addon constructor retained; all native exact-replace callers now share fresh session staging and one jailed read/write capability | behavioral/addon/installed checks; separate multi-target write/read-provenance/hashline connections | Written/connected; unverified |
 | Tool schemas/registration | `rust-agent/src/chat.rs`, `tools.rs` | OpenAI/Anthropic model requests; sync/async session tool runtime | schema/collision regressions and dynamic registry integration tests | Written/connected; unverified |
 | Native plugin v1 host | `rust-agent/src/plugins/{protocol,host}.rs` | `ToolRuntime`, `AgentSession`, `SessionEngineOptions`, run/RPC `--plugin` | cancellation/exit/queue/approval tests; graceful draining and descendant cleanup | Written/connected; unverified |
 | Rust plugin SDK | `rust-agent/src/plugins/sdk.rs`, `examples/native-plugin.rs` | protocol authoring, host callbacks, cancellation, typed UI events | copied external consumer; version/malformed/process-exit tests; installed platforms | Written/connected; unverified |
@@ -1265,3 +1266,31 @@ cannot use the native jailed FileSource; Session::apply writes sequentially and
 does not itself supply all-file rollback. Read the new card before connecting
 hashline. Do not substitute ambient reads, waive seen-line provenance or claim a
 multi-file transaction from per-file atomic replacement.
+
+## Jailed edit-session source and native staging continuation
+
+Owner application:edit-file-source; base fd657c6; reviewed/in progress. Read the
+updated card for input/consumer review, exact API, checks, recovery and remaining
+work. Shared Session retains a host FileSource (Send+Sync), validates policy
+identity, and reuses one final stage for public host staging and existing apply.
+Default Session::new/FileCache remains for existing native addon callers. Native
+exact replacement now connects to that common session stage using its existing
+jailed/cancellable source and the same pinned filesystem capability for its writer.
+It retains actual staged metadata/noop, encoding/notebook rules, size bounds and
+host final-argument approval. No other edit modes are exposed by this change.
+
+Four host-source scenarios plus compile-time threading requirements are written;
+aggregate pi-edit/application all-target/all-feature compiler and format/ownership
+checks only. Consolidation runs cargo xtask test -p pi-edit --test host_source,
+-p harvest-omp --test native_edit, all shared modes/session and affected addon
+contracts plus copied installed native session/metadata/jail/encoding/cancellation
+and platform checks. Compilation is not behavioral/addon/source parity.
+Receipt/log prefix target/migration/conversion-edit-source-*; no TS deletion or
+verified count advance. Legacy edit/index.ts remains parent-owned partial/retained.
+
+Multi-target publication review is bounded separately as application:edit-write-contract
+(planned/review pending), before hashline-host-bridge along with source evidence.
+Session::apply is sequential, not all-file rollback. Public stage does not commit
+persisted store/clipboard. Review actual retained failure semantics and host
+approval/locking/rename/delete/freshness before picking that writer contract.
+Keep native exact replacement and all still-required TS consumers working.

@@ -4,20 +4,20 @@ use std::{path::Path, sync::Arc};
 use anyhow::{Context, Result, bail};
 use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken};
 use pi_edit::{
-	ArgSnapshot, EditError, EditResult, EditStore, ModeEngine, PathPolicy, Resolved,
+	EditError, EditMode, EditResult, EditStore, PathPolicy, Resolved, Session,
 	files::{FileRead, FileSource},
-	modes::replace::ReplaceEngine,
+	session::SessionConfig,
 };
 
 use crate::tools::EditArgs;
 
-struct WorkspaceFiles<'a> {
-	fs:           JailedFs,
+struct WorkspaceFiles {
+	fs:           Arc<JailedFs>,
 	policy:       PathPolicy,
-	cancellation: &'a CancelToken,
+	cancellation: CancelToken,
 }
 
-impl WorkspaceFiles<'_> {
+impl WorkspaceFiles {
 	fn load(&self, resolved: &Resolved) -> Result<Option<Arc<FileRead>>> {
 		self.cancellation.heartbeat()?;
 		let Some(bytes) = self.fs.read_optional(&resolved.absolute, MAX_FILE_BYTES)? else {
@@ -41,7 +41,7 @@ fn edit_error(error: anyhow::Error) -> EditError {
 	EditError::apply(format!("{error:#}"))
 }
 
-impl FileSource for WorkspaceFiles<'_> {
+impl FileSource for WorkspaceFiles {
 	fn policy(&self) -> &PathPolicy {
 		&self.policy
 	}
@@ -83,7 +83,7 @@ pub(crate) fn replace_detailed(
 	args: &EditArgs,
 	cancellation: &CancelToken,
 ) -> Result<crate::tools::ToolOutput> {
-	let fs = JailedFs::open(root)?;
+	let fs = Arc::new(JailedFs::open(root)?);
 	let policy = PathPolicy {
 		cwd:                  fs.root().to_owned(),
 		home_dir:             fs.root().to_owned(),
@@ -92,16 +92,32 @@ pub(crate) fn replace_detailed(
 		plan_active:          false,
 		block_auto_generated: true,
 	};
-	let mut files = WorkspaceFiles { fs, policy, cancellation };
-	let snapshot = ArgSnapshot {
-		path: Some(args.path.clone()),
-		old_string: Some(args.old.clone()),
-		new_string: Some(args.new.clone()),
-		complete: true,
-		..ArgSnapshot::default()
+	let files = WorkspaceFiles {
+		fs:           fs.clone(),
+		policy:       policy.clone(),
+		cancellation: cancellation.clone(),
 	};
-	let engine = ReplaceEngine { allow_fuzzy: false, fuzzy_threshold: 1.0 };
-	let staged = engine.stage(&snapshot, &mut files, &EditStore::default())?;
+	let mut session = Session::with_file_source(
+		SessionConfig {
+			mode: EditMode::Replace,
+			policy,
+			allow_fuzzy: false,
+			fuzzy_threshold: 1.0,
+			enforce_seen_lines: true,
+			raw_input: false,
+		},
+		EditStore::default(),
+		files,
+	)?;
+	session.set_args_json(&serde_json::to_string(
+		&serde_json::json!({"path":args.path,"old_string":args.old,"new_string":args.new}),
+	)?);
+	session.finish();
+	let staged = session.stage()?;
+	if staged.len() != 1 {
+		bail!("replace requires exactly one staged file");
+	}
+
 	let file = staged.first().context("edit produced no staged file")?;
 	// Reuse the engine's actual staged diff, not the requested old/new strings.
 	// Never publish truncated diffs as complete calibration data.
@@ -131,7 +147,7 @@ pub(crate) fn replace_detailed(
 		bail!("edit exceeds file limit");
 	}
 	cancellation.heartbeat()?;
-	files.fs.atomic_write(&file.absolute, content.as_bytes())?;
+	fs.atomic_write(&file.absolute, content.as_bytes())?;
 	Ok(crate::tools::ToolOutput {
 		is_error: false,
 		content:  format!("edited {}", file.display),

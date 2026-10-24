@@ -124,7 +124,7 @@ pub struct Session {
 	config:          SessionConfig,
 	engine:          Box<dyn ModeEngine>,
 	args:            ArgStream,
-	files:           FileCache,
+	files:           Box<dyn FileSource + Send + Sync>,
 	store:           EditStore,
 	generation:      u32,
 	/// Generation the last preview was computed for.
@@ -134,13 +134,34 @@ pub struct Session {
 
 impl Session {
 	pub fn new(config: SessionConfig, store: EditStore) -> Self {
+		let files = Box::new(FileCache::new(config.policy.clone()));
+		Self::with_source_unchecked(config, store, files)
+	}
+
+	/// Retain the host's file capability, cancellation and resolution policy.
+	/// Policy mismatch is rejected before reading or staging any target.
+	pub fn with_file_source(
+		config: SessionConfig,
+		store: EditStore,
+		files: impl FileSource + Send + Sync + 'static,
+	) -> EditResult<Self> {
+		if config.policy != *files.policy() {
+			return Err(EditError::apply("Edit session and file source policies differ"));
+		}
+		Ok(Self::with_source_unchecked(config, store, Box::new(files)))
+	}
+
+	fn with_source_unchecked(
+		config: SessionConfig,
+		store: EditStore,
+		files: Box<dyn FileSource + Send + Sync>,
+	) -> Self {
 		let engine = crate::modes::engine_for(
 			config.mode,
 			config.allow_fuzzy,
 			config.fuzzy_threshold,
 			config.enforce_seen_lines,
 		);
-		let files = FileCache::new(config.policy.clone());
 		Self {
 			args: ArgStream::new(config.raw_input),
 			config,
@@ -200,7 +221,7 @@ impl Session {
 		let snapshot = self.args.snapshot();
 		let mut files = self
 			.engine
-			.preview(&snapshot, streaming, &mut self.files, &self.store);
+			.preview(&snapshot, streaming, self.files.as_mut(), &self.store);
 		if streaming {
 			for file in &mut files {
 				if let Some(diff) = file.diff.take() {
@@ -214,24 +235,19 @@ impl Session {
 		PreviewBatch { generation, streaming, files }
 	}
 
-	/// Stage and apply the finished arguments through `writer`.
-	///
-	/// Order: reread every target fresh, stage all files in memory (any
-	/// failure aborts before the first write), enforce the plan-mode guard
-	/// for every file, then write in payload order. A writer failure aborts
-	/// the loop; files already written stay written and the error is
-	/// returned verbatim.
-	pub async fn apply(
-		&mut self,
-		request: ApplyRequest,
-		writer: &dyn EditWriter,
-	) -> EditResult<ApplyOutcome> {
+	/// Reread, stage and validate every final path without writing files.
+	/// A native host may own publication separately; this does not record
+	/// persisted snapshots/clipboard or imply an all-file write transaction.
+	/// Calling again starts a fresh source pass, never trusting preview bytes.
+	pub fn stage(&mut self) -> EditResult<Vec<StagedFile>> {
 		self.files.clear();
 		let snapshot = self.args.snapshot();
 		if !snapshot.complete {
 			return Err(EditError::parse("Edit arguments were incomplete"));
 		}
-		let staged = self.engine.stage(&snapshot, &mut self.files, &self.store)?;
+		let staged = self
+			.engine
+			.stage(&snapshot, self.files.as_mut(), &self.store)?;
 		// Jail re-check before the first write: staging read every existing
 		// source through the read jail, but missing, created, deleted, and
 		// renamed targets never passed it. A host writer without its own
@@ -254,6 +270,23 @@ impl Session {
 				file.move_to.as_ref().map(|m| m.display.as_str()),
 			)?;
 		}
+
+		Ok(staged)
+	}
+
+	/// Stage and apply the finished arguments through `writer`.
+	///
+	/// Order: reread every target fresh, stage all files in memory (any
+	/// failure aborts before the first write), enforce the plan-mode guard
+	/// for every file, then write in payload order. A writer failure aborts
+	/// the loop; files already written stay written and the error is
+	/// returned verbatim.
+	pub async fn apply(
+		&mut self,
+		request: ApplyRequest,
+		writer: &dyn EditWriter,
+	) -> EditResult<ApplyOutcome> {
+		let staged = self.stage()?;
 
 		let last_write = staged.iter().rposition(|file| file.op != FileOp::Noop);
 		let mut files = Vec::with_capacity(staged.len());

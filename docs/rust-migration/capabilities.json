@@ -5578,6 +5578,20 @@
         ],
         "timeout_seconds": 900,
         "kind": "contracts"
+      },
+      {
+        "id": "edit-host-source-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "pi-edit",
+          "--test",
+          "host_source"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
       }
     ],
     "release_gates": [
@@ -7216,7 +7230,8 @@
         "depends_on": [
           "control:playbook",
           "review:application",
-          "application:edit-file-source"
+          "application:edit-file-source",
+          "application:edit-write-contract"
         ],
         "card": "docs/rust-migration/tasks/HASHLINE-HOST-BRIDGE.md",
         "capabilities": [
@@ -7306,8 +7321,8 @@
       {
         "id": "application:edit-file-source",
         "kind": "migration",
-        "state": "planned",
-        "review": "pending",
+        "state": "in_progress",
+        "review": "reviewed",
         "work_unit": "primitives",
         "depends_on": [
           "control:playbook",
@@ -7318,6 +7333,33 @@
         "capabilities": [
           "tool:read",
           "tool:edit"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check",
+          "edit-host-source-contracts"
+        ],
+        "evidence": [
+          "Shared Session now owns an injected Send+Sync FileSource with exact policy equality, common fresh stage/apply and unchanged default constructor interface. Native exact replacement moves from direct engine staging through the shared session with the same jailed read/write capability.",
+          "Four focused host-source scenarios are written and compiled for consolidation; no tests, addon rebuild, installed/platform/source-removal or parity verification is claimed. Native multi-file publication review is separately owned by application:edit-write-contract."
+        ]
+      },
+      {
+        "id": "application:edit-write-contract",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application",
+          "review:primitives"
+        ],
+        "card": "docs/rust-migration/tasks/EDIT-WRITE-CONTRACT.md",
+        "capabilities": [
+          "tool:edit",
+          "surface:benchmarks"
         ],
         "checks": [
           "rust-format",
