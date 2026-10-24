@@ -24,17 +24,27 @@ enum Command {
 		json:   bool,
 	},
 	Mutations,
+	/// Inspect candidate source data and exclusions without mutation/model
+	/// access.
+	Corpus {
+		#[arg(long)]
+		source: PathBuf,
+		#[arg(long, value_enum, default_value_t = super::SourcePolicy::ReviewedTree)]
+		policy: super::SourcePolicy,
+	},
 	Generate {
+		#[arg(long, value_enum, default_value_t = super::SourcePolicy::ReviewedTree)]
+		source_policy: super::SourcePolicy,
 		#[arg(long)]
-		source:   PathBuf,
+		source:        PathBuf,
 		#[arg(long)]
-		output:   PathBuf,
+		output:        PathBuf,
 		#[arg(long)]
-		task_id:  String,
+		task_id:       String,
 		#[arg(long)]
-		mutation: String,
+		mutation:      String,
 		#[arg(long, default_value_t = 42)]
-		seed:     u64,
+		seed:          u64,
 	},
 	/// Calibrate edit shapes from existing session logs, without running models.
 	EditShapes {
@@ -258,11 +268,25 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 			writeln!(io::stdout().lock())?;
 			return Ok(0);
 		},
-		Command::Generate { source, output, task_id, mutation, seed } => {
+		Command::Corpus { source, policy } => {
+			let report = super::inspect_corpus(&source, policy, &cancellation)?;
+			serde_json::to_writer(io::stdout().lock(), &report)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(if report.eligible > 0 { 0 } else { 1 });
+		},
+		Command::Generate { source, output, task_id, mutation, seed, source_policy } => {
 			let kind = super::MutationKind::from_name(&mutation).ok_or_else(|| {
 				anyhow::anyhow!("unsupported native mutation; use edit-benchmark mutations")
 			})?;
-			let report = super::generate_task(&source, &output, &task_id, kind, seed, &cancellation)?;
+			let report = super::generate_task_with_policy(
+				&source,
+				&output,
+				&task_id,
+				kind,
+				seed,
+				source_policy,
+				&cancellation,
+			)?;
 			serde_json::to_writer(io::stdout().lock(), &report)?;
 			writeln!(io::stdout().lock())?;
 			return Ok(0);

@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current benchmark-timeout continuation base: `b5ccadf`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current corpus-selection continuation base: `2d80e17`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -39,7 +39,7 @@ through this table and the machine task before editing a shared interface.
 | Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native bounded/unchanged metadata cases | Written/connected; removal verification pending |
 | Native tool-result metadata | `rust-agent/src/{edit,tools,durable_session,agent_session,session_engine}.rs` | shared native SDK/sync/async/RPC committed records and benchmark analyzer | actual result/error/no-op/metadata bounds and persistence/replay regressions | Written/connected; unverified |
 | Fixture archives | `rust-agent/src/edit_benchmark/archive.rs` | SDK FixtureSource/pack_fixtures, CLI pack/unpack/list/validate/run and shared task loader | malformed/CRC/path/alias/budget/cancellation/platform and installed contracts | Written/connected; unverified |
-| Syntax-aware mutation generation | `crates/pi-ast/src/mutations.rs`; `rust-agent/src/edit_benchmark/generate.rs` | native generate/mutations CLI and SDK -> shared snapshots/hunks -> validate/run | full binding/grammar eligibility, corpus/difficulty/calibrated shapes, legacy generator cutover, behavioral/installed checks | Written/connected foundation; unverified |
+| Syntax-aware mutation generation/corpus | `crates/pi-ast/src/mutations.rs`; `rust-agent/src/edit_benchmark/generate.rs` | native generate/mutations CLI and SDK -> shared snapshots/hunks -> validate/run | full binding/grammar eligibility, corpus/difficulty/calibrated shapes, legacy generator cutover, behavioral/installed checks | Written/connected foundation; unverified |
 
 ## Inputs, connections and deletion rules
 
@@ -943,3 +943,65 @@ cargo check --locked -p harvest-omp -p harvest-runtime --all-targets --all-featu
 existing xtask playbook check. Ignored receipt/log prefix:
 target/migration/conversion-attempt-timeouts-. Compilation/ownership evidence
 only; retained capability/source removal and installation states stay unverified.
+
+## Native corpus inspection and source selection continuation
+
+Owner `application:conversion-first`; base `2d80e17`; retained capability
+surface:benchmarks; source generate.ts remains partial/retained. Inputs: legacy
+collectFiles/isExcluded/filterFiles/hasStructure, current native generator,
+shared bounded task traversal and pi-ast mutation selector. Prerequisites are the
+existing generator/hunk/task/archive owners. No new parser, filesystem walker,
+random generator, scorer or fixture publisher is introduced.
+
+Destinations: edit_benchmark/corpus.rs holds policy/report; existing tasks.rs
+traversal accepts an internal pruning predicate and cancellation token, with
+ordinary list_files callers retaining the all-files behavior. CLI corpus and
+inspect_corpus SDK use the shared source policy. generate --source-policy and
+new generate_task_with_policy SDK use the same policy before existing seeded AST
+selection -> unchanged snapshot mutation/hunks/prepare -> pack/validate/run.
+generate_task SDK keeps reviewed-tree as its default. Generation reads selected
+source paths once, retaining bytes in the existing temporary immutable expected
+snapshot; corpus inspection is a separate read-only invocation, not a duplicate
+scan on every generation.
+
+Policies written: reviewed-tree preserves the curated source-tree snapshot and
+copies unsupported files as context. Explicit legacy-packages starts at packages/
+and prunes __tests__, __mocks__, fixtures, fixture, dist, build, node_modules,
+scripts. Only .js/.jsx/.ts/.tsx survive path selection; filenames containing
+.test./.spec./.fixture. are excluded. Its copied corpus admits only nonempty UTF-8
+JS/TS/TSX <=256 KiB, 30..800 LF-split lines and one literal structure token
+function-space/class-space/export-space/=>. These are coarse lexical filters, not
+syntax/mutation-candidate validation. Other admitted files are omitted from this
+explicit policy's fixture snapshot. Missing packages/no viable candidate fails;
+no silent fallback to reviewed-tree or language runtime. Nothing clones or
+executes source data.
+
+Limits: existing depth 64, 10,000 visited entries/files, individual file bound and
+64 MiB admitted path-tree bytes; inspect checks total read bytes too. Corpus paths
+must be UTF-8, <=4096 bytes each and <=1 MiB combined. Cancellation is checked
+during shared traversal and reads. New generation also checks prospective output
+against the original source tree through the existing path resolver before
+creating output; snapshots/output must not overlap the original source.
+
+Corpus report contains sorted path/hash/bytes/LF line count/coarse eligibility and
+reason, rust-corpus-v1 and policy name. Rejected content is not emitted. Pruned
+paths are outside the inspected set. CLI corpus returns 1 if none are coarsely
+eligible; this does not prove a requested mutation can be generated. Producer
+metadata/report record source policy/version and scanned/retained file counts;
+rust-ast-v1 mutation selection and rust-v1 score meanings remain separate. Old
+Babel source discovery/difficulty/seed/formatter behavior is not certified.
+
+Remaining: difficulty/repeated-block/range scoring, dedup/calibration/case quotas,
+source repository acquisition, specialized prompts/guidance/full grammar and
+legacy package/metaharness consumers. Keep generate.ts and shared TS hunk/parser
+consumers. Deletions zero. Recovery: revert this continuation to 2d80e17.
+Consolidated acceptance: native corpus/generate/validate/pack/run SDK and installed
+CLI against curated and packages fixtures, line boundaries/structure/name rules,
+unsupported/binary/empty/large sources, pruning/symlink/path/entry/depth/byte caps,
+source/output overlap/aliases, cancellation and original-byte preservation,
+deterministic same-policy seeds, expected policy provenance and coarse filter
+versus actual AST candidate distinction. Use cargo xtask test -p harvest-omp and
+installed native commands later. Conversion checks: cargo fmt -p harvest-omp --
+--check; cargo check --locked -p harvest-omp --all-targets --all-features; existing
+xtask playbook check. Receipt prefix target/migration/conversion-corpus-selection-.
+No behavioral/installed/source-removal or retained parity evidence yet.

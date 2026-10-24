@@ -402,3 +402,38 @@ Started/Failed events do not imply remote provider activity. timeout-retry-NN.js
 preserves redacted recovery telemetry. Outcome/view timeout_retries is unavailable
 for older summaries. Usage remains unavailable after failed provider requests.
 Runtime/installed/platform and cancellation compatibility evidence remain pending.
+
+## Native corpus policies (written, unverified)
+
+```text
+harvest edit-benchmark corpus --source /path/to/local-data --policy legacy-packages
+harvest edit-benchmark generate --source /path/to/local-data --source-policy legacy-packages --output /path/to/new-fixture --task-id case-001 --mutation <NAME_FROM_MUTATIONS> --seed 42
+```
+
+Use `mutations` to list actual supported mutation names. `inspect_corpus` and
+`generate_task_with_policy` expose the same Rust policy. Existing generate_task
+and CLI generate default to reviewed-tree, preserving curated-tree snapshots.
+Native source policy is independently versioned rust-corpus-v1; hashes/counts/
+policy enter the report/provenance, never legacy results.
+
+legacy-packages inspects packages/ beneath the supplied local root; it prunes
+__tests__/__mocks__/fixtures/fixture/dist/build/node_modules/scripts. It admits
+.js/.jsx/.ts/.tsx names without .test./.spec./.fixture., then nonempty UTF-8 JS/TS
+sources <=256 KiB with 30..800 LF-split lines and a literal function/class/export
+space or => structure token. Generation snapshots only admitted source files in
+that mode, preserving packages-relative paths. reviewed-tree keeps all source
+files as context and existing native candidate rejection behavior. Missing root,
+no selected source/candidate, ambiguous hunks or unsupported syntax fails explicitly.
+
+The corpus report lists coarse per-file eligibility/reason, SHA-256, byte and
+line counts, not source content. Pruned paths are outside the report. No AST
+parse or named-mutation success is certified by eligibility. CLI returns 1 if
+none are coarsely eligible. Selection and inspection share bounded/cancellable
+jailed traversal (64 depth/10,000 entries/64 MiB); corpus path limits are 4096
+UTF-8 bytes each and 1 MiB combined. The generator reads sources once per snapshot,
+uses the existing engine, and rejects output overlapping the original data tree.
+No repository is cloned and no fixture source executed by these commands.
+
+Difficulty/range/repetition scoring, dedup/calibration/multi-case quotas, repository
+acquisition and specialized guidance remain pending, as do all runtime/installed
+checks and actual legacy producer/metaharness consumer moves. No TS deletion.

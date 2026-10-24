@@ -20,17 +20,30 @@ pub struct Task {
 
 /// Sorted, capability-relative traversal; symlinks are not benchmark inputs.
 pub fn list_files(filesystem: &JailedFs, directory: &Path) -> Result<Vec<PathBuf>> {
+	list_files_filtered(filesystem, directory, |_, _| true, &Default::default())
+}
+pub(super) fn list_files_filtered(
+	filesystem: &JailedFs,
+	directory: &Path,
+	include: impl Fn(&Path, bool) -> bool,
+	cancellation: &harvest_runtime::cancel::CancelToken,
+) -> Result<Vec<PathBuf>> {
 	let mut pending = vec![(directory.to_path_buf(), 0_u32)];
 	let mut files = Vec::new();
 	let mut total = 0_u64;
 	let mut visited = 0_usize;
 	while let Some((path, depth)) = pending.pop() {
+		cancellation.heartbeat()?;
 		ensure!(depth <= 64, "benchmark directory nesting exceeds limit");
 		for entry in filesystem.entries(&path, MAX_FILES)? {
+			cancellation.heartbeat()?;
 			visited += 1;
 			ensure!(visited <= MAX_FILES, "benchmark traversal entry count exceeds limit");
-			ensure!(!entry.is_symlink, "benchmark fixtures cannot contain symlinks");
 			let path = path.join(&entry.name);
+			if !include(&path, entry.is_directory) {
+				continue;
+			}
+			ensure!(!entry.is_symlink, "benchmark fixtures cannot contain symlinks");
 			if entry.is_directory {
 				pending.push((path, depth + 1));
 			} else if entry.is_file {

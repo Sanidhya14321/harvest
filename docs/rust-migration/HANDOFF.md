@@ -49,13 +49,21 @@ guards for all tool families. First-provider-event/broader provider recovery, gu
 views and metaharness consumer moves remain pending. See RUST-BENCHMARK.md and the
 reviewed common card; runner.ts is partial/retained, no TS deletion.
 
+Corpus continuation base `2d80e17`: corpus CLI/SDK and explicit source policy now
+connect native reviewed-tree/legacy-packages selection to the existing generator,
+with bounded shared pruning/cancellation and versioned hashes/counts/provenance.
+Legacy package filters are coarse; native AST eligibility and difficulty/calibration/
+dedup/case quotas/guidance/metaharness cutover remain separate pending contracts.
+Generator snapshots source paths once and rejects original-source/output overlap.
+
 Compiler, format and ownership checks only; behavioral/installed/platform evidence
 is deferred. No TS source is deleted and no verified capability/removal counter
 advances in these continuations. Generate counts from `cargo xtask playbook status
 --json`; partial Rust code and raw language bytes are not engineering completion.
 Ignored receipts/logs: target/migration/conversion-provider-values-*,
 conversion-plugin-events-*, conversion-process-byte-count-* and
-conversion-benchmark-retries-* and conversion-benchmark-provider-retries-* and conversion-attempt-timeouts-*. Prior source hashes/evidence remain historical.
+conversion-benchmark-retries-* and conversion-benchmark-provider-retries-* and conversion-attempt-timeouts-*
+and conversion-corpus-selection-*. Prior source hashes/evidence remain historical.
 
 ## Next dependency-ready work
 
@@ -69,7 +77,7 @@ conversion-benchmark-retries-* and conversion-benchmark-provider-retries-* and c
   Reuse current value resolver/invalidation and cancellable transport.
 - Benchmark: shared AST has partial paths for 23 mutation names, paired preparation,
   exact hunks, rust-v1 scoring, native archive export/import and orchestration.
-  Finish corpus/difficulty/dedup/calibration/prompts, first-provider-event/broader provider recovery and interactive native views
+  Finish difficulty/dedup/calibration/case quotas/prompts, first-provider-event/broader provider recovery and interactive native views
   and actual metaharness cutover. See RUST-BENCHMARK.md and the common card.
 - Guidance prerequisite: application:hashline-host-bridge is planned/review pending;
   native read provenance/session EditStore/mode/approval must connect before legacy

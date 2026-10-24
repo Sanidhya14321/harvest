@@ -38,14 +38,18 @@ pub struct RejectedSource {
 }
 #[derive(Debug, Serialize)]
 pub struct GenerationReport {
-	pub producer:          &'static str,
-	pub seed:              u64,
-	pub mutation:          MutationKind,
-	pub target:            PathBuf,
-	pub candidates:        usize,
-	pub rejected_sources:  usize,
-	pub rejected_examples: Vec<RejectedSource>,
-	pub fixture:           super::PreparedTask,
+	pub source_policy:         super::SourcePolicy,
+	pub corpus_policy_version: &'static str,
+	pub corpus_files:          usize,
+	pub corpus_scanned:        usize,
+	pub producer:              &'static str,
+	pub seed:                  u64,
+	pub mutation:              MutationKind,
+	pub target:                PathBuf,
+	pub candidates:            usize,
+	pub rejected_sources:      usize,
+	pub rejected_examples:     Vec<RejectedSource>,
+	pub fixture:               super::PreparedTask,
 }
 /// `source` is a reviewed source-data tree, not a repository discovery rule.
 /// Unsupported/large/non-UTF8 files are retained as inert copies. Only the
@@ -59,10 +63,37 @@ pub fn generate_task(
 	seed: u64,
 	cancellation: &CancelToken,
 ) -> Result<GenerationReport> {
+	generate_task_with_policy(
+		source,
+		output,
+		task_id,
+		kind,
+		seed,
+		super::SourcePolicy::ReviewedTree,
+		cancellation,
+	)
+}
+/// Explicit source-data selection shares the ordinary generator and scorer.
+pub fn generate_task_with_policy(
+	source: &Path,
+	output: &Path,
+	task_id: &str,
+	kind: MutationKind,
+	seed: u64,
+	policy: super::SourcePolicy,
+	cancellation: &CancelToken,
+) -> Result<GenerationReport> {
 	cancellation.heartbeat()?;
 	let source = JailedFs::open(source)?;
-	let paths = super::list_files(&source, Path::new(""))?;
-	ensure!(!paths.is_empty(), "mutation source tree is empty");
+	let proposed = super::prepare::prospective_output(output)?;
+	ensure!(
+		!proposed.starts_with(source.root()) && !source.root().starts_with(&proposed),
+		"generation output and original source trees must be disjoint"
+	);
+	let paths = policy.paths(&source, cancellation)?;
+	ensure!(!paths.is_empty(), "mutation source selection is empty");
+	let corpus_scanned = paths.len();
+	let mut corpus_files = 0;
 	let temporary = tempfile::Builder::new()
 		.prefix("harvest-mutation-")
 		.tempdir()?;
@@ -90,6 +121,12 @@ pub fn generate_task(
 			.checked_add(bytes.len())
 			.ok_or_else(|| anyhow::anyhow!("source size overflow"))?;
 		ensure!(total <= 64 * 1024 * 1024, "source snapshot exceeds 64 MiB");
+		if matches!(policy, super::SourcePolicy::LegacyPackages)
+			&& policy.rejection(&path, &bytes).is_some()
+		{
+			continue;
+		}
+		corpus_files += 1;
 		ensure!(!bytes.is_empty(), "mutation source tree contains an empty file");
 		input.atomic_create(&path, &bytes)?;
 		expected.atomic_create(&path, &bytes)?;
@@ -119,7 +156,7 @@ pub fn generate_task(
 			seen += 1;
 			ensure!(seen <= 100_000, "mutation selection exceeds candidate budget");
 			if random.below(seen as u64) == 0 {
-				selected = Some((path.clone(), lang, candidate));
+				selected = Some((path.to_owned(), lang, candidate));
 			}
 		}
 	}
@@ -142,7 +179,8 @@ pub fn generate_task(
 	input.atomic_write(&path, mutated.as_bytes())?;
 	let provenance = serde_json::json!({"producer":PRODUCER_VERSION,"seed":seed,"mutation":kind,
         "target":path,"selected":candidate,"original_sha256":content_hash(&original),
-        "mutated_sha256":content_hash(mutated.as_bytes()),"candidates":seen,"rejected_sources":rejected});
+        "mutated_sha256":content_hash(mutated.as_bytes()),"candidates":seen,"rejected_sources":rejected,
+        "source_policy":policy,"corpus_policy_version":super::corpus::POLICY_VERSION,"corpus_files":corpus_files,"corpus_scanned":corpus_scanned});
 	let fixture = super::prepare::prepare_task_with_provenance(
 		input.root(),
 		expected.root(),
@@ -152,6 +190,10 @@ pub fn generate_task(
 		cancellation,
 	)?;
 	Ok(GenerationReport {
+		source_policy: policy,
+		corpus_policy_version: super::corpus::POLICY_VERSION,
+		corpus_files,
+		corpus_scanned,
 		producer: PRODUCER_VERSION,
 		seed,
 		mutation: kind,
