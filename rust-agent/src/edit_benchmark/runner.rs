@@ -11,7 +11,10 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
-use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken};
+use harvest_runtime::{
+	JailedFs, MAX_FILE_BYTES,
+	cancel::{AbortError, AbortReason, CancelToken},
+};
 use serde::Serialize;
 use serde_json::value::RawValue;
 
@@ -37,6 +40,9 @@ pub struct RunConfiguration {
 	pub concurrency:         usize,
 	pub max_steps:           u32,
 	pub timeout:             Duration,
+	/// Optional cooperative deadline for each submit; never extends run timeout.
+	pub attempt_timeout:     Option<Duration>,
+	pub timeout_retries:     u32,
 	/// An empty list selects all tasks, otherwise require exact existing IDs.
 	pub task_ids:            Vec<String>,
 	pub require_edit_tool:   bool,
@@ -54,6 +60,8 @@ impl Default for RunConfiguration {
 			concurrency:         1,
 			max_steps:           16,
 			timeout:             Duration::from_secs(300),
+			attempt_timeout:     None,
+			timeout_retries:     3,
 			task_ids:            Vec::new(),
 			require_edit_tool:   false,
 			require_read_tool:   false,
@@ -66,6 +74,7 @@ pub struct RunOutcome {
 	pub early_stopped:          bool,
 	pub attempts:               u32,
 	pub provider_retries:       u32,
+	pub timeout_retries:        u32,
 	pub no_edit_retries:        u32,
 	pub tool_evidence:          Option<super::ToolEvidence>,
 	pub requirements_satisfied: Option<bool>,
@@ -218,6 +227,13 @@ pub fn run_tasks<M: Model>(
 	ensure!((1..=16).contains(&configuration.max_attempts), "max attempts must be 1..16");
 	ensure!(configuration.no_edit_retries <= 16, "no-edit retries must be 0..16");
 	ensure!(configuration.provider_retries <= 16, "provider retries must be 0..16");
+	ensure!(configuration.timeout_retries <= 16, "timeout retries must be 0..16");
+	ensure!(
+		configuration
+			.attempt_timeout
+			.is_none_or(|timeout| !timeout.is_zero() && timeout <= configuration.timeout),
+		"attempt timeout must be positive and at most the run timeout"
+	);
 	ensure!((1..=100).contains(&configuration.repetitions), "repetitions must be 1..100");
 	ensure!((1..=16).contains(&configuration.concurrency), "concurrency must be 1..16");
 	ensure!((1..=1024).contains(&configuration.max_steps), "max steps must be 1..1024");
@@ -267,6 +283,7 @@ pub fn run_tasks<M: Model>(
 			 "concurrency":configuration.concurrency,"max_steps":configuration.max_steps,
 			 "early_stop_on_match":configuration.early_stop_on_match,"max_attempts":configuration.max_attempts,"no_edit_retries":configuration.no_edit_retries,"provider_retries":configuration.provider_retries,
 			 "timeout_ms":configuration.timeout.as_millis(),
+			"attempt_timeout_ms":configuration.attempt_timeout.map(|v| v.as_millis()),"timeout_retries":configuration.timeout_retries,
 			"require_edit_tool":configuration.require_edit_tool,"require_read_tool":configuration.require_read_tool,
 			"export_messages":configuration.export_messages,"tasks":tasks.iter().map(|t| &t.id).collect::<Vec<_>>()
 		}),
@@ -336,6 +353,7 @@ fn run_one<M: Model>(
 	let started = Instant::now();
 	let mut outcome = RunOutcome {
 		provider_retries: 0,
+		timeout_retries: 0,
 		early_stopped: false,
 		attempts: 0,
 		no_edit_retries: 0,
@@ -360,6 +378,7 @@ fn run_one<M: Model>(
 	let workspace = JailedFs::open_or_create(&artifacts.root().join("workspace"))?;
 	let token = cancellation.child_with_timeout(configuration.timeout);
 	outcome.artifacts = Some(directory);
+	let mut attempt_timeout_failure = false;
 	let execution = (|| -> Result<()> {
 		let input = JailedFs::open(&task.input_directory)?;
 		let files = list_files(&input, Path::new(""))?;
@@ -387,6 +406,13 @@ fn run_one<M: Model>(
 				token.heartbeat()?;
 				let first_message = session.stored_messages().len();
 				outcome.attempts += 1;
+				let attempt_started = Instant::now();
+				let attempt_token = configuration
+					.attempt_timeout
+					.map_or_else(|| token.clone(), |timeout| token.child_with_timeout(timeout));
+				let mut event_count = 0_u64;
+				let mut text_deltas = 0_u64;
+				let mut last_event = None;
 				let answer = session.submit_until_tool_checkpoint(
 					&prompt,
 					&model,
@@ -395,12 +421,25 @@ fn run_one<M: Model>(
 						max_steps:      configuration.max_steps,
 						user_agent_dir: None,
 						tags:           Default::default(),
-						cancellation:   token.clone(),
+						cancellation:   attempt_token.clone(),
 					},
 					&mut |event| {
 						let mut bytes = serde_json::to_vec(&event)?;
 						bytes.push(b'\n');
-						artifacts.append(Path::new("events.jsonl"), &bytes, 16 * 1024 * 1024)
+						artifacts.append(Path::new("events.jsonl"), &bytes, 16 * 1024 * 1024)?;
+						event_count += 1;
+						last_event = Some(match event.event {
+							crate::agent_session::EventKind::Started => "started",
+							crate::agent_session::EventKind::TextDelta { .. } => {
+								text_deltas += 1;
+								"text_delta"
+							},
+							crate::agent_session::EventKind::PluginEvent { .. } => "plugin_event",
+							crate::agent_session::EventKind::Committed { .. } => "committed",
+							crate::agent_session::EventKind::Completed => "completed",
+							crate::agent_session::EventKind::Failed => "failed",
+						});
+						Ok(())
 					},
 					&mut |messages| {
 						if !configuration.early_stop_on_match {
@@ -414,11 +453,19 @@ fn run_one<M: Model>(
 							return Ok(false);
 						}
 						let matched =
-							compare(&task.expected_directory, workspace.root(), &token)?.success;
+							compare(&task.expected_directory, workspace.root(), &attempt_token)?.success;
 						outcome.early_stopped |= matched;
 						Ok(matched)
 					},
 				);
+				let timed_out = answer.as_ref().err().is_some_and(|error| {
+					error.chain().any(|cause| {
+						cause
+							.downcast_ref::<AbortError>()
+							.is_some_and(|error| matches!(error.reason, AbortReason::Timeout))
+					})
+				});
+				let elapsed_micros = attempt_started.elapsed().as_micros();
 				// Keep cumulative accounting even when a later turn or export fails.
 				let measurements = model.measurements.borrow();
 				persist(
@@ -450,11 +497,37 @@ fn run_one<M: Model>(
 					&artifacts,
 					Path::new(&format!("attempt-{:02}.json", outcome.attempts)),
 					&serde_json::json!({"attempt":outcome.attempts,"complete":answer.is_ok(),
-					"tool_evidence":attempt_evidence,"requirements_satisfied":requirements}),
+					"tool_evidence":attempt_evidence,"requirements_satisfied":requirements,
+						"elapsed_micros":elapsed_micros,"event_count":event_count,"text_deltas":text_deltas,
+						"last_event":last_event,"committed_messages":session.stored_messages().len() - first_message,
+						"timed_out":timed_out}),
 				)?;
 				if let Err(error) = &answer {
+					// Outer cancellation/deadline always wins, even when the child
+					// also expired. Never reset the overall budget on recovery.
 					token.heartbeat()?;
-					if attempt_evidence.mutation_calls == 0
+					if timed_out && configuration.attempt_timeout.is_some() {
+						if attempt_evidence.mutation_calls == 0
+							&& attempt_evidence.unresolved_calls == 0
+							&& outcome.timeout_retries < configuration.timeout_retries
+						{
+							outcome.timeout_retries += 1;
+							persist(
+								&artifacts,
+								Path::new(&format!("timeout-retry-{:02}.json", outcome.timeout_retries)),
+								&serde_json::json!({"attempt":outcome.attempts,"retry":outcome.timeout_retries,
+									"elapsed_micros":elapsed_micros,"event_count":event_count,"text_deltas":text_deltas,
+									"last_event":last_event,"mutation_calls":attempt_evidence.mutation_calls}),
+							)?;
+							prompt = include_str!("../prompts/benchmark-timeout-retry.md").into();
+							continue;
+						}
+						attempt_timeout_failure = true;
+					}
+
+					if !timed_out
+						&& attempt_evidence.mutation_calls == 0
+						&& attempt_evidence.unresolved_calls == 0
 						&& outcome.provider_retries < configuration.provider_retries
 						&& let Some(failure) = super::retry::Failure::classify(error)
 					{
@@ -528,12 +601,18 @@ fn run_one<M: Model>(
 		"completed"
 	} else if cancellation.heartbeat().is_err() {
 		"cancelled"
-	} else if token.heartbeat().is_err() {
+	} else if attempt_timeout_failure || token.heartbeat().is_err() {
 		"timed_out"
 	} else {
 		"failed"
 	};
-	outcome.error = execution.err().map(|_| "run_did_not_complete");
+	outcome.error = execution.err().map(|_| {
+		if attempt_timeout_failure {
+			"attempt_timeout"
+		} else {
+			"run_did_not_complete"
+		}
+	});
 	outcome.elapsed_micros = started.elapsed().as_micros();
 	persist(&artifacts, Path::new("outcome.json"), &outcome)?;
 	Ok(outcome)

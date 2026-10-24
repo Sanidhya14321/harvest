@@ -377,3 +377,28 @@ hashline calls. All runtime/installed/platform evidence remains pending.
 The shared transport now keeps request-builder/configuration and response-decoding
 errors as separate redacted nonretryable categories, rather than treating them as
 IO. Cancellation and malformed message errors keep their existing failure paths.
+
+## Cooperative per-attempt deadlines (written, unverified)
+
+`run --attempt-timeout-seconds 30 --timeout-retries 3` enables a child deadline
+for each submit. Default has no child deadline; the original overall run timeout
+still applies. Child timeout must be positive and no greater than the overall
+limit. A fresh child never extends the original parent deadline. Timeout retry
+budget is 0..16 (default 3), independent of all other budgets; combined maximum
+submits is now 64. This is cooperative cancellation, not forced SDK interruption
+or the retained first-provider-event/connection timeout policy.
+
+Only a typed runtime AbortError with Timeout cause qualifies, with parent still
+live, no mutation calls and no unresolved tool call results. The shared runtime
+keeps its original Aborted diagnostics, now typed for safe cause inspection.
+Signal/user/unknown aborts and textual timeout lookalikes are not retried. Both
+provider and timeout recovery now require complete results for every tool family,
+including grep; no follow-up enters a session with an unfinished call batch.
+Unsafe/exhausted attempt timeouts end as timed_out with attempt_timeout reason.
+
+Numbered attempt artifacts include elapsed submit time, delivered session event/
+delta counts, last event, committed message count and typed timeout flag. Lifecycle
+Started/Failed events do not imply remote provider activity. timeout-retry-NN.json
+preserves redacted recovery telemetry. Outcome/view timeout_retries is unavailable
+for older summaries. Usage remains unavailable after failed provider requests.
+Runtime/installed/platform and cancellation compatibility evidence remain pending.

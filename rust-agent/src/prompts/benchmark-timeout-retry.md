@@ -1,0 +1,1 @@
+The previous turn exceeded its attempt deadline before it attempted a mutation. Continue the original task in this session and workspace. Make one minimal concrete edit promptly using the available tools, then stop. The host retains the original overall deadline and a bounded timeout retry allowance.

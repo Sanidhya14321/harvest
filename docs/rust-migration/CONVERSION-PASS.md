@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current benchmark-provider continuation base: `6dfa7cb`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current benchmark-timeout continuation base: `b5ccadf`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -887,3 +887,59 @@ Shared transport refinement in this continuation: request-builder/configuration
 and response-decoding errors retain distinct redacted InvalidRequest/InvalidResponse
 types and cannot enter the selected IO retry path. MCP and other transport
 consumers preserve their existing owner; regression evidence is pending.
+
+## Cooperative attempt timeout and recovery continuation
+
+Task/owner: `application:conversion-first`; base `b5ccadf`; capability
+`surface:benchmarks`; same retained runner.ts ledger subset. Prerequisites: existing
+native shared CancelToken child deadlines, sync session lifecycle, benchmark
+attempt/evidence/usage/artifact loop and typed provider recovery. Inputs: legacy
+PromptTimeoutError/PromptAttemptTelemetry and maxTimeoutRetries loop, native
+cancel.rs, runner/evidence/view/CLI. Destinations remain these existing owners;
+no new timer thread, runtime, transport or session writer.
+
+Written/connections: CLI --attempt-timeout-seconds N or SDK attempt_timeout
+explicitly enables a cooperative child deadline per submit. Default None preserves
+the previous overall-only timeout. N is positive and <= overall timeout; every
+child still clamps to the parent's deadline. timeout_retries defaults 3, range
+0..16, separate run-wide allowance, no scored/no-edit/provider slot consumption;
+at most 64 submits across all budgets. Same model/session/workspace persists.
+Only typed Timeout AbortError qualifies; runtime cancellation preserves the exact
+existing Aborted diagnostics and now exposes its cause without text matching.
+User/signal/unknown aborts and textual lookalikes do not qualify. A parent timeout
+or cancellation always wins; retries never extend/reset that outer budget.
+
+Every timeout/provider recovery also requires zero mutation calls and zero
+unresolved calls. Evidence tracks pending IDs across all tool families, including
+grep/unknown names, rather than only read/edit. Never send a follow-up after an
+interrupted multi-call batch with missing results. Failed/denied mutation attempts
+block retry. Exhausted or unsafe attempt timeouts produce timed_out outcomes with
+attempt_timeout reason; other errors retain existing classification. Custom SDK
+models must cooperate; this is not forced interruption of arbitrary model code.
+No first-event/connection timer is implemented by this submit deadline.
+
+Each attempt records elapsed submit microseconds, delivered event/text-delta
+counts, last delivered event type, committed message count and typed timeout flag.
+Counts describe existing session events (including lifecycle/failure), not proof
+of provider activity. Immutable timeout-retry-NN records recovery counts/telemetry
+without raw provider diagnostics. Outcomes and native views add timeout_retries;
+old summaries show unavailable. Failed request usage remains unavailable after
+recovery. Artifact failures are not recovered as timeouts.
+
+Next bounded prerequisites: first-provider-event deadline and idle/stall telemetry
+need a defined shared transport/session notification contract; do not use local
+Started as remote activity or add a detached watchdog. Hashline guidance stays in
+application:hashline-host-bridge; general metaharness consumers remain retained.
+No TS deletion in this continuation. Recovery: revert to b5ccadf. Stabilization:
+scripted/cooperative models and local HTTP through SDK/installed run/view cover
+parent/child deadline precedence, cancellation, typed errors through IO/context,
+textual errors rejected, retry exhaustion/counts, complete read/grep batches,
+unresolved tool batches, denied/failed mutations, same-session continuity,
+failed usage and artifact writes, exact old cancellation diagnostics, all native
+cancel users and old summary parsing. Run cargo xtask test -p harvest-runtime and
+-p harvest-omp in consolidation, with installed/platform checks later.
+Conversion checks: cargo fmt -p harvest-omp -p harvest-runtime -- --check;
+cargo check --locked -p harvest-omp -p harvest-runtime --all-targets --all-features;
+existing xtask playbook check. Ignored receipt/log prefix:
+target/migration/conversion-attempt-timeouts-. Compilation/ownership evidence
+only; retained capability/source removal and installation states stay unverified.

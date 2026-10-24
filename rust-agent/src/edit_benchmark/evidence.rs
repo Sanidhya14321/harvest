@@ -1,7 +1,7 @@
 //! Projection of actual persisted calls/results; never infer tool success from
 //! assistant prose. Original messages and unknown provider fields stay
 //! lossless.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,8 @@ use serde_json::value::RawValue;
 pub struct ToolEvidence {
 	/// Conservative: every call except read/grep, including unknown tool names.
 	pub mutation_calls:   usize,
+	/// All tool families, including grep and unknown names.
+	pub unresolved_calls: usize,
 	pub write_calls:      usize,
 	pub read_calls:       usize,
 	pub edit_calls:       usize,
@@ -53,6 +55,7 @@ impl ToolEvidence {
 pub fn tool_evidence(messages: &[Box<RawValue>]) -> Result<ToolEvidence> {
 	let mut result = ToolEvidence::default();
 	let mut pending = BTreeMap::new();
+	let mut pending_calls = BTreeSet::new();
 	for raw in messages {
 		let message: Message = serde_json::from_str(raw.get())?;
 		if message.role == "assistant" {
@@ -63,6 +66,7 @@ pub fn tool_evidence(messages: &[Box<RawValue>]) -> Result<ToolEvidence> {
 						continue;
 					}
 					if let (Some(id), Some(name)) = (block.id, block.name) {
+						ensure!(pending_calls.insert(id.clone()), "ambiguous pending tool call identity");
 						if !matches!(name.as_str(), "read" | "grep") {
 							result.mutation_calls += 1;
 						}
@@ -83,6 +87,9 @@ pub fn tool_evidence(messages: &[Box<RawValue>]) -> Result<ToolEvidence> {
 				}
 			}
 		} else if message.role == "toolResult" {
+			if let Some(id) = &message.call_id {
+				pending_calls.remove(id);
+			}
 			if let Some(name) = message.call_id.and_then(|id| pending.remove(&id)) {
 				match (name.as_str(), message.is_error) {
 					("read", Some(false)) => result.successful_reads += 1,
@@ -106,5 +113,6 @@ pub fn tool_evidence(messages: &[Box<RawValue>]) -> Result<ToolEvidence> {
 			_ => {},
 		}
 	}
+	result.unresolved_calls = pending_calls.len();
 	Ok(result)
 }

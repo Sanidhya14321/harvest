@@ -43,7 +43,9 @@ same-session verification/no-edit retries, cumulative per-attempt artifacts and
 exact-match stopping after complete durable tool batches. Native view/SummaryView
 reads completed rust-v1 summaries without providers. Normal session callers keep
 existing behavior. Selected typed pre-mutation HTTP/IO retries and command-source auth invalidation
-are also connected from base 6dfa7cb. Attempt-timeout/broader provider recovery, guided policies, interactive
+are also connected from base 6dfa7cb. Optional cooperative child submit deadlines and typed pre-mutation timeout recovery
+are connected from base b5ccadf, with per-attempt telemetry and complete-result
+guards for all tool families. First-provider-event/broader provider recovery, guided policies, interactive
 views and metaharness consumer moves remain pending. See RUST-BENCHMARK.md and the
 reviewed common card; runner.ts is partial/retained, no TS deletion.
 
@@ -53,7 +55,7 @@ advances in these continuations. Generate counts from `cargo xtask playbook stat
 --json`; partial Rust code and raw language bytes are not engineering completion.
 Ignored receipts/logs: target/migration/conversion-provider-values-*,
 conversion-plugin-events-*, conversion-process-byte-count-* and
-conversion-benchmark-retries-* and conversion-benchmark-provider-retries-*. Prior source hashes/evidence remain historical.
+conversion-benchmark-retries-* and conversion-benchmark-provider-retries-* and conversion-attempt-timeouts-*. Prior source hashes/evidence remain historical.
 
 ## Next dependency-ready work
 
@@ -67,7 +69,7 @@ conversion-benchmark-retries-* and conversion-benchmark-provider-retries-*. Prio
   Reuse current value resolver/invalidation and cancellable transport.
 - Benchmark: shared AST has partial paths for 23 mutation names, paired preparation,
   exact hunks, rust-v1 scoring, native archive export/import and orchestration.
-  Finish corpus/difficulty/dedup/calibration/prompts, attempt-timeout/broader provider recovery and interactive native views
+  Finish corpus/difficulty/dedup/calibration/prompts, first-provider-event/broader provider recovery and interactive native views
   and actual metaharness cutover. See RUST-BENCHMARK.md and the common card.
 - Guidance prerequisite: application:hashline-host-bridge is planned/review pending;
   native read provenance/session EditStore/mode/approval must connect before legacy

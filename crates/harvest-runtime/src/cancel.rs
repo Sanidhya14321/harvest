@@ -6,7 +6,7 @@ use std::{
 	time::{Duration, Instant},
 };
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use tokio::sync::Notify;
 
 #[derive(Debug, Clone, Copy)]
@@ -17,6 +17,19 @@ pub enum AbortReason {
 	Signal  = 3,
 	User    = 4,
 }
+
+/// Typed cancellation cause. Display preserves the existing public diagnostic;
+/// recovery owners can inspect the cause without matching error text.
+#[derive(Debug, Clone, Copy)]
+pub struct AbortError {
+	pub reason: AbortReason,
+}
+impl std::fmt::Display for AbortError {
+	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(formatter, "Aborted: {:?}", self.reason)
+	}
+}
+impl std::error::Error for AbortError {}
 
 impl TryFrom<u8> for AbortReason {
 	type Error = ();
@@ -110,12 +123,12 @@ impl CancelToken {
 		if let Some(flag) = &self.flag
 			&& let Some(reason) = flag.cause()
 		{
-			return Err(Error::msg(format!("Aborted: {reason:?}")));
+			return Err(AbortError { reason }.into());
 		}
 		if let Some(deadline) = self.deadline
 			&& deadline < Instant::now()
 		{
-			return Err(Error::msg("Aborted: Timeout"));
+			return Err(AbortError { reason: AbortReason::Timeout }.into());
 		}
 		Ok(())
 	}

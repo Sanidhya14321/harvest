@@ -27,6 +27,7 @@ pub struct RunView {
 	pub attempts:         Option<u32>,
 	pub no_edit_retries:  Option<u32>,
 	pub provider_retries: Option<u32>,
+	pub timeout_retries:  Option<u32>,
 	pub early_stopped:    Option<bool>,
 }
 #[derive(Debug, Deserialize, Serialize)]
@@ -60,7 +61,7 @@ impl SummaryView {
 				!run.success || matches!(run.state, RunState::Completed),
 				"successful run has incomplete state"
 			);
-			ensure!(run.attempts.is_none_or(|n| n <= 48), "invalid benchmark attempt count");
+			ensure!(run.attempts.is_none_or(|n| n <= 64), "invalid benchmark attempt count");
 			ensure!(
 				run.no_edit_retries
 					.is_none_or(|n| n <= 16 && run.attempts.is_some_and(|a| n <= a)),
@@ -71,10 +72,18 @@ impl SummaryView {
 					.is_none_or(|n| n <= 16 && run.attempts.is_some_and(|a| n <= a)),
 				"invalid benchmark provider retry count"
 			);
+			ensure!(
+				run.timeout_retries
+					.is_none_or(|n| n <= 16 && run.attempts.is_some_and(|a| n <= a)),
+				"invalid benchmark timeout retry count"
+			);
 			if let (Some(attempts), Some(no_edit), Some(provider)) =
 				(run.attempts, run.no_edit_retries, run.provider_retries)
 			{
-				ensure!(no_edit + provider <= attempts, "inconsistent benchmark retry total");
+				ensure!(
+					no_edit + provider + run.timeout_retries.unwrap_or(0) <= attempts,
+					"inconsistent benchmark retry total"
+				);
 			}
 		}
 		let successful = summary.runs.iter().filter(|run| run.success).count();
@@ -97,7 +106,7 @@ impl SummaryView {
 			"{}",
 			concat!(
 				"index\ttask\trepetition\tstate\tsuccess\telapsed_us\tattempts",
-				"\tno_edit_retries\tprovider_retries\tearly_stopped"
+				"\tno_edit_retries\tprovider_retries\ttimeout_retries\tearly_stopped"
 			)
 		)?;
 		for run in &self.runs {
@@ -105,7 +114,7 @@ impl SummaryView {
 			// or additional table rows. No paths or files in a summary are opened.
 			writeln!(
 				output,
-				"{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+				"{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
 				run.index,
 				serde_json::to_string(&run.task_id)?,
 				run.repetition,
@@ -117,6 +126,8 @@ impl SummaryView {
 				run.no_edit_retries
 					.map_or_else(|| "unavailable".into(), |n| n.to_string()),
 				run.provider_retries
+					.map_or_else(|| "unavailable".into(), |n| n.to_string()),
+				run.timeout_retries
 					.map_or_else(|| "unavailable".into(), |n| n.to_string()),
 				run.early_stopped
 					.map_or_else(|| "unavailable".into(), |n| n.to_string())

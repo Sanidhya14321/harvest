@@ -95,6 +95,11 @@ enum Command {
 }
 #[derive(Debug, clap::Args)]
 struct RunArguments {
+	/// Bound each model/session submit inside the original run deadline.
+	#[arg(long)]
+	attempt_timeout_seconds:   Option<u64>,
+	#[arg(long, default_value_t = 3)]
+	timeout_retries:           u32,
 	/// Keep requesting model responses after a matching committed tool batch.
 	#[arg(long)]
 	no_early_stop_on_match:    bool,
@@ -188,6 +193,10 @@ fn run(arguments: RunArguments) -> Result<u8> {
 		&arguments.fixtures,
 		&arguments.output,
 		&super::RunConfiguration {
+			attempt_timeout: arguments
+				.attempt_timeout_seconds
+				.map(std::time::Duration::from_secs),
+			timeout_retries: arguments.timeout_retries,
 			early_stop_on_match: !arguments.no_early_stop_on_match,
 			max_attempts: arguments.max_attempts,
 			no_edit_retries: arguments.no_edit_retries,
