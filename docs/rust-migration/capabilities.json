@@ -900,7 +900,9 @@
           "rust-agent/src/tools.rs",
           "rust-agent/src/edit/read.rs",
           "crates/pi-edit/src/files.rs",
-          "crates/pi-edit/src/store.rs"
+          "crates/pi-edit/src/store.rs",
+          "rust-agent/src/edit/read",
+          "crates/harvest-runtime/src/filesystem.rs"
         ]
       },
       "verification": {
@@ -5728,7 +5730,8 @@
           "Multi-case continuation base 8c19c66: generate-batch CLI and Rust generate_batch execute a bounded explicit case plan against one immutable source snapshot, sharing the existing fixture publisher/lock through a collection owner and carrying successful source-bound regions. Plan/case journals, partial/cancel outcomes, copy/entry/depth preflight and actual 64 MiB output charging are connected. Shape calibration/quotas, full producer/metaharness cutover and behavioral/installed/platform verification remain pending; zero TS deletion or verified completion.",
           "Calibration continuation base c99df19: existing edit-shape analyzer \u2192 explicit quota planning/apportionment \u2192 shared candidate materialization/hunk constraints/content history \u2192 existing seeded reservoir/batch snapshot/writer/archives/run are connected. Native CLI/SDK/package commands retain source-hash plan and measured/rejection metadata. Six focused contracts are written/compiled for consolidation; actual source removals zero and no behavioral/installed/platform parity claimed.",
           "Latest user scheduling at 7c60c91: full retained-system conversion sweep precedes integration repair and workflow/platform verification. Native editing end-to-end is the next domain; no per-helper compiler/test/receipt loop or stopping after a foundation. Existing checks stay registered for consolidation; unrun checks, partial implementations and source removals retain honest states. No implementation/verified counter advances from this process update.",
-          "Native editing domain conversion from ea95e01: session-lifetime bounded EditStore; windowed shared-decoder read snapshots/tags and emitted-row provenance; explicit opt-in strict engine policy; native mode/config/schema/final approval; sync/async/RPC/SDK/resume callers; current-byte versioned benchmark guidance and multi-file result-shape consumers are written and connected. Compiler, behavioral, addon, installed and platform checks NOT RUN in the conversion sweep. All capabilities remain partial/unverified; zero TS deletions. Exact remaining callers/contracts are in CONVERSION-PASS.md and HASHLINE-HOST-BRIDGE.md."
+          "Native editing domain conversion from ea95e01: session-lifetime bounded EditStore; windowed shared-decoder read snapshots/tags and emitted-row provenance; explicit opt-in strict engine policy; native mode/config/schema/final approval; sync/async/RPC/SDK/resume callers; current-byte versioned benchmark guidance and multi-file result-shape consumers are written and connected. Compiler, behavioral, addon, installed and platform checks NOT RUN in the conversion sweep. All capabilities remain partial/unverified; zero TS deletions. Exact remaining callers/contracts are in CONVERSION-PASS.md and HASHLINE-HOST-BRIDGE.md.",
+          "Native editing read-domain continuation from 7a5257c: bounded line/tail/raw and disjoint-range selectors now connect native schema -> literal path probe -> shared read decoder -> displayed-row snapshot authority. Existing JailedFs owns literal-entry probing so inaccessible entries/dangling symlinks cannot silently redirect to another file. New range/literal/negative workflow scenarios written; no compiler, behavioral, installed or platform execution. TS read-selector/path-utils/read-format sources remain for the production SDK, grep and rich readers; zero TS deletions or verified advances."
         ]
       },
       {
@@ -7269,7 +7272,8 @@
           "playbook-check"
         ],
         "evidence": [
-          "Reviewed native contract and code written under application:conversion-first: Native editing domain conversion from ea95e01: session-lifetime bounded EditStore; windowed shared-decoder read snapshots/tags and emitted-row provenance; explicit opt-in strict engine policy; native mode/config/schema/final approval; sync/async/RPC/SDK/resume callers; current-byte versioned benchmark guidance and multi-file result-shape consumers are written and connected. Compiler, behavioral, addon, installed and platform checks NOT RUN in the conversion sweep. All capabilities remain partial/unverified; zero TS deletions. Exact remaining callers/contracts are in CONVERSION-PASS.md and HASHLINE-HOST-BRIDGE.md. Formal leaf stays planned because source/writer verification prerequisites remain in_progress; do not mark them done to bypass the graph."
+          "Reviewed native contract and code written under application:conversion-first: Native editing domain conversion from ea95e01: session-lifetime bounded EditStore; windowed shared-decoder read snapshots/tags and emitted-row provenance; explicit opt-in strict engine policy; native mode/config/schema/final approval; sync/async/RPC/SDK/resume callers; current-byte versioned benchmark guidance and multi-file result-shape consumers are written and connected. Compiler, behavioral, addon, installed and platform checks NOT RUN in the conversion sweep. All capabilities remain partial/unverified; zero TS deletions. Exact remaining callers/contracts are in CONVERSION-PASS.md and HASHLINE-HOST-BRIDGE.md. Formal leaf stays planned because source/writer verification prerequisites remain in_progress; do not mark them done to bypass the graph.",
+          "Native selector continuation from 7a5257c is written under the conversion coordinator; formal prerequisite evidence remains incomplete. See common register and reviewed card; uncompiled/unexecuted."
         ]
       },
       {

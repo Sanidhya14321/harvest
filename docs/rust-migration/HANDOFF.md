@@ -25,6 +25,17 @@ another small primitive or ask for continue. Uncompiled/unverified checkpoints
 are allowed and must record checks not run. No stubs, unsafe bypasses or premature
 source/default-launcher removal. Preserve all final acceptance requirements.
 
+## Latest read-domain continuation (base 7a5257c)
+
+Native selector schema/path parsing now connects sorted/merged disjoint ranges,
+open/count/dot aliases, tail and raw compounds to the same bounded read owner.
+JailedFs literal-entry probing prevents colon filenames, inaccessible entries or
+dangling symlinks from redirecting to another source. Raw reads and omitted gaps
+grant no numbered edit authority. Metadata retains selection and actual shown rows.
+Three new workflow scenarios written; compiler/tests/installed/platform execution
+NOT RUN. No TS deletions or verified advances. Full contract/resume is in the common
+register/card; next stays on rich-read/native rendering and editor-service consumers.
+
 ## Latest native editing domain conversion (base ea95e01)
 
 Whole native read → snapshot/seen rows → mode schema/config → approved shared

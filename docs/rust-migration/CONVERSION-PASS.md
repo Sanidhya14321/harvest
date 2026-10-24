@@ -1391,3 +1391,25 @@ mode/session/guidance core is already written: do not reimplement it or restart 
 per-helper compiler/test/receipt schedule. Integration later runs aggregate shared
 engine/native/addon checks, then the listed workflow tests and installed/platform
 checks. Current inherited source-removal/platform/provider blockers remain.
+
+### Read selector continuation (base 7a5257c)
+
+Same native editing domain and coordinator. Native read schema now accepts selector
+or a trailing path:selector, with N/N-M/N+K/N-/N..M, comma-separated sorted/merged
+ranges, -N tail and raw compounds. Use existing pi-ast LineRange and shared read
+normalization/store; no second filesystem reader. JailedFs::entry_exists probes
+literal entries including dangling symlinks; only a confirmed missing entry enables
+suffix splitting. Unknown/permission errors preserve literal interpretation. Explicit
+selector and offset/limit or embedded selectors conflict rather than widening reads.
+At most 32 ranges/4096 selector bytes; checked positive u32/count arithmetic. Raw
+reads grant no new seen-line authority; omitted range gaps remain unseen. Result
+metadata records selectedRanges/selectionComplete/raw and actual shownLines.
+
+Three new consumer scenarios are written, uncompiled/unexecuted: disjoint/tail/raw
+read/edit authority, literal colon/dangling symlink precedence, and malformed/
+conflicting/unsupported/overflow selectors. No compiler/test/addon/installed checks;
+source/card ownership and diff hygiene only. Zero TS deletions: read.ts/read-format/
+read-selector/path-utils and grep still have live production consumers. Inherited
+full read remaining surfaces are still required (context/elision, conflicts/images,
+archives/PDF/SQLite/URLs/SSH/tree/profile, native renderer) and editor-service bridge
+connections are not done. Continue those same domain consumers next.

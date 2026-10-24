@@ -211,3 +211,26 @@ most 256 named clipboard registers, 256 bytes per register name and 16Mi UTF-16
 units across retained names/rows, before any publication. Anonymous clipboard
 state remains batch-local. Consolidate retention/eviction/clipboard bounds with
 the workflow checks; these conversion changes are uncompiled/unexecuted.
+
+## Current read-selector continuation from 7a5257c
+
+Written/connected under coordinator, uncompiled/unexecuted. Source review includes
+read-selector.ts and path-utils.ts range/tail/split/probe functions. Native owner is
+edit/read/selector.rs, called by the same read/decoder/store; JailedFs owns new
+entry_exists (literal symlink metadata, unknown errors preserved). Existing
+pi-ast LineRange carries inclusive ranges. Named conflict/image selectors fail
+explicitly until those readers connect; unknown explicit selector text fails.
+No selector silently widens a malformed request to a full read. Bare N is open-ended,
+N+K checked count, dots/hyphens inclusive, ranges sorted/merged, -N tail clamped,
+raw case-insensitive/compound once. 32 ranges/4096 bytes, positive u32; overlapping
+selector/offset or embedded/explicit inputs fail. Literal complete filenames and
+dangling symlinks win. Raw displays no numbered authority; range gaps remain unseen.
+Metadata carries chosen ranges/completion/raw and actual shown lines.
+
+Inputs/consumers: all native session/SDK/RPC benchmark callers share ToolRuntime.
+TS read.ts/read-format/grep still consume selector/path-utils; no legacy file may
+be removed yet. Run native_edit_sessions plus shared filesystem/session/platform
+contracts during consolidated verification, including permissions and literal-path
+errors. New disjoint/tail/raw, literal/dangling and malformed/conflict/overflow
+scenarios are written, not compiled/executed. Recovery reverts this continuation
+to 7a5257c without touching earlier core state/mode/guidance or history.

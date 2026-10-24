@@ -307,3 +307,12 @@ most 256 named clipboard registers, 256 bytes per register name and 16Mi UTF-16
 units across retained names/rows, before any publication. Anonymous clipboard
 state remains batch-local. Consolidate retention/eviction/clipboard bounds with
 the workflow checks; these conversion changes are uncompiled/unexecuted.
+
+Native read also accepts `selector` or a trailing `path:selector` when the complete
+literal entry is confirmed absent. Selectors include `N`, `N-M`, `N+K`, `N-`,
+`N..M`, comma-separated ranges, `-N` tail and `raw` compounds. Bare `N` reads from
+that line onward. Ranges sort/merge, omitted gaps stay unseen, and raw output grants
+no new numbered-line edit authority. Use either selector or offset/limit. Conflicting,
+malformed, overflow and unimplemented named readers fail explicitly. Literal colon
+filenames and dangling symlinks take precedence. This continuation is also uncompiled
+and unverified; the production TS read/grep consumers remain in place.

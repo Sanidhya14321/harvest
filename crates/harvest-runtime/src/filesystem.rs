@@ -604,6 +604,27 @@ impl JailedFs {
 		Ok(entries)
 	}
 
+	/// Probe the literal entry, including dangling symlinks. Unknown errors are
+	/// preserved so selector callers never reinterpret inaccessible filenames.
+	pub fn entry_exists(&self, path: &Path) -> Result<bool> {
+		let path = self.relative(path)?;
+		if path.as_os_str().is_empty() {
+			return Ok(true);
+		}
+		match self.directory.symlink_metadata(path) {
+			Ok(_) => Ok(true),
+			Err(error)
+				if matches!(
+					error.kind(),
+					std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+				) =>
+			{
+				Ok(false)
+			},
+			Err(error) => Err(error.into()),
+		}
+	}
+
 	pub fn exists(&self, path: &Path) -> Result<bool> {
 		let path = self.relative(path)?;
 		if path.as_os_str().is_empty() {

@@ -205,6 +205,8 @@ pub fn specs_for_edit(mode: crate::edit::Mode) -> Vec<ToolSpec> {
 		serde_json::json!({"type":"integer","minimum":1});
 	read.function.parameters["properties"]["limit"] =
 		serde_json::json!({"type":"integer","minimum":1});
+	read.function.parameters["properties"]["selector"] = serde_json::json!({"type":"string"});
+	read.function.description = include_str!("prompts/tools/read-native.md").trim().into();
 	if mode == crate::edit::Mode::Hashline {
 		read.function.description = include_str!("prompts/tools/read-hashline.md").trim().into();
 	}

@@ -313,3 +313,63 @@ fn profile_edit_selection_is_overridden_by_host_and_invalid_modes_fail() -> Resu
 	);
 	Ok(())
 }
+
+#[test]
+fn disjoint_tail_and_raw_selectors_preserve_exact_read_authority() -> Result<()> {
+	let root = tempfile::tempdir()?;
+	std::fs::write(root.path().join("a.txt"), "one\ntwo\nthree\nfour\nfive\n")?;
+	let mut owner = runtime();
+	let result = invoke(&mut owner, root.path(), "read", json!({"path":"a.txt:3-3,1+1"}))?;
+	let details = result.details.unwrap();
+	assert_eq!(details["shownLines"], json!([1, 3]));
+	let tag = details["tag"].as_str().unwrap();
+	assert!(edit(&mut owner, root.path(), tag, 2, "hidden gap")?.is_error);
+	assert!(!edit(&mut owner, root.path(), tag, 3, "changed")?.is_error);
+	let tail = invoke(&mut owner, root.path(), "read", json!({"path":"a.txt","selector":"-2"}))?;
+	assert_eq!(tail.details.unwrap()["shownLines"], json!([4, 5]));
+	assert!(tail.content.contains("4:four"));
+	let mut raw_owner = runtime();
+	let raw = invoke(&mut raw_owner, root.path(), "read", json!({"path":"a.txt:raw:1-2"}))?;
+	assert_eq!(raw.content, "one\ntwo\n\n[Read continues at offset 3 of 5 lines.]");
+	let details = raw.details.unwrap();
+	assert_eq!(details["shownLines"], json!([]));
+	assert!(
+		edit(&mut raw_owner, root.path(), details["tag"].as_str().unwrap(), 1, "not seen")?.is_error
+	);
+	Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn literal_colon_names_and_dangling_symlinks_never_fall_back_to_other_files() -> Result<()> {
+	let root = tempfile::tempdir()?;
+	std::fs::write(root.path().join("a.txt"), "base file\n")?;
+	std::fs::write(root.path().join("a.txt:1-1"), "literal file\n")?;
+	let mut owner = runtime();
+	let literal = invoke(&mut owner, root.path(), "read", json!({"path":"a.txt:1-1"}))?;
+	assert!(literal.content.contains("1:literal file"));
+	assert!(!literal.content.contains("base file"));
+	std::os::unix::fs::symlink("absent-target", root.path().join("a.txt:raw"))?;
+	assert!(invoke(&mut owner, root.path(), "read", json!({"path":"a.txt:raw"})).is_err());
+	Ok(())
+}
+
+#[test]
+fn invalid_or_conflicting_selectors_fail_instead_of_widening_the_read() -> Result<()> {
+	let root = tempfile::tempdir()?;
+	std::fs::write(root.path().join("a.txt"), "one\ntwo\nthree\n")?;
+	let mut owner = runtime();
+	for args in [
+		json!({"path":"a.txt","selector":"0"}),
+		json!({"path":"a.txt","selector":"2+0"}),
+		json!({"path":"a.txt","selector":"3-1"}),
+		json!({"path":"a.txt","selector":"1-2","offset":1}),
+		json!({"path":"a.txt:1-2","selector":"3-3"}),
+		json!({"path":"a.txt","selector":"raw:raw"}),
+		json!({"path":"a.txt","selector":"conflicts"}),
+		json!({"path":"a.txt","selector":"4294967295+2"}),
+	] {
+		assert!(invoke(&mut owner, root.path(), "read", args).is_err());
+	}
+	Ok(())
+}
