@@ -520,3 +520,82 @@ source execution, archive publication or historical generator equivalence.
 Runtime/installed/platform and single-case regression evidence remains pending.
 Shape calibration/quotas, whole-content deduplication, full retained grammar and
 specialized prompt/guidance/metaharness consumer cutover remain unfinished.
+
+## Native calibrated quota generation (written, unverified)
+
+The existing native pipeline now connects session edit-shape measurements,
+quota planning, constrained AST selection, duplicate-target rejection and batch
+fixture publication. No source code is executed or formatted by a foreign runtime.
+The retained TS generator still owns its specialized prompts, source acquisition,
+full grammar/formatting and metaharness compatibility; do not delete it yet.
+
+```text
+harvest edit-benchmark edit-shapes --sessions-dir SESSIONS --repo REPO --json > shapes.json
+harvest edit-benchmark plan --quotas quotas.json --calibration shapes.json --seed 42 > plan.json
+harvest edit-benchmark generate-batch --source SOURCE --output NEW_DIR --plan plan.json --deduplicate-content
+harvest edit-benchmark validate --fixtures NEW_DIR
+harvest edit-benchmark pack --fixtures NEW_DIR --output fixtures.tar.gz
+```
+
+Package generate:plan/generate:native launch these same Rust owners; the historical
+generate command stays retained. `quotas.json` is an ordered 1..64-row array:
+
+```json
+[
+  {"mutation":"flip-boolean","count":2,"shape":{"min_changed_lines":1,"max_changed_lines":1,"min_hunks":1,"max_hunks":1}},
+  {"mutation":"composite-multi-edit","count":4}
+]
+```
+
+Counts sum to <=64; IDs are case-001 onward, seeds come from the existing SplitMix64
+owner. Without --calibration, unspecified shapes stay unconstrained. With it,
+only unspecified shapes receive the measured per_call size distribution from the
+existing native edit-shapes output. Samples must be 1..100000 with known size
+buckets summing exactly to samples. Weights describe parsed per-call measurements;
+missing/skipped diff coverage remains in the source report and is not counted as
+a zero-size edit. Largest remainder allocates integer case
+counts; equal remainders use canonical size-band order. Assign those constraints
+to unshaped cases in canonical band order, preserving explicit shapes and case/
+mutation order. This does not infer mutation applicability: an assigned shape can
+be infeasible for the chosen mutation and must fail explicitly, not relax/fallback.
+
+Plan rust-calibration-v1 records the input-byte SHA-256, samples/weights and exact
+allocated counts; generate-batch accepts either its versioned document or the
+prior plain case array. generate_quota_batch retains the full supplied plan in
+generation-plan.json. Provenance describes supplied measured data, not certified
+telemetry or a promise of historical Babel/Prettier/seed equivalence. A hand-edited
+plan remains an explicit plan; validation does not authenticate its origin.
+
+Each case optionally overrides a global --shape FILE constraint. Shape JSON uses
+the four integer fields above: changed lines 1..4000, hunks 1..128. Actual metric
+is sum(max(removed,inserted)) across contiguous runs from the existing exact
+hunk engine on raw mutated/expected text; no added+removed double count, no
+Prettier normalization. Filter requested shape/content policies before the seeded
+preferred/fallback reservoirs. Reapply/recheck the selected candidate before
+publication. Existing disabled-policy seed draws stay unchanged.
+
+Constraint/history selection materializes/reparses candidates through shared
+pi-ast, never a second mutation engine. It charges prospective work before each
+materialization: <=4096 candidates, <=64 MiB cumulative original/prospective
+mutated bytes, <=16 million prospective old×new line work. These conservative
+bounds also apply to history-only filtering; a bound error fails instead of
+returning a biased prefix sample. Existing per-diff 256 KiB/4000 lines/one-million
+line-work and original source/corpus/region limits remain. No final task publishes
+for no eligible candidate. Syntax, shape and duplicate rejection counts are separate.
+
+--exclude-content FILE is a read-only <=1 MiB array of original_sha256 and
+mutated_sha256 lowercase 64-hex pairs, <=4096 records. rust-content-v1 identifies
+the entire target expected/input byte pair, independent of filename, task ID,
+seed or mutation name. It does not hash unrelated fixture context, equate CRLF/LF
+or deduplicate similar/near-matching files. --deduplicate-content additionally
+carries successful pair identities through a batch, with upfront history capacity
+validation. It is off by default; static history exclusions remain explicit.
+Existing source-bound all-edit region exclusion still operates independently.
+
+Metadata/report includes requested/measured shape, content identity/policy and
+materialization/rejection counts. Existing writer lock, snapshot, create-only
+publisher, output byte charging, prefix failure journals and archive/run owners
+are unchanged. No automatic attempt loop, lowered difficulty, cross-process
+history mutation, resume, multi-provider orchestration or legacy cutover is claimed.
+Six contracts are written in benchmark_calibration.rs; execution, copied installed
+flows and broad provider/AST/scorer/shape/platform stabilization are still pending.

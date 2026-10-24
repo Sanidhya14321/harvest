@@ -5564,6 +5564,20 @@
         ],
         "timeout_seconds": 900,
         "kind": "contracts"
+      },
+      {
+        "id": "benchmark-calibration-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "benchmark_calibration"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
       }
     ],
     "release_gates": [
@@ -5657,7 +5671,8 @@
         "checks": [
           "rust-format",
           "rust-contracts",
-          "playbook-check"
+          "playbook-check",
+          "benchmark-calibration-contracts"
         ],
         "evidence": [
           "User-directed conversion-first checkpoint: native plugin host/SDK, dynamic tool schemas, layered configuration/profiles and rust-v1 edit scoring are written and connected.",
@@ -5674,7 +5689,8 @@
           "Attempt-timeout continuation base b5ccadf: existing runtime cancellation now exposes typed AbortError with unchanged diagnostics; optional native benchmark child submit deadlines, bounded pre-mutation timeout recovery, per-attempt event/commit telemetry and outcome/view counts are connected. Timeout/provider retry admission rejects unresolved calls in every tool family. Parent deadline/cancellation remains authoritative; first-event timeout, noncooperative SDK enforcement and installed/runtime evidence remain pending. Zero TS deletion or verified parity.",
           "Corpus continuation base 2d80e17: native corpus CLI/SDK read-only report and shared reviewed-tree/legacy-packages source policy connect to the existing mutation generator/task/archive/run pipeline. Shared bounded jailed traversal now supports pruning/cancellation; native generation snapshots sources once and records versioned policy/scanned/retained provenance. Difficulty/calibration/guidance/full grammar/metaharness cutover and runtime/installed verification remain pending. Zero TS removal or verified capability advance.",
           "Difficulty/region continuation base 518458c: shared native corpus inspection and generator connect bounded lexical file metrics, easy/medium/hard/nightmare preferences and score thresholds, preferred/fallback candidate reservoirs, and source-hash-bound all-edit region exclusions. CLI/SDK/provenance and existing task/archive/run consumers are connected; no extra parser/scorer/history writer. Calibration, multi-case orchestration/quotas, guided hashline, full grammar/metaharness cutover and runtime/installed/platform evidence remain pending. Zero TS deletion or verified capability advance.",
-          "Multi-case continuation base 8c19c66: generate-batch CLI and Rust generate_batch execute a bounded explicit case plan against one immutable source snapshot, sharing the existing fixture publisher/lock through a collection owner and carrying successful source-bound regions. Plan/case journals, partial/cancel outcomes, copy/entry/depth preflight and actual 64 MiB output charging are connected. Shape calibration/quotas, full producer/metaharness cutover and behavioral/installed/platform verification remain pending; zero TS deletion or verified completion."
+          "Multi-case continuation base 8c19c66: generate-batch CLI and Rust generate_batch execute a bounded explicit case plan against one immutable source snapshot, sharing the existing fixture publisher/lock through a collection owner and carrying successful source-bound regions. Plan/case journals, partial/cancel outcomes, copy/entry/depth preflight and actual 64 MiB output charging are connected. Shape calibration/quotas, full producer/metaharness cutover and behavioral/installed/platform verification remain pending; zero TS deletion or verified completion.",
+          "Calibration continuation base c99df19: existing edit-shape analyzer \u2192 explicit quota planning/apportionment \u2192 shared candidate materialization/hunk constraints/content history \u2192 existing seeded reservoir/batch snapshot/writer/archives/run are connected. Native CLI/SDK/package commands retain source-hash plan and measured/rejection metadata. Six focused contracts are written/compiled for consolidation; actual source removals zero and no behavioral/installed/platform parity claimed."
         ]
       },
       {
@@ -7199,7 +7215,8 @@
         "work_unit": "application",
         "depends_on": [
           "control:playbook",
-          "review:application"
+          "review:application",
+          "application:edit-file-source"
         ],
         "card": "docs/rust-migration/tasks/HASHLINE-HOST-BRIDGE.md",
         "capabilities": [
@@ -7278,6 +7295,29 @@
         "card": "docs/rust-migration/tasks/LEGACY-PROVIDER-CREDENTIALS.md",
         "capabilities": [
           "surface:oauth-credentials"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "application:edit-file-source",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook",
+          "review:primitives",
+          "review:application"
+        ],
+        "card": "docs/rust-migration/tasks/EDIT-FILE-SOURCE.md",
+        "capabilities": [
+          "tool:read",
+          "tool:edit"
         ],
         "checks": [
           "rust-format",

@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current metaharness trace-report continuation base: `dd34b68`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current calibration/quota continuation base: `c99df19`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -43,6 +43,7 @@ through this table and the machine task before editing a shared interface.
 | Edit-shape calibration | `rust-agent/src/edit_benchmark/shapes.rs` | native CLI/SDK and package edit-shapes command; legacy standalone TS script removed | parser/grouping/coverage/installed regressions; native bounded/unchanged metadata cases | Written/connected; removal verification pending |
 | Native tool-result metadata | `rust-agent/src/{edit,tools,durable_session,agent_session,session_engine}.rs` | shared native SDK/sync/async/RPC committed records and benchmark analyzer | actual result/error/no-op/metadata bounds and persistence/replay regressions | Written/connected; unverified |
 | Fixture archives | `rust-agent/src/edit_benchmark/archive.rs` | SDK FixtureSource/pack_fixtures, CLI pack/unpack/list/validate/run and shared task loader | malformed/CRC/path/alias/budget/cancellation/platform and installed contracts | Written/connected; unverified |
+| Calibrated generation/target-content dedup | existing edit_benchmark/{shapes,calibration,generate,batch,hunks} owners | native edit-shapes → plan → constrained generate-batch → fixture validate/archive/run; SDK/package commands | consolidated metric/selection/bounds/installed checks; specialized prompts/grammar and legacy producer cutover | Written/connected; unverified |
 | Syntax-aware mutation generation/corpus | `crates/pi-ast/src/mutations.rs`; `rust-agent/src/edit_benchmark/generate.rs` | native generate/mutations CLI and SDK -> shared snapshots/hunks -> validate/run | full binding/grammar eligibility, corpus/difficulty/calibrated shapes, legacy generator cutover, behavioral/installed checks | Written/connected foundation; unverified |
 
 ## Inputs, connections and deletion rules
@@ -1208,3 +1209,59 @@ Actual TS deletions zero here. Capability/source states stay partial/unverified/
 retained; compiling a new native report does not certify all metaharness behavior.
 Receipt/log prefix target/migration/conversion-trace-*. Continue other connected
 ready consumers while credential review and consolidation remain pending.
+
+## Calibrated quota and content selection continuation
+
+Owner application:conversion-first; base c99df19. Read RUST-BENCHMARK.md's native
+calibrated quota section for exact policy, flags, JSON, destinations, bounds and
+native versus historical differences. One implementation spans session per-call
+measurements → plan_quotas/plan_calibrated_quotas → existing AST generator/reservoir
+→ snapshot/collection publisher → validate/pack/archive/run. Source ledger row
+src/generate.ts stays with this active coordinator and partial/retained/unverified.
+
+Quota rows name mutation/count/optional exact shape, total <=64. Existing PRNG
+owns derived seeds; native analyzer size-band constants have one shared owner.
+Supplied per-call size counts use largest-remainder allocation and canonical band
+ties, then canonical assignment to unshaped cases. Explicit shapes survive.
+No mutation feasibility, historical percentages/distribution/formatting or random
+fallback is invented. Versioned plan and native generate_quota_batch preserve
+supplied calibration byte hash/weights/counts/seed in generation-plan.json;
+prior plain arrays/generate_batch remain supported.
+
+Shape constraints use the existing exact hunk metric on raw mutated/expected
+text, before preferred/fallback reservoirs; bounds are never silently relaxed.
+Target-content history excludes exact original/mutated SHA pairs independent of
+path. Batch carry is opt-in; old disabled-policy sampling stays unchanged.
+Root capacity validation precedes output ownership. Materializations/reparses
+use shared pi-ast, <=4096/64 MiB/16 million conservative line work, plus existing
+per-diff limits; budget errors fail instead of sampling a biased prefix. Existing
+jailed snapshots, resource lease, create-only publication, 64 MiB actual output
+charge and completed/failed/cancelled/not_started journals remain the sole owners.
+Requested/measured shapes, identities, syntax/shape/duplicate rejection counts
+are reported. No fixture context-tree/near-duplicate dedup or mutable history DB.
+
+Consumers: native CLI plan/generate/generate-batch and SDK, package generate:plan/
+generate:native; existing analyzer/hunk/fixture/archive/model-run owners. Keep
+legacy generate.ts/package generate, specialized prompts/formatter/grammar and
+metaharness adapters until their last consumers move. Actual TS deletions zero.
+Six benchmark_calibration contracts are written and registered for consolidation,
+not executed. Conversion checks: cargo fmt -p harvest-omp -- --check;
+cargo check --locked -p harvest-omp --all-targets --all-features; existing xtask
+playbook check/source-audit --plan. Behavioral/installed/platform/source verification
+remains unverified. Receipt prefix target/migration/conversion-calibration-*.
+
+Consolidate cargo xtask test -p harvest-omp --test benchmark_calibration plus
+native generator/AST/difficulty/region/batch/single-case consumers and installed
+plan→generate-batch→validate→pack→archive run. Cover metric/mixed-hunk/newline,
+quota rounding/ties/explicit overrides/unsupported versions, history/hash/path,
+counts/bounds/aliases/locks/cancellation/partial publication, prompt/metadata and
+old no-policy seed compatibility. Source plan is a plan only; full shared gates
+are deferred, not passed. Recovery reverts this coherent batch to c99df19; original
+sources, legacy generator and historical fixtures remain untouched.
+
+Independent dependency finding: application:edit-file-source is planned/review
+pending and now precedes hashline-host-bridge. Session::new's concrete FileCache
+cannot use the native jailed FileSource; Session::apply writes sequentially and
+does not itself supply all-file rollback. Read the new card before connecting
+hashline. Do not substitute ambient reads, waive seen-line provenance or claim a
+multi-file transaction from per-file atomic replacement.

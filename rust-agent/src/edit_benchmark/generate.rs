@@ -11,9 +11,13 @@ use pi_ast::{
 use serde::Serialize;
 
 pub const PRODUCER_VERSION: &str = "rust-ast-v1";
-struct Random(u64);
+pub(super) struct Random(u64);
 impl Random {
-	fn next(&mut self) -> u64 {
+	pub fn new(seed: u64) -> Self {
+		Self(seed)
+	}
+
+	pub fn next(&mut self) -> u64 {
 		self.0 = self.0.wrapping_add(0x9e3779b97f4a7c15);
 		let mut x = self.0;
 		x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
@@ -33,11 +37,15 @@ impl Random {
 }
 #[derive(Debug, Default, Clone)]
 pub struct GenerationOptions {
-	pub source_policy:    super::SourcePolicy,
-	pub difficulty:       Option<super::Difficulty>,
+	pub source_policy:       super::SourcePolicy,
+	pub difficulty:          Option<super::Difficulty>,
 	/// Override the requested difficulty's default minimum; requires difficulty.
-	pub min_score:        Option<u32>,
-	pub excluded_regions: Vec<super::MutationRegion>,
+	pub min_score:           Option<u32>,
+	pub excluded_regions:    Vec<super::MutationRegion>,
+	pub shape:               Option<super::ShapeConstraint>,
+	pub excluded_content:    Vec<super::ContentIdentity>,
+	/// Carry successful content identities across a collection; opt-in.
+	pub deduplicate_content: bool,
 }
 #[derive(Debug, Serialize)]
 pub struct DifficultySelection {
@@ -57,22 +65,30 @@ pub struct RejectedSource {
 }
 #[derive(Debug, Serialize)]
 pub struct GenerationReport {
-	pub region_policy_version: &'static str,
-	pub regions:               Vec<super::MutationRegion>,
-	pub excluded_candidates:   usize,
-	pub difficulty:            Option<DifficultySelection>,
-	pub source_policy:         super::SourcePolicy,
-	pub corpus_policy_version: &'static str,
-	pub corpus_files:          usize,
-	pub corpus_scanned:        usize,
-	pub producer:              &'static str,
-	pub seed:                  u64,
-	pub mutation:              MutationKind,
-	pub target:                PathBuf,
-	pub candidates:            usize,
-	pub rejected_sources:      usize,
-	pub rejected_examples:     Vec<RejectedSource>,
-	pub fixture:               super::PreparedTask,
+	pub invalid_candidates:     usize,
+	pub measured_shape:         Option<super::MeasuredShape>,
+	pub shape_constraint:       Option<super::ShapeConstraint>,
+	pub content_identity:       super::ContentIdentity,
+	pub content_policy_version: &'static str,
+	pub calibration_candidates: usize,
+	pub shape_rejected:         usize,
+	pub content_rejected:       usize,
+	pub region_policy_version:  &'static str,
+	pub regions:                Vec<super::MutationRegion>,
+	pub excluded_candidates:    usize,
+	pub difficulty:             Option<DifficultySelection>,
+	pub source_policy:          super::SourcePolicy,
+	pub corpus_policy_version:  &'static str,
+	pub corpus_files:           usize,
+	pub corpus_scanned:         usize,
+	pub producer:               &'static str,
+	pub seed:                   u64,
+	pub mutation:               MutationKind,
+	pub target:                 PathBuf,
+	pub candidates:             usize,
+	pub rejected_sources:       usize,
+	pub rejected_examples:      Vec<RejectedSource>,
+	pub fixture:                super::PreparedTask,
 }
 /// `source` is a reviewed source-data tree, not a repository discovery rule.
 /// Unsupported/large/non-UTF8 files are retained as inert copies. Only the
@@ -144,6 +160,15 @@ pub(super) fn generate_task_owned(
 		"minimum score requires explicit difficulty"
 	);
 	let exclusions = super::regions::Exclusions::new(&options.excluded_regions, cancellation)?;
+	if let Some(shape) = &options.shape {
+		shape.validate()?;
+	}
+	let content_history = super::calibration::content_history(&options.excluded_content)?;
+	let constrained = options.shape.is_some() || !content_history.is_empty();
+	let mut calibration_budget = super::calibration::CalibrationBudget::new();
+	let mut shape_rejected = 0;
+	let mut invalid_candidates = 0;
+	let mut content_rejected = 0;
 	let mut excluded_candidates = 0;
 	let policy = options.source_policy;
 	let minimum = options
@@ -246,6 +271,41 @@ pub(super) fn generate_task_owned(
 			if minimum.is_some_and(|minimum| score.is_some_and(|score| score < minimum)) {
 				continue;
 			}
+			if constrained {
+				// Charge prospective output/diff work before native application.
+				let mut estimate = code.len();
+				let mut lines = code.split('\n').count();
+				for edit in &candidate.edits {
+					estimate = estimate
+						.checked_add(edit.new.len())
+						.ok_or_else(|| anyhow::anyhow!("mutation estimate overflow"))?;
+					lines = lines
+						.checked_add(edit.new.bytes().filter(|b| *b == b'\n').count())
+						.ok_or_else(|| anyhow::anyhow!("mutation line estimate overflow"))?;
+				}
+				calibration_budget.charge(code, estimate, lines)?;
+				let mutated =
+					match mutations::apply(code, lang, &candidate, &mut || cancellation.heartbeat()) {
+						Ok(mutated) => mutated,
+						Err(_) => {
+							cancellation.heartbeat()?;
+							invalid_candidates += 1;
+							continue;
+						},
+					};
+				if content_history.contains(&super::ContentIdentity::new(code, &mutated)) {
+					content_rejected += 1;
+					continue;
+				}
+				if options.shape.is_some() {
+					let measured = super::measure_shape(&mutated, code, cancellation)?;
+					if !measured.admitted_by(options.shape.as_ref()) {
+						shape_rejected += 1;
+						continue;
+					}
+				}
+			}
+
 			if preferred {
 				preferred_count += 1;
 				if random.below(preferred_count as u64) == 0 {
@@ -266,7 +326,9 @@ pub(super) fn generate_task_owned(
 			.map(|r| r.reason.as_str())
 			.unwrap_or("no syntax candidate passes the requested selection policy");
 		anyhow::anyhow!(
-			"no eligible {} candidate: {detail} ({rejected} rejected sources)",
+			"no eligible {} candidate: {detail} ({rejected} rejected sources, {shape_rejected} shape \
+			 exclusions, {content_rejected} duplicate contents, {invalid_candidates} invalid \
+			 candidates)",
 			kind.name()
 		)
 	})?;
@@ -287,8 +349,25 @@ pub(super) fn generate_task_owned(
 		.with_context(|| {
 			format!("selected {} mutation rejected in {}", kind.name(), path.display())
 		})?;
+	let content_identity = super::ContentIdentity::new(code, &mutated);
+	ensure!(
+		!content_history.contains(&content_identity),
+		"selected mutation duplicates content history"
+	);
+	let measured_shape = options
+		.shape
+		.as_ref()
+		.map(|_| super::measure_shape(&mutated, code, cancellation))
+		.transpose()?;
+	ensure!(
+		measured_shape
+			.as_ref()
+			.is_none_or(|shape| shape.admitted_by(options.shape.as_ref())),
+		"selected mutation violates shape constraint"
+	);
+
 	input.atomic_write(&path, mutated.as_bytes())?;
-	let provenance = serde_json::json!({"producer":PRODUCER_VERSION,"seed":seed,"mutation":kind,
+	let provenance = serde_json::json!({"invalid_candidates":invalid_candidates,"shape_constraint":options.shape,"measured_shape":measured_shape,"calibration_version":super::CALIBRATION_VERSION,"calibration_candidates":calibration_budget.materialized,"shape_rejected":shape_rejected,"content_rejected":content_rejected,"content_identity":content_identity,"content_policy_version":super::CONTENT_VERSION,"producer":PRODUCER_VERSION,"seed":seed,"mutation":kind,
         "target":path,"selected":candidate,"original_sha256":content_hash(&original),
         "mutated_sha256":content_hash(mutated.as_bytes()),"candidates":seen,"rejected_sources":rejected,
         "difficulty":difficulty,"region_policy_version":super::REGION_VERSION,"regions":regions,"excluded_candidates":excluded_candidates,"source_policy":policy,"corpus_policy_version":super::corpus::POLICY_VERSION,"corpus_files":corpus_files,"corpus_scanned":corpus_scanned});
@@ -302,6 +381,14 @@ pub(super) fn generate_task_owned(
 		collection,
 	)?;
 	Ok(GenerationReport {
+		invalid_candidates,
+		shape_constraint: options.shape.clone(),
+		measured_shape,
+		content_identity,
+		content_policy_version: super::CONTENT_VERSION,
+		calibration_candidates: calibration_budget.materialized,
+		shape_rejected,
+		content_rejected,
 		region_policy_version: super::REGION_VERSION,
 		regions,
 		excluded_candidates,

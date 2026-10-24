@@ -18,6 +18,24 @@ state, never create overlapping runs or infer work from scheduling alone.
 
 ## Current checkpoint
 
+Calibration/quota continuation base c99df19 (owner application:conversion-first):
+existing per-call shape measurements now feed explicit deterministic quota plans,
+raw exact-hunk constraints and path-independent target-content SHA pair history
+before the shared seeded AST reservoirs. Native CLI plan/generate/generate-batch,
+SDK and package generate:plan/generate:native connect through the existing snapshot/
+fixture writer/archives/run. Batch dedup carry is opt-in; constraints never relax.
+Versioned calibration source/weights/allocation and measured/rejected candidates
+are journaled. See RUST-BENCHMARK.md and common card for bounds/commands/recovery.
+Six new contracts written/compiled, not executed; aggregate conversion checks only.
+No TS deletion/parity/installed/source-verification count advances. Legacy producer
+specialized prompts/formatter/grammar/metaharness consumers remain retained.
+Receipt/log prefix target/migration/conversion-calibration-*.
+
+New bounded prerequisite application:edit-file-source precedes hashline. Shared
+Session owns concrete ambient FileCache and applies sequential writes, without
+whole-call rollback. Review injectable jailed/cancellable source and actual host
+multi-file write contract before ready; never shortcut native jail or seen-lines.
+
 Metaharness narrative trace continuation base dd34b68: reviewed leaf
 application:metaharness-trace-report writes/connects the whole native map/reduce
 report pipeline, normalized HTTP/offline and selected persisted-session branch
@@ -79,8 +97,8 @@ still launches TS; do not cut it over to this partial candidate.
 
 ## Next dependency-ready connections
 
-- Benchmark: edit-shape quotas/calibration and whole-content
-  deduplication, specialized prompts, full syntax eligibility, retained metaharness
+- Benchmark: consolidate written quota/calibration/target-content policy; finish
+  specialized prompts, full syntax eligibility, retained metaharness
   run/report/queue workflows and native interactive views; move actual TS consumers.
 - application:hashline-host-bridge remains planned/review pending. Native read
   provenance/session EditStore/mode/approval contracts must connect before legacy

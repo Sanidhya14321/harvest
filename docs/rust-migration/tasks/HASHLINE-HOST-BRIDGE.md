@@ -49,3 +49,12 @@ paths, line provenance/noop/clipboard, streaming/commit/cancel ordering, guided
 first/retry attempts and normal replace consumers. Completion requires those
 behavioral/installed contracts and the documented remaining TS consumers, never
 compilation alone. No Rust code or parity is claimed by creating this card.
+
+## Concrete source/writer prerequisite (c99df19 review)
+
+application:edit-file-source now names the missing jailed FileSource seam for
+Session::new and the actual sequential writer semantics. Read that card before
+making this task ready. Existing Session does not itself provide all-file rollback;
+the earlier reference to a transactional host was a requirement to review, not an
+implemented property. Keep native replace and legacy hashline consumers working;
+no seen-line bypass, ambient FileCache shortcut or invented multi-file guarantee.

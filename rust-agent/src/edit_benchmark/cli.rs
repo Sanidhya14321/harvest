@@ -12,8 +12,58 @@ pub(crate) struct Arguments {
 	#[command(subcommand)]
 	command: Command,
 }
+#[derive(Debug, clap::Args)]
+struct GenerationSelectionArgs {
+	/// JSON shape constraint: min/max_changed_lines and min/max_hunks.
+	#[arg(long)]
+	shape:           Option<PathBuf>,
+	/// Read-only original/mutated SHA-256 pair history.
+	#[arg(long)]
+	exclude_content: Option<PathBuf>,
+}
+impl GenerationSelectionArgs {
+	fn options(
+		self,
+		source_policy: super::SourcePolicy,
+		difficulty: Option<super::Difficulty>,
+		min_score: Option<u32>,
+		excluded_regions: Vec<super::MutationRegion>,
+	) -> Result<super::GenerationOptions> {
+		Ok(super::GenerationOptions {
+			source_policy,
+			difficulty,
+			min_score,
+			excluded_regions,
+			shape: self
+				.shape
+				.map(|p| -> Result<super::ShapeConstraint> {
+					Ok(serde_json::from_slice(&read_document(&p, 65536)?)?)
+				})
+				.transpose()?,
+			excluded_content: self
+				.exclude_content
+				.map(|p| -> Result<Vec<super::ContentIdentity>> {
+					Ok(serde_json::from_slice(&read_document(&p, 1024 * 1024)?)?)
+				})
+				.transpose()?
+				.unwrap_or_default(),
+			deduplicate_content: false,
+		})
+	}
+}
 #[derive(Debug, clap::Subcommand)]
 enum Command {
+	/// Expand explicit per-mutation/shape quotas into a versioned case plan.
+	Plan {
+		#[arg(long)]
+		quotas:      PathBuf,
+		/// Native edit-shapes JSON; apportion unshaped quota cases by per-call
+		/// size.
+		#[arg(long)]
+		calibration: Option<PathBuf>,
+		#[arg(long, default_value_t = 42)]
+		seed:        u64,
+	},
 	/// Execute isolated native model runs and write rust-v1 artifacts.
 	Run(RunArguments),
 	/// Inspect a completed native summary without model/network access.
@@ -35,23 +85,30 @@ enum Command {
 		policy:     super::SourcePolicy,
 	},
 	GenerateBatch {
+		/// Carry successful target-content identities across this collection.
 		#[arg(long)]
-		source:          PathBuf,
+		deduplicate_content: bool,
+		#[command(flatten)]
+		selection:           GenerationSelectionArgs,
 		#[arg(long)]
-		output:          PathBuf,
-		/// JSON array of task_id/mutation/seed case records, max 64.
+		source:              PathBuf,
 		#[arg(long)]
-		plan:            PathBuf,
+		output:              PathBuf,
+		/// Ordered case array or rust-calibration-v1 plan document, max 64 cases.
+		#[arg(long)]
+		plan:                PathBuf,
 		#[arg(long, value_enum, default_value_t = super::SourcePolicy::ReviewedTree)]
-		source_policy:   super::SourcePolicy,
+		source_policy:       super::SourcePolicy,
 		#[arg(long, value_enum)]
-		difficulty:      Option<super::Difficulty>,
+		difficulty:          Option<super::Difficulty>,
 		#[arg(long, requires = "difficulty")]
-		min_score:       Option<u32>,
+		min_score:           Option<u32>,
 		#[arg(long)]
-		exclude_regions: Option<PathBuf>,
+		exclude_regions:     Option<PathBuf>,
 	},
 	Generate {
+		#[command(flatten)]
+		selection:       GenerationSelectionArgs,
 		/// Read-only JSON array of native source-hash-bound region exclusions.
 		#[arg(long)]
 		exclude_regions: Option<PathBuf>,
@@ -278,6 +335,23 @@ struct Manifest {
 pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 	let cancellation = Default::default();
 	let report = match arguments.command {
+		Command::Plan { quotas, seed, calibration } => {
+			let quotas: Vec<super::GenerationQuota> =
+				serde_json::from_slice(&read_document(&quotas, 1024 * 1024)?)?;
+			let plan = if let Some(path) = calibration {
+				super::plan_calibrated_quotas(
+					&quotas,
+					seed,
+					&read_document(&path, 1024 * 1024)?,
+					&cancellation,
+				)?
+			} else {
+				super::plan_quotas(&quotas, seed, &cancellation)?
+			};
+			serde_json::to_writer(io::stdout().lock(), &plan)?;
+			writeln!(io::stdout().lock())?;
+			return Ok(0);
+		},
 		Command::Run(arguments) => return run(arguments),
 		Command::View { output, json } => {
 			let summary = super::SummaryView::load(&output)?;
@@ -306,6 +380,8 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 			return Ok(if report.eligible > 0 { 0 } else { 1 });
 		},
 		Command::GenerateBatch {
+			deduplicate_content,
+			selection,
 			source,
 			output,
 			plan,
@@ -314,26 +390,37 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 			min_score,
 			exclude_regions,
 		} => {
-			let cases: Vec<super::GenerationCase> =
-				serde_json::from_slice(&read_document(&plan, 1024 * 1024)?)?;
+			let cases = super::calibration::decode_plan(&read_document(&plan, 1024 * 1024)?)?;
 			let excluded_regions = exclude_regions
 				.map(|path| -> Result<Vec<super::MutationRegion>> {
 					Ok(serde_json::from_slice(&read_document(&path, 1024 * 1024)?)?)
 				})
 				.transpose()?
 				.unwrap_or_default();
-			let report = super::generate_batch(
-				&source,
-				&output,
-				&cases,
-				&super::GenerationOptions { source_policy, difficulty, min_score, excluded_regions },
-				&cancellation,
-			)?;
+			let mut options =
+				selection.options(source_policy, difficulty, min_score, excluded_regions)?;
+			options.deduplicate_content = deduplicate_content;
+			let report = match cases {
+				super::calibration::PlanInput::Array(cases) => {
+					super::generate_batch(&source, &output, &cases, &options, &cancellation)?
+				},
+				super::calibration::PlanInput::Document(plan) => {
+					let quota_plan = super::QuotaPlan {
+						version:     super::CALIBRATION_VERSION,
+						seed:        plan.seed,
+						cases:       plan.cases,
+						calibration: plan.calibration,
+					};
+					super::generate_quota_batch(&source, &output, &quota_plan, &options, &cancellation)?
+				},
+			};
+
 			serde_json::to_writer(io::stdout().lock(), &report)?;
 			writeln!(io::stdout().lock())?;
 			return Ok(if report.complete { 0 } else { 1 });
 		},
 		Command::Generate {
+			selection,
 			source,
 			output,
 			task_id,
@@ -359,7 +446,7 @@ pub(crate) fn execute(arguments: Arguments) -> Result<u8> {
 				&task_id,
 				kind,
 				seed,
-				&super::GenerationOptions { source_policy, difficulty, min_score, excluded_regions },
+				&selection.options(source_policy, difficulty, min_score, excluded_regions)?,
 				&cancellation,
 			)?;
 			serde_json::to_writer(io::stdout().lock(), &report)?;

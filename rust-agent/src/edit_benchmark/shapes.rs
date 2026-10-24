@@ -11,6 +11,8 @@ use harvest_runtime::{JailedFs, MAX_EVENT_BYTES, cancel::CancelToken};
 use serde::Serialize;
 use serde_json::Value;
 
+pub(super) const SIZE_BANDS: [(&str, usize, usize); 5] =
+	[("1", 1, 1), ("2-5", 2, 5), ("6-20", 6, 20), ("21-60", 21, 60), ("61+", 61, usize::MAX)];
 const MAX_SAMPLES: usize = 100_000;
 const MAX_SESSION_BYTES: u64 = 64 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, Default, Serialize)]
@@ -106,13 +108,11 @@ impl Distribution {
 		let changed = runs.iter().map(|r| r.old_count.max(r.new_count)).sum();
 		self.changed.push(changed);
 		self.samples += 1;
-		let size = match changed {
-			0..=1 => "1",
-			2..=5 => "2-5",
-			6..=20 => "6-20",
-			21..=60 => "21-60",
-			_ => "61+",
-		};
+		let size = SIZE_BANDS
+			.iter()
+			.find(|(_, _, max)| changed <= *max)
+			.expect("unbounded final size band")
+			.0;
 		*self.sizes.entry(size).or_default() += 1;
 		*self
 			.hunks

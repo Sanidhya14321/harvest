@@ -17,6 +17,8 @@ pub struct GenerationCase {
 	pub task_id:  String,
 	pub mutation: String,
 	pub seed:     u64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub shape:    Option<super::ShapeConstraint>,
 }
 #[derive(Debug, Serialize)]
 pub struct GenerationCaseOutcome {
@@ -54,16 +56,52 @@ pub fn generate_batch(
 	options: &GenerationOptions,
 	cancellation: &CancelToken,
 ) -> Result<GenerationBatch> {
+	generate_collection(source, output, cases, options, cancellation, None)
+}
+/// Execute a versioned quota plan through the same collection writer. The full
+/// calibration source/weights/seed provenance is retained in the root journal.
+pub fn generate_quota_batch(
+	source: &Path,
+	output: &Path,
+	plan: &super::QuotaPlan,
+	options: &GenerationOptions,
+	cancellation: &CancelToken,
+) -> Result<GenerationBatch> {
+	ensure!(plan.version == super::CALIBRATION_VERSION, "unsupported quota plan version");
+	if let Some(calibration) = &plan.calibration {
+		calibration.validate()?;
+	}
+	generate_collection(source, output, &plan.cases, options, cancellation, Some(plan))
+}
+fn generate_collection(
+	source: &Path,
+	output: &Path,
+	cases: &[GenerationCase],
+	options: &GenerationOptions,
+	cancellation: &CancelToken,
+	quota_plan: Option<&super::QuotaPlan>,
+) -> Result<GenerationBatch> {
 	ensure!(!cases.is_empty() && cases.len() <= 64, "generation plan must contain 1..64 cases");
 	ensure!(
 		options.difficulty.is_some() || options.min_score.is_none(),
 		"minimum score requires explicit difficulty"
 	);
 	super::regions::Exclusions::new(&options.excluded_regions, cancellation)?;
+	super::calibration::content_history(&options.excluded_content)?;
+	ensure!(
+		!options.deduplicate_content || options.excluded_content.len() + cases.len() <= 4096,
+		"planned batch content history exceeds 4096 records"
+	);
+	if let Some(shape) = &options.shape {
+		shape.validate()?;
+	}
 	let mut ids = BTreeSet::new();
 	let mut kinds = Vec::with_capacity(cases.len());
 	for case in cases {
 		cancellation.heartbeat()?;
+		if let Some(shape) = &case.shape {
+			shape.validate()?;
+		}
 		super::prepare::validate_task_id(&case.task_id)?;
 		let portable = Path::new("__batch__").join(&case.task_id);
 		ensure!(super::archive::normalized(&portable)? == portable, "task identity is not portable");
@@ -125,8 +163,9 @@ pub fn generate_batch(
 		&collection,
 		Path::new("generation-plan.json"),
 		&serde_json::json!({
-			"version":BATCH_VERSION,"cases":cases,"source_policy":options.source_policy,
+			"version":BATCH_VERSION,"quota_plan":quota_plan,"cases":cases,"source_policy":options.source_policy,
 			"difficulty":options.difficulty,"min_score":options.min_score,
+				"shape_constraint":options.shape,"calibration_version":super::CALIBRATION_VERSION,"content_policy_version":super::CONTENT_VERSION,"deduplicate_content":options.deduplicate_content,"initial_excluded_content":options.excluded_content,
 			"initial_excluded_regions":options.excluded_regions,"source_inventory":corpus,
 			"planned_snapshot_bytes":bytes,
 		}),
@@ -144,6 +183,10 @@ pub fn generate_batch(
 			});
 			continue;
 		}
+		let mut case_options = current.clone();
+		if case.shape.is_some() {
+			case_options.shape = case.shape.clone();
+		}
 		let result = (|| -> Result<GenerationReport> {
 			cancellation.heartbeat()?;
 			super::generate::generate_task_owned(
@@ -152,7 +195,7 @@ pub fn generate_batch(
 				&case.task_id,
 				kind,
 				case.seed,
-				&current,
+				&case_options,
 				cancellation,
 				Some(&collection),
 			)
@@ -165,6 +208,13 @@ pub fn generate_batch(
 				current
 					.excluded_regions
 					.extend(report.regions.iter().cloned());
+				if options.deduplicate_content {
+					ensure!(current.excluded_content.len() < 4096, "batch content history exhausted");
+					current
+						.excluded_content
+						.push(report.content_identity.clone());
+				}
+
 				outcomes.push(GenerationCaseOutcome {
 					task_id: case.task_id.clone(),
 					state:   "completed",
