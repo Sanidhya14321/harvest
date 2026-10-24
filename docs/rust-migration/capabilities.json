@@ -4767,6 +4767,31 @@
         ],
         "status": "pending"
       }
+    },
+    {
+      "id": "surface:cleanup-discovery",
+      "implementation": {
+        "status": "complete",
+        "paths": [
+          "rust-agent/src/cleanup_scan",
+          "crates/pi-ast/src/cleanup.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "work_unit": "tooling",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
     }
   ],
   "execution": {
@@ -5509,6 +5534,20 @@
           "harvest-omp"
         ],
         "timeout_seconds": 1200,
+        "kind": "contracts"
+      },
+      {
+        "id": "cleanup-discovery-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "cleanup_scan"
+        ],
+        "timeout_seconds": 900,
         "kind": "contracts"
       }
     ],
@@ -7159,6 +7198,31 @@
           "playbook-check"
         ],
         "evidence": []
+      },
+      {
+        "id": "tooling:cleanup-discovery",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook",
+          "review:tooling"
+        ],
+        "card": "docs/rust-migration/tasks/CLEANUP-DISCOVERY.md",
+        "capabilities": [
+          "surface:cleanup-discovery"
+        ],
+        "checks": [
+          "rust-format",
+          "cleanup-discovery-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Whole six-report cleanup scanner port and native CLI/SDK/command-prompt cutover; scripts/cleanup-scan.ts deleted after final consumer move. Historical source baseline preserved.",
+          "Five focused Rust contracts plus doctests pass; copied Linux candidate JSON/text/invalid-top/unsafe-package checks pass without language runtimes in PATH. Legacy/default row sets match across all six reports with stable-order/numeric normalization; detailed receipts and intentional native diagnostics in the card.",
+          "Implementation complete is distinct from verification: source-removal validator, consolidated shared consumers/Clippy and all-platform installed artifact evidence remain pending. Task is in progress; no verified capability or removal count claimed."
+        ]
       }
     ]
   }

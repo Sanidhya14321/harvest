@@ -53,3 +53,6 @@ mod browser_cli;
 
 /// Ordinary document conversion API, without JavaScript or native bindings.
 pub use harvest_media::docx;
+
+pub mod cleanup_scan;
+mod source_text;

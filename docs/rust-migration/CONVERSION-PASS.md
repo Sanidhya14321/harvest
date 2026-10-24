@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current multi-case continuation base: `8c19c66`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current cleanup-discovery continuation base: `8b30730`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -11,7 +11,9 @@ Do not revert to per-file test/addon cycles on resume.
 “Written and connected” describes code and consumers. It does not mean behavioral
 parity, installation verification, completed migration or eligible source deletion.
 The machine manifest retains these distinctions. No feature becomes done from a
-compiler result. This checkpoint has no behavioral or installed evidence.
+compiler result. Most conversion foundations have no behavioral or installed evidence. Feature-specific
+local contracts and copied Linux CLI checks for cleanup discovery are recorded in
+its reviewed card; they do not establish whole migration or platform parity.
 
 ## Reserved interfaces and file ownership
 
@@ -21,6 +23,7 @@ through this table and the machine task before editing a shared interface.
 
 | Feature | Sole Rust destination | Consumers connected | Remaining work | State |
 |---|---|---|---|---|
+| Cleanup discovery | cleanup_scan modules; pi-ast cleanup facts | Rust scan/CLI; both cleanup prompts; package alias | source-bound removal and consolidated/platform gates | Whole feature implemented/cut over; verification pending |
 | Tool schemas/registration | `rust-agent/src/chat.rs`, `tools.rs` | OpenAI/Anthropic model requests; sync/async session tool runtime | schema/collision regressions and dynamic registry integration tests | Written/connected; unverified |
 | Native plugin v1 host | `rust-agent/src/plugins/{protocol,host}.rs` | `ToolRuntime`, `AgentSession`, `SessionEngineOptions`, run/RPC `--plugin` | cancellation/exit/queue/approval tests; graceful draining and descendant cleanup | Written/connected; unverified |
 | Rust plugin SDK | `rust-agent/src/plugins/sdk.rs`, `examples/native-plugin.rs` | protocol authoring, host callbacks, cancellation, typed UI events | copied external consumer; version/malformed/process-exit tests; installed platforms | Written/connected; unverified |
@@ -1148,3 +1151,31 @@ Batch report fixture.output is relative to its collection root. Original source
 roots/temporary snapshot paths are omitted from successful journals; standalone
 prepare/generate report paths retain their existing behavior. Cross-machine
 reproducibility and portability still require the recorded installed checks.
+
+## Whole cleanup discovery feature cutover
+
+Owner `tooling:cleanup-discovery` (same active migration agent); base 8b30730.
+Read tasks/CLEANUP-DISCOVERY.md for the reviewed whole-feature contract and exact
+inputs/consumers/evidence/recovery. All six reports, corpus/reference indexing,
+AST facts/barrel closure, clone normalization/grouping, rankings and JSON/text
+CLI move together. Two cleanup prompts and root developer alias now reach Rust;
+the stale old index entry and scripts/cleanup-scan.ts are removed. This is a real
+legacy entrypoint/consumer deletion, not another parallel primitive.
+
+Native module ownership is reserved to this leaf; do not introduce another
+cleanup scanner or TypeScript runtime. It reuses shared cached AST, filesystem,
+text and bounded-output owners. Shared ECMAScript whitespace patterns now have
+one host utility; benchmark difficulty uses the existing pi-edit whitespace
+predicate instead of a duplicate implementation.
+
+The inventory was missing this retained developer feature; surface:cleanup-discovery
+is registered rather than hidden under an unrelated capability. Implementation
+is complete but behavioral/lifecycle stages stay unverified/pending and the task
+in progress until source-bound/consolidated/platform gates accept evidence.
+Five focused contracts, copied Linux CLI runtime-free PATH checks, and historical
+oracle row comparisons are recorded; broad stabilization remains deferred. Actual
+TS deletion: 1 file, 492 lines/17,304 bytes; verified source-removal count does not
+advance from the deletion alone. Original baseline and inherited missing evidence
+remain intact. Receipt prefix conversion-cleanup-scan-* and cleanup-oracle/ under
+ignored target/migration. Continue other connected ready features after this
+checkpoint; do not rewrite or abandon this completed code/consumer move.

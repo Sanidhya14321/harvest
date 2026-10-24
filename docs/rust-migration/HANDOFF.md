@@ -35,6 +35,16 @@ and preserves plan/case journals with completed/failed/cancelled/not_started sta
 No resume or shape-quota/calibration policy is claimed. See the same benchmark
 and common card; ignored receipts target/migration/conversion-generation-batch-*.
 
+Whole cleanup discovery continuation base 8b30730: tooling:cleanup-discovery owns
+the complete six-report scanner, shared AST facts/reference index/barrel trace,
+clone grouping and native CLI/SDK. Both cleanup command prompts and package alias
+now call Rust; scripts/cleanup-scan.ts (492 lines/17,304 bytes) and its stale
+source-index record are removed. Five focused contracts and copied Linux CLI
+checks pass; complete legacy/default row sets agree, with deterministic ordering
+and explicit diagnostics. See tasks/CLEANUP-DISCOVERY.md. Implementation complete,
+source-bound/consolidated/platform verification still pending; task stays active.
+Ignored receipts/oracles: conversion-cleanup-scan-* and cleanup-oracle/.
+
 Existing owners remain: configuration/value and command cache; shared provider
 builder; plugin protocol/process/event forwarding; MCP/LSP/DAP; source corpus,
 AST mutations/hunks/fixture archives; native session/run/scoring/report owners.
@@ -44,7 +54,9 @@ tool results and stays inside the original run deadline. All remain unverified
 foundations, not completed retained workflows. Earlier exact contracts/receipts
 are in NATIVE-PROVIDER-VALUES.md, RUST-BENCHMARK.md, common card and archives.
 
-Compiler, format and ownership only; no TS deletion or verified count advance.
+Earlier foundations have compiler/format/ownership evidence only; cleanup has the
+focused evidence above. Actual cleanup TS deletion is pending source verification;
+no verified capability/source-removal count advances from it alone.
 Generate honest counts from cargo xtask playbook status --json. Default product
 still launches TS; do not cut it over to this partial candidate.
 

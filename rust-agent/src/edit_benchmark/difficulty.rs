@@ -54,11 +54,7 @@ pub struct DifficultyMetrics {
 	pub max_indent:           usize,
 	pub function_ranges:      Vec<FunctionRange>,
 }
-// ECMAScript whitespace, rather than Rust's broader Unicode White_Space.
-fn space(character: char) -> bool {
-	matches!(character, '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' |
-		'\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
-}
+use pi_edit::text::is_js_whitespace as space;
 fn trim(line: &str) -> &str {
 	line.trim_matches(space)
 }
@@ -72,7 +68,7 @@ fn indent(line: &str) -> usize {
 fn trivial(line: &str) -> bool {
 	matches!(line, "{" | "}" | "};" | ");" | "});" | "return;" | "break;" | "continue;" | "")
 }
-const WS: &str = r"[\x09-\x0D\x20\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]";
+use crate::source_text::JS_SPACE as WS;
 static FUNCTIONS: LazyLock<Regex> = LazyLock::new(|| {
 	Regex::new(&format!(
 	r"(?:function{WS}+([A-Za-z0-9_]+)|(?:const|let|var){WS}+([A-Za-z0-9_]+){WS}*={WS}*(?:async{WS}*)?\([^)]*\){WS}*=>)"

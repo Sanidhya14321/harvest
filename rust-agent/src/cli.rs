@@ -25,6 +25,10 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+	#[command(
+		about = "Discover cleanup candidates using native source analysis; never deletes files"
+	)]
+	CleanupScan(crate::cleanup_scan::Arguments),
 	#[command(about = "Query or refactor with a configured native language server")]
 	Lsp(crate::language_services::cli::Arguments),
 	#[command(about = "Inspect or control a program with a configured native debug adapter")]
@@ -423,6 +427,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
 			crate::replay_cli::execute(&args.workspace, &args.file, &args.leaf, args.columns)?;
 			Ok(0)
 		},
+		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
 		Commands::Session(args) => inspect_session(args),
 		Commands::RetiredCompletions { .. } => bail!(
