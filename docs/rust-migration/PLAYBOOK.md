@@ -4,8 +4,69 @@ Work on `ts-to-rust`. Preserve its existing history and user changes. Commit one
 coherent migration checkpoint at a time; do not publish, release or merge to `main` as
 part of migration work. [SCOPE.md](SCOPE.md) records the user-approved target.
 
+## Full conversion sweep (latest user instruction)
+
+The user again requests the whole codebase be moved first and errors/tests handled
+in a consolidated later pass, with routine execution requiring no intervention.
+The prior process still produced too many small foundation checkpoints. This
+section supersedes their per-feature compiler/test/receipt scheduling. Preserve
+SCOPE.md, security/approval/data contracts and honest unverified states.
+
+Use three passes:
+
+1. **Conversion sweep:** implement retained Rust subsystem behavior and connect
+   its real callers/entrypoints. Work across the existing subsystem inventory,
+   reusing shared engines. Group source review, implementation, consumer moves,
+   eligible deletion and ledger/handoff updates by a whole workflow/domain.
+   A helper or prerequisite alone is not a normal stopping milestone. Continue
+   the same unfinished domain across resumptions instead of switching to another
+   small foundation. Do not run cargo/compiler/Clippy/tests/addon/installed loops
+   after each helper, file or prerequisite. Uncompiled conversion checkpoints
+   are allowed and must say checks not run. Keep remaining connections/errors
+   explicit; do not claim syntactic conversion or Rust additions are parity.
+2. **Integration repair:** after the conversion sweep has connected the retained
+   Rust application graph (or an explicitly recorded broad integration checkpoint
+   is needed to resolve shared API uncertainty), run aggregate compiler/connection
+   checks and fix groups of errors. Record why an early aggregate check is needed;
+   it must not become the ordinary per-helper schedule. Keep independent conversion
+   work moving when credentials/platform access block a different workflow.
+3. **Verification:** consolidate behavioral, regression, installed, security,
+   performance and promised-platform checks by actual user workflow, then run all
+   final source/capability/release gates. Only evidence advances verified/done.
+
+Execution granularity: the next domain is native editing as a user workflow,
+including per-session edit state, read snapshots/seen-line output, explicit mode
+configuration, model schemas, sync/async/RPC/SDK consumers and benchmark guidance.
+The existing source/writer engines are code dependencies, not reasons to stop
+again. Read the common register/card before selecting interfaces. Finish that
+connected implementation domain, or record a genuine architecture/access/resource
+blocker, before choosing the next broad domain from the authoritative inventory.
+
+Keep one Markdown ownership/checklist register plus existing ledgers/graph. Update
+records once per coherent batch, not a new planning document for every helper.
+Keep original baselines and historical evidence. Commit/push recoverable conversion
+checkpoints at domain boundaries or actual execution/resource limits, with a short
+exact resume action. Cheap diff/ownership hygiene may run before commits; a source
+plan or compilation is never behavioral proof. Do not weaken CI or source gates.
+
+Remove legacy files when their last real consumer has moved, record actual removal
+with verification pending, and consolidate deletion evidence later. Shared legacy
+sources stay until their consumers move. Do not substitute generated stubs,
+rename executable scripts as data, embed legacy implementations or introduce a
+language runtime to manufacture conversion progress. Default launchers remain
+until the final Rust candidate has the required installed evidence.
+
+Routine migration edits, commits and pushes to ts-to-rust are already authorized.
+No repeated continue/approval prompts. Use existing scheduled continuation for
+resumption; do not spawn overlapping writers or duplicate automations. A scheduled
+run is bounded and can fail; do not promise unlimited uninterrupted execution or
+completion by a particular time without evidence. Stop only at verified full
+acceptance, the user's stop instruction, or an actual run limit with a saved
+checkpoint; surface essential unavailable access/product decisions truthfully.
+
 ## Conversion-first execution (latest user instruction)
 
+Historical scheduling below is subordinate to the full conversion sweep above.
 The user explicitly changed execution order: write and connect Rust across larger
 subsystems first, then stabilize errors and run tests together. This supersedes
 older per-slice verification scheduling below and in historical task cards.

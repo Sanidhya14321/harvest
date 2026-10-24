@@ -6,6 +6,41 @@ The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
 
+## Current execution order: broad conversion sweep
+
+Latest user steering at 7c60c91: convert the retained system first, repair integration
+errors together, then run workflow/platform verification. PLAYBOOK.md's full sweep
+section overrides older per-helper/per-feature checks in this register and cards.
+No routine compiler/test/receipt cycle after each small addition. Preserve contracts,
+source ownership and unverified states; no fabricated Rust stubs or bulk deletion.
+
+Active next domain: **native editing end to end**. Sole coordinator remains
+application:conversion-first; existing source/writer leaf ownership is retained.
+The prior native source and multi-file writer code is already written; continue
+its missing consumers as one batch:
+
+- [ ] Retain bounded edit state for the session lifetime, with correct root/alias
+  ownership and invalidation; reuse EditStore and existing native writer.
+- [ ] Connect bounded read windows, normalized snapshots, tags and exactly shown
+  seen-line provenance; never authorize undisplayed content or document projections.
+- [ ] Connect explicit native edit mode selection to schemas and runtime dispatch,
+  retaining ordinary exact replacement and host final-argument approval.
+- [ ] Connect the same state/mode through sync/async/RPC/SDK entrypoints and persisted
+  session/resume boundaries; record what is volatile versus durable.
+- [ ] Connect benchmark mode/guidance through the same native read/edit contract;
+  do not emit hashline guidance for an incompatible host.
+- [ ] Move actual applicable callers, remove eligible legacy sources and orphaned
+  dependencies, record exact remaining TS callers, then checkpoint the domain.
+
+These boxes are a conversion checklist, not verified capability states. Resolve
+technical contracts from source before writing; review HASHLINE-HOST-BRIDGE.md
+and the implemented source/writer cards, rather than guessing their semantics.
+If a real contract/access dependency blocks the domain, record one bounded blocker
+and continue another whole ready domain; do not make a queue of tiny stopping points.
+Aggregate checks belong to the later integration pass unless a recorded broad
+shared-interface uncertainty requires them earlier. Existing unrun contracts remain
+in the shared stabilization queue, not a reason to recheck every prior helper.
+
 ## What is written versus what is done
 
 “Written and connected” describes code and consumers. It does not mean behavioral

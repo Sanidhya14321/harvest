@@ -15,6 +15,16 @@ at checkpoints, broad behavioral/installed/platform stabilization later. Preserv
 unverified/partial states. Commit/push this branch without routine approval or a
 continue prompt; no main merge/publication/default-launcher cutover.
 
+Latest scheduling instruction: follow PLAYBOOK.md's full conversion sweep, then
+integration repair, then workflow/platform verification. Older per-helper compiler/
+test scheduling is superseded. Next implementation batch is native editing end to
+end (session edit state → read provenance → mode/schema → sync/async/RPC/SDK →
+benchmark guidance and eligible caller deletion). Checklist/ownership is in the
+common register. Continue that unfinished domain across runs; do not stop after
+another small primitive or ask for continue. Uncompiled/unverified checkpoints
+are allowed and must record checks not run. No stubs, unsafe bypasses or premature
+source/default-launcher removal. Preserve all final acceptance requirements.
+
 ## Current written connections
 
 Native edit-writer continuation base 2538615: application:edit-write-contract is
