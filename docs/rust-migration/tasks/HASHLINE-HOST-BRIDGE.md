@@ -65,3 +65,9 @@ Behavioral/addon/installed evidence remains pending. application:edit-write-cont
 separately owns multi-target publication/failure review. Hashline still stays
 planned/review pending; neither prerequisite establishes seen-line/mode/guidance
 connections or a multi-file transaction. Read the updated cards before proceeding.
+
+Writer continuation base 2538615: the write contract is now reviewed/in progress
+and shared native publication is connected, including explicit SDK modes with
+enforce_seen_lines=true. Normal read provenance/mode/guidance consumers remain
+unconnected; no tool-schema/default-mode switch or parity follows from this SDK.
+Read the updated writer card and pending consolidation checks before ready.

@@ -17,6 +17,18 @@ continue prompt; no main merge/publication/default-launcher cutover.
 
 ## Current written connections
 
+Native edit-writer continuation base 2538615: application:edit-write-contract is
+reviewed/in progress. Complete-stage preflight now precedes callbacks; native
+exact replace and explicit Rust SDK multi-file modes share one jailed/resource-
+owned/preimage-checked writer, existing engines/store and final-argument approval.
+Create/update/delete/move commits are sequential; earlier bytes remain on later
+failure and committed-path/partial-move diagnostics are explicit. No all-file
+transaction/CAS/crash-recovery promise. Read EDIT-WRITE-CONTRACT.md for conservative
+collision/alias limits, exact bounds, recovery and remaining consumers.
+Eight new contracts written/compiled, not executed; compiler/format/ownership only.
+No TS deletions, verified counts or addon/installed/platform parity advances.
+Receipts/logs: target/migration/conversion-edit-writer-*.
+
 Edit-source continuation base fd657c6: application:edit-file-source is reviewed/
 in progress. Session owns an injected Send+Sync FileSource with matching policy,
 preserves Session::new/FileCache, and shares one fresh all-path stage across apply
@@ -27,10 +39,10 @@ aggregate pi-edit/application compiler/format/playbook only. Addon, behavioral,
 installed/platform/removal verification pending. Zero TS deletion or verified count
 advance. Receipts/logs: target/migration/conversion-edit-source-*.
 
-application:edit-write-contract separately owns multi-target publication/failure
-review. Shared apply stays sequential and stage commits no persisted snapshot/
-clipboard. Hashline still needs read provenance, mode/approval and writer
-connections; do not expose hashline/guidance or claim an all-file transaction.
+Multi-target publication is now written as above; its consolidated evidence is
+pending. Hashline still needs normal read provenance, mode/configuration and
+guidance connections. Public source-only stage commits no persisted snapshot/
+clipboard; the full native writer uses shared session application instead.
 
 Preserve other written owners: calibration/quota planning, exact-hunk shape and
 source-bound region constraints, optional target-content SHA-pair dedup, immutable
@@ -43,7 +55,7 @@ Default product still launches TS; do not confuse native connections with parity
 
 ## Next connections and remaining consumers
 
-- Finish native edit write contract and shared read snapshots/seen-line display,
+- Consolidate the written native writer; connect shared read snapshots/seen-line display,
   mode configuration and final multi-target approval before hashline guidance.
 - Benchmark specialized prompts, full syntax eligibility/source acquisition and
   metaharness run/report/queue/native views remain. Keep generate.ts, its legacy

@@ -81,3 +81,10 @@ compatibility. Run copied installed sync/async/RPC/SDK/benchmark native replacem
 and promised platforms; shared source-audit/lifecycle validators still apply.
 No addon rebuild, behavioral, installed/platform or source-removal verification is
 claimed by the compiler check. Task stays in progress until those checks pass.
+
+Publication continuation base 2538615 supersedes the earlier direct single-file
+publication paragraph: native replace now uses full Session application and one
+NativeWriter. See EDIT-WRITE-CONTRACT.md for complete-stage ownership/freshness,
+sequential partial failures and explicit SDK modes. Source reads now also have a
+whole-call 256-read/128 MiB budget; existence probes use jailed metadata. No
+hashline read-tool provenance or default mode is implied by this connection.

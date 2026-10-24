@@ -131,3 +131,21 @@ const _: fn() = || {
 	fn require<T: Send + Sync>() {}
 	require::<Session>();
 };
+
+#[tokio::test]
+async fn rejected_preflight_never_calls_writer_or_changes_disk() {
+	let ws = Workspace::new(EditMode::Replace);
+	ws.write("file.txt", "alpha\n");
+	let state = Arc::new(Mutex::new(State { text: Some("alpha\n".into()), ..Default::default() }));
+	let mut session = session(&ws, state);
+	let writer = DiskWriter::default();
+	let error = session
+		.apply_with_preflight(ApplyRequest::default(), &writer, |_| -> EditResult<()> {
+			Err(EditError::apply("host rejected complete staged set"))
+		})
+		.await
+		.unwrap_err();
+	assert!(error.to_string().contains("host rejected"));
+	assert!(writer.requests.lock().is_empty());
+	assert_eq!(ws.read("file.txt").as_deref(), Some("alpha\n"));
+}

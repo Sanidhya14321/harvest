@@ -987,7 +987,8 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/edit.rs",
-          "crates/pi-edit/src"
+          "crates/pi-edit/src",
+          "rust-agent/src/edit"
         ]
       },
       "verification": {
@@ -5592,6 +5593,20 @@
         ],
         "timeout_seconds": 900,
         "kind": "contracts"
+      },
+      {
+        "id": "native-edit-writer-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "native_edit_writer"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
       }
     ],
     "release_gates": [
@@ -7348,8 +7363,8 @@
       {
         "id": "application:edit-write-contract",
         "kind": "migration",
-        "state": "planned",
-        "review": "pending",
+        "state": "in_progress",
+        "review": "reviewed",
         "work_unit": "application",
         "depends_on": [
           "control:playbook",
@@ -7364,9 +7379,13 @@
         "checks": [
           "rust-format",
           "rust-contracts",
-          "playbook-check"
+          "playbook-check",
+          "native-edit-writer-contracts"
         ],
-        "evidence": []
+        "evidence": [
+          "Reviewed legacy sequential writer/move behavior; shared Session preflight hook and native jailed resource-owned/preimage-checked writer are connected to existing native replace consumers and explicit multi-file Rust SDK.",
+          "Eight contract scenarios written/compiled, not executed. Committed-prefix/partial-move errors are explicit; no all-file rollback, crash journal, default hashline mode, addon/installed/platform/source-removal parity claim."
+        ]
       }
     ]
   }

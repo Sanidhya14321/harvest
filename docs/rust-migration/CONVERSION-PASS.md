@@ -1,7 +1,7 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current edit-source continuation base: `fd657c6`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current native edit-writer continuation base: `2538615`. Current owner: the active migration agent on `ts-to-rust`.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
@@ -25,6 +25,7 @@ through this table and the machine task before editing a shared interface.
 |---|---|---|---|---|
 | Metaharness narrative trace report | trace_report modules; shared provider/configuration/HTTP/session/display/cancel owners | native CLI/SDK, package trace:report and README; HTTP/offline/selected session inputs | shared stored/OAuth credential prerequisite; legacy-auth consumer; consolidation/platform/removal gates | Whole pipeline written/connected; partial and unverified |
 | Cleanup discovery | cleanup_scan modules; pi-ast cleanup facts | Rust scan/CLI; both cleanup prompts; package alias | source-bound removal and consolidated/platform gates | Whole feature implemented/cut over; verification pending |
+| Native edit publication | shared Session preflight; existing edit.rs and edit/writer.rs | all native exact-replace consumers; explicit Rust SDK multi-file modes with seen-line enforcement | normal read provenance/mode/guidance, legacy bridge/cache/repair, consolidated partial/collision/installed/platform checks | Written/connected; partial/unverified |
 | Jailed edit-session source/staging | existing pi-edit Session/FileSource/PathPolicy and native edit.rs | default addon constructor retained; all native exact-replace callers now share fresh session staging and one jailed read/write capability | behavioral/addon/installed checks; separate multi-target write/read-provenance/hashline connections | Written/connected; unverified |
 | Tool schemas/registration | `rust-agent/src/chat.rs`, `tools.rs` | OpenAI/Anthropic model requests; sync/async session tool runtime | schema/collision regressions and dynamic registry integration tests | Written/connected; unverified |
 | Native plugin v1 host | `rust-agent/src/plugins/{protocol,host}.rs` | `ToolRuntime`, `AgentSession`, `SessionEngineOptions`, run/RPC `--plugin` | cancellation/exit/queue/approval tests; graceful draining and descendant cleanup | Written/connected; unverified |
@@ -1294,3 +1295,32 @@ Session::apply is sequential, not all-file rollback. Public stage does not commi
 persisted store/clipboard. Review actual retained failure semantics and host
 approval/locking/rename/delete/freshness before picking that writer contract.
 Keep native exact replacement and all still-required TS consumers working.
+
+## Native edit publication continuation
+
+Owner application:edit-write-contract; base 2538615; reviewed/in progress. Its
+complete card records reviewed legacy behavior, exact APIs/consumers/bounds,
+recovery and stabilization commands. Session now offers a complete-stage preflight
+hook before any callback, with existing apply preserving default behavior. One
+native jailed/resource-owned writer checks every preimage/destination before the
+first write and each request before publication. Native exact replace uses this
+full shared application instead of publishing stage bytes itself; explicit Rust
+SDK multi-file modes use the same engines/writer and final-mode/argument approval.
+No engine, parser, snapshot store, filesystem or async runtime is duplicated.
+
+Sequential commits preserve earlier landed bytes on later failure, matching the
+reviewed legacy boundary. Errors expose committed path/operation records and
+unknown progress if state is poisoned; moves can report a landed destination
+before failed cleanup. No atomic all-file rollback/CAS/crash recovery claim.
+Create-only destination and alias/overlap rejection are conservative native
+constraints to review during retained-mode cutover, not hidden parity. Shared
+store/clipboard/result handling remains after each successful callback.
+
+Default model tool remains exact replacement; normal hashline read provenance,
+mode configuration, guidance and legacy repair/LSP/ACP/cache/structured partial
+RPC/UI consumers are still unfinished. Keep shared TS and this task in progress.
+Actual TS removals zero; no verified capability/source-removal advance. Eight
+contract scenarios are written/compiled, not executed; native/source shared
+behavior/addon/installed/platform gates remain in consolidation. Aggregate
+pi-edit/application compiler, formatting and ownership only. Receipts/logs under
+target/migration/conversion-edit-writer-*; no tracked edits after frozen receipts.

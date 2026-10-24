@@ -66,6 +66,8 @@ core = []
 full = ["core", "dep:pi-shell", "dep:flume"]
 
 [dependencies]
+async-trait.workspace = true
+futures.workspace = true
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 tempfile = "3.23.0"
 base64.workspace = true

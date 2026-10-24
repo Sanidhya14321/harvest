@@ -186,6 +186,11 @@ impl Session {
 		self.engine.as_ref()
 	}
 
+	/// Inspect all authored targets/intents without filesystem reads.
+	pub fn inspection(&self) -> crate::engine::Inspection {
+		self.engine.inspect(&self.args.snapshot())
+	}
+
 	/// Append a raw argument fragment.
 	pub fn push(&mut self, delta: &str) {
 		self.args.push(delta);
@@ -286,7 +291,21 @@ impl Session {
 		request: ApplyRequest,
 		writer: &dyn EditWriter,
 	) -> EditResult<ApplyOutcome> {
+		self.apply_with_preflight(request, writer, |_| Ok(())).await
+	}
+
+	/// Let the host validate/lock the complete staged set before the first
+	/// writer callback. The returned guard stays alive through application.
+	/// Writer errors retain the existing sequential partial-write contract.
+	pub async fn apply_with_preflight<G>(
+		&mut self,
+		request: ApplyRequest,
+		writer: &dyn EditWriter,
+		preflight: impl FnOnce(&[StagedFile]) -> EditResult<G>,
+	) -> EditResult<ApplyOutcome> {
 		let staged = self.stage()?;
+
+		let _ownership = preflight(&staged)?;
 
 		let last_write = staged.iter().rposition(|file| file.op != FileOp::Noop);
 		let mut files = Vec::with_capacity(staged.len());
