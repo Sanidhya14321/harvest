@@ -1,5 +1,15 @@
 # Current Rust migration handoff
 
+## Migration paused by user
+
+The user explicitly stopped conversion on 2026-10-24. Do not resume migration or
+schedule further conversion unless the user explicitly authorizes it again. The
+existing autonomous continuation has been paused. All conversion changes through
+29c5936 are committed and pushed to ts-to-rust; the code remains uncompiled and
+unverified as recorded below. Preserve the branch and pending checklist. This stop
+instruction supersedes older autonomous-continuation instructions in this handoff
+and the playbook. No merge to main or release publication is authorized.
+
 Continue ts-to-rust from its actual remote tip, preserving history/user/other-agent
 changes. Immutable baseline d811cb2; imported history through 6eefffc is preserved.
 Previous detail: archive/HANDOFF-2026-10-24-before-edit-source.md and earlier archives.
