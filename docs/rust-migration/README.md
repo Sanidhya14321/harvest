@@ -19,9 +19,15 @@ because a Rust command or tool has the same name.
   `<file>:` prefixes and snapshot headers. A 17-call read/write sequence over a
   2-way, diff3, long-sided and CRLF fixture produced 19/19 byte-identical
   results and final files against the TypeScript tools. `write` now takes the
-  legacy `content` argument (`contents` still accepted); the rest of the legacy
-  write tool (archives, SQLite, `local://`, shebang chmod, result wording) is
-  still pending.
+  legacy `content` argument (`contents` still accepted). Plain filesystem writes
+  now follow the legacy local-file path too: read-selector and `;`-list misfire
+  guards, the auto-generated guard, hashline-prefix stripping (incl. a pasted
+  `[path#TAG]` target), `chmod +x` for `#!` content with its notice, and a fresh
+  snapshot header plus `Successfully wrote N bytes` (UTF-16 length): 21/21
+  probes identical, file contents and modes included. Still pending: archive and
+  SQLite targets, `local://`/`xd://` and other internal URLs (URI-like targets
+  fail with an explicit message), the ACP bridge and LSP writethrough
+  diagnostics.
 
 - `pi_walker::workspace` owns the single-pass workspace scan (excluded build/
   cache dirs, depth bound, AGENTS.md discovery below the tree depth);

@@ -186,11 +186,7 @@ fn write(
 	// A pasted `[path#TAG]` read header names the same target.
 	let path = pi_edit::path_policy::unwrap_hashline_header_path(&args.path);
 	let Some(uri) = crate::conflict::parse_uri(path)? else {
-		if args.content.len() > MAX_FILE_BYTES {
-			bail!("write exceeds file limit");
-		}
-		JailedFs::open(root)?.atomic_write(Path::new(path), args.content.as_bytes())?;
-		return Ok(format!("wrote {path}"));
+		return write_file(root, path, &args.content, store);
 	};
 	if let (Some(id), Some(scope)) = (uri.id, uri.scope) {
 		let scope = scope.name();
@@ -218,6 +214,115 @@ fn write(
 		);
 	}
 	Ok(result)
+}
+
+const EXECUTABLE_NOTICE: &str = "[Notice: Made executable via chmod +x]";
+
+/// Plain filesystem `write` (the legacy local-file path): fail closed on
+/// mis-dispatched reads, refuse auto-generated files, strip copied hashline
+/// prefixes, persist through the workspace jail, mark `#!` scripts
+/// executable, and hand back a fresh snapshot header.
+fn write_file(
+	root: &Path,
+	path: &str,
+	content: &str,
+	store: &pi_edit::EditStore,
+) -> Result<String> {
+	let trimmed = path.trim();
+	if let Some((scheme, _)) = trimmed.split_once("://")
+		&& !scheme.is_empty()
+		&& scheme
+			.chars()
+			.next()
+			.is_some_and(|ch| ch.is_ascii_alphabetic())
+		&& scheme
+			.chars()
+			.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '.' | '-'))
+	{
+		bail!(
+			"Unknown URI-like write target '{trimmed}'. This host only supports filesystem paths and \
+			 conflict:// targets. Prefix the path with './' to write it as a filesystem path."
+		);
+	}
+	let fs = JailedFs::open(root)?;
+	let relative = fs.relative(Path::new(path))?;
+	let literal_missing = || !fs.exists(&relative).unwrap_or(true);
+	// A `;`-joined list of read selectors is never a real write target.
+	let segments: Vec<&str> = path.split(';').collect();
+	if segments.len() >= 2
+		&& segments.iter().all(|segment| {
+			let segment = segment.trim();
+			!segment.is_empty() && crate::read::split_path(segment).1.is_some()
+		}) && literal_missing()
+	{
+		bail!(
+			"write target '{path}' is a semicolon-joined list of {} read-tool selectors, not a \
+			 filesystem path — refusing to create it. write creates a single file; issue one read() \
+			 per path to read these ranges (e.g. read({{ path: \"<one path>:<range>\" }})).",
+			segments.len()
+		);
+	}
+	if content.is_empty()
+		&& let (_, Some(selector)) = crate::read::split_path(path)
+		&& literal_missing()
+	{
+		bail!(
+			"write target '{path}' ends with a read-tool selector ':{selector}' and no such file \
+			 exists — refusing to create a literal file by that name. If you meant to read it, use \
+			 read({{ path: \"{path}\" }}). If you truly intend to create this file, pass its \
+			 contents in `content` (a non-empty write is never blocked)."
+		);
+	}
+	if let Ok(Some(existing)) = fs.read_optional(&relative, MAX_FILE_BYTES * 4) {
+		let policy = crate::edit::policy(fs.root());
+		if let Some(message) =
+			policy.auto_generated_message(path, &existing[..existing.len().min(1024)])
+		{
+			bail!("{message}");
+		}
+	}
+	let (clean, stripped) = crate::conflict::strip_write_content(content);
+	if clean.len() > MAX_FILE_BYTES {
+		bail!("write exceeds file limit");
+	}
+	fs.atomic_write(&relative, clean.as_bytes())?;
+	let absolute = fs.root().join(&relative);
+	let made_executable = clean.starts_with("#!") && mark_executable(&absolute);
+	let display = relative.display().to_string();
+	let key = pi_edit::path_policy::canonical_key(&absolute);
+	store.invalidate(&key);
+	let tag = store.record(&key, &pi_edit::text::normalize_to_lf(&clean), Some(&[]));
+	let mut result = format!(
+		"{}\nSuccessfully wrote {} bytes to {display}",
+		pi_edit::modes::hashline::format::format_hashline_header(&display, &tag),
+		clean.encode_utf16().count()
+	);
+	if stripped {
+		result
+			.push_str("\nNote: auto-stripped hashline display prefixes from content before writing.");
+	}
+	if made_executable {
+		result.push('\n');
+		result.push_str(EXECUTABLE_NOTICE);
+	}
+	Ok(result)
+}
+
+/// `chmod a+x`; failures never fail the write. True when the mode changed.
+#[cfg(unix)]
+fn mark_executable(path: &Path) -> bool {
+	use std::os::unix::fs::PermissionsExt;
+	let Ok(metadata) = std::fs::metadata(path) else {
+		return false;
+	};
+	let mode = metadata.permissions().mode() & 0o7777;
+	let next = mode | 0o111;
+	next != mode && std::fs::set_permissions(path, std::fs::Permissions::from_mode(next)).is_ok()
+}
+
+#[cfg(not(unix))]
+fn mark_executable(_path: &Path) -> bool {
+	false
 }
 
 #[cfg(not(feature = "full"))]

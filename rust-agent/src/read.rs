@@ -73,7 +73,7 @@ pub(crate) enum Selector {
 
 /// Split a trailing `:selector` (`splitPathAndSel`), including the compound
 /// `range:raw` / `raw:range` form.
-fn split_path(raw: &str) -> (&str, Option<String>) {
+pub(crate) fn split_path(raw: &str) -> (&str, Option<String>) {
 	let Some(colon) = raw.rfind(':').filter(|&index| index > 0) else {
 		return (raw, None);
 	};

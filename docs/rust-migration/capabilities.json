@@ -630,13 +630,15 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/conflict.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/conflict/tests.rs"
         ]
       },
       "installation": "experimental-rust-cli",
