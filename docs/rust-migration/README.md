@@ -9,6 +9,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- The Rust host gains a `glob` tool (`rust-agent/src/glob.rs`) on `pi_walker::glob`:
+  semicolon target lists, base/glob splitting, newest-first merge across targets,
+  directory `/` suffixes, prefix-folded grouped output, the 200-result cap and
+  limit notice, skipped-missing-path notes, the 5 s timeout notice, and the
+  legacy root/ssh/limit/not-found errors, all inside the workspace jail. Six
+  tool tests pass. Not yet covered: internal URLs (memory://, local://), streamed
+  progress updates and the TUI renderer, so `tool:glob` stays partial.
+  `native_search::depth_limits_are_visible...` fails on macOS before and after this
+  change (temp-dir `/var` vs `/private/var` jail prefix); tracked separately.
+
 - `pi_walker::glob` owns glob search (pattern normalization, depth bounding,
   mtime ranking, symlink-aware type filtering, heartbeat cancellation); the
   N-API `glob` export and `glob_util` pattern helpers are thin adapters. Five

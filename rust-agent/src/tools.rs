@@ -63,7 +63,7 @@ pub fn invoke_with_cancellation(
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
 	}
-	if !matches!(name, "read" | "write" | "edit" | "grep" | "bash") {
+	if !matches!(name, "read" | "write" | "edit" | "grep" | "glob" | "bash") {
 		bail!("unknown tool {name}");
 	}
 	if matches!(name, "write" | "edit" | "bash") && !policy.approve(call)? {
@@ -90,6 +90,7 @@ fn invoke_authorized(
 		"write" => write_file(root, &parse::<WriteArgs>(arguments)?)?,
 		"edit" => crate::edit::replace(root, &parse::<EditArgs>(arguments)?, cancellation)?,
 		"grep" => crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, cancellation)?,
+		"glob" => crate::glob::glob(root, &parse::<crate::glob::Args>(arguments)?, cancellation)?,
 		"bash" => bash(root, &parse::<BashArgs>(arguments)?, cancellation)?,
 		_ => bail!("unknown tool {name}"),
 	};

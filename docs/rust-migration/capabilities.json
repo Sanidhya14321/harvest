@@ -521,10 +521,18 @@
     {
       "id": "tool:glob",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/glob.rs",
+          "crates/pi-walker/src/glob.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/glob.rs",
+          "crates/pi-walker/src/glob.rs"
+        ]
       }
     },
     {
@@ -1834,7 +1842,9 @@
         "paths": [
           "crates/harvest-media/src/html.rs",
           "crates/harvest-media/src/svg.rs",
-          "rust-agent/src/lib.rs"
+          "rust-agent/src/lib.rs",
+          "crates/harvest-media/src/sixel.rs",
+          "crates/harvest-media/src/pdf.rs"
         ]
       },
       "verification": {

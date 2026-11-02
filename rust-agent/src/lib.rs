@@ -8,6 +8,7 @@ mod cli;
 pub mod config;
 pub mod durable_session;
 mod edit;
+mod glob;
 pub mod provider;
 mod search;
 mod session_context;

@@ -65,7 +65,18 @@ struct ToolProperties {
 	command:        Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pattern:        Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	hidden:         Option<BooleanProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	limit:          Option<NumberProperty>,
 }
+
+#[derive(Debug, Clone, Copy, Serialize)]
+struct NumberProperty {
+	#[serde(rename = "type")]
+	kind: &'static str,
+}
+const NUMBER: NumberProperty = NumberProperty { kind: "number" };
 
 #[derive(Debug, Clone, Copy, Serialize)]
 struct StringProperty {
@@ -148,6 +159,18 @@ pub fn specs() -> Vec<ToolSpec> {
 			&["pattern"],
 		),
 		spec(
+			"glob",
+			include_str!("prompts/tools/glob.md").trim_end(),
+			ToolProperties {
+				path: Some(STRING),
+				hidden: Some(BOOLEAN),
+				gitignore: Some(BOOLEAN),
+				limit: Some(NUMBER),
+				..EMPTY
+			},
+			&[],
+		),
+		spec(
 			"bash",
 			include_str!("prompts/tools/bash.md").trim_end(),
 			ToolProperties { command: Some(STRING), ..EMPTY },
@@ -165,6 +188,8 @@ const EMPTY: ToolProperties = ToolProperties {
 	contents:       None,
 	command:        None,
 	pattern:        None,
+	hidden:         None,
+	limit:          None,
 };
 
 const fn spec(
@@ -190,7 +215,7 @@ mod tests {
 	#[test]
 	fn tool_catalog_names_the_workspace_tools() {
 		let names: Vec<&str> = specs().iter().map(|spec| spec.function.name).collect();
-		assert_eq!(names, ["read", "write", "edit", "grep", "bash"]);
+		assert_eq!(names, ["read", "write", "edit", "grep", "glob", "bash"]);
 	}
 
 	#[test]
