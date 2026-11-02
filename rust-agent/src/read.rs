@@ -12,7 +12,7 @@ use pi_edit::{
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::output::ToolOutput;
+use crate::output::{ToolOutput, format_bytes};
 
 const MAX_LINES: usize = 3000;
 const MAX_BYTES: usize = 50 * 1024;
@@ -221,17 +221,6 @@ fn addressable_lines(text: &str) -> Vec<&str> {
 		lines.pop();
 	}
 	lines
-}
-
-/// `formatBytes`.
-fn format_bytes(bytes: usize) -> String {
-	if bytes < 1024 {
-		format!("{bytes}B")
-	} else if bytes < 1024 * 1024 {
-		format!("{:.1}KB", bytes as f64 / 1024.0)
-	} else {
-		format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
-	}
 }
 
 /// `truncateLine`: cap at `max` UTF-16 units with a trailing `…`.
@@ -874,10 +863,20 @@ pub(crate) fn read(
 		split => split,
 	};
 	let selector = parse_selector(selector.as_deref())?;
+	let relative = fs.relative(Path::new(authored))?;
+	match fs.file_type(&relative) {
+		Err(_) if !fs.exists(&relative).unwrap_or(true) => bail!("Path '{authored}' not found"),
+		Ok(kind) if kind.is_dir() => {
+			if matches!(&selector, Selector::Lines { ranges, .. } if ranges.len() > 1) {
+				bail!("Multi-range line selectors are not supported for directory listings.");
+			}
+			return Ok(read_directory(&fs.root().join(&relative), selector));
+		},
+		_ => {},
+	}
 	if let Selector::Unsupported(kind) = selector {
 		bail!("The :{kind} selector is not supported by this host yet");
 	}
-	let relative = fs.relative(Path::new(authored))?;
 	let display = if relative.as_os_str().is_empty() {
 		".".to_owned()
 	} else {
@@ -1074,6 +1073,69 @@ fn summarize(
 		format!("{text}\n\n{footer}")
 	};
 	Some(ToolOutput::text(format!("{header}\n{body}")))
+}
+
+/// `#readDirectory`: a depth-2 tree, 12 children per directory, sliced by
+/// line selectors.
+fn read_directory(absolute: &Path, selector: Selector) -> ToolOutput {
+	let tree = crate::tree::build(absolute, 2, Some(12), None, None);
+	let output = if tree.total_lines <= 1 {
+		"(empty directory)".to_owned()
+	} else {
+		tree.rendered
+	};
+	let limits = if tree.truncated {
+		vec!["1 results limit reached. Use limit=2 for more".to_owned()]
+	} else {
+		Vec::new()
+	};
+	let all: Vec<&str> = output.split('\n').collect();
+	let selector = resolve_tail(selector, all.len());
+	if let Selector::Lines { ranges, .. } = &selector {
+		let start = ranges[0].start - 1;
+		if start >= all.len() {
+			return ToolOutput::text(format!(
+				"Line {} is beyond end of listing ({} lines total). Use :1 to read from the start, or \
+				 :{} to read the last line.",
+				start + 1,
+				all.len(),
+				all.len()
+			));
+		}
+		let end = ranges[0]
+			.end
+			.map_or(all.len(), |end| (start + end - ranges[0].start + 1).min(all.len()));
+		let mut text = all[start..end].join("\n");
+		if end < all.len() {
+			let _ = write!(
+				text,
+				"\n\n[{} more lines in listing. Use :{} to continue]",
+				all.len() - end,
+				end + 1
+			);
+		}
+		return ToolOutput { text, limits, ..ToolOutput::default() };
+	}
+	// truncateHead with no line cap: whole leading lines within 50 KiB.
+	if output.len() <= MAX_BYTES {
+		return ToolOutput { text: output, limits, ..ToolOutput::default() };
+	}
+	let mut used = 0;
+	let mut shown = 0;
+	for line in &all {
+		let needed = line.len() + usize::from(shown > 0);
+		if used + needed > MAX_BYTES {
+			break;
+		}
+		used += needed;
+		shown += 1;
+	}
+	ToolOutput {
+		text: all[..shown].join("\n"),
+		truncation: Some(truncation_notice(1, shown, all.len(), Some(used), Some(shown + 1))),
+		next_offset: Some(shown + 1),
+		limits,
+	}
 }
 
 /// `~` for the home directory (`shortenPath`).

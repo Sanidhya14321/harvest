@@ -9,6 +9,20 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `pi_walker::workspace` owns the single-pass workspace scan (excluded build/
+  cache dirs, depth bound, AGENTS.md discovery below the tree depth);
+  `listWorkspace` is a thin adapter with unchanged bindings. `read` of a
+  directory renders the legacy tree (`rust-agent/src/tree.rs`): depth 2, 12
+  children per directory ranked newest-first with the oldest kept after a
+  `… N more` marker, size and relative-age columns, ICU-style name tie-breaks,
+  `(empty directory)`, line selectors with the "more lines in listing" notice,
+  and the multi-range and `Path '…' not found` errors. 11/12 real-repository
+  directory probes are byte-identical (the 12th matches up to the no-session
+  output cap); name collation matched `localeCompare` on 3,000 random names, and
+  `formatBytes` now rounds exact ties up like `toFixed`. Conflict warnings are
+  deferred to a dedicated `conflict://` slice: the warning hands out ids that
+  only that subsystem can resolve.
+
 - Bare code reads now return the legacy structural summary: `pi_ast` tree-sitter
   segments with the default fold settings (100-line minimum, 4/6-line body and
   comment thresholds, unfold 50/100), brace-pair merging (`N-M:head … tail`),

@@ -52,16 +52,26 @@ impl ToolOutput {
 	}
 }
 
+/// `Number#toFixed(1)` for non-negative values: exact binary ties round up
+/// (Rust's formatter rounds them to even).
+fn to_fixed_1(value: f64) -> String {
+	let scaled = value * 10.0;
+	if scaled.fract() == 0.5 && scaled < 9.0e15 {
+		return format!("{:.1}", (scaled.ceil()) / 10.0);
+	}
+	format!("{value:.1}")
+}
+
 /// `formatBytes`.
 pub fn format_bytes(bytes: usize) -> String {
 	if bytes < 1024 {
 		format!("{bytes}B")
 	} else if bytes < 1024 * 1024 {
-		format!("{:.1}KB", bytes as f64 / 1024.0)
+		format!("{}KB", to_fixed_1(bytes as f64 / 1024.0))
 	} else if bytes < 1024 * 1024 * 1024 {
-		format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
+		format!("{}MB", to_fixed_1(bytes as f64 / (1024.0 * 1024.0)))
 	} else {
-		format!("{:.1}GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+		format!("{}GB", to_fixed_1(bytes as f64 / (1024.0 * 1024.0 * 1024.0)))
 	}
 }
 
@@ -474,6 +484,14 @@ mod tests {
 			.map(|n| format!("{n:0>width$}"))
 			.collect::<Vec<_>>()
 			.join("\n")
+	}
+
+	#[test]
+	fn byte_sizes_round_exact_ties_up_like_to_fixed() {
+		assert_eq!(format_bytes(3328), "3.3KB");
+		assert_eq!(format_bytes(3276), "3.2KB");
+		assert_eq!(format_bytes(1023), "1023B");
+		assert_eq!(format_bytes(51_200), "50.0KB");
 	}
 
 	#[test]

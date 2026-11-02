@@ -18,6 +18,7 @@ pub mod session_format;
 mod shell;
 mod streaming;
 pub mod tools;
+mod tree;
 
 /// Document conversion and SVG previews shared with the native addon.
 pub use harvest_media as media;
