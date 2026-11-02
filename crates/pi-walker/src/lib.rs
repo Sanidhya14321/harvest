@@ -8,6 +8,7 @@
 
 mod cache;
 pub mod glob;
+pub mod workspace;
 
 #[cfg(not(unix))]
 use std::ffi::OsString;
