@@ -9,6 +9,19 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Tool results now carry their notices separately (`rust-agent/src/output.rs`).
+  Inside a persisted `AgentSession`, results over 50 KB spill to
+  `<session>/<id>.<tool>.log` (atomic, sanitized names, ids resumed from disk)
+  and are replaced by the legacy 20 KB/500-line head + tail window with an
+  elision marker and an `artifact://N` notice; reads of artifacts are never
+  re-spilled. 22/22 randomized spill cases matched `wrapToolWithMetaNotice`
+  byte-for-byte. `read artifact://N[:selector]` follows `#readArtifactFile`
+  (plain rows, 300-line default, block-context multi-range, raw-unbounded
+  block, storage notice over 50 KB, legacy resolver errors): 15/15 probe cases
+  identical. Without a session the host keeps its 20,000-character cap, where
+  legacy returns the full text. 107 default-feature and 106 core-feature tests
+  pass.
+
 - The Rust host's `edit` is now the legacy hashline contract: one `pi_edit`
   hashline `Session` per call (fuzzy 0.95, auto-generated guard), staged in
   memory with the engine's read-jail re-check, persisted only through a

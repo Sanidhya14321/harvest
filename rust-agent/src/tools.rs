@@ -71,6 +71,20 @@ pub fn invoke_with_store(
 	store: &pi_edit::EditStore,
 ) -> Result<String> {
 	cancellation.heartbeat()?;
+	invoke_in_session(root, call, policy, cancellation, store, None)
+}
+
+/// Invoke inside a persisted session: results over 50 KB spill into
+/// `artifacts` (readable back through `read artifact://N`) instead of being
+/// capped.
+pub fn invoke_in_session(
+	root: &Path,
+	call: &ToolCall,
+	policy: &dyn Approval,
+	cancellation: &harvest_runtime::cancel::CancelToken,
+	store: &pi_edit::EditStore,
+	artifacts: Option<&crate::output::ArtifactStore>,
+) -> Result<String> {
 	let name = call.function.name.as_str();
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
@@ -82,12 +96,12 @@ pub fn invoke_with_store(
 		bail!("tool {name} requires human approval");
 	}
 	cancellation.heartbeat()?;
-	invoke_authorized(root, call, cancellation, store)
+	invoke_authorized(root, call, cancellation, store, artifacts)
 }
 
 #[cfg(test)]
 fn invoke_approved(root: &Path, call: &ToolCall) -> Result<String> {
-	invoke_authorized(root, call, &Default::default(), &pi_edit::EditStore::new())
+	invoke_authorized(root, call, &Default::default(), &pi_edit::EditStore::new(), None)
 }
 
 fn invoke_authorized(
@@ -95,21 +109,38 @@ fn invoke_authorized(
 	call: &ToolCall,
 	cancellation: &harvest_runtime::cancel::CancelToken,
 	store: &pi_edit::EditStore,
+	artifacts: Option<&crate::output::ArtifactStore>,
 ) -> Result<String> {
+	use crate::output::ToolOutput;
 	let name = call.function.name.as_str();
 	let arguments = call.function.arguments.as_str();
+	let mut reading_artifact = false;
 	let output = match name {
 		"read" => {
-			crate::read::read(root, &parse::<crate::read::Args>(arguments)?, store, cancellation)?
+			let args = parse::<crate::read::Args>(arguments)?;
+			reading_artifact = args.is_artifact();
+			crate::read::read(root, &args, store, artifacts, cancellation)?
 		},
-		"write" => write_file(root, &parse::<WriteArgs>(arguments)?)?,
-		"edit" => crate::edit::hashline(root, arguments, store, cancellation)?,
-		"grep" => crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, cancellation)?,
-		"glob" => crate::glob::glob(root, &parse::<crate::glob::Args>(arguments)?, cancellation)?,
-		"bash" => bash(root, &parse::<BashArgs>(arguments)?, cancellation)?,
+		"write" => ToolOutput::text(write_file(root, &parse::<WriteArgs>(arguments)?)?),
+		"edit" => ToolOutput::text(crate::edit::hashline(root, arguments, store, cancellation)?),
+		"grep" => ToolOutput::text(crate::search::grep(
+			root,
+			&parse::<crate::search::Args>(arguments)?,
+			cancellation,
+		)?),
+		"glob" => ToolOutput::text(crate::glob::glob(
+			root,
+			&parse::<crate::glob::Args>(arguments)?,
+			cancellation,
+		)?),
+		"bash" => ToolOutput::text(bash(root, &parse::<BashArgs>(arguments)?, cancellation)?),
 		_ => bail!("unknown tool {name}"),
 	};
-	Ok(bounded(&output))
+	Ok(match artifacts {
+		Some(artifacts) => crate::output::spill(output, name, artifacts, reading_artifact).render(),
+		// Without a session there is nowhere to spill to: keep the hard cap.
+		None => bounded(&output.render()),
+	})
 }
 
 #[derive(Debug, Deserialize)]
@@ -278,7 +309,13 @@ mod tests {
 		let root = tempfile::tempdir().unwrap();
 		let store = pi_edit::EditStore::new();
 		let run = |name: &str, arguments: &str| {
-			super::invoke_authorized(root.path(), &call(name, arguments), &Default::default(), &store)
+			super::invoke_authorized(
+				root.path(),
+				&call(name, arguments),
+				&Default::default(),
+				&store,
+				None,
+			)
 		};
 		assert!(
 			run("write", r#"{"path":"src/a.txt","contents":"alpha beta\n"}"#)
@@ -307,12 +344,47 @@ mod tests {
 			&call("edit", &serde_json::json!({ "input": input }).to_string()),
 			&Default::default(),
 			&store,
+			None,
 		)
 		.unwrap_err();
 		assert!(!error.to_string().is_empty());
 		assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(), "one\n");
 		let escaped = invoke(root.path(), &call("read", r#"{"path":"../secret"}"#)).unwrap_err();
 		assert!(escaped.to_string().contains("escapes"));
+	}
+
+	#[test]
+	fn session_results_over_50_kb_spill_to_a_readable_artifact() {
+		let root = tempfile::tempdir().unwrap();
+		let rows = (1..=3000)
+			.map(|n| format!("{n:0>60}\n"))
+			.collect::<Vec<_>>()
+			.concat();
+		std::fs::write(root.path().join("big.txt"), &rows).unwrap();
+		let artifacts =
+			crate::output::ArtifactStore::for_session(&root.path().join("s.jsonl")).unwrap();
+		let store = pi_edit::EditStore::new();
+		let run = |path: &str| {
+			super::invoke_authorized(
+				root.path(),
+				&call("read", &serde_json::json!({ "path": path }).to_string()),
+				&Default::default(),
+				&store,
+				Some(&artifacts),
+			)
+			.unwrap()
+		};
+		let spilled = run("big.txt:1-3000");
+		assert!(spilled.contains("ln elided…]"), "{}", &spilled[spilled.len() - 300..]);
+		assert!(
+			spilled.ends_with("Read artifact://0 for full output]"),
+			"{}",
+			&spilled[spilled.len() - 300..]
+		);
+		let page = run("artifact://0:3-4");
+		// Artifact line 1 is the read's `[big.txt#TAG]` header; `:3-4` shows lines 2-7.
+		assert!(page.starts_with("1:0") && page.contains("\n2:0"), "{page}");
+		assert!(page.ends_with("Use :8 to continue]"), "{page}");
 	}
 
 	#[cfg(unix)]

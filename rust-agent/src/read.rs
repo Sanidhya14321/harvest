@@ -12,6 +12,8 @@ use pi_edit::{
 use regex::Regex;
 use serde::Deserialize;
 
+use crate::output::ToolOutput;
+
 const MAX_LINES: usize = 3000;
 const MAX_BYTES: usize = 50 * 1024;
 const LEADING_CONTEXT: usize = 1;
@@ -37,6 +39,13 @@ static TAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^-(\d+)$").expect("
 #[derive(Debug, Deserialize)]
 pub(crate) struct Args {
 	path: String,
+}
+
+impl Args {
+	/// Reads of `artifact://` are never re-spilled.
+	pub(crate) fn is_artifact(&self) -> bool {
+		self.path.to_ascii_lowercase().starts_with("artifact://")
+	}
 }
 
 /// An inclusive one-based range; `end: None` runs to EOF.
@@ -338,14 +347,6 @@ fn truncation_notice(
 	notice
 }
 
-/// Append the bracketed tool-result notices (`formatOutputNotice`).
-fn with_notices(mut text: String, notices: &[String]) -> String {
-	if !notices.is_empty() {
-		let _ = write!(text, "\n\n[{}]", notices.join(". "));
-	}
-	text
-}
-
 /// Byte-faithful views of one buffered file (`deriveBufferedFileText`).
 struct Buffered<'a> {
 	raw_segments: Vec<&'a str>,
@@ -456,7 +457,7 @@ fn read_file_text(
 	raw_text: &str,
 	bytes: &[u8],
 	selector: &Selector,
-) -> String {
+) -> ToolOutput {
 	let raw = matches!(selector, Selector::Raw | Selector::Lines { raw: true, .. });
 	let buffered = Buffered::new(raw_text, bytes);
 	let total = buffered.total_lines(raw);
@@ -557,7 +558,7 @@ fn read_file_text(
 		} else {
 			vec![]
 		};
-		return with_notices(output, &limits);
+		return ToolOutput { text: output, limits, ..ToolOutput::default() };
 	}
 
 	let (offset, limit) = match selector {
@@ -589,10 +590,10 @@ fn read_file_text(
 		} else {
 			format!("Use :1 to read from the start, or :{total} to read the last line.")
 		};
-		return format!(
+		return ToolOutput::text(format!(
 			"Line {} is beyond end of file ({total} lines total). {suggestion}",
 			requested_start + 1
-		);
+		));
 	}
 	let rows: Vec<String> = window
 		.lines
@@ -630,11 +631,13 @@ fn read_file_text(
 		}
 	};
 
-	let mut notices = Vec::new();
-	let mut output = if first_line_exceeds {
+	let mut truncation = None;
+	let mut next_offset = None;
+	let output = if first_line_exceeds {
 		let line_bytes = window.first_line_bytes.unwrap_or(0);
 		let shown = usize::from(!numbered);
-		notices.push(truncation_notice(first, shown, total, Some(line_bytes.min(max_bytes)), None));
+		truncation =
+			Some(truncation_notice(first, shown, total, Some(line_bytes.min(max_bytes)), None));
 		format!(
 			"[Line {first} is {}, exceeds {} limit. Hashline output requires full lines; cannot emit \
 			 an editable numbered preview for a truncated line.]",
@@ -656,7 +659,8 @@ fn read_file_text(
 		}
 		let next = (omitted.is_none()).then_some(first + rows.len());
 		let by_bytes = window.stopped_by_bytes.then_some(window.collected_bytes);
-		notices.push(truncation_notice(first, rows.len(), total, by_bytes, next));
+		next_offset = next;
+		truncation = Some(truncation_notice(first, rows.len(), total, by_bytes, next));
 		text
 	} else {
 		render(&rows)
@@ -664,11 +668,12 @@ fn read_file_text(
 	if let Some((_, tag)) = &hash {
 		context.record_seen(tag, &output);
 	}
-	if column_truncated {
-		notices.push(format!("Some lines truncated to {column_cap} chars"));
-	}
-	output = with_notices(output, &notices);
-	output
+	let limits = if column_truncated {
+		vec![format!("Some lines truncated to {column_cap} chars")]
+	} else {
+		Vec::new()
+	};
+	ToolOutput { text: output, truncation, next_offset, limits }
 }
 
 /// The in-memory reader (`buildInMemoryTextResult`), used for notebooks.
@@ -677,7 +682,7 @@ fn read_in_memory(
 	text: &str,
 	selector: &Selector,
 	entity: &str,
-) -> String {
+) -> ToolOutput {
 	let raw = matches!(selector, Selector::Raw | Selector::Lines { raw: true, .. });
 	let all: Vec<&str> = if raw {
 		text.split('\n').collect()
@@ -687,11 +692,12 @@ fn read_in_memory(
 	let total = all.len();
 	let hash = (!raw).then(|| context.header(text));
 	let numbered = !raw;
-	let finish = |body: String, notices: &[String]| -> String {
+	let finish = |body: String, truncation: Option<(String, usize)>| -> ToolOutput {
 		if let Some((_, tag)) = &hash {
 			context.record_seen(tag, &body);
 		}
-		with_notices(body, notices)
+		let (truncation, next_offset) = truncation.unzip();
+		ToolOutput { text: body, truncation, next_offset, limits: Vec::new() }
 	};
 	let entries_for = |spans: &[(usize, usize)]| -> String {
 		let entries = block_entries(&all, spans, &context.display, &|_, source| source.to_owned());
@@ -734,7 +740,7 @@ fn read_in_memory(
 			(true, false) => notices.join("\n"),
 			(false, false) => format!("{body}\n{}", notices.join("\n")),
 		};
-		return finish(body, &[]);
+		return finish(body, None);
 	}
 	let (offset, limit) = match selector {
 		Selector::Lines { ranges, .. } => {
@@ -760,10 +766,10 @@ fn read_in_memory(
 		} else {
 			format!("Use :1 to read from the start, or :{total} to read the last line.")
 		};
-		return format!(
+		return ToolOutput::text(format!(
 			"Line {} is beyond end of {entity} ({total} lines total). {suggestion}",
 			requested_start + 1
-		);
+		));
 	}
 	let window = &all[start..end];
 	// truncateHead: whole lines within 3000 lines and 50 KiB.
@@ -804,7 +810,7 @@ fn read_in_memory(
 				format_bytes(bytes),
 				format_bytes(MAX_BYTES)
 			),
-			&[],
+			None,
 		);
 	}
 	if shown < window.len() {
@@ -817,23 +823,27 @@ fn read_in_memory(
 			by_bytes.then_some(output_bytes),
 			Some(first + shown),
 		);
-		return finish(render(&window[..shown]), &[notice]);
+		return finish(render(&window[..shown]), Some((notice, first + shown)));
 	}
 	let mut body = render(window);
 	if limit.is_some() && end < total {
 		let _ =
 			write!(body, "\n\n[{} more lines in {entity}. Use :{} to continue]", total - end, end + 1);
 	}
-	finish(body, &[])
+	finish(body, None)
 }
 
 pub(crate) fn read(
 	root: &Path,
 	args: &Args,
 	store: &EditStore,
+	artifacts: Option<&crate::output::ArtifactStore>,
 	cancellation: &CancelToken,
-) -> Result<String> {
+) -> Result<ToolOutput> {
 	cancellation.heartbeat()?;
+	if args.is_artifact() {
+		return read_artifact(&args.path, artifacts);
+	}
 	let fs = JailedFs::open(root)?;
 	// A real file whose name ends in selector syntax keeps its colon.
 	let literal_exists = || {
@@ -871,17 +881,288 @@ pub(crate) fn read(
 		return Ok(read_in_memory(&context, &view, &selector, "notebook"));
 	}
 	if !raw && looks_binary(&bytes) {
-		return Ok(format!(
+		return Ok(ToolOutput::text(format!(
 			"[Cannot read binary file '{}' ({}); not valid UTF-8 text. Use ':raw' to read bytes \
 			 verbatim.]",
 			context.display,
 			format_bytes(bytes.len())
-		));
+		)));
 	}
 	let raw_text = String::from_utf8_lossy(&bytes).into_owned();
 	let total = Buffered::new(&raw_text, &bytes).total_lines(raw);
 	let selector = resolve_tail(selector, total);
 	Ok(read_file_text(&context, &raw_text, &bytes, &selector))
+}
+
+/// `~` for the home directory (`shortenPath`).
+fn shorten_path(path: &Path) -> String {
+	let text = path.display().to_string();
+	match std::env::var("HOME") {
+		Ok(home) if !home.is_empty() && text.starts_with(&home) => {
+			format!("~{}", &text[home.len()..])
+		},
+		_ => text,
+	}
+}
+
+/// `read artifact://N[:selector]` (`#readArtifactFile`): immutable output, so
+/// no hashline anchors and no line numbers.
+fn read_artifact(
+	path: &str,
+	artifacts: Option<&crate::output::ArtifactStore>,
+) -> Result<ToolOutput> {
+	let rest = &path["artifact://".len()..];
+	let (id, selector) = rest
+		.split_once(':')
+		.map_or((rest, None), |(id, selector)| (id, Some(selector)));
+	if id.is_empty() {
+		bail!("artifact:// URL requires a numeric ID: artifact://0");
+	}
+	if !id.bytes().all(|byte| byte.is_ascii_digit()) {
+		bail!("artifact:// ID must be numeric, got: {id}");
+	}
+	let Some(store) = artifacts else {
+		bail!("No session - artifacts unavailable")
+	};
+	let Ok(entries) = std::fs::read_dir(store.dir()) else {
+		bail!("No artifacts directory found")
+	};
+	let names: Vec<String> = entries
+		.filter_map(Result::ok)
+		.filter_map(|entry| entry.file_name().into_string().ok())
+		.collect();
+	let prefix = format!("{id}.");
+	let Some(file) = names
+		.iter()
+		.find(|name| name.starts_with(&prefix))
+		.map(|name| store.dir().join(name))
+	else {
+		let mut available: Vec<u64> = names
+			.iter()
+			.filter_map(|name| name.split_once('.').map(|(head, _)| head))
+			.filter_map(|head| head.parse().ok())
+			.collect();
+		available.sort_unstable();
+		available.dedup();
+		let available = if available.is_empty() {
+			"none".to_owned()
+		} else {
+			available
+				.iter()
+				.map(u64::to_string)
+				.collect::<Vec<_>>()
+				.join(", ")
+		};
+		bail!("Artifact {id} not found. Available: {available}");
+	};
+	if file.is_dir() {
+		bail!("Artifact {id} resolved to a directory, not a file");
+	}
+	let url = format!("artifact://{id}");
+	let bytes = std::fs::read(&file).with_context(|| format!("could not read {url}"))?;
+	let size = bytes.len();
+	let selector = parse_selector(selector)?;
+	if let Selector::Unsupported(kind) = selector {
+		bail!("The :{kind} selector is not supported for artifacts");
+	}
+	if matches!(selector, Selector::Raw) && size > MAX_BYTES {
+		return Ok(ToolOutput::text(format!(
+			"Unbounded raw read blocked for {url} ({}). Reading the whole artifact verbatim can \
+			 exhaust memory. Use {url}:raw:1-3000 for bounded verbatim chunks, {url}:1-3000 for \
+			 numbered exploration, and the artifact file path for search/copy workflows: {}",
+			format_bytes(size),
+			shorten_path(&file)
+		)));
+	}
+	let raw = matches!(
+		selector,
+		Selector::Raw | Selector::Lines { raw: true, .. } | Selector::Tail { raw: true, .. }
+	);
+	let text = String::from_utf8_lossy(&bytes).into_owned();
+	let buffered = Buffered::new(&text, &bytes);
+	let total = buffered.total_lines(raw);
+	let selector = resolve_tail(selector, total);
+	let workflow = (!raw && size > MAX_BYTES).then(|| {
+		format!(
+			"Artifact storage: {} ({}). Use {url}:N-M to page, {url}:raw:N-M for verbatim chunks, \
+			 and the artifact file path for search/copy workflows.",
+			shorten_path(&file),
+			format_bytes(size)
+		)
+	});
+	let with_workflow = |mut text: String| {
+		if let Some(workflow) = &workflow {
+			text = if text.is_empty() {
+				workflow.clone()
+			} else {
+				format!("{text}\n\n[{workflow}]")
+			};
+		}
+		text
+	};
+
+	if let Selector::Lines { ranges, .. } = &selector
+		&& ranges.len() > 1
+	{
+		let addressable = buffered.addressable();
+		let mut notices = Vec::new();
+		let mut spans = Vec::new();
+		let mut blocks = Vec::new();
+		for range in ranges {
+			let start = range.start - 1;
+			let max_lines = range
+				.end
+				.map_or(DEFAULT_LIMIT, |end| end - range.start + 1)
+				.min(MAX_LINES);
+			let (range_total, lines): (usize, Vec<usize>) = if raw {
+				let window = collect_window(
+					&buffered.raw_segments,
+					total,
+					start,
+					max_lines,
+					MAX_BYTES.max(max_lines * 512),
+				);
+				(total, window.lines)
+			} else {
+				(addressable.len(), (start..addressable.len()).take(max_lines).collect())
+			};
+			if start >= range_total {
+				let bound = range
+					.end
+					.map_or_else(|| range.start.to_string(), |end| format!("{}-{end}", range.start));
+				notices.push(format!(
+					"[Range {bound} is beyond end of file ({range_total} lines total); skipped]"
+				));
+				continue;
+			}
+			if lines.is_empty() {
+				continue;
+			}
+			spans.push((range.start, range.start + lines.len() - 1));
+			if raw {
+				blocks.push(
+					lines
+						.iter()
+						.map(|&index| buffered.raw_segments[index])
+						.collect::<Vec<_>>()
+						.join("\n"),
+				);
+			}
+		}
+		let mut output = if raw {
+			blocks.join("\n\n…\n\n")
+		} else if spans.is_empty() {
+			String::new()
+		} else {
+			format_entries(
+				&block_entries(&addressable, &spans, &url, &|_, source| source.to_owned()),
+				false,
+			)
+		};
+		if !notices.is_empty() {
+			output = if output.is_empty() {
+				notices.join("\n")
+			} else {
+				format!("{output}\n{}", notices.join("\n"))
+			};
+		}
+		return Ok(ToolOutput::text(with_workflow(output)));
+	}
+
+	let (offset, limit) = match &selector {
+		Selector::Lines { ranges, .. } => {
+			(Some(ranges[0].start), ranges[0].end.map(|end| end - ranges[0].start + 1))
+		},
+		_ => (None, None),
+	};
+	let requested_start = offset.map_or(0, |offset| offset - 1);
+	let leading = if !raw && offset.is_some_and(|offset| offset > 1) {
+		requested_start.min(LEADING_CONTEXT)
+	} else {
+		0
+	};
+	let trailing = if !raw && limit.is_some() {
+		TRAILING_CONTEXT
+	} else {
+		0
+	};
+	let start = requested_start - leading;
+	let first = start + 1;
+	let max_lines = (limit.unwrap_or(DEFAULT_LIMIT) + leading + trailing).min(MAX_LINES);
+	let max_bytes = MAX_BYTES.max(max_lines * 512);
+	let window = collect_window(&buffered.raw_segments, total, start, max_lines, max_bytes);
+	if requested_start >= total {
+		let suggestion = if total == 0 {
+			"The artifact is empty.".to_owned()
+		} else {
+			format!("Use {url}:1 to read from the start, or {url}:{total} to read the last line.")
+		};
+		return Ok(ToolOutput::text(format!(
+			"Line {} is beyond end of artifact ({total} lines total). {suggestion}",
+			requested_start + 1
+		)));
+	}
+	let rows: Vec<&str> = window
+		.lines
+		.iter()
+		.map(|&index| buffered.raw_segments[index])
+		.collect();
+	let truncated = window.lines.len() < total - start || window.stopped_by_bytes;
+	let first_line_exceeds = window
+		.first_line_bytes
+		.is_some_and(|bytes| bytes > max_bytes);
+	let omitted = window.limit_line.filter(|&(index, _)| {
+		!raw && leading > 0 && index == requested_start && window.lines.len() == leading
+	});
+	let mut output = ToolOutput::default();
+	if first_line_exceeds {
+		let line = buffered.raw_segments[start];
+		let preview = {
+			let mut end = max_bytes.min(line.len());
+			while !line.is_char_boundary(end) {
+				end -= 1;
+			}
+			&line[..end]
+		};
+		output.text = if preview.is_empty() {
+			format!(
+				"[Line {first} is {}, exceeds {} limit. Unable to display a valid UTF-8 snippet.]",
+				format_bytes(line.len()),
+				format_bytes(max_bytes)
+			)
+		} else {
+			preview.to_owned()
+		};
+		output.truncation = Some(truncation_notice(
+			first,
+			usize::from(!preview.is_empty()),
+			total,
+			Some(max_bytes),
+			None,
+		));
+	} else {
+		output.text = rows.join("\n");
+		if truncated {
+			if let Some((index, length)) = omitted {
+				let line = index + 1;
+				let _ = write!(
+					output.text,
+					"\n\n[Line {line} is {} and could not fit after preceding context in the {} read \
+					 budget. Use {url}:raw:{line}-{line} to read that line without context \
+					 (byte-capped if it exceeds the budget), or widen the requested range to increase \
+					 the budget.]",
+					format_bytes(length),
+					format_bytes(max_bytes)
+				);
+			}
+			let next = omitted.is_none().then_some(first + rows.len());
+			output.next_offset = next;
+			let by_bytes = window.stopped_by_bytes.then_some(max_bytes);
+			output.truncation = Some(truncation_notice(first, rows.len(), total, by_bytes, next));
+		}
+	}
+	output.text = with_workflow(output.text);
+	Ok(output)
 }
 
 /// Pin `:-N` to absolute lines once the line count is known.
@@ -900,7 +1181,8 @@ mod tests {
 	use super::*;
 
 	fn run(root: &Path, path: &str, store: &EditStore) -> Result<String> {
-		read(root, &Args { path: path.to_owned() }, store, &CancelToken::default())
+		read(root, &Args { path: path.to_owned() }, store, None, &CancelToken::default())
+			.map(ToolOutput::render)
 	}
 
 	fn fixture(lines: usize) -> (tempfile::TempDir, String) {

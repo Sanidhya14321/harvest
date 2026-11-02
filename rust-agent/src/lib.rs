@@ -9,6 +9,7 @@ pub mod config;
 pub mod durable_session;
 mod edit;
 mod glob;
+pub mod output;
 pub mod provider;
 mod read;
 mod search;

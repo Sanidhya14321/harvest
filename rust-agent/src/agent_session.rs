@@ -51,6 +51,8 @@ pub struct AgentSession {
 	active:     Option<(RunHandle, CancelToken)>,
 	/// Snapshots shared by `read` and `edit` across this session's tool calls.
 	edit_store: pi_edit::EditStore,
+	/// Spilled tool outputs, beside the session file.
+	artifacts:  Option<crate::output::ArtifactStore>,
 }
 impl AgentSession {
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
@@ -62,6 +64,10 @@ impl AgentSession {
 			sequence: 0,
 			active: None,
 			edit_store: pi_edit::EditStore::new(),
+			artifacts: harvest_runtime::JailedFs::open(root)
+				.and_then(|fs| Ok(fs.root().join(fs.relative(path)?)))
+				.ok()
+				.and_then(|file| crate::output::ArtifactStore::for_session(&file)),
 		})
 	}
 
@@ -204,12 +210,13 @@ impl AgentSession {
 			}
 			for call in calls {
 				cancellation.heartbeat()?;
-				let output = match tools::invoke_with_store(
+				let output = match tools::invoke_in_session(
 					&self.root,
 					&call,
 					approval,
 					cancellation,
 					&self.edit_store,
+					self.artifacts.as_ref(),
 				) {
 					Ok(output) => output,
 					Err(error) => format!("error: {error:#}"),
