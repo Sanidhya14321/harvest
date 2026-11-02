@@ -10,7 +10,6 @@
  */
 import { $, Glob } from "bun";
 import { compareVersions } from "../packages/utils/src/version.ts";
-import { runChangelogFixer } from "./fix-changelogs";
 
 const changelogGlob = new Glob("packages/*/CHANGELOG.md");
 const packageJsonGlob = new Glob("packages/*/package.json");
@@ -380,14 +379,7 @@ async function cmdRelease(versionOrBump: string): Promise<void> {
 		// Omit `since` so the fixer resolves its own baseline: the `clog` tag (last
 		// authoritative rewrite) when newer than `latestTag`, else `latestTag`. This
 		// keeps a release run from re-promoting bullets a prior `--recover` restored.
-		const fixResult = await runChangelogFixer({});
-		for (const fixed of fixResult.changedFiles) {
-			console.log(
-				`  Fixed ${fixed.path}: ${fixed.promotedItems} promoted, ` +
-					`${fixed.mergedDuplicateHeadings} duplicate heading(s) merged, ` +
-					`${fixed.removedEmptyHeadings} empty heading(s) removed`,
-			);
-		}
+		await $`cargo xtask fix-changelogs`;
 		await updateChangelogsForRelease(version);
 		console.log();
 	}

@@ -9,6 +9,11 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask fix-changelogs` replaces the changelog fixer in `scripts/fix-changelogs.ts`;
+  `fix:changelogs` and `scripts/release.ts` call it, and real-repository rewrites are
+  byte-identical. The TS file is reduced to the parser/renderer that
+  `rewrite-changelog.ts` still imports; its test file is deleted.
+
 - `cargo xtask bench-runs DIR...` replaces `scripts/eval-bench-runs.ts` (deleted).
   Output is byte-identical except that rows whose sort metric is missing (NaN)
   now sort last deterministically instead of in engine-defined order.

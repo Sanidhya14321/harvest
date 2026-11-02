@@ -107,7 +107,7 @@
 		"fix:ts:all": "bun run fix:tools:all && bun run --workspaces --if-present fix",
 		"fix:tools": "oxlint --fix --fix-suggestions . && bun run fmt:tools",
 		"fix:tools:all": "oxlint --fix --fix-suggestions . && bun run fmt:tools",
-		"fix:changelogs": "bun scripts/fix-changelogs.ts",
+		"fix:changelogs": "cargo xtask fix-changelogs",
 		"fix:rs": "cargo xtask dev fix",
 		"ci:check:full": "bun run check:ts",
 		"ci:test:full": "bun run ci:test:ts && bun run test:rs",
