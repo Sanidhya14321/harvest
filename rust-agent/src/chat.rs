@@ -60,7 +60,7 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	new:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	contents:       Option<StringProperty>,
+	content:        Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	command:        Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -139,8 +139,8 @@ pub fn specs() -> Vec<ToolSpec> {
 		spec(
 			"write",
 			include_str!("prompts/tools/write.md").trim_end(),
-			ToolProperties { path: Some(STRING), contents: Some(STRING), ..EMPTY },
-			&["path", "contents"],
+			ToolProperties { path: Some(STRING), content: Some(STRING), ..EMPTY },
+			&["path", "content"],
 		),
 		spec(
 			"edit",
@@ -187,7 +187,7 @@ const EMPTY: ToolProperties = ToolProperties {
 	path:           None,
 	old:            None,
 	new:            None,
-	contents:       None,
+	content:        None,
 	command:        None,
 	pattern:        None,
 	input:          None,

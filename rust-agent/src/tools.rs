@@ -71,7 +71,15 @@ pub fn invoke_with_store(
 	store: &pi_edit::EditStore,
 ) -> Result<String> {
 	cancellation.heartbeat()?;
-	invoke_in_session(root, call, policy, cancellation, store, None)
+	invoke_in_session(
+		root,
+		call,
+		policy,
+		cancellation,
+		store,
+		None,
+		&crate::conflict::ConflictHistory::new(),
+	)
 }
 
 /// Invoke inside a persisted session: results over 50 KB spill into
@@ -84,6 +92,7 @@ pub fn invoke_in_session(
 	cancellation: &harvest_runtime::cancel::CancelToken,
 	store: &pi_edit::EditStore,
 	artifacts: Option<&crate::output::ArtifactStore>,
+	conflicts: &crate::conflict::ConflictHistory,
 ) -> Result<String> {
 	let name = call.function.name.as_str();
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
@@ -96,12 +105,19 @@ pub fn invoke_in_session(
 		bail!("tool {name} requires human approval");
 	}
 	cancellation.heartbeat()?;
-	invoke_authorized(root, call, cancellation, store, artifacts)
+	invoke_authorized(root, call, cancellation, store, artifacts, conflicts)
 }
 
 #[cfg(test)]
 fn invoke_approved(root: &Path, call: &ToolCall) -> Result<String> {
-	invoke_authorized(root, call, &Default::default(), &pi_edit::EditStore::new(), None)
+	invoke_authorized(
+		root,
+		call,
+		&Default::default(),
+		&pi_edit::EditStore::new(),
+		None,
+		&crate::conflict::ConflictHistory::new(),
+	)
 }
 
 fn invoke_authorized(
@@ -110,6 +126,7 @@ fn invoke_authorized(
 	cancellation: &harvest_runtime::cancel::CancelToken,
 	store: &pi_edit::EditStore,
 	artifacts: Option<&crate::output::ArtifactStore>,
+	conflicts: &crate::conflict::ConflictHistory,
 ) -> Result<String> {
 	use crate::output::ToolOutput;
 	let name = call.function.name.as_str();
@@ -119,9 +136,9 @@ fn invoke_authorized(
 		"read" => {
 			let args = parse::<crate::read::Args>(arguments)?;
 			reading_artifact = args.is_artifact();
-			crate::read::read(root, &args, store, artifacts, cancellation)?
+			crate::read::read(root, &args, store, artifacts, conflicts, cancellation)?
 		},
-		"write" => ToolOutput::text(write_file(root, &parse::<WriteArgs>(arguments)?)?),
+		"write" => ToolOutput::text(write(root, &parse::<WriteArgs>(arguments)?, store, conflicts)?),
 		"edit" => ToolOutput::text(crate::edit::hashline(root, arguments, store, cancellation)?),
 		"grep" => ToolOutput::text(crate::search::grep(
 			root,
@@ -145,8 +162,10 @@ fn invoke_authorized(
 
 #[derive(Debug, Deserialize)]
 struct WriteArgs {
-	path:     String,
-	contents: String,
+	path:    String,
+	/// `content` in the legacy schema; `contents` is still accepted.
+	#[serde(alias = "contents")]
+	content: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,12 +177,51 @@ fn parse<T: for<'de> Deserialize<'de>>(arguments: &str) -> Result<T> {
 	serde_json::from_str(arguments).context("tool arguments are not valid JSON")
 }
 
-fn write_file(root: &Path, args: &WriteArgs) -> Result<String> {
-	if args.contents.len() > MAX_FILE_BYTES {
-		bail!("write exceeds file limit");
+fn write(
+	root: &Path,
+	args: &WriteArgs,
+	store: &pi_edit::EditStore,
+	conflicts: &crate::conflict::ConflictHistory,
+) -> Result<String> {
+	// A pasted `[path#TAG]` read header names the same target.
+	let path = pi_edit::path_policy::unwrap_hashline_header_path(&args.path);
+	let Some(uri) = crate::conflict::parse_uri(path)? else {
+		if args.content.len() > MAX_FILE_BYTES {
+			bail!("write exceeds file limit");
+		}
+		JailedFs::open(root)?.atomic_write(Path::new(path), args.content.as_bytes())?;
+		return Ok(format!("wrote {path}"));
+	};
+	if let (Some(id), Some(scope)) = (uri.id, uri.scope) {
+		let scope = match scope {
+			crate::conflict::Scope::Ours => "ours",
+			crate::conflict::Scope::Theirs => "theirs",
+			crate::conflict::Scope::Base => "base",
+		};
+		bail!(
+			"Conflict URI scope '/{scope}' is read-only — read `conflict://{id}/{scope}` to inspect \
+			 that side. To write, drop the scope (`conflict://{id}`) and put the chosen content (or \
+			 shorthand like `@{scope}`) in `content`."
+		);
 	}
-	JailedFs::open(root)?.atomic_write(Path::new(&args.path), args.contents.as_bytes())?;
-	Ok(format!("wrote {}", args.path))
+	let fs = JailedFs::open(root)?;
+	let (clean, stripped) = crate::conflict::strip_write_content(&args.content);
+	let resolver = crate::conflict::Resolver { fs: &fs, history: conflicts, store };
+	let mut result = match uri.id {
+		None => resolver.resolve_all(&clean, stripped, &args.content)?,
+		Some(id) => resolver.resolve_one(id, &clean, stripped)?,
+	};
+	if let Some(prefix) = uri.recovered_prefix {
+		let id = uri.id.map_or_else(|| "*".to_owned(), |id| id.to_string());
+		let _ = std::fmt::Write::write_fmt(
+			&mut result,
+			format_args!(
+				"\nNote: stripped erroneous '{prefix}:' prefix from path; conflict URIs are global \
+				 (use `conflict://{id}`, not `<file>:conflict://{id}`)."
+			),
+		);
+	}
+	Ok(result)
 }
 
 #[cfg(not(feature = "full"))]
@@ -315,6 +373,7 @@ mod tests {
 				&Default::default(),
 				&store,
 				None,
+				&crate::conflict::ConflictHistory::new(),
 			)
 		};
 		assert!(
@@ -345,6 +404,7 @@ mod tests {
 			&Default::default(),
 			&store,
 			None,
+			&crate::conflict::ConflictHistory::new(),
 		)
 		.unwrap_err();
 		assert!(!error.to_string().is_empty());
@@ -371,6 +431,7 @@ mod tests {
 				&Default::default(),
 				&store,
 				Some(&artifacts),
+				&crate::conflict::ConflictHistory::new(),
 			)
 			.unwrap()
 		};

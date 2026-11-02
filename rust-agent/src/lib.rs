@@ -6,6 +6,7 @@ mod brain_cli;
 pub mod chat;
 mod cli;
 pub mod config;
+pub mod conflict;
 pub mod durable_session;
 mod edit;
 mod glob;

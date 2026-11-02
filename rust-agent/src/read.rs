@@ -846,6 +846,8 @@ pub(crate) fn read(
 	args: &Args,
 	store: &EditStore,
 	artifacts: Option<&crate::output::ArtifactStore>,
+	// Conflict-history integration into `read` is pending.
+	_conflicts: &crate::conflict::ConflictHistory,
 	cancellation: &CancelToken,
 ) -> Result<ToolOutput> {
 	cancellation.heartbeat()?;
@@ -1427,8 +1429,15 @@ mod tests {
 	use super::*;
 
 	fn run(root: &Path, path: &str, store: &EditStore) -> Result<String> {
-		read(root, &Args { path: path.to_owned() }, store, None, &CancelToken::default())
-			.map(ToolOutput::render)
+		read(
+			root,
+			&Args { path: path.to_owned() },
+			store,
+			None,
+			&crate::conflict::ConflictHistory::new(),
+			&CancelToken::default(),
+		)
+		.map(ToolOutput::render)
 	}
 
 	fn fixture(lines: usize) -> (tempfile::TempDir, String) {
