@@ -9,6 +9,13 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-media::pdf` owns PDF-to-Markdown conversion (page markers, title,
+  OCR-needed pages, encoding-issue flag, `PDF conversion failed:` error prefix)
+  and is reachable as `harvest_omp::media::pdf`. `pdfToMarkdown` is a thin
+  adapter. The three existing Rust tests moved with the logic; 17 media tests,
+  strict Clippy, a rebuilt addon and 9 focused TS PDF converter/read tests pass.
+  No TS source is retired.
+
 - `harvest-media::sixel` owns SIXEL encode and bounded decode; the
   `pi-natives` exports are thin adapters with unchanged JS signatures and error
   text. Encoding now rejects zero or oversized targets (8192 px edge, 4 Mi

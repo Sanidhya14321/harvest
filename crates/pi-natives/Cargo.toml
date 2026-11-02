@@ -51,7 +51,6 @@ napi.workspace = true
 napi-derive.workspace = true
 pi-vcs.workspace = true
 parking_lot.workspace = true
-pdf-inspector.workspace = true
 flume.workspace = true
 pi-ast.workspace = true
 pi-diff.workspace = true

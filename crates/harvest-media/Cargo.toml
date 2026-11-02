@@ -13,6 +13,7 @@ workspace = true
 anyhow.workspace = true
 html-to-markdown-rs.workspace = true
 icy_sixel.workspace = true
+pdf-inspector.workspace = true
 image = { workspace = true, features = ["bmp"] }
 resvg.workspace = true
 # The pinned JPEG decoder requires log even when only resvg uses it.
