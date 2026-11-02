@@ -302,3 +302,26 @@ fn a_panicking_stream_cannot_leave_partial_payload_files_or_replace_the_original
 		}
 	}
 }
+
+#[cfg(unix)]
+#[test]
+fn absolute_paths_through_an_alias_of_the_root_map_inside_but_escapes_stay_rejected()
+-> anyhow::Result<()> {
+	let parent = tempfile::tempdir()?;
+	let root = parent.path().join("root");
+	std::fs::create_dir(&root)?;
+	std::fs::write(root.join("kept"), "x")?;
+	// An alias of the root, like macOS `/var` → `/private/var`.
+	let alias = parent.path().join("alias");
+	std::os::unix::fs::symlink(&root, &alias)?;
+	let fs = JailedFs::open(&root)?;
+	assert_eq!(fs.relative(&alias.join("kept"))?, Path::new("kept"));
+	assert_eq!(fs.relative(&alias.join("new/leaf"))?, Path::new("new/leaf"));
+
+	let outside = parent.path().join("outside");
+	std::fs::create_dir(&outside)?;
+	std::os::unix::fs::symlink(&outside, root.join("link"))?;
+	assert!(fs.relative(&alias.join("link/secret")).is_err());
+	assert!(fs.relative(&outside.join("secret")).is_err());
+	Ok(())
+}

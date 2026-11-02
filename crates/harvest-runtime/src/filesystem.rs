@@ -108,10 +108,19 @@ impl JailedFs {
 
 	/// Normalize paths lexically; the directory capability enforces real access.
 	pub fn relative(&self, path: &Path) -> Result<PathBuf> {
+		let resolved;
 		let path = if path.is_absolute() {
-			path
-				.strip_prefix(&self.root)
-				.context("path escapes the authorized root")?
+			if let Ok(inside) = path.strip_prefix(&self.root) {
+				inside
+			} else {
+				// The root is canonical, so an alias of it (macOS `/var` →
+				// `/private/var`) needs its deepest existing ancestor resolved
+				// before comparing. The capability still enforces real access.
+				resolved = canonical_ancestor(path)?;
+				resolved
+					.strip_prefix(&self.root)
+					.context("path escapes the authorized root")?
+			}
 		} else {
 			path
 		};
@@ -487,5 +496,23 @@ impl ContentDigest {
 
 	pub fn hash(&self) -> String {
 		format!("{:x}", self.0.clone().finalize())
+	}
+}
+/// Canonicalize the deepest existing ancestor of an absolute path and append
+/// the remaining (possibly nonexistent) components lexically.
+fn canonical_ancestor(path: &Path) -> Result<PathBuf> {
+	let mut existing = path;
+	let mut rest = Vec::new();
+	loop {
+		if let Ok(canonical) = std::fs::canonicalize(existing) {
+			let mut resolved = canonical;
+			resolved.extend(rest.iter().rev());
+			return Ok(resolved);
+		}
+		let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
+			bail!("path escapes the authorized root");
+		};
+		rest.push(name);
+		existing = parent;
 	}
 }

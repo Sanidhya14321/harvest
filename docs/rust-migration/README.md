@@ -16,8 +16,10 @@ because a Rust command or tool has the same name.
   legacy root/ssh/limit/not-found errors, all inside the workspace jail. Six
   tool tests pass. Not yet covered: internal URLs (memory://, local://), streamed
   progress updates and the TUI renderer, so `tool:glob` stays partial.
-  `native_search::depth_limits_are_visible...` fails on macOS before and after this
-  change (temp-dir `/var` vs `/private/var` jail prefix); tracked separately.
+  A follow-up fixes `JailedFs::relative` for absolute paths through an alias of
+  the canonical root (macOS `/var` → `/private/var`), which made
+  `native_search::depth_limits_are_visible...` fail on macOS; escapes through
+  symlinks remain rejected.
 
 - `pi_walker::glob` owns glob search (pattern normalization, depth bounding,
   mtime ranking, symlink-aware type filtering, heartbeat cancellation); the
