@@ -9,6 +9,10 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask bench-runs DIR...` replaces `scripts/eval-bench-runs.ts` (deleted).
+  Output is byte-identical except that rows whose sort metric is missing (NaN)
+  now sort last deterministically instead of in engine-defined order.
+
 - `cargo xtask fix-test-imports [--write]` replaces `scripts/fix-test-imports.ts`
   (deleted); reports and rewritten files are byte-identical on the real test tree.
 

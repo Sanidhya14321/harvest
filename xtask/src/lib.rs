@@ -1,6 +1,7 @@
 //! Rust-owned development and distribution helpers.
 pub mod abi;
 pub mod artifacts;
+pub mod bench_runs;
 pub mod brew_formula;
 pub mod capabilities;
 pub mod checksums;

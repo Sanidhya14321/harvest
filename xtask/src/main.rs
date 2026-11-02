@@ -35,6 +35,7 @@ fn execute() -> Result<()> {
 		"package" => packaging::execute(selection),
 		"migration" => xtask::migration::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
+		"bench-runs" => xtask::bench_runs::execute(selection),
 		"fix-test-imports" => xtask::fix_test_imports::execute(selection),
 		"nix-bun-deps" => xtask::nix_bun_deps::execute(selection),
 		"merge-pr" => xtask::merge_pr::execute(selection),
