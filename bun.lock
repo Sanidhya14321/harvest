@@ -78,6 +78,7 @@
       "name": "@harvest/pi-coding-agent",
       "version": "0.1.0",
       "bin": {
+        "harvest": "src/cli.ts",
         "omp": "src/cli.ts",
       },
       "dependencies": {

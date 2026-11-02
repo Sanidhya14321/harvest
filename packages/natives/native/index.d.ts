@@ -1038,14 +1038,7 @@ export declare function decodePrintableKey(data: string): string | null
 /** Decode tmux-reencoded paste control bytes before editor sanitization. */
 export declare function decodeReencodedPasteControls(data: string): string
 
-/**
- * Decode one complete SIXEL control string into a PNG.
- *
- * The decoder is deliberately bounded before handing the stream to
- * `icy_sixel`: raster declarations, repeats, and row advances are scanned
- * first so hostile dimensions cannot make the dependency allocate its much
- * larger internal maximum.
- */
+/** Decode one complete SIXEL control string into a PNG. */
 export declare function decodeSixelToPng(bytes: Uint8Array): Uint8Array
 
 export interface DesktopCapabilities {
@@ -1455,7 +1448,8 @@ export declare function encodeDeccaraRectangle(top: number, left: number, bottom
  * before encoding.
  *
  * # Errors
- * Returns an error if decoding, resizing, or SIXEL encoding fails.
+ * Returns an error if the dimensions exceed limits, or decoding, resizing, or
+ * SIXEL encoding fails.
  */
 export declare function encodeSixel(bytes: Uint8Array, targetWidthPx: number, targetHeightPx: number): string
 

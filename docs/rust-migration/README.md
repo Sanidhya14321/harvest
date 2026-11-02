@@ -9,6 +9,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-media::sixel` owns SIXEL encode and bounded decode; the
+  `pi-natives` exports are thin adapters with unchanged JS signatures and error
+  text. Encoding now rejects zero or oversized targets (8192 px edge, 4 Mi
+  pixels) before decoding, and checks source header dimensions (64 Mi pixels,
+  64 MiB input) before allocating pixels. Six Rust boundary/roundtrip tests,
+  14 media tests plus one doctest, strict Clippy, a rebuilt addon (130 exports)
+  and 183 focused TS SIXEL/terminal-graphics tests pass. A byte-for-byte oracle
+  against the pre-extraction addon and Bazel execution were not rerun on this
+  macOS host. No TS source is retired; `utils/sixel.ts` remains a consumer.
+
 - `harvest-media::{html,svg}` exposes the existing HTML-to-Markdown and SVG/SVGZ
   preview engines through `harvest_omp::media`. N-API only converts/owns inputs
   and schedules the original blocking-pool calls. Standalone installed Rust

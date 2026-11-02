@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Shared HTML conversion and safe SVG previews for Harvest"
+description = "Shared HTML conversion, SIXEL encoding and safe SVG previews for Harvest"
 
 [lints]
 workspace = true
@@ -12,11 +12,12 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 html-to-markdown-rs.workspace = true
+icy_sixel.workspace = true
+image = { workspace = true, features = ["bmp"] }
 resvg.workspace = true
 # The pinned JPEG decoder requires log even when only resvg uses it.
 zune-jpeg.workspace = true
 
 [dev-dependencies]
-image.workspace = true
 base64.workspace = true
 tempfile = "3"
