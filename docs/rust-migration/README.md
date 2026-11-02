@@ -9,6 +9,16 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Bare code reads now return the legacy structural summary: `pi_ast` tree-sitter
+  segments with the default fold settings (100-line minimum, 4/6-line body and
+  comment thresholds, unfold 50/100), brace-pair merging (`N-M:head … tail`),
+  the `[…Nln elided; re-read needed ranges …]` footer and seen-line provenance;
+  Markdown/`.txt` files and selector reads skip it. Block context now parses the
+  host's original text (new `pi_edit::diff_string::find_block_context_lines_with_text`),
+  so nodes that run to EOF keep their last line. 17/17 real-file probes
+  (TypeScript, Rust, Python, Shell, Julia, TOML) and the earlier 27/28 read
+  probes are byte-identical to the TypeScript tool.
+
 - Tool results now carry their notices separately (`rust-agent/src/output.rs`).
   Inside a persisted `AgentSession`, results over 50 KB spill to
   `<session>/<id>.<tool>.log` (atomic, sanitized names, ids resumed from disk)

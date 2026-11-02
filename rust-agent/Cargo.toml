@@ -78,6 +78,7 @@ harvest-tui = { path = "../crates/harvest-tui" }
 harvest-media = { path = "../crates/harvest-media" }
 harvest-tokenizer = { path = "../crates/harvest-tokenizer" }
 pi-edit = { path = "../crates/pi-edit" }
+pi-ast = { path = "../crates/pi-ast" }
 pi-walker = { path = "../crates/pi-walker" }
 async-trait.workspace = true
 pi-shell = { path = "../crates/pi-shell", optional = true }

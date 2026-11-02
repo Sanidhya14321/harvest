@@ -409,6 +409,7 @@ fn native_block_context(
 	full_lines: &[&str],
 	visible: &BTreeSet<u32>,
 	source: &BlockContextSource<'_>,
+	text: Option<&str>,
 ) -> Option<Vec<(u32, String)>> {
 	if source.path.is_none() && source.lang.is_none() {
 		return None;
@@ -418,7 +419,7 @@ fn native_block_context(
 		return Some(Vec::new());
 	}
 	let options = EnclosingBoundaryOptions {
-		code:   full_lines.join("\n"),
+		code:   text.map_or_else(|| full_lines.join("\n"), str::to_owned),
 		lang:   source.lang.map(str::to_owned),
 		path:   source.path.map(str::to_owned),
 		ranges: ranges
@@ -579,7 +580,26 @@ pub fn find_block_context_lines(
 	if visible.is_empty() || (!full_lines.is_empty() && visible.len() >= full_lines.len()) {
 		return Vec::new();
 	}
-	native_block_context(full_lines, &visible, source)
+	native_block_context(full_lines, &visible, source, None)
+		.unwrap_or_else(|| lexical_bracket_context(full_lines, &visible))
+}
+
+/// [`find_block_context_lines`] parsing `text`, the source `full_lines` came
+/// from.
+///
+/// Passing it keeps a trailing newline the joined lines would
+/// drop, so nodes that run to EOF end on the same line the host reports.
+pub fn find_block_context_lines_with_text(
+	full_lines: &[&str],
+	visible: &[u32],
+	source: &BlockContextSource<'_>,
+	text: &str,
+) -> Vec<(u32, String)> {
+	let visible = visible.iter().copied().collect::<BTreeSet<_>>();
+	if visible.is_empty() || (!full_lines.is_empty() && visible.len() >= full_lines.len()) {
+		return Vec::new();
+	}
+	native_block_context(full_lines, &visible, source, Some(text))
 		.unwrap_or_else(|| lexical_bracket_context(full_lines, &visible))
 }
 

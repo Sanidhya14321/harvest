@@ -271,6 +271,7 @@ fn block_entries(
 	full: &[&str],
 	spans: &[(usize, usize)],
 	path: &str,
+	source_text: Option<&str>,
 	text_for: &dyn Fn(usize, &str) -> String,
 ) -> Vec<Entry> {
 	let total = full.len();
@@ -292,11 +293,16 @@ fn block_entries(
 		.flat_map(|&(start, end)| start..=end)
 		.map(|line| line as u32)
 		.collect();
-	let context = pi_edit::diff_string::find_block_context_lines(
-		full,
-		&visible,
-		&pi_edit::diff_string::BlockContextSource { path: Some(path), lang: None },
-	);
+	let block_source = pi_edit::diff_string::BlockContextSource { path: Some(path), lang: None };
+	let context = match source_text {
+		Some(text) => pi_edit::diff_string::find_block_context_lines_with_text(
+			full,
+			&visible,
+			&block_source,
+			text,
+		),
+		None => pi_edit::diff_string::find_block_context_lines(full, &visible, &block_source),
+	};
 	let mut lines: Vec<usize> = visible.iter().map(|&line| line as usize).collect();
 	lines.extend(context.iter().map(|(line, _)| *line as usize));
 	lines.sort_unstable();
@@ -532,11 +538,17 @@ fn read_file_text(
 			}
 		}
 		let mut output = if numbered && !spans.is_empty() {
-			let entries = block_entries(&addressable, &spans, &context.display, &|line, source| {
-				shown.get(&line).cloned().unwrap_or_else(|| {
-					truncate_columns(source, column_cap).unwrap_or_else(|| source.to_owned())
-				})
-			});
+			let entries = block_entries(
+				&addressable,
+				&spans,
+				&context.display,
+				Some(&buffered.normalized),
+				&|line, source| {
+					shown.get(&line).cloned().unwrap_or_else(|| {
+						truncate_columns(source, column_cap).unwrap_or_else(|| source.to_owned())
+					})
+				},
+			);
 			format_entries(&entries, true)
 		} else {
 			blocks.join("\n\n…\n\n")
@@ -612,15 +624,21 @@ fn read_file_text(
 	let render = |rows: &[String]| -> String {
 		let body = if numbered {
 			let spans = [(first, first + rows.len().saturating_sub(1))];
-			let entries = block_entries(&addressable, &spans, &context.display, &|line, source| {
-				line
-					.checked_sub(first)
-					.and_then(|offset| rows.get(offset))
-					.cloned()
-					.unwrap_or_else(|| {
-						truncate_columns(source, column_cap).unwrap_or_else(|| source.to_owned())
-					})
-			});
+			let entries = block_entries(
+				&addressable,
+				&spans,
+				&context.display,
+				Some(&buffered.normalized),
+				&|line, source| {
+					line
+						.checked_sub(first)
+						.and_then(|offset| rows.get(offset))
+						.cloned()
+						.unwrap_or_else(|| {
+							truncate_columns(source, column_cap).unwrap_or_else(|| source.to_owned())
+						})
+				},
+			);
 			format_entries(&entries, true)
 		} else {
 			rows.join("\n")
@@ -700,7 +718,8 @@ fn read_in_memory(
 		ToolOutput { text: body, truncation, next_offset, limits: Vec::new() }
 	};
 	let entries_for = |spans: &[(usize, usize)]| -> String {
-		let entries = block_entries(&all, spans, &context.display, &|_, source| source.to_owned());
+		let entries =
+			block_entries(&all, spans, &context.display, Some(text), &|_, source| source.to_owned());
 		format_entries(&entries, true)
 	};
 	let prefix = |body: String| match &hash {
@@ -889,9 +908,172 @@ pub(crate) fn read(
 		)));
 	}
 	let raw_text = String::from_utf8_lossy(&bytes).into_owned();
+	if matches!(selector, Selector::None)
+		&& bytes.len() <= MAX_SUMMARY_BYTES
+		&& !is_prose(&relative)
+		&& let Some(summary) = summarize(
+			&context,
+			&fs.root().join(&relative),
+			&raw_text,
+			&Buffered::new(&raw_text, &bytes).normalized,
+		) {
+		return Ok(summary);
+	}
 	let total = Buffered::new(&raw_text, &bytes).total_lines(raw);
 	let selector = resolve_tail(selector, total);
 	Ok(read_file_text(&context, &raw_text, &bytes, &selector))
+}
+
+const MAX_SUMMARY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SUMMARY_LINES: usize = 20_000;
+/// `read.summarize.*` defaults.
+const SUMMARY_MIN_TOTAL_LINES: usize = 100;
+const SUMMARY_MIN_BODY_LINES: u32 = 4;
+const SUMMARY_MIN_COMMENT_LINES: u32 = 6;
+const SUMMARY_UNFOLD_UNTIL: u32 = 50;
+const SUMMARY_UNFOLD_LIMIT: u32 = 100;
+const FOOTER_RANGE_SAMPLES: usize = 2;
+
+/// Markdown and `.txt` skip summarization (`isProseSummaryPath`).
+fn is_prose(path: &Path) -> bool {
+	path
+		.extension()
+		.and_then(|ext| ext.to_str())
+		.is_some_and(|ext| {
+			matches!(
+				ext.to_ascii_lowercase().as_str(),
+				"md" | "markdown" | "mdx" | "mdc" | "mkd" | "mdown" | "txt"
+			)
+		})
+}
+
+/// `canMergeBracePair`.
+fn can_merge_brace_pair(head: &str, tail: &str) -> bool {
+	let head = head.trim_end();
+	let tail = tail.trim();
+	let closer = match head.chars().last() {
+		Some('{') => '}',
+		Some('(') => ')',
+		Some('[') => ']',
+		_ => return false,
+	};
+	tail.strip_prefix(closer).is_some_and(|rest| {
+		rest
+			.chars()
+			.all(|ch| matches!(ch, ';' | ',' | ')' | ']' | '}'))
+	})
+}
+
+/// A bare code read: tree-sitter summary with elided bodies
+/// (`trySummarize` + `renderSummary` + `formatSummaryElisionFooter`), or
+/// `None` when the file is unsuitable.
+fn summarize(
+	context: &ReadContext<'_>,
+	absolute: &Path,
+	raw_text: &str,
+	normalized: &str,
+) -> Option<ToolOutput> {
+	let code = raw_text.strip_prefix('\u{feff}').unwrap_or(raw_text);
+	let lines = if code.is_empty() {
+		0
+	} else {
+		code.matches('\n').count() + 1
+	};
+	if !(SUMMARY_MIN_TOTAL_LINES..=MAX_SUMMARY_LINES).contains(&lines) {
+		return None;
+	}
+	let summary = pi_ast::summary::summarize_code(pi_ast::summary::SummaryOptions {
+		code:               code.to_owned(),
+		lang:               None,
+		path:               Some(absolute.to_string_lossy().into_owned()),
+		min_body_lines:     Some(SUMMARY_MIN_BODY_LINES),
+		min_comment_lines:  Some(SUMMARY_MIN_COMMENT_LINES),
+		unfold_until_lines: Some(SUMMARY_UNFOLD_UNTIL),
+		unfold_limit_lines: Some(SUMMARY_UNFOLD_LIMIT),
+	})
+	.ok()?;
+	if !(summary.parsed && summary.elided) {
+		return None;
+	}
+	enum Unit {
+		Line(u32, String),
+		Elided(u32, u32),
+		Merged(u32, u32, String, String),
+	}
+	let mut flat = Vec::new();
+	for segment in summary.segments {
+		if segment.kind == "elided" {
+			flat.push(Unit::Elided(segment.start_line, segment.end_line));
+			continue;
+		}
+		let text = segment.text.unwrap_or_default();
+		if text.is_empty() {
+			continue;
+		}
+		for (offset, line) in text.split('\n').enumerate() {
+			flat.push(Unit::Line(segment.start_line + offset as u32, line.to_owned()));
+		}
+	}
+	let mut units: Vec<Unit> = Vec::new();
+	let mut flat = flat.into_iter().peekable();
+	while let Some(unit) = flat.next() {
+		if let Unit::Elided(..) = unit
+			&& let Some(Unit::Line(_, previous)) = units.last()
+			&& let Some(Unit::Line(_, next)) = flat.peek()
+			&& can_merge_brace_pair(previous, next)
+		{
+			let Some(Unit::Line(start, head)) = units.pop() else {
+				unreachable!()
+			};
+			let Some(Unit::Line(end, tail)) = flat.next() else {
+				unreachable!()
+			};
+			units.push(Unit::Merged(start, end, head, tail));
+			continue;
+		}
+		units.push(unit);
+	}
+	let mut parts = Vec::new();
+	let mut ranges: Vec<(u32, u32)> = Vec::new();
+	let mut elided_lines = 0;
+	for unit in &units {
+		match unit {
+			Unit::Elided(start, end) => {
+				parts.push("…".to_owned());
+				ranges.push((*start, *end));
+				elided_lines += end - start + 1;
+			},
+			Unit::Merged(start, end, head, tail) => {
+				parts.push(format!("{start}-{end}:{} … {}", head.trim_end(), tail.trim()));
+				ranges.push((*start, *end));
+				elided_lines += end.saturating_sub(*start + 1);
+			},
+			Unit::Line(line, text) => parts.push(format!("{line}:{text}")),
+		}
+	}
+	let text = parts.join("\n");
+	let samples = ranges.len().min(FOOTER_RANGE_SAMPLES);
+	let selector = ranges[..samples]
+		.iter()
+		.map(|(start, end)| format!("{start}-{end}"))
+		.collect::<Vec<_>>()
+		.join(",");
+	let example = format!("{}:{selector}", context.display);
+	let footer = if ranges.is_empty() {
+		String::new()
+	} else if ranges.len() > samples {
+		format!("[…{elided_lines}ln elided; re-read needed ranges, e.g. {example}]")
+	} else {
+		format!("[…{elided_lines}ln elided; re-read needed ranges with {example}]")
+	};
+	let (header, tag) = context.header(normalized);
+	context.record_seen(&tag, &text);
+	let body = if footer.is_empty() {
+		text
+	} else {
+		format!("{text}\n\n{footer}")
+	};
+	Some(ToolOutput::text(format!("{header}\n{body}")))
 }
 
 /// `~` for the home directory (`shortenPath`).
@@ -1055,7 +1237,9 @@ fn read_artifact(
 			String::new()
 		} else {
 			format_entries(
-				&block_entries(&addressable, &spans, &url, &|_, source| source.to_owned()),
+				&block_entries(&addressable, &spans, &url, Some(&buffered.normalized), &|_, source| {
+					source.to_owned()
+				}),
 				false,
 			)
 		};
@@ -1260,6 +1444,33 @@ mod tests {
 		);
 		std::fs::write(root.path().join("log:1-2"), "literal\n")?;
 		assert!(run(root.path(), "log:1-2", &store)?.ends_with("1:literal"));
+		Ok(())
+	}
+
+	#[test]
+	fn bare_code_reads_summarize_and_name_the_elided_ranges() -> Result<()> {
+		let root = tempfile::tempdir()?;
+		let body: String = (0..20)
+			.map(|n| format!("    let value_{n} = {n};\n"))
+			.collect::<Vec<_>>()
+			.concat();
+		let source: String = (0..8)
+			.map(|n| format!("pub fn f{n}() {{\n{body}}}\n\n"))
+			.collect::<Vec<_>>()
+			.concat();
+		std::fs::write(root.path().join("lib.rs"), &source)?;
+		let store = EditStore::new();
+		let output = run(root.path(), "lib.rs", &store)?;
+		assert!(output.starts_with("[lib.rs#"), "{output}");
+		// Elided bodies collapse to `N-M:pub fn fK() { … }` and the footer names
+		// re-readable ranges; the summary is much shorter than the source.
+		assert!(output.lines().any(|line| line.ends_with("() { … }")), "{output}");
+		assert!(output.contains("ln elided; re-read needed ranges"), "{output}");
+		assert!(output.lines().count() < source.lines().count() / 2, "{output}");
+		// A selector bypasses the summary; prose never summarizes.
+		assert!(run(root.path(), "lib.rs:2-2", &store)?.contains("2:    let value_0 = 0;"));
+		std::fs::write(root.path().join("notes.md"), &source)?;
+		assert!(!run(root.path(), "notes.md", &store)?.contains(" … "));
 		Ok(())
 	}
 

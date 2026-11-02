@@ -3796,6 +3796,7 @@ dependencies = [
  "harvest-runtime",
  "harvest-tokenizer",
  "harvest-tui",
+ "pi-ast",
  "pi-edit",
  "pi-shell",
  "pi-walker",
