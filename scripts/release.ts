@@ -11,7 +11,6 @@
 import { $, Glob } from "bun";
 import { compareVersions } from "../packages/utils/src/version.ts";
 import { runChangelogFixer } from "./fix-changelogs";
-import { generateNixBunDeps, resolveNixBunDepsGenerator } from "./gen-nix-bun";
 
 const changelogGlob = new Glob("packages/*/CHANGELOG.md");
 const packageJsonGlob = new Glob("packages/*/package.json");
@@ -259,8 +258,8 @@ async function cmdRelease(versionOrBump: string): Promise<void> {
 	}
 	console.log("  Working directory clean");
 
-	const nixBunDepsGenerator = resolveNixBunDepsGenerator();
-	console.log(`  Nix dependency generator: ${nixBunDepsGenerator.kind}`);
+	const nixBunDepsGenerator = (await $`cargo xtask nix-bun-deps --print-generator`.quiet().text()).trim();
+	console.log(`  Nix dependency generator: ${nixBunDepsGenerator}`);
 
 	const latestTag = (await git(["describe", "--tags", "--abbrev=0", "--match", "v*"]).text()).trim();
 	let version = versionOrBump;
@@ -365,7 +364,7 @@ async function cmdRelease(versionOrBump: string): Promise<void> {
 	await $`rm -f bun.lock`;
 	await $`bun install`;
 	await $`cargo generate-lockfile`;
-	await generateNixBunDeps(nixBunDepsGenerator);
+	await $`cargo xtask nix-bun-deps`;
 	// bazel/clippy.bazelrc mirrors [workspace.lints] in Cargo.toml; regenerate
 	// it here (like the lockfiles) so the bazel clippy policy can never drift.
 	// The release_gate CI job runs the matching `--check`.

@@ -12,6 +12,7 @@ pub mod emit_extensions;
 mod generated;
 pub mod merge_pr;
 pub mod migration;
+pub mod nix_bun_deps;
 pub mod packaging;
 mod process;
 pub mod release_notes;

@@ -1873,7 +1873,8 @@
         "paths": [
           "xtask/src/clippy_config.rs",
           "xtask/src/theme_index.rs",
-          "xtask/src/emit_extensions.rs"
+          "xtask/src/emit_extensions.rs",
+          "xtask/src/nix_bun_deps.rs"
         ]
       },
       "verification": {
@@ -1881,15 +1882,15 @@
         "contract_suites": [
           "xtask/src/clippy_config.rs",
           "xtask/src/theme_index.rs",
-          "xtask/src/emit_extensions.rs"
+          "xtask/src/emit_extensions.rs",
+          "xtask/src/nix_bun_deps.rs"
         ]
       },
       "installation": "native-xtask",
       "legacy": {
         "paths": [
           "packages/catalog/scripts/generate-models.ts",
-          "packages/coding-agent/scripts/generate-share-viewer.ts",
-          "scripts/gen-nix-bun.ts"
+          "packages/coding-agent/scripts/generate-share-viewer.ts"
         ],
         "removable": false
       }

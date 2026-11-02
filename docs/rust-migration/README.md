@@ -9,6 +9,10 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask nix-bun-deps [--print-generator]` replaces `scripts/gen-nix-bun.ts`
+  and its test (both deleted); `gen:nix` and `scripts/release.ts` call it. A
+  real bunx bun2nix run produced byte-identical bun.lock/nix/bun.nix to legacy.
+
 - `cargo xtask merge-pr BRANCH [--pr N] [--dry-run]` replaces
   `scripts/merge-pr.ts` and its test (both deleted); alias it with
   `git config alias.mpr '!cargo xtask merge-pr'`.
