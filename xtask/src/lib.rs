@@ -9,6 +9,7 @@ pub mod clippy_config;
 pub mod development;
 pub mod elf;
 pub mod emit_extensions;
+pub mod fix_test_imports;
 mod generated;
 pub mod merge_pr;
 pub mod migration;

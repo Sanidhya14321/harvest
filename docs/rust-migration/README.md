@@ -9,6 +9,9 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask fix-test-imports [--write]` replaces `scripts/fix-test-imports.ts`
+  (deleted); reports and rewritten files are byte-identical on the real test tree.
+
 - `cargo xtask nix-bun-deps [--print-generator]` replaces `scripts/gen-nix-bun.ts`
   and its test (both deleted); `gen:nix` and `scripts/release.ts` call it. A
   real bunx bun2nix run produced byte-identical bun.lock/nix/bun.nix to legacy.
