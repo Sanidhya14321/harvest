@@ -58,6 +58,18 @@ pub fn invoke_with_cancellation(
 	policy: &dyn Approval,
 	cancellation: &harvest_runtime::cancel::CancelToken,
 ) -> Result<String> {
+	invoke_with_store(root, call, policy, cancellation, &pi_edit::EditStore::new())
+}
+
+/// Invoke with a session-scoped edit store: `read` records the snapshots
+/// whose `[path#TAG]` headers anchor later `edit` calls.
+pub fn invoke_with_store(
+	root: &Path,
+	call: &ToolCall,
+	policy: &dyn Approval,
+	cancellation: &harvest_runtime::cancel::CancelToken,
+	store: &pi_edit::EditStore,
+) -> Result<String> {
 	cancellation.heartbeat()?;
 	let name = call.function.name.as_str();
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
@@ -70,25 +82,28 @@ pub fn invoke_with_cancellation(
 		bail!("tool {name} requires human approval");
 	}
 	cancellation.heartbeat()?;
-	invoke_authorized(root, call, cancellation)
+	invoke_authorized(root, call, cancellation, store)
 }
 
 #[cfg(test)]
 fn invoke_approved(root: &Path, call: &ToolCall) -> Result<String> {
-	invoke_authorized(root, call, &Default::default())
+	invoke_authorized(root, call, &Default::default(), &pi_edit::EditStore::new())
 }
 
 fn invoke_authorized(
 	root: &Path,
 	call: &ToolCall,
 	cancellation: &harvest_runtime::cancel::CancelToken,
+	store: &pi_edit::EditStore,
 ) -> Result<String> {
 	let name = call.function.name.as_str();
 	let arguments = call.function.arguments.as_str();
 	let output = match name {
-		"read" => read_file(root, &parse::<ReadArgs>(arguments)?)?,
+		"read" => {
+			crate::read::read(root, &parse::<crate::read::Args>(arguments)?, store, cancellation)?
+		},
 		"write" => write_file(root, &parse::<WriteArgs>(arguments)?)?,
-		"edit" => crate::edit::replace(root, &parse::<EditArgs>(arguments)?, cancellation)?,
+		"edit" => crate::edit::hashline(root, arguments, store, cancellation)?,
 		"grep" => crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, cancellation)?,
 		"glob" => crate::glob::glob(root, &parse::<crate::glob::Args>(arguments)?, cancellation)?,
 		"bash" => bash(root, &parse::<BashArgs>(arguments)?, cancellation)?,
@@ -98,21 +113,9 @@ fn invoke_authorized(
 }
 
 #[derive(Debug, Deserialize)]
-struct ReadArgs {
-	path: String,
-}
-
-#[derive(Debug, Deserialize)]
 struct WriteArgs {
 	path:     String,
 	contents: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct EditArgs {
-	pub path: String,
-	pub old:  String,
-	pub new:  String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,16 +125,6 @@ struct BashArgs {
 
 fn parse<T: for<'de> Deserialize<'de>>(arguments: &str) -> Result<T> {
 	serde_json::from_str(arguments).context("tool arguments are not valid JSON")
-}
-
-fn read_file(root: &Path, args: &ReadArgs) -> Result<String> {
-	let fs = JailedFs::open(root)?;
-	let path = fs.relative(Path::new(&args.path))?;
-	let bytes = fs.read(&path, MAX_FILE_BYTES)?;
-	if bytes.contains(&0) {
-		bail!("{} is not a text file", path.display());
-	}
-	String::from_utf8(bytes).with_context(|| format!("{} is not UTF-8", path.display()))
 }
 
 fn write_file(root: &Path, args: &WriteArgs) -> Result<String> {
@@ -270,32 +263,54 @@ mod tests {
 		}
 	}
 
+	fn tag_of(read: &str) -> String {
+		read
+			.lines()
+			.next()
+			.and_then(|header| header.split('#').nth(1))
+			.unwrap()
+			.trim_end_matches(']')
+			.to_owned()
+	}
+
 	#[test]
-	fn write_read_edit_and_grep_round_trip() {
+	fn write_read_hashline_edit_and_grep_round_trip() {
 		let root = tempfile::tempdir().unwrap();
-		let wrote =
-			invoke(root.path(), &call("write", r#"{"path":"src/a.txt","contents":"alpha beta"}"#))
-				.unwrap();
-		assert!(wrote.contains("wrote"));
-		let read = invoke(root.path(), &call("read", r#"{"path":"src/a.txt"}"#)).unwrap();
-		assert_eq!(read, "alpha beta");
-		let edited =
-			invoke(root.path(), &call("edit", r#"{"path":"src/a.txt","old":"beta","new":"gamma"}"#))
-				.unwrap();
-		assert!(edited.contains("edited"));
-		let hits = invoke(root.path(), &call("grep", r#"{"pattern":"gamma","path":"src"}"#)).unwrap();
+		let store = pi_edit::EditStore::new();
+		let run = |name: &str, arguments: &str| {
+			super::invoke_authorized(root.path(), &call(name, arguments), &Default::default(), &store)
+		};
+		assert!(
+			run("write", r#"{"path":"src/a.txt","contents":"alpha beta\n"}"#)
+				.unwrap()
+				.contains("wrote")
+		);
+		let read = run("read", r#"{"path":"src/a.txt"}"#).unwrap();
+		let tag = tag_of(&read);
+		assert_eq!(read, format!("[src/a.txt#{tag}]\n1:alpha beta"));
+		let input = format!("[src/a.txt#{tag}]\nPUT 1.=1:\n+alpha gamma\n");
+		let edited = run("edit", &serde_json::json!({ "input": input }).to_string()).unwrap();
+		assert!(edited.starts_with("[src/a.txt#"), "{edited}");
+		assert_eq!(std::fs::read_to_string(root.path().join("src/a.txt")).unwrap(), "alpha gamma\n");
+		let hits = run("grep", r#"{"pattern":"gamma","path":"src"}"#).unwrap();
 		assert!(hits.contains("alpha gamma"));
 	}
 
 	#[test]
-	fn edit_requires_one_match_and_paths_cannot_escape() {
+	fn stale_tags_and_escaping_paths_are_rejected_without_writes() {
 		let root = tempfile::tempdir().unwrap();
-		let wrote =
-			invoke(root.path(), &call("write", r#"{"path":"a.txt","contents":"one one"}"#)).unwrap();
-		assert!(wrote.contains("wrote"), "{wrote}");
-		let error = invoke(root.path(), &call("edit", r#"{"path":"a.txt","old":"one","new":"two"}"#))
-			.unwrap_err();
-		assert!(error.to_string().contains("2 occurrences"));
+		let store = pi_edit::EditStore::new();
+		std::fs::write(root.path().join("a.txt"), "one\n").unwrap();
+		let input = "[a.txt#0000]\nPUT 1.=1:\n+two\n";
+		let error = super::invoke_authorized(
+			root.path(),
+			&call("edit", &serde_json::json!({ "input": input }).to_string()),
+			&Default::default(),
+			&store,
+		)
+		.unwrap_err();
+		assert!(!error.to_string().is_empty());
+		assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(), "one\n");
 		let escaped = invoke(root.path(), &call("read", r#"{"path":"../secret"}"#)).unwrap_err();
 		assert!(escaped.to_string().contains("escapes"));
 	}

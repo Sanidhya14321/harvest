@@ -391,13 +391,14 @@
       "implementation": {
         "status": "partial",
         "paths": [
+          "rust-agent/src/read.rs",
           "rust-agent/src/tools.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/read.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -452,7 +453,7 @@
         "status": "unverified",
         "contract_suites": [
           "rust-agent/tests/native_edit.rs",
-          "crates/pi-edit/tests"
+          "rust-agent/src/tools.rs"
         ]
       },
       "installation": "experimental-rust-cli",

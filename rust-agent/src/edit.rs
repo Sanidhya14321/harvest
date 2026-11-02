@@ -1,108 +1,127 @@
-//! Native edit staging uses pi-edit; the application owns approvals and bytes.
-use std::{path::Path, sync::Arc};
-
-use anyhow::{Context, Result, bail};
-use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken};
-use pi_edit::{
-	ArgSnapshot, EditError, EditResult, EditStore, ModeEngine, PathPolicy, Resolved,
-	files::{FileRead, FileSource},
-	modes::replace::ReplaceEngine,
+//! The `edit` tool: a `pi_edit` hashline session per call, sharing the
+//! session-wide snapshot store with `read`. The engine stages every file in
+//! memory and re-checks its read jail before the first write; the host writer
+//! below persists bytes only through the workspace capability.
+use std::{
+	future::Future,
+	path::{Path, PathBuf},
+	pin::pin,
+	sync::Arc,
+	task::{Context as TaskContext, Poll, Wake, Waker},
 };
 
-use crate::tools::EditArgs;
+use anyhow::{Result, bail};
+use async_trait::async_trait;
+use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken};
+use pi_edit::{
+	EditError, EditMode, EditResult, EditStore, FileOp, PathPolicy, Session,
+	session::{ApplyRequest, EditWriter, SessionConfig, WriteRequest, WriteResponse},
+};
 
-struct WorkspaceFiles<'a> {
-	fs:           JailedFs,
-	policy:       PathPolicy,
-	cancellation: &'a CancelToken,
-}
+/// Matches the legacy `edit.fuzzyMatch` / `edit.fuzzyThreshold` defaults.
+const FUZZY_THRESHOLD: f64 = 0.95;
 
-impl WorkspaceFiles<'_> {
-	fn load(&self, resolved: &Resolved) -> Result<Option<Arc<FileRead>>> {
-		self.cancellation.heartbeat()?;
-		let Some(bytes) = self.fs.read_optional(&resolved.absolute, MAX_FILE_BYTES)? else {
-			return Ok(None);
-		};
-		if bytes.contains(&0) {
-			bail!("edit target is not a text file");
-		}
-		if let Some(message) = self
-			.policy
-			.auto_generated_message(&resolved.display, &bytes[..bytes.len().min(1024)])
-		{
-			bail!("{message}");
-		}
-		let raw = String::from_utf8(bytes).context("edit target is not UTF-8")?;
-		Ok(Some(Arc::new(FileRead::from_raw(resolved.clone(), raw)?)))
-	}
-}
-
-fn edit_error(error: anyhow::Error) -> EditError {
-	EditError::apply(format!("{error:#}"))
-}
-
-impl FileSource for WorkspaceFiles<'_> {
-	fn policy(&self) -> &PathPolicy {
-		&self.policy
-	}
-
-	fn resolve(&mut self, authored: &str, _must_exist: bool) -> EditResult<Resolved> {
-		let resolved = self.policy.resolve(authored)?;
-		self.fs.relative(&resolved.absolute).map_err(edit_error)?;
-		// No suffix recovery: approval covered this exact authored target.
-		Ok(resolved)
-	}
-
-	fn exists(&mut self, absolute: &Path) -> bool {
-		self
-			.fs
-			.read_optional(absolute, MAX_FILE_BYTES)
-			.is_ok_and(|read| read.is_some())
-	}
-
-	fn read(&mut self, authored: &str) -> EditResult<Arc<FileRead>> {
-		let resolved = self.resolve(authored, true)?;
-		self
-			.try_read(&resolved)?
-			.ok_or_else(|| EditError::apply(format!("File not found: {}", resolved.display)))
-	}
-
-	fn try_read(&mut self, resolved: &Resolved) -> EditResult<Option<Arc<FileRead>>> {
-		self.load(resolved).map_err(edit_error)
-	}
-
-	fn clear(&mut self) {}
-}
-
-pub(crate) fn replace(root: &Path, args: &EditArgs, cancellation: &CancelToken) -> Result<String> {
-	let fs = JailedFs::open(root)?;
-	let policy = PathPolicy {
-		cwd:                  fs.root().to_owned(),
-		home_dir:             fs.root().to_owned(),
+/// The policy every edit runs under: reads and writes stay inside `root`.
+pub(crate) fn policy(root: &Path) -> PathPolicy {
+	PathPolicy {
+		cwd:                  root.to_owned(),
+		home_dir:             root.to_owned(),
 		local_sandbox_root:   None,
 		vault_roots:          None,
 		plan_active:          false,
 		block_auto_generated: true,
-	};
-	let mut files = WorkspaceFiles { fs, policy, cancellation };
-	let snapshot = ArgSnapshot {
-		path: Some(args.path.clone()),
-		old_string: Some(args.old.clone()),
-		new_string: Some(args.new.clone()),
-		complete: true,
-		..ArgSnapshot::default()
-	};
-	let engine = ReplaceEngine { allow_fuzzy: false, fuzzy_threshold: 1.0 };
-	let staged = engine.stage(&snapshot, &mut files, &EditStore::default())?;
-	let file = staged.first().context("edit produced no staged file")?;
-	let content = file
-		.persisted
-		.as_deref()
-		.context("edit produced no content")?;
-	if content.len() > MAX_FILE_BYTES {
-		bail!("edit exceeds file limit");
 	}
+}
+
+struct JailedWriter<'a> {
+	fs:           JailedFs,
+	cancellation: &'a CancelToken,
+}
+
+fn writer_error(error: impl std::fmt::Display) -> EditError {
+	EditError::Writer(error.to_string())
+}
+
+impl JailedWriter<'_> {
+	fn persist(&self, request: &WriteRequest) -> Result<String> {
+		self.cancellation.heartbeat()?;
+		if request.op == FileOp::Delete {
+			self.fs.remove(&request.absolute)?;
+			return Ok(String::new());
+		}
+		let Some(content) = &request.content else {
+			bail!("Native edit {} request omitted content", request.op.as_str());
+		};
+		if content.len() > MAX_FILE_BYTES {
+			bail!("edit exceeds file limit");
+		}
+		match &request.move_to {
+			Some(destination) => {
+				self.fs.relative(destination)?;
+				self.fs.atomic_write(destination, content.as_bytes())?;
+				self.fs.remove(&request.absolute)?;
+			},
+			None => self
+				.fs
+				.atomic_write(&request.absolute, content.as_bytes())?,
+		}
+		Ok(content.clone())
+	}
+}
+
+#[async_trait]
+impl EditWriter for JailedWriter<'_> {
+	async fn write(&self, request: WriteRequest) -> EditResult<WriteResponse> {
+		let written = self.persist(&request).map_err(writer_error)?;
+		Ok(WriteResponse { written, diagnostics_json: None })
+	}
+}
+
+/// Drive a future whose awaits all complete synchronously (the jailed writer
+/// never yields), without pulling an async runtime into the core build.
+fn block_on<F: Future>(future: F) -> F::Output {
+	struct Unpark(std::thread::Thread);
+	impl Wake for Unpark {
+		fn wake(self: Arc<Self>) {
+			self.0.unpark();
+		}
+	}
+	let waker = Waker::from(Arc::new(Unpark(std::thread::current())));
+	let mut context = TaskContext::from_waker(&waker);
+	let mut future = pin!(future);
+	loop {
+		match future.as_mut().poll(&mut context) {
+			Poll::Ready(output) => return output,
+			Poll::Pending => std::thread::park(),
+		}
+	}
+}
+
+/// Apply one hashline edit call (`{"input": "..."}`) and return the
+/// model-facing result text.
+pub(crate) fn hashline(
+	root: &Path,
+	arguments: &str,
+	store: &EditStore,
+	cancellation: &CancelToken,
+) -> Result<String> {
 	cancellation.heartbeat()?;
-	files.fs.atomic_write(&file.absolute, content.as_bytes())?;
-	Ok(format!("edited {}", file.display))
+	let fs = JailedFs::open(root)?;
+	let root: PathBuf = fs.root().to_owned();
+	let mut session = Session::new(
+		SessionConfig {
+			mode:               EditMode::Hashline,
+			policy:             policy(&root),
+			allow_fuzzy:        true,
+			fuzzy_threshold:    FUZZY_THRESHOLD,
+			enforce_seen_lines: false,
+			raw_input:          false,
+		},
+		store.clone(),
+	);
+	session.set_args_json(arguments);
+	session.finish();
+	let writer = JailedWriter { fs, cancellation };
+	let outcome = block_on(session.apply(ApplyRequest::default(), &writer))?;
+	Ok(outcome.text)
 }

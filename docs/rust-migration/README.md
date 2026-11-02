@@ -9,6 +9,22 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- The Rust host's `edit` is now the legacy hashline contract: one `pi_edit`
+  hashline `Session` per call (fuzzy 0.95, auto-generated guard), staged in
+  memory with the engine's read-jail re-check, persisted only through a
+  `JailedFs` writer, returning the engine's model-facing text. `read` records
+  each file in the session-wide `EditStore` and returns `[path#TAG]` plus `N:line`
+  rows, with legacy selectors (`:N`, `N-M`, `N+K`, `N-`, `-N`, comma lists,
+  `..`, `raw`, compound raw), literal-colon filenames, the 1/3-line range
+  context, out-of-range and multi-range notices, and notebook cell views. Tags
+  matched the legacy read on all 28 probe cases, so headers anchor edits across
+  both hosts; 16/28 outputs were byte-identical. Known read differences, kept
+  partial: limited ranges use the legacy "Showing lines X-Y of N" streaming
+  notice; CRLF/BOM rows display raw in legacy; an empty file renders `1:`;
+  Markdown/code ranges get block context; no column cap, default-limit
+  setting, structural summaries, directories, archives, SQLite, images, PDFs,
+  URLs or internal URIs. 102 default-feature and 101 core-feature tests pass.
+
 - The Rust host gains a `glob` tool (`rust-agent/src/glob.rs`) on `pi_walker::glob`:
   semicolon target lists, base/glob splitting, newest-first merge across targets,
   directory `/` suffixes, prefix-folded grouped output, the 200-result cap and

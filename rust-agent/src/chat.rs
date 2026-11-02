@@ -66,6 +66,8 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pattern:        Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	input:          Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	hidden:         Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	limit:          Option<NumberProperty>,
@@ -142,9 +144,9 @@ pub fn specs() -> Vec<ToolSpec> {
 		),
 		spec(
 			"edit",
-			include_str!("prompts/tools/edit.md").trim_end(),
-			ToolProperties { path: Some(STRING), old: Some(STRING), new: Some(STRING), ..EMPTY },
-			&["path", "old", "new"],
+			pi_edit::description(pi_edit::EditMode::Hashline).trim_end(),
+			ToolProperties { input: Some(STRING), ..EMPTY },
+			&["input"],
 		),
 		spec(
 			"grep",
@@ -188,6 +190,7 @@ const EMPTY: ToolProperties = ToolProperties {
 	contents:       None,
 	command:        None,
 	pattern:        None,
+	input:          None,
 	hidden:         None,
 	limit:          None,
 };

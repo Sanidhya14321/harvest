@@ -10,6 +10,7 @@ pub mod durable_session;
 mod edit;
 mod glob;
 pub mod provider;
+mod read;
 mod search;
 mod session_context;
 pub mod session_format;

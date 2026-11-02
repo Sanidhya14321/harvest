@@ -49,11 +49,20 @@ pub struct AgentSession {
 	generation: u64,
 	sequence:   u64,
 	active:     Option<(RunHandle, CancelToken)>,
+	/// Snapshots shared by `read` and `edit` across this session's tool calls.
+	edit_store: pi_edit::EditStore,
 }
 impl AgentSession {
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
 		let log = DurableSession::open(root, path, leaf)?;
-		Ok(Self { root: root.canonicalize()?, log, generation: 0, sequence: 0, active: None })
+		Ok(Self {
+			root: root.canonicalize()?,
+			log,
+			generation: 0,
+			sequence: 0,
+			active: None,
+			edit_store: pi_edit::EditStore::new(),
+		})
 	}
 
 	pub fn session_id(&self) -> &str {
@@ -195,11 +204,16 @@ impl AgentSession {
 			}
 			for call in calls {
 				cancellation.heartbeat()?;
-				let output =
-					match tools::invoke_with_cancellation(&self.root, &call, approval, cancellation) {
-						Ok(output) => output,
-						Err(error) => format!("error: {error:#}"),
-					};
+				let output = match tools::invoke_with_store(
+					&self.root,
+					&call,
+					approval,
+					cancellation,
+					&self.edit_store,
+				) {
+					Ok(output) => output,
+					Err(error) => format!("error: {error:#}"),
+				};
 				let result = chat::tool_result(&call.id, output);
 				self.commit(&result, model, None, sink)?;
 				messages.push(result);
