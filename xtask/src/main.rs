@@ -35,6 +35,7 @@ fn execute() -> Result<()> {
 		"package" => packaging::execute(selection),
 		"migration" => xtask::migration::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
+		"brew-formula" => xtask::brew_formula::execute(selection),
 		"spoofed-versions" => xtask::spoofed_versions::execute(selection),
 		"test" => {
 			let doctest_selection = xtask::testing::doctest_selection(&selection)?;
@@ -83,7 +84,7 @@ fn execute() -> Result<()> {
 				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
 				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
 				 --help\ncargo xtask secrets --help\ncargo xtask spoofed-versions [--update]\ncargo \
-				 xtask migration [--require-complete]"
+				 xtask brew-formula TAG [--out FILE]\ncargo xtask migration [--require-complete]"
 			);
 			Ok(())
 		},

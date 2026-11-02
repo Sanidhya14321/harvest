@@ -9,6 +9,11 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask brew-formula TAG [--out FILE]` replaces
+  `scripts/ci-update-brew-formula.ts` and its test (both deleted). Output is
+  byte-identical to the legacy renderer; the issue #2398 regressions are
+  ported as Rust tests.
+
 - `cargo xtask spoofed-versions [--update]` replaces
   `scripts/check-spoofed-versions.ts` (deleted). It reports Gemini CLI
   User-Agent drift against GitHub releases with bounded HTTP, and rewrites only
