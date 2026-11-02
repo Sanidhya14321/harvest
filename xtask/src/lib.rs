@@ -14,6 +14,7 @@ pub mod packaging;
 mod process;
 pub mod release_notes;
 pub mod secrets;
+pub mod spoofed_versions;
 pub mod testing;
 pub mod theme_index;
 pub mod version;

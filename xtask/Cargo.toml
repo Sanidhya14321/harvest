@@ -19,6 +19,7 @@ semver = "1.0"
 toml_edit = "0.25"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 serde_yaml_ng = "0.10.0"
+ureq = { version = "2.12.1", default-features = false, features = ["tls"] }
 
 [[bin]]
 name = "xtask"

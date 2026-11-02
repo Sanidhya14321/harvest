@@ -9,6 +9,12 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask spoofed-versions [--update]` replaces
+  `scripts/check-spoofed-versions.ts` (deleted). It reports Gemini CLI
+  User-Agent drift against GitHub releases with bounded HTTP, and rewrites only
+  the matched default atomically. Legacy and Rust runs produced identical
+  drift reports and exit codes; the binary runs with no Bun/Node on PATH.
+
 - `harvest-media::pdf` owns PDF-to-Markdown conversion (page markers, title,
   OCR-needed pages, encoding-issue flag, `PDF conversion failed:` error prefix)
   and is reachable as `harvest_omp::media::pdf`. `pdfToMarkdown` is a thin

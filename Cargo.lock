@@ -10775,6 +10775,7 @@ dependencies = [
  "serde_yaml_ng",
  "tempfile",
  "toml_edit",
+ "ureq",
  "zip",
 ]
 

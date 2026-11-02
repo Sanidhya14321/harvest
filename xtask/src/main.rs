@@ -35,6 +35,7 @@ fn execute() -> Result<()> {
 		"package" => packaging::execute(selection),
 		"migration" => xtask::migration::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
+		"spoofed-versions" => xtask::spoofed_versions::execute(selection),
 		"test" => {
 			let doctest_selection = xtask::testing::doctest_selection(&selection)?;
 			let mut nextest = vec!["nextest".into(), "run".into(), "--locked".into()];
@@ -81,7 +82,8 @@ fn execute() -> Result<()> {
 				 xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and target \
 				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
 				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
-				 --help\ncargo xtask secrets --help\ncargo xtask migration [--require-complete]"
+				 --help\ncargo xtask secrets --help\ncargo xtask spoofed-versions [--update]\ncargo \
+				 xtask migration [--require-complete]"
 			);
 			Ok(())
 		},
