@@ -48,44 +48,7 @@ impl CompiledGlob {
 	}
 }
 
-/// Normalize a raw glob string: fix path separators, optionally prepend `**/`
-/// for recursive matching, and close any unclosed `{` alternation groups.
-pub fn build_glob_pattern(glob: &str, recursive: bool) -> String {
-	let normalized = glob.replace('\\', "/");
-	let pattern = if !recursive
-		|| normalized.contains('/')
-		|| normalized.starts_with("**")
-		|| is_exact_brace_union(&normalized)
-	{
-		normalized
-	} else {
-		format!("**/{normalized}")
-	};
-	fix_unclosed_braces(pattern)
-}
-
-/// Maximum walk depth (path components) a normalized glob pattern can match,
-/// or `usize::MAX` when unbounded.
-///
-/// Walk-relative globs compile with `literal_separator(true)`, so `*`, `?`,
-/// and `[...]` never cross `/` — a pattern with N literal segments can only
-/// match entries at most N components deep. Bounding the walk to that depth
-/// keeps non-recursive patterns (`*`, `dir/*.json`) from traversing an entire
-/// subtree they can never match into (the source of "narrow glob timed out on
-/// a populated directory" failures).
-///
-/// `**` matches any number of components and `{...}` alternations may contain
-/// `/`, so both disable the bound.
-pub fn walk_depth_bound(pattern: &str) -> usize {
-	if pattern.contains("**") || pattern.contains('{') {
-		return usize::MAX;
-	}
-	pattern
-		.split('/')
-		.filter(|seg| !seg.is_empty())
-		.count()
-		.max(1)
-}
+pub use pi_walker::glob::{build_glob_pattern, walk_depth_bound};
 
 /// Compile a glob pattern string into a [`CompiledGlob`].
 ///
@@ -188,35 +151,6 @@ fn is_literal_path(value: &str) -> bool {
 		&& !value
 			.chars()
 			.any(|ch| matches!(ch, '*' | '?' | '[' | ']' | '{' | '}' | '\\' | '/'))
-}
-
-/// Close unclosed `{` alternation groups in a glob pattern.
-///
-/// LLMs occasionally produce patterns like `*.{ts,js` without the closing `}`.
-/// Rather than failing, we append the missing braces.
-fn fix_unclosed_braces(pattern: String) -> String {
-	let opens = pattern.chars().filter(|&c| c == '{').count();
-	let closes = pattern.chars().filter(|&c| c == '}').count();
-	if opens > closes {
-		let mut fixed = pattern;
-		for _ in 0..(opens - closes) {
-			fixed.push('}');
-		}
-		fixed
-	} else {
-		pattern
-	}
-}
-
-fn is_exact_brace_union(pattern: &str) -> bool {
-	if !(pattern.starts_with('{') && pattern.ends_with('}')) {
-		return false;
-	}
-	let inner = &pattern[1..pattern.len() - 1];
-	!inner.is_empty()
-		&& !inner
-			.chars()
-			.any(|ch| matches!(ch, '*' | '?' | '[' | ']' | '{' | '}'))
 }
 
 #[cfg(test)]

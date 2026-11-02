@@ -7,6 +7,7 @@
 //! caller-supplied heartbeat so consumers do not inherit N-API dependencies.
 
 mod cache;
+pub mod glob;
 
 #[cfg(not(unix))]
 use std::ffi::OsString;

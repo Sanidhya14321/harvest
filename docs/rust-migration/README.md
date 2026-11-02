@@ -9,6 +9,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `pi_walker::glob` owns glob search (pattern normalization, depth bounding,
+  mtime ranking, symlink-aware type filtering, heartbeat cancellation); the
+  N-API `glob` export and `glob_util` pattern helpers are thin adapters. Five
+  walker tests (moved from pi-natives plus a filter-before-limit and heartbeat
+  case), 238 pi-walker/pi-natives tests, a rebuilt addon with unchanged
+  bindings and 23 focused TS glob tests pass. `tools.test.ts` has 23
+  pre-existing macOS `/var` → `/private/var` path-jail failures, identical on
+  `pre-rust-migration-backup`. No TS source is retired yet.
+
 - `cargo xtask fix-changelogs` replaces the changelog fixer in `scripts/fix-changelogs.ts`;
   `fix:changelogs` and `scripts/release.ts` call it, and real-repository rewrites are
   byte-identical. The TS file is reduced to the parser/renderer that
