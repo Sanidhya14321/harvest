@@ -17,13 +17,19 @@ because a Rust command or tool has the same name.
   rows, with legacy selectors (`:N`, `N-M`, `N+K`, `N-`, `-N`, comma lists,
   `..`, `raw`, compound raw), literal-colon filenames, the 1/3-line range
   context, out-of-range and multi-range notices, and notebook cell views. Tags
-  matched the legacy read on all 28 probe cases, so headers anchor edits across
-  both hosts; 16/28 outputs were byte-identical. Known read differences, kept
-  partial: limited ranges use the legacy "Showing lines X-Y of N" streaming
-  notice; CRLF/BOM rows display raw in legacy; an empty file renders `1:`;
-  Markdown/code ranges get block context; no column cap, default-limit
-  setting, structural summaries, directories, archives, SQLite, images, PDFs,
-  URLs or internal URIs. 102 default-feature and 101 core-feature tests pass.
+  matched the legacy read on all 28 probe cases. A follow-up ports the legacy
+  buffered local-file reader (raw LF segments with BOM/CR preserved, the
+  300-line `read.defaultLimit`, 512 B/line byte budgets, 768-column cap,
+  tree-sitter/lexical block context via `pi_edit`, binary sniff, omitted-line
+  and "Showing lines" notices) and the in-memory notebook reader: 27/28 probe
+  outputs are now byte-identical to the TypeScript tool. The remaining case is a
+  host difference: legacy spills results over 50 KB to a session artifact, while
+  the Rust host still hard-caps tool output at 20,000 characters. Still missing:
+  structural summaries for bare code reads, merge-conflict warnings, files over
+  4 MiB (legacy streams them), directories, archives, SQLite, images, PDFs,
+  URLs and internal URIs. 102 default-feature and 101 core-feature tests pass;
+  `provider_usage::unsuccessful_json_and_unterminated_sse...` is timing-flaky
+  under parallel load (passes alone and on re-run).
 
 - The Rust host gains a `glob` tool (`rust-agent/src/glob.rs`) on `pi_walker::glob`:
   semicolon target lists, base/glob splitting, newest-first merge across targets,

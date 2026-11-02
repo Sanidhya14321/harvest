@@ -7,9 +7,7 @@ use std::{fmt::Write as _, path::Path, sync::LazyLock};
 use anyhow::{Context, Result, bail};
 use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken};
 use pi_edit::{
-	EditStore,
-	modes::hashline::format::{format_hashline_header, format_numbered_lines},
-	path_policy::canonical_key,
+	EditStore, modes::hashline::format::format_hashline_header, path_policy::canonical_key,
 };
 use regex::Regex;
 use serde::Deserialize;
@@ -18,7 +16,11 @@ const MAX_LINES: usize = 3000;
 const MAX_BYTES: usize = 50 * 1024;
 const LEADING_CONTEXT: usize = 1;
 const TRAILING_CONTEXT: usize = 3;
-const ENTITY: &str = "file";
+/// `read.defaultLimit` default.
+const DEFAULT_LIMIT: usize = 300;
+/// `tools.outputMaxColumns` default.
+const OUTPUT_MAX_COLUMNS: usize = 768;
+const BINARY_SNIFF_BYTES: usize = 8192;
 
 const RANGE_CHUNK: &str = r"L?\d+(?:(?:[-+]|\.\.)L?\d+|-|\.\.)?";
 static FILE_SELECTOR: LazyLock<Regex> = LazyLock::new(|| {
@@ -206,34 +208,623 @@ pub(crate) fn parse_selector(selector: Option<&str>) -> Result<Selector> {
 
 fn addressable_lines(text: &str) -> Vec<&str> {
 	let mut lines: Vec<&str> = text.split('\n').collect();
-	if lines.last() == Some(&"") {
+	if lines.len() > 1 && lines.last() == Some(&"") {
 		lines.pop();
 	}
 	lines
 }
 
-/// Head window: whole lines within 3000 lines and 50 KiB.
-fn head_window(lines: &[&str]) -> (usize, bool) {
-	let mut bytes = 0;
-	for (index, line) in lines.iter().enumerate() {
-		if index >= MAX_LINES {
-			return (index, false);
-		}
-		let needed = line.len() + usize::from(index > 0);
-		if bytes + needed > MAX_BYTES {
-			return (index, true);
-		}
-		bytes += needed;
-	}
-	(lines.len(), false)
-}
-
+/// `formatBytes`.
 fn format_bytes(bytes: usize) -> String {
 	if bytes < 1024 {
 		format!("{bytes}B")
-	} else {
+	} else if bytes < 1024 * 1024 {
 		format!("{:.1}KB", bytes as f64 / 1024.0)
+	} else {
+		format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
 	}
+}
+
+/// `truncateLine`: cap at `max` UTF-16 units with a trailing `…`.
+fn truncate_columns(line: &str, max: usize) -> Option<String> {
+	if line.encode_utf16().count() <= max {
+		return None;
+	}
+	let mut units = 0;
+	let mut end = 0;
+	for (index, ch) in line.char_indices() {
+		if units + ch.len_utf16() > max {
+			break;
+		}
+		units += ch.len_utf16();
+		end = index + ch.len_utf8();
+	}
+	Some(format!("{}…", &line[..end]))
+}
+
+/// `isProbablyBinaryHeader`: NUL bytes or invalid UTF-8 in the first 8 KiB
+/// (a multibyte sequence cut by the header boundary is tolerated).
+fn looks_binary(bytes: &[u8]) -> bool {
+	let header = &bytes[..bytes.len().min(BINARY_SNIFF_BYTES)];
+	header.contains(&0)
+		|| std::str::from_utf8(header).is_err_and(|error| error.error_len().is_some())
+}
+
+/// One rendered row: a numbered line or an elision marker.
+enum Entry {
+	Line(usize, String),
+	Ellipsis,
+}
+
+/// `buildLineEntriesWithBlockContext`: visible spans plus off-window block
+/// boundary lines, with `…` across gaps. `text_for` supplies display text.
+fn block_entries(
+	full: &[&str],
+	spans: &[(usize, usize)],
+	path: &str,
+	text_for: &dyn Fn(usize, &str) -> String,
+) -> Vec<Entry> {
+	let total = full.len();
+	let mut normalized: Vec<(usize, usize)> = spans
+		.iter()
+		.map(|&(start, end)| (start.max(1), end.min(total)))
+		.filter(|(start, end)| end >= start)
+		.collect();
+	normalized.sort_unstable();
+	let mut merged: Vec<(usize, usize)> = Vec::new();
+	for span in normalized {
+		match merged.last_mut() {
+			Some(previous) if span.0 <= previous.1 + 1 => previous.1 = previous.1.max(span.1),
+			_ => merged.push(span),
+		}
+	}
+	let visible: Vec<u32> = merged
+		.iter()
+		.flat_map(|&(start, end)| start..=end)
+		.map(|line| line as u32)
+		.collect();
+	let context = pi_edit::diff_string::find_block_context_lines(
+		full,
+		&visible,
+		&pi_edit::diff_string::BlockContextSource { path: Some(path), lang: None },
+	);
+	let mut lines: Vec<usize> = visible.iter().map(|&line| line as usize).collect();
+	lines.extend(context.iter().map(|(line, _)| *line as usize));
+	lines.sort_unstable();
+	lines.dedup();
+	let mut entries = Vec::new();
+	let mut previous: Option<usize> = None;
+	for line in lines {
+		if previous.is_some_and(|previous| line > previous + 1) {
+			entries.push(Entry::Ellipsis);
+		}
+		entries.push(Entry::Line(line, text_for(line, full.get(line - 1).copied().unwrap_or(""))));
+		previous = Some(line);
+	}
+	entries
+}
+
+fn format_entries(entries: &[Entry], numbered: bool) -> String {
+	entries
+		.iter()
+		.map(|entry| match entry {
+			Entry::Ellipsis => "…".to_owned(),
+			Entry::Line(line, text) if numbered => format!("{line}:{text}"),
+			Entry::Line(_, text) => text.clone(),
+		})
+		.collect::<Vec<_>>()
+		.join("\n")
+}
+
+/// Head-direction truncation notice (`formatTruncationMetaNotice`).
+fn truncation_notice(
+	first: usize,
+	shown: usize,
+	total: usize,
+	by_bytes: Option<usize>,
+	next: Option<usize>,
+) -> String {
+	let mut notice = if shown > 0 {
+		format!("Showing lines {first}-{} of {total}", first + shown - 1)
+	} else {
+		format!("Showing {shown} of {total} lines")
+	};
+	if let Some(bytes) = by_bytes {
+		let _ = write!(notice, " ({} limit)", format_bytes(bytes));
+	}
+	if let Some(next) = next {
+		let _ = write!(notice, ". Use :{next} to continue");
+	}
+	notice
+}
+
+/// Append the bracketed tool-result notices (`formatOutputNotice`).
+fn with_notices(mut text: String, notices: &[String]) -> String {
+	if !notices.is_empty() {
+		let _ = write!(text, "\n\n[{}]", notices.join(". "));
+	}
+	text
+}
+
+/// Byte-faithful views of one buffered file (`deriveBufferedFileText`).
+struct Buffered<'a> {
+	raw_segments: Vec<&'a str>,
+	normalized:   String,
+	ends_with_lf: bool,
+}
+
+impl<'a> Buffered<'a> {
+	fn new(raw: &'a str, bytes: &[u8]) -> Self {
+		let stripped = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+		Self {
+			raw_segments: raw.split('\n').collect(),
+			normalized:   pi_edit::text::normalize_to_lf(stripped).into_owned(),
+			ends_with_lf: bytes.last() == Some(&b'\n'),
+		}
+	}
+
+	fn addressable(&self) -> Vec<&str> {
+		let mut lines: Vec<&str> = self.normalized.split('\n').collect();
+		if lines.last() == Some(&"") && self.normalized.ends_with('\n') {
+			lines.pop();
+		}
+		lines
+	}
+
+	const fn total_lines(&self, raw: bool) -> usize {
+		let segments = self.raw_segments.len();
+		if self.ends_with_lf && !raw && segments > 1 {
+			segments - 1
+		} else {
+			segments
+		}
+	}
+}
+
+/// The window `collectLineWindowFromBuffer` collects.
+struct Window {
+	lines:            Vec<usize>,
+	collected_bytes:  usize,
+	stopped_by_bytes: bool,
+	limit_line:       Option<(usize, usize)>,
+	first_line_bytes: Option<usize>,
+}
+
+fn collect_window(
+	segments: &[&str],
+	total: usize,
+	start: usize,
+	max_lines: usize,
+	max_bytes: usize,
+) -> Window {
+	let mut window = Window {
+		lines:            Vec::new(),
+		collected_bytes:  0,
+		stopped_by_bytes: false,
+		limit_line:       None,
+		first_line_bytes: None,
+	};
+	for (index, segment) in segments.iter().enumerate().take(total).skip(start) {
+		let length = segment.len();
+		let separator = usize::from(!window.lines.is_empty());
+		if window.lines.len() >= max_lines {
+			break;
+		} else if window.lines.is_empty() && length > max_bytes {
+			window.stopped_by_bytes = true;
+			window.limit_line = Some((index, length));
+			window.first_line_bytes.get_or_insert(length);
+			break;
+		} else if !window.lines.is_empty() && window.collected_bytes + separator + length > max_bytes
+		{
+			window.stopped_by_bytes = true;
+			window.limit_line = Some((index, length));
+			break;
+		}
+		window.lines.push(index);
+		window.collected_bytes += separator + length;
+		window.first_line_bytes.get_or_insert(length);
+		if window.lines.len() >= max_lines {
+			break;
+		}
+	}
+	window
+}
+
+struct ReadContext<'a> {
+	store:   &'a EditStore,
+	key:     std::path::PathBuf,
+	display: String,
+}
+
+impl ReadContext<'_> {
+	fn header(&self, normalized: &str) -> (String, String) {
+		let tag = self.store.record(&self.key, normalized, None);
+		(format_hashline_header(&self.display, &tag), tag)
+	}
+
+	fn record_seen(&self, tag: &str, body: &str) {
+		let lines = pi_edit::store::seen_lines_from_body(body);
+		if !lines.is_empty() {
+			self.store.record_seen_lines(&self.key, tag, &lines);
+		}
+	}
+}
+
+/// The local-file reader for buffered (≤ 4 MiB) text files.
+fn read_file_text(
+	context: &ReadContext<'_>,
+	raw_text: &str,
+	bytes: &[u8],
+	selector: &Selector,
+) -> String {
+	let raw = matches!(selector, Selector::Raw | Selector::Lines { raw: true, .. });
+	let buffered = Buffered::new(raw_text, bytes);
+	let total = buffered.total_lines(raw);
+	let addressable = buffered.addressable();
+	let numbered = !raw;
+	let column_cap = if raw { 0 } else { OUTPUT_MAX_COLUMNS };
+	let mut column_truncated = false;
+	let display = |line: &str, truncated: &mut bool| -> String {
+		if column_cap == 0 {
+			return line.to_owned();
+		}
+		truncate_columns(line, column_cap).map_or_else(
+			|| line.to_owned(),
+			|text| {
+				*truncated = true;
+				text
+			},
+		)
+	};
+
+	if let Selector::Lines { ranges, .. } = selector
+		&& ranges.len() > 1
+	{
+		let mut notices = Vec::new();
+		let mut spans = Vec::new();
+		let mut shown: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+		let mut blocks = Vec::new();
+		for range in ranges {
+			let start = range.start - 1;
+			let requested = range.end.map_or(DEFAULT_LIMIT, |end| end - range.start + 1);
+			let max_lines = requested.min(MAX_LINES);
+			let lines: Vec<usize> = if numbered {
+				(start..addressable.len()).take(max_lines).collect()
+			} else {
+				collect_window(
+					&buffered.raw_segments,
+					total,
+					start,
+					max_lines,
+					MAX_BYTES.max(max_lines * 512),
+				)
+				.lines
+			};
+			let range_total = if numbered { addressable.len() } else { total };
+			if start >= range_total {
+				let bound = range
+					.end
+					.map_or_else(|| range.start.to_string(), |end| format!("{}-{end}", range.start));
+				notices.push(format!(
+					"[Range {bound} is beyond end of file ({range_total} lines total); skipped]"
+				));
+				continue;
+			}
+			if lines.is_empty() {
+				continue;
+			}
+			let source = if numbered {
+				&addressable
+			} else {
+				&buffered.raw_segments
+			};
+			let rows: Vec<String> = lines
+				.iter()
+				.map(|&index| display(source[index], &mut column_truncated))
+				.collect();
+			spans.push((range.start, range.start + rows.len() - 1));
+			for (offset, row) in rows.iter().enumerate() {
+				shown.insert(range.start + offset, row.clone());
+			}
+			if !numbered {
+				blocks.push(rows.join("\n"));
+			}
+		}
+		let mut output = if numbered && !spans.is_empty() {
+			let entries = block_entries(&addressable, &spans, &context.display, &|line, source| {
+				shown.get(&line).cloned().unwrap_or_else(|| {
+					truncate_columns(source, column_cap).unwrap_or_else(|| source.to_owned())
+				})
+			});
+			format_entries(&entries, true)
+		} else {
+			blocks.join("\n\n…\n\n")
+		};
+		if numbered && !output.is_empty() {
+			let (header, tag) = context.header(&buffered.normalized);
+			context.record_seen(&tag, &output);
+			output = format!("{header}\n{output}");
+		}
+		if !notices.is_empty() {
+			output = if output.is_empty() {
+				notices.join("\n")
+			} else {
+				format!("{output}\n{}", notices.join("\n"))
+			};
+		}
+		let limits = if column_truncated {
+			vec![format!("Some lines truncated to {column_cap} chars")]
+		} else {
+			vec![]
+		};
+		return with_notices(output, &limits);
+	}
+
+	let (offset, limit) = match selector {
+		Selector::Lines { ranges, .. } => {
+			(Some(ranges[0].start), ranges[0].end.map(|end| end - ranges[0].start + 1))
+		},
+		_ => (None, None),
+	};
+	let requested_start = offset.map_or(0, |offset| offset - 1);
+	let leading = if !raw && offset.is_some_and(|offset| offset > 1) {
+		requested_start.min(LEADING_CONTEXT)
+	} else {
+		0
+	};
+	let trailing = if !raw && limit.is_some() {
+		TRAILING_CONTEXT
+	} else {
+		0
+	};
+	let start = requested_start - leading;
+	let first = start + 1;
+	let effective_limit = limit.unwrap_or(DEFAULT_LIMIT);
+	let max_lines = (effective_limit + leading + trailing).min(MAX_LINES);
+	let max_bytes = MAX_BYTES.max(max_lines * 512);
+	let window = collect_window(&buffered.raw_segments, total, start, max_lines, max_bytes);
+	if requested_start >= total {
+		let suggestion = if total == 0 {
+			"The file is empty.".to_owned()
+		} else {
+			format!("Use :1 to read from the start, or :{total} to read the last line.")
+		};
+		return format!(
+			"Line {} is beyond end of file ({total} lines total). {suggestion}",
+			requested_start + 1
+		);
+	}
+	let rows: Vec<String> = window
+		.lines
+		.iter()
+		.map(|&index| display(buffered.raw_segments[index], &mut column_truncated))
+		.collect();
+	let truncated = window.lines.len() < total - start || window.stopped_by_bytes;
+	let first_line_exceeds = window
+		.first_line_bytes
+		.is_some_and(|bytes| bytes > max_bytes);
+	let omitted = window.limit_line.filter(|&(index, _)| {
+		!raw && leading > 0 && index == requested_start && window.lines.len() == leading
+	});
+	let hash = (numbered && !window.lines.is_empty() && !first_line_exceeds)
+		.then(|| context.header(&buffered.normalized));
+	let render = |rows: &[String]| -> String {
+		let body = if numbered {
+			let spans = [(first, first + rows.len().saturating_sub(1))];
+			let entries = block_entries(&addressable, &spans, &context.display, &|line, source| {
+				line
+					.checked_sub(first)
+					.and_then(|offset| rows.get(offset))
+					.cloned()
+					.unwrap_or_else(|| {
+						truncate_columns(source, column_cap).unwrap_or_else(|| source.to_owned())
+					})
+			});
+			format_entries(&entries, true)
+		} else {
+			rows.join("\n")
+		};
+		match &hash {
+			Some((header, _)) => format!("{header}\n{body}"),
+			None => body,
+		}
+	};
+
+	let mut notices = Vec::new();
+	let mut output = if first_line_exceeds {
+		let line_bytes = window.first_line_bytes.unwrap_or(0);
+		let shown = usize::from(!numbered);
+		notices.push(truncation_notice(first, shown, total, Some(line_bytes.min(max_bytes)), None));
+		format!(
+			"[Line {first} is {}, exceeds {} limit. Hashline output requires full lines; cannot emit \
+			 an editable numbered preview for a truncated line.]",
+			format_bytes(line_bytes),
+			format_bytes(max_bytes)
+		)
+	} else if truncated {
+		let mut text = render(&rows);
+		if let Some((index, length)) = omitted {
+			let line = index + 1;
+			let _ = write!(
+				text,
+				"\n\n[Line {line} is {} and could not fit after preceding context in the {} read \
+				 budget. Use :raw:{line}-{line} to read that line without context (byte-capped if it \
+				 exceeds the budget), or widen the requested range to increase the budget.]",
+				format_bytes(length),
+				format_bytes(max_bytes)
+			);
+		}
+		let next = (omitted.is_none()).then_some(first + rows.len());
+		let by_bytes = window.stopped_by_bytes.then_some(window.collected_bytes);
+		notices.push(truncation_notice(first, rows.len(), total, by_bytes, next));
+		text
+	} else {
+		render(&rows)
+	};
+	if let Some((_, tag)) = &hash {
+		context.record_seen(tag, &output);
+	}
+	if column_truncated {
+		notices.push(format!("Some lines truncated to {column_cap} chars"));
+	}
+	output = with_notices(output, &notices);
+	output
+}
+
+/// The in-memory reader (`buildInMemoryTextResult`), used for notebooks.
+fn read_in_memory(
+	context: &ReadContext<'_>,
+	text: &str,
+	selector: &Selector,
+	entity: &str,
+) -> String {
+	let raw = matches!(selector, Selector::Raw | Selector::Lines { raw: true, .. });
+	let all: Vec<&str> = if raw {
+		text.split('\n').collect()
+	} else {
+		addressable_lines(text)
+	};
+	let total = all.len();
+	let hash = (!raw).then(|| context.header(text));
+	let numbered = !raw;
+	let finish = |body: String, notices: &[String]| -> String {
+		if let Some((_, tag)) = &hash {
+			context.record_seen(tag, &body);
+		}
+		with_notices(body, notices)
+	};
+	let entries_for = |spans: &[(usize, usize)]| -> String {
+		let entries = block_entries(&all, spans, &context.display, &|_, source| source.to_owned());
+		format_entries(&entries, true)
+	};
+	let prefix = |body: String| match &hash {
+		Some((header, _)) if !body.is_empty() => format!("{header}\n{body}"),
+		_ => body,
+	};
+
+	if let Selector::Lines { ranges, .. } = selector
+		&& ranges.len() > 1
+	{
+		let mut spans = Vec::new();
+		let mut parts = Vec::new();
+		let mut notices = Vec::new();
+		for range in ranges {
+			if range.start > total {
+				let bound = range
+					.end
+					.map_or_else(|| range.start.to_string(), |end| format!("{}-{end}", range.start));
+				notices.push(format!(
+					"[Range {bound} is beyond end of {entity} ({total} lines total); skipped]"
+				));
+				continue;
+			}
+			let end = range.end.unwrap_or(total).min(total);
+			spans.push((range.start, end));
+			parts.push(all[range.start - 1..end].join("\n"));
+		}
+		let body = if raw {
+			parts.join("\n\n…\n\n")
+		} else if spans.is_empty() {
+			String::new()
+		} else {
+			prefix(entries_for(&spans))
+		};
+		let body = match (body.is_empty(), notices.is_empty()) {
+			(_, true) => body,
+			(true, false) => notices.join("\n"),
+			(false, false) => format!("{body}\n{}", notices.join("\n")),
+		};
+		return finish(body, &[]);
+	}
+	let (offset, limit) = match selector {
+		Selector::Lines { ranges, .. } => {
+			(Some(ranges[0].start), ranges[0].end.map(|end| end - ranges[0].start + 1))
+		},
+		_ => (None, None),
+	};
+	let requested_start = offset.map_or(0, |offset| offset - 1);
+	let requested_end = limit.map_or(total, |limit| (requested_start + limit).min(total));
+	let start = if !raw && offset.is_some_and(|offset| offset > 1) {
+		requested_start.saturating_sub(LEADING_CONTEXT)
+	} else {
+		requested_start
+	};
+	let end = if !raw && limit.is_some() {
+		(requested_end + TRAILING_CONTEXT).min(total)
+	} else {
+		requested_end
+	};
+	if requested_start >= total {
+		let suggestion = if total == 0 {
+			format!("The {entity} is empty.")
+		} else {
+			format!("Use :1 to read from the start, or :{total} to read the last line.")
+		};
+		return format!(
+			"Line {} is beyond end of {entity} ({total} lines total). {suggestion}",
+			requested_start + 1
+		);
+	}
+	let window = &all[start..end];
+	// truncateHead: whole lines within 3000 lines and 50 KiB.
+	let content_bytes =
+		window.iter().map(|line| line.len()).sum::<usize>() + window.len().saturating_sub(1);
+	let (shown, by_bytes, first_exceeds) = if window.len() <= MAX_LINES && content_bytes <= MAX_BYTES
+	{
+		(window.len(), false, false)
+	} else {
+		let mut used = 0;
+		let mut count = 0;
+		let mut by_bytes = false;
+		while count < MAX_LINES && count < window.len() {
+			let needed = window[count].len() + usize::from(count > 0);
+			if used + needed > MAX_BYTES {
+				by_bytes = true;
+				break;
+			}
+			used += needed;
+			count += 1;
+		}
+		(count, by_bytes, count == 0)
+	};
+	let first = start + 1;
+	let render = |rows: &[&str]| -> String {
+		if numbered {
+			prefix(entries_for(&[(first, first + rows.len().saturating_sub(1))]))
+		} else {
+			rows.join("\n")
+		}
+	};
+	if first_exceeds {
+		let bytes = window[0].len();
+		return finish(
+			format!(
+				"[Line {first} is {}, exceeds {} limit. Hashline output requires full lines; cannot \
+				 emit an editable numbered preview for a truncated line.]",
+				format_bytes(bytes),
+				format_bytes(MAX_BYTES)
+			),
+			&[],
+		);
+	}
+	if shown < window.len() {
+		let output_bytes =
+			window[..shown].iter().map(|line| line.len()).sum::<usize>() + shown.saturating_sub(1);
+		let notice = truncation_notice(
+			first,
+			shown,
+			total,
+			by_bytes.then_some(output_bytes),
+			Some(first + shown),
+		);
+		return finish(render(&window[..shown]), &[notice]);
+	}
+	let mut body = render(window);
+	if limit.is_some() && end < total {
+		let _ =
+			write!(body, "\n\n[{} more lines in {entity}. Use :{} to continue]", total - end, end + 1);
+	}
+	finish(body, &[])
 }
 
 pub(crate) fn read(
@@ -264,158 +855,44 @@ pub(crate) fn read(
 		relative.display().to_string()
 	};
 	let bytes = fs.read(&relative, MAX_FILE_BYTES)?;
-	if bytes.contains(&0) {
-		bail!("{display} is not a text file");
-	}
-	let raw_text = String::from_utf8(bytes).with_context(|| format!("{display} is not UTF-8"))?;
-	let mut text =
-		pi_edit::text::normalize_to_lf(pi_edit::text::strip_bom(&raw_text).1).into_owned();
-	// Notebooks read (and edit) as their editable cell view, not raw JSON.
-	if pi_edit::notebook::is_notebook_path(&relative) && !matches!(selector, Selector::Raw) {
-		text = pi_edit::notebook::notebook_to_editable_text(&text, &display)
-			.map(|view| pi_edit::text::normalize_to_lf(&view).into_owned())
-			.map_err(|error| anyhow::anyhow!("{error}"))?;
-	}
 	let raw = matches!(
 		selector,
 		Selector::Raw | Selector::Lines { raw: true, .. } | Selector::Tail { raw: true, .. }
 	);
-	let lines: Vec<&str> = if raw {
-		text.split('\n').collect()
-	} else {
-		addressable_lines(&text)
-	};
-	let total = lines.len();
-	let selector = match selector {
+	let context = ReadContext { store, key: canonical_key(&fs.root().join(&relative)), display };
+
+	if pi_edit::notebook::is_notebook_path(&relative) && !raw {
+		let json =
+			String::from_utf8(bytes).with_context(|| format!("{} is not UTF-8", context.display))?;
+		let view = pi_edit::notebook::notebook_to_editable_text(&json, &context.display)
+			.map_err(|error| anyhow::anyhow!("{error}"))?;
+		let view = pi_edit::text::normalize_to_lf(&view).into_owned();
+		let selector = resolve_tail(selector, addressable_lines(&view).len());
+		return Ok(read_in_memory(&context, &view, &selector, "notebook"));
+	}
+	if !raw && looks_binary(&bytes) {
+		return Ok(format!(
+			"[Cannot read binary file '{}' ({}); not valid UTF-8 text. Use ':raw' to read bytes \
+			 verbatim.]",
+			context.display,
+			format_bytes(bytes.len())
+		));
+	}
+	let raw_text = String::from_utf8_lossy(&bytes).into_owned();
+	let total = Buffered::new(&raw_text, &bytes).total_lines(raw);
+	let selector = resolve_tail(selector, total);
+	Ok(read_file_text(&context, &raw_text, &bytes, &selector))
+}
+
+/// Pin `:-N` to absolute lines once the line count is known.
+fn resolve_tail(selector: Selector, total: usize) -> Selector {
+	match selector {
 		Selector::Tail { count, raw } => {
 			let start = total.saturating_sub(count) + 1;
 			Selector::Lines { ranges: vec![Range { start, end: Some(start.max(total)) }], raw }
 		},
 		other => other,
-	};
-	let key = canonical_key(&fs.root().join(&relative));
-	let header = (!raw).then(|| {
-		let tag = store.record(&key, &text, None);
-		(format_hashline_header(&display, &tag), tag)
-	});
-	let mut seen: Vec<u32> = Vec::new();
-	let render = |start: usize, rows: &[&str], seen: &mut Vec<u32>| -> String {
-		if raw {
-			return rows.join("\n");
-		}
-		seen.extend((start..start + rows.len()).map(|line| line as u32));
-		format_numbered_lines(&rows.join("\n"), start as u32)
-	};
-
-	let output = match &selector {
-		Selector::Lines { ranges, .. } if ranges.len() > 1 => {
-			let mut blocks = Vec::new();
-			let mut notices = Vec::new();
-			for range in ranges {
-				if range.start > total {
-					let bound = range
-						.end
-						.map_or_else(|| range.start.to_string(), |end| format!("{}-{end}", range.start));
-					notices.push(format!(
-						"[Range {bound} is beyond end of {ENTITY} ({total} lines total); skipped]"
-					));
-					continue;
-				}
-				let end = range.end.unwrap_or(total).min(total);
-				blocks.push(render(range.start, &lines[range.start - 1..end], &mut seen));
-			}
-			let body = blocks.join(if raw { "\n\n…\n\n" } else { "\n…\n" });
-			let body = match &header {
-				Some((header, _)) if !body.is_empty() => format!("{header}\n{body}"),
-				_ => body,
-			};
-			match (body.is_empty(), notices.is_empty()) {
-				(_, true) => body,
-				(true, false) => notices.join("\n"),
-				(false, false) => format!("{body}\n{}", notices.join("\n")),
-			}
-		},
-		_ => {
-			let (offset, limit) = match &selector {
-				Selector::Lines { ranges, .. } => {
-					let first = ranges[0];
-					(Some(first.start), first.end.map(|end| end - first.start + 1))
-				},
-				_ => (None, None),
-			};
-			let requested_start = offset.map_or(0, |offset| offset - 1);
-			if requested_start >= total {
-				let suggestion = if total == 0 {
-					format!("The {ENTITY} is empty.")
-				} else {
-					format!("Use :1 to read from the start, or :{total} to read the last line.")
-				};
-				return Ok(format!(
-					"Line {} is beyond end of {ENTITY} ({total} lines total). {suggestion}",
-					requested_start + 1
-				));
-			}
-			let requested_end = limit.map_or(total, |limit| (requested_start + limit).min(total));
-			let start = if !raw && offset.is_some_and(|offset| offset > 1) {
-				requested_start.saturating_sub(LEADING_CONTEXT)
-			} else {
-				requested_start
-			};
-			let end = if !raw && limit.is_some() {
-				(requested_end + TRAILING_CONTEXT).min(total)
-			} else {
-				requested_end
-			};
-			let window = &lines[start..end];
-			let (shown, by_bytes) = head_window(window);
-			let first = start + 1;
-			let mut body = if shown == 0 && !window.is_empty() {
-				let line_bytes = window[0].len();
-				format!(
-					"[Line {first} is {}, exceeds {} limit. Hashline output requires full lines; \
-					 cannot emit an editable numbered preview for a truncated line.]",
-					format_bytes(line_bytes),
-					format_bytes(MAX_BYTES)
-				)
-			} else {
-				render(first, &window[..shown], &mut seen)
-			};
-			if shown > 0
-				&& let Some((header, _)) = &header
-			{
-				body = format!("{header}\n{body}");
-			}
-			if shown < window.len() && shown > 0 {
-				let last = first + shown - 1;
-				let limit = if by_bytes {
-					format!(" ({} limit)", format_bytes(MAX_BYTES))
-				} else {
-					String::new()
-				};
-				let _ = write!(
-					body,
-					"\n\n[Showing lines {first}-{last} of {total}{limit}. Use :{} to continue]",
-					last + 1
-				);
-			} else if let Some(limit) = limit
-				&& requested_start + limit < total
-			{
-				let remaining = total - (requested_start + limit);
-				let _ = write!(
-					body,
-					"\n\n[{remaining} more lines in {ENTITY}. Use :{} to continue]",
-					requested_start + limit + 1
-				);
-			}
-			body
-		},
-	};
-	if let Some((_, tag)) = &header
-		&& !seen.is_empty()
-	{
-		store.record_seen_lines(&key, tag, &seen);
 	}
-	Ok(output)
 }
 
 #[cfg(test)]
@@ -450,19 +927,21 @@ mod tests {
 
 	#[test]
 	fn ranges_add_context_and_continuation_notices() -> Result<()> {
+		// Expected strings follow the legacy local-file reader (verified against
+		// the TypeScript tool on the same fixture shape).
 		let (root, _) = fixture(20);
 		let store = EditStore::new();
 		let output = run(root.path(), "f.txt:5-6", &store)?;
-		let body: Vec<&str> = output.lines().skip(1).collect();
-		assert_eq!(body[..6], [
-			"4:line 4", "5:line 5", "6:line 6", "7:line 7", "8:line 8", "9:line 9"
-		]);
-		assert!(output.ends_with("[14 more lines in file. Use :7 to continue]"), "{output}");
+		let body: Vec<&str> = output.lines().skip(1).take(6).collect();
+		assert_eq!(body, ["4:line 4", "5:line 5", "6:line 6", "7:line 7", "8:line 8", "9:line 9"]);
+		assert!(output.ends_with("[Showing lines 4-9 of 20. Use :10 to continue]"), "{output}");
 		assert_eq!(
 			run(root.path(), "f.txt:raw:2-3", &store)?,
-			"line 2\nline 3\n\n[18 more lines in file. Use :4 to continue]"
+			"line 2\nline 3\n\n[Showing lines 2-3 of 21. Use :4 to continue]"
 		);
-		assert!(run(root.path(), "f.txt:-2", &store)?.ends_with("19:line 19\n20:line 20"));
+		assert!(
+			run(root.path(), "f.txt:-2", &store)?.ends_with("18:line 18\n19:line 19\n20:line 20")
+		);
 		Ok(())
 	}
 
@@ -506,10 +985,7 @@ mod tests {
 	fn oversized_windows_truncate_on_whole_lines() -> Result<()> {
 		let (root, _) = fixture(3500);
 		let output = run(root.path(), "f.txt", &EditStore::new())?;
-		assert!(
-			output.ends_with("[Showing lines 1-3000 of 3500. Use :3001 to continue]"),
-			"{output}"
-		);
+		assert!(output.ends_with("[Showing lines 1-300 of 3500. Use :301 to continue]"), "{output}");
 		Ok(())
 	}
 }
