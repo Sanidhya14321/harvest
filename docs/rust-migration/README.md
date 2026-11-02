@@ -9,6 +9,11 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask sync-versions` replaces `scripts/sync-versions.ts` (deleted),
+  writing byte-identical manifests on all 16 real package manifests. Like the
+  legacy script it also rewrites `catalog:` specifiers, so do not run it on the
+  current tree without reviewing that behavior.
+
 - `cargo xtask brew-formula TAG [--out FILE]` replaces
   `scripts/ci-update-brew-formula.ts` and its test (both deleted). Output is
   byte-identical to the legacy renderer; the issue #2398 regressions are
