@@ -427,9 +427,11 @@ fn collect_window(
 }
 
 struct ReadContext<'a> {
-	store:   &'a EditStore,
-	key:     std::path::PathBuf,
-	display: String,
+	store:     &'a EditStore,
+	key:       std::path::PathBuf,
+	display:   String,
+	conflicts: &'a crate::conflict::ConflictHistory,
+	absolute:  std::path::PathBuf,
 }
 
 impl ReadContext<'_> {
@@ -675,6 +677,36 @@ fn read_file_text(
 	if let Some((_, tag)) = &hash {
 		context.record_seen(tag, &output);
 	}
+	let mut output = output;
+	if !first_line_exceeds && !window.lines.is_empty() {
+		let collected: Vec<&str> = window
+			.lines
+			.iter()
+			.map(|&index| buffered.raw_segments[index])
+			.collect();
+		let blocks = crate::conflict::scan_lines(&collected, first);
+		if !blocks.is_empty() {
+			let entries: Vec<crate::conflict::Entry> = blocks
+				.into_iter()
+				.map(|block| {
+					context
+						.conflicts
+						.register(&context.absolute, &context.display, block)
+				})
+				.collect();
+			// Cheap full-file scan only once the window already showed a conflict.
+			let (total, scan_truncated) = crate::conflict::scan_file(&context.absolute)
+				.map_or((entries.len(), false), |(file, truncated)| {
+					(entries.len().max(file.len()), truncated)
+				});
+			output.push_str(&crate::conflict::format_warning(
+				&entries,
+				total,
+				&context.display,
+				scan_truncated,
+			));
+		}
+	}
 	let limits = if column_truncated {
 		vec![format!("Some lines truncated to {column_cap} chars")]
 	} else {
@@ -847,7 +879,7 @@ pub(crate) fn read(
 	store: &EditStore,
 	artifacts: Option<&crate::output::ArtifactStore>,
 	// Conflict-history integration into `read` is pending.
-	_conflicts: &crate::conflict::ConflictHistory,
+	conflicts: &crate::conflict::ConflictHistory,
 	cancellation: &CancelToken,
 ) -> Result<ToolOutput> {
 	cancellation.heartbeat()?;
@@ -855,6 +887,16 @@ pub(crate) fn read(
 		return read_artifact(&args.path, artifacts);
 	}
 	let fs = JailedFs::open(root)?;
+	if let Some(uri) = crate::conflict::parse_uri(&args.path)? {
+		let Some(id) = uri.id else {
+			bail!(
+				"Reading `conflict://*` is not supported — wildcards are write-only. Use the \
+				 `<path>:conflicts` read selector for the full list of conflicts in a file, or read \
+				 `conflict://<N>` to inspect a single block."
+			);
+		};
+		return read_conflict_region(conflicts, store, id, uri.scope);
+	}
 	// A real file whose name ends in selector syntax keeps its colon.
 	let literal_exists = || {
 		fs.relative(Path::new(&args.path))
@@ -876,6 +918,20 @@ pub(crate) fn read(
 		},
 		_ => {},
 	}
+	if matches!(selector, Selector::Unsupported("conflicts")) {
+		let absolute = fs.root().join(&relative);
+		let display = relative.display().to_string();
+		let (blocks, scan_truncated) = crate::conflict::scan_file(&absolute)?;
+		let entries: Vec<crate::conflict::Entry> = blocks
+			.into_iter()
+			.map(|block| conflicts.register(&absolute, &display, block))
+			.collect();
+		return Ok(ToolOutput::text(if entries.is_empty() {
+			format!("No unresolved git merge conflicts in {display}.")
+		} else {
+			crate::conflict::format_summary(&entries, &display, scan_truncated)
+		}));
+	}
 	if let Selector::Unsupported(kind) = selector {
 		bail!("The :{kind} selector is not supported by this host yet");
 	}
@@ -889,7 +945,8 @@ pub(crate) fn read(
 		selector,
 		Selector::Raw | Selector::Lines { raw: true, .. } | Selector::Tail { raw: true, .. }
 	);
-	let context = ReadContext { store, key: canonical_key(&fs.root().join(&relative)), display };
+	let absolute = fs.root().join(&relative);
+	let context = ReadContext { store, key: canonical_key(&absolute), display, conflicts, absolute };
 
 	if pi_edit::notebook::is_notebook_path(&relative) && !raw {
 		let json =
@@ -1138,6 +1195,29 @@ fn read_directory(absolute: &Path, selector: Selector) -> ToolOutput {
 		next_offset: Some(shown + 1),
 		limits,
 	}
+}
+
+/// `read conflict://N[/scope]` (`#readConflictRegion`): the recorded block,
+/// numbered at its original file lines under a fresh snapshot header.
+fn read_conflict_region(
+	conflicts: &crate::conflict::ConflictHistory,
+	store: &EditStore,
+	id: usize,
+	scope: Option<crate::conflict::Scope>,
+) -> Result<ToolOutput> {
+	let Some(entry) = conflicts.get(id) else {
+		bail!(
+			"Conflict #{id} not found. Conflict ids are registered when `read` surfaces a marker \
+			 block; re-read the file to get a current id."
+		);
+	};
+	let (lines, start) = crate::conflict::render_region(&entry, scope)?;
+	let body =
+		pi_edit::modes::hashline::format::format_numbered_lines(&lines.join("\n"), start as u32);
+	Ok(ToolOutput::text(match store.record_file(&entry.absolute_path, None) {
+		Some(tag) => format!("{}\n{body}", format_hashline_header(&entry.display_path, &tag)),
+		None => body,
+	}))
 }
 
 /// `~` for the home directory (`shortenPath`).

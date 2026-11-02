@@ -5,10 +5,6 @@
 //! `<<<<<<<` / `|||||||` / `=======` / `>>>>>>>` blocks, registers each block
 //! in the session's [`ConflictHistory`] under a stable id, and appends a
 //! warning. `write conflict://N` splices the recorded region by content.
-// The read-side half (scan, warning, summary, region render) is wired into
-// `read` in the next slice; until then those helpers are only exercised by tests.
-#![allow(dead_code, reason = "read-side conflict helpers are wired into read in the next slice")]
-
 use std::{
 	collections::BTreeMap,
 	sync::{Arc, Mutex},
@@ -238,7 +234,7 @@ pub(crate) enum Scope {
 }
 
 impl Scope {
-	const fn name(self) -> &'static str {
+	pub(crate) const fn name(self) -> &'static str {
 		match self {
 			Self::Ours => "ours",
 			Self::Theirs => "theirs",

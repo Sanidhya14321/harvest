@@ -193,11 +193,7 @@ fn write(
 		return Ok(format!("wrote {path}"));
 	};
 	if let (Some(id), Some(scope)) = (uri.id, uri.scope) {
-		let scope = match scope {
-			crate::conflict::Scope::Ours => "ours",
-			crate::conflict::Scope::Theirs => "theirs",
-			crate::conflict::Scope::Base => "base",
-		};
+		let scope = scope.name();
 		bail!(
 			"Conflict URI scope '/{scope}' is read-only — read `conflict://{id}/{scope}` to inspect \
 			 that side. To write, drop the scope (`conflict://{id}`) and put the chosen content (or \

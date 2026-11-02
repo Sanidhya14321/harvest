@@ -9,6 +9,20 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- The merge-conflict workflow is ported (`rust-agent/src/conflict.rs`): strict
+  2-way/diff3 marker scanning, a per-session history with stable ids, the
+  window warning `read` appends after a file window (with the full-file count),
+  the `:conflicts` index, `read conflict://N[/ours|theirs|base]`, and `write
+  conflict://N` / `conflict://*` with `@ours`/`@theirs`/`@base`/`@both` tokens,
+  `<id>: @side` directives, content-located splicing with boundary-echo repair,
+  CRLF preservation, stale-twin cleanup, hashline-prefix stripping, recovered
+  `<file>:` prefixes and snapshot headers. A 17-call read/write sequence over a
+  2-way, diff3, long-sided and CRLF fixture produced 19/19 byte-identical
+  results and final files against the TypeScript tools. `write` now takes the
+  legacy `content` argument (`contents` still accepted); the rest of the legacy
+  write tool (archives, SQLite, `local://`, shebang chmod, result wording) is
+  still pending.
+
 - `pi_walker::workspace` owns the single-pass workspace scan (excluded build/
   cache dirs, depth bound, AGENTS.md discovery below the tree depth);
   `listWorkspace` is a thin adapter with unchanged bindings. `read` of a
