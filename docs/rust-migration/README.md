@@ -9,6 +9,10 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `cargo xtask merge-pr BRANCH [--pr N] [--dry-run]` replaces
+  `scripts/merge-pr.ts` and its test (both deleted); alias it with
+  `git config alias.mpr '!cargo xtask merge-pr'`.
+
 - `cargo xtask sync-versions` replaces `scripts/sync-versions.ts` (deleted),
   writing byte-identical manifests on all 16 real package manifests. Like the
   legacy script it also rewrites `catalog:` specifiers, so do not run it on the
