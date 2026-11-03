@@ -144,3 +144,8 @@ mod plugin_store;
 pub mod say;
 mod secrets;
 pub mod share;
+pub mod launch;
+pub mod acp;
+pub mod join;
+pub mod shell;
+pub mod git;

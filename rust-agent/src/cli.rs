@@ -64,6 +64,16 @@ enum Commands {
 	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Launch the agent (non-interactive path forwards to run)")]
+	Launch(crate::commands::launch::LaunchArgs),
+	#[command(about = "Run Harvest as an ACP (Agent Client Protocol) server over stdio")]
+	Acp(crate::commands::launch::LaunchArgs),
+	#[command(about = "Join a shared collab session")]
+	Join(crate::commands::join::JoinArgs),
+	#[command(about = "Interactive shell console")]
+	Shell(crate::commands::shell::ShellArgs),
+	#[command(about = "Interactive git diff viewer and commit composer")]
+	Git(crate::commands::git::GitArgs),
 	#[command(about = "Generate a conventional commit from staged changes")]
 	Commit(crate::commands::commit::CommitArgs),
 	#[command(about = "Manage plugins (install, uninstall, list, etc.)")]
@@ -489,6 +499,11 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Launch(args) => crate::commands::launch::execute(args, redispatch_run),
+		Commands::Acp(args) => crate::commands::acp::execute(args, redispatch_run),
+		Commands::Join(args) => crate::commands::join::execute(args),
+		Commands::Shell(args) => crate::commands::shell::execute(args),
+		Commands::Git(args) => crate::commands::git::execute(args),
 		Commands::Token(args) => crate::commands::token::execute(args),
 		Commands::Commit(args) => crate::commands::commit::execute(args),
 		Commands::Plugin(args) => crate::commands::plugin::execute(args),
@@ -840,6 +855,13 @@ fn run_async_session(
 		}
 		Ok(0)
 	})
+}
+
+/// Re-enter dispatch as `omp run <args>` (non-TUI launch path).
+fn redispatch_run(args: Vec<std::ffi::OsString>) -> Result<u8> {
+	let mut argv: Vec<std::ffi::OsString> = vec!["omp".into(), "run".into()];
+	argv.extend(args);
+	dispatch(Cli::try_parse_from(argv)?)
 }
 
 fn tools() -> Result<u8> {
