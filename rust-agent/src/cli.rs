@@ -41,12 +41,8 @@ enum Commands {
 	Config(ConfigArgs),
 	#[command(about = "List fixtures or score edits using the separate rust-v1 baseline")]
 	EditBenchmark(crate::edit_benchmark::cli::Arguments),
-	#[command(name = "setup", hide = true, disable_help_flag = true)]
-	RetiredSetup {
-		component: String,
-		#[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-		arguments: Vec<std::ffi::OsString>,
-	},
+	#[command(about = "Run onboarding setup or install dependencies for optional features")]
+	Setup(crate::commands::setup::SetupArgs),
 	#[command(about = "Convert a DOCX document to HTML, Markdown or JSON using Rust")]
 	Document(DocumentArgs),
 	#[command(name = "browser-relay", hide = true, disable_help_flag = true)]
@@ -74,6 +70,12 @@ enum Commands {
 	Shell(crate::commands::shell::ShellArgs),
 	#[command(about = "Interactive git diff viewer and commit composer")]
 	Git(crate::commands::git::GitArgs),
+	#[command(about = "Manage the credential vault (auth broker)", arg_required_else_help = true)]
+	AuthBroker(crate::commands::auth_broker::AuthBrokerArgs),
+	#[command(about = "Run a forward proxy that injects auth from the broker", arg_required_else_help = true)]
+	AuthGateway(crate::commands::auth_gateway::AuthGatewayArgs),
+	#[command(about = "View usage statistics dashboard")]
+	Stats(crate::commands::stats::StatsArgs),
 	#[command(about = "Generate a conventional commit from staged changes")]
 	Commit(crate::commands::commit::CommitArgs),
 	#[command(about = "Manage plugins (install, uninstall, list, etc.)")]
@@ -473,17 +475,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
 			io::stdout().lock().write_all(text.as_bytes())?;
 			Ok(0)
 		},
-		Commands::RetiredSetup { component, arguments } => {
-			if component != "python" {
-				bail!("setup component {component} is not implemented in the native application");
-			}
-			let reason = crate::tools::PYTHON_EVAL_RETIRED.trim();
-			if arguments.iter().any(|arg| arg == "--json") {
-				println!("{}", serde_json::json!({"available":false,"retired":true,"reason":reason}));
-				return Ok(1);
-			}
-			bail!("{reason}");
-		},
+		Commands::Setup(args) => crate::commands::setup::execute(args),
 		Commands::RetiredBrowserRelay { .. } => bail!(
 			"The Chrome extension relay has been removed. Use the native harvest browser --chrome \
 			 PATH --profile NEW_DIRECTORY controller. Sign in separately in that dedicated profile; \
@@ -504,6 +496,9 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::Join(args) => crate::commands::join::execute(args),
 		Commands::Shell(args) => crate::commands::shell::execute(args),
 		Commands::Git(args) => crate::commands::git::execute(args),
+		Commands::AuthBroker(args) => crate::commands::auth_broker::execute(args),
+		Commands::AuthGateway(args) => crate::commands::auth_gateway::execute(args),
+		Commands::Stats(args) => crate::commands::stats::execute(args),
 		Commands::Token(args) => crate::commands::token::execute(args),
 		Commands::Commit(args) => crate::commands::commit::execute(args),
 		Commands::Plugin(args) => crate::commands::plugin::execute(args),

@@ -149,3 +149,7 @@ pub mod acp;
 pub mod join;
 pub mod shell;
 pub mod git;
+pub mod auth_broker;
+pub mod auth_gateway;
+pub mod stats;
+pub mod setup;
