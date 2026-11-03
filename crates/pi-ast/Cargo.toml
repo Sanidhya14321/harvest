@@ -11,6 +11,8 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
+harvest-runtime = { path = "../harvest-runtime" }
+pi-walker.workspace = true
 ast-grep-core.workspace = true
 globset.workspace = true
 ignore.workspace = true
