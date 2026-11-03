@@ -173,7 +173,10 @@ pub fn invoke_in_session(
 	if !crate::core_specs::is_tool(name) {
 		bail!("unknown tool {name}");
 	}
-	if matches!(name, "write" | "edit" | "bash") && !policy.approve(call)? {
+	if (matches!(name, "write" | "edit" | "bash")
+		|| crate::agent_tools::requires_approval(name, &call.function.arguments))
+		&& !policy.approve(call)?
+	{
 		bail!("tool {name} requires human approval");
 	}
 	cancellation.heartbeat()?;
@@ -307,6 +310,11 @@ fn invoke_authorized(
 		"yield" => ToolOutput::text(state.agent.submit(arguments)?),
 		"goal" => ToolOutput::text(state.agent.goal(arguments)?),
 		"task" => bail!("task requires a host session with a model"),
+		"eval" => ToolOutput::text(crate::agent_tools::eval(root, &parse(arguments)?, cancellation)?),
+		"github" => ToolOutput::text(crate::agent_tools::github(root, &parse(arguments)?, cancellation)?),
+		"hub" => ToolOutput::text(crate::agent_tools::hub(root, &parse(arguments)?)?),
+		"search_code" => ToolOutput::text(crate::agent_tools::search_code(root, &parse(arguments)?, cancellation)?),
+		"security_scan" => ToolOutput::text(crate::agent_tools::security_scan(&state.settings, arguments)?),
 		"ast_grep" => ToolOutput::text(crate::ast::ast_grep(
 			root,
 			&parse::<crate::ast::Args>(arguments)?,

@@ -45,6 +45,7 @@ pub mod tools;
 mod task_tool;
 mod tree;
 mod web_search;
+mod agent_tools;
 
 /// Document conversion, SVG previews and bounded SIXEL shared with the addon.
 pub use harvest_media as media;

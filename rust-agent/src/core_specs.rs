@@ -98,6 +98,8 @@ struct ToolProperties {
 	data: Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	token_budget: Option<NumberProperty>,
+	#[serde(skip_serializing_if = "Option::is_none", flatten)]
+	extra:              Option<RawProps>,
 }
 
 /// A literal JSON Schema fragment for shapes the typed properties cannot
@@ -110,6 +112,18 @@ impl Serialize for RawSchema {
 		serde_json::value::RawValue::from_string(self.0.to_owned())
 			.map_err(serde::ser::Error::custom)?
 			.serialize(serializer)
+	}
+}
+
+/// Extra properties as a literal JSON object, flattened into `properties`.
+#[derive(Debug, Clone, Copy)]
+struct RawProps(&'static str);
+
+impl Serialize for RawProps {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		let map: serde_json::Map<String, serde_json::Value> =
+			serde_json::from_str(self.0).map_err(serde::ser::Error::custom)?;
+		map.serialize(serializer)
 	}
 }
 
@@ -312,6 +326,72 @@ pub(crate) fn core_specs() -> Vec<ToolSpec> {
 			},
 			&["op"],
 		),
+		spec(
+			"eval",
+			include_str!("prompts/tools/eval.md").trim_end(),
+			&ToolProperties {
+				timeout: Some(NUMBER),
+				extra: Some(RawProps(
+					r#"{"language":{"type":"string","enum":["py","js"]},"code":{"type":"string"}}"#,
+				)),
+				..EMPTY
+			},
+			&["language", "code"],
+		),
+		spec(
+			"github",
+			include_str!("prompts/tools/gh-tool.md").trim_end(),
+			&ToolProperties {
+				op: Some(RawSchema(
+					r#"{"type":"string","enum":["repo_view","file_read","pr_create","pr_checkout","pr_push","search_issues","search_prs","search_code","search_commits","search_repos","run_watch"]}"#,
+				)),
+				path: Some(STRING),
+				query: Some(STRING),
+				limit: Some(NUMBER),
+				extra: Some(RawProps(
+					r#"{"repo":{"type":"string"},"branch":{"type":"string"},"pr":{"anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]},"force":{"type":"boolean"},"forceWithLease":{"type":"boolean"},"title":{"type":"string"},"body":{"type":"string"},"base":{"type":"string"},"head":{"type":"string"},"draft":{"type":"boolean"},"fill":{"type":"boolean"},"reviewer":{"type":"array","items":{"type":"string"}},"assignee":{"type":"array","items":{"type":"string"}},"label":{"type":"array","items":{"type":"string"}},"since":{"type":"string"},"until":{"type":"string"},"dateField":{"type":"string","enum":["created","updated"]},"run":{"type":"string"},"tail":{"type":"number"}}"#,
+				)),
+				..EMPTY
+			},
+			&["op"],
+		),
+		spec(
+			"hub",
+			include_str!("prompts/tools/hub.md").trim_end(),
+			&ToolProperties {
+				op: Some(RawSchema(
+					r#"{"type":"string","enum":["send","wait","inbox","list","jobs","cancel","start","ps","logs","stop","restart","describe"]}"#,
+				)),
+				cwd: Some(STRING),
+				extra: Some(RawProps(
+					r#"{"name":{"type":"string","maxLength":48},"application":{"type":"string"},"args":{"type":"array","items":{"type":"string"}},"env":{"type":"object","additionalProperties":{"type":"string"}},"lines":{"type":"number"},"grep":{"type":"string"}}"#,
+				)),
+				..EMPTY
+			},
+			&["op"],
+		),
+		spec(
+			"search_code",
+			include_str!("prompts/tools/search-code.md").trim_end(),
+			&ToolProperties {
+				query: Some(STRING),
+				limit: Some(NUMBER),
+				extra: Some(RawProps(r#"{"mode":{"type":"string","enum":["symbols","docs","all"]}}"#)),
+				..EMPTY
+			},
+			&["query"],
+		),
+		spec(
+			"security_scan",
+			include_str!("prompts/tools/security-scan.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"action":{"type":"string","enum":["preflight","start","status","cancel","validate","cloud_scans","cloud_start","cloud_status","cloud_pull"]},"plan_id":{"type":"string"},"operation_id":{"type":"string"},"target_kind":{"type":"string","enum":["repository","scoped_path","ref_diff","working_tree"]},"credential_id":{"type":"integer","minimum":1},"scan_id":{"type":"string"},"finding_id":{"type":"string"},"cloud_configuration_id":{"type":"string"}}"#,
+				)),
+				..EMPTY
+			},
+			&["action"],
+		),
 	]
 }
 
@@ -353,6 +433,7 @@ const EMPTY: ToolProperties = ToolProperties {
 	questions: None,
 	data: None,
 	token_budget: None,
+	extra:              None,
 };
 
 const fn spec(
