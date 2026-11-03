@@ -239,6 +239,9 @@ fn invoke_authorized(
 			}
 		},
 		"think" => ToolOutput::text("------"),
+		"web_search" => ToolOutput::text(crate::web_search::web_search(&parse::<
+			crate::web_search::Args,
+		>(arguments)?)),
 		"checkpoint" => {
 			let args = parse::<CheckpointArgs>(arguments)?;
 			let mut checkpoint = state.checkpoint();

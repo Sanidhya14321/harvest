@@ -23,6 +23,7 @@ mod streaming;
 pub mod todo;
 pub mod tools;
 mod tree;
+mod web_search;
 
 /// Document conversion and SVG previews shared with the native addon.
 pub use harvest_media as media;

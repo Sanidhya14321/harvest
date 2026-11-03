@@ -9,6 +9,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `web_search` walks the legacy fallback chain over Exa, Tavily and Brave
+  (keys from `EXA_API_KEY`/`TAVILY_API_KEY`/`BRAVE_API_KEY`) and keyless
+  DuckDuckGo (HTML frontend, redirect unwrapping, bot-challenge error), with
+  the legacy request shapes, credit/auth error classification, fallback
+  failure summary and `formatForLLM` output; a live DuckDuckGo search works.
+  Still pending: the other 18 providers, the credential store, query
+  directive parsing and constraint filtering, Exa's keyless MCP path and
+  answer synthesis, and the provider order/exclude settings.
+
 - `write` targets archive members (`pkg.zip:src/a.txt`) by rewriting the whole
   zip/tar/tar.gz/tar.zst archive through the workspace capability (new
   `harvest-archive` encoders; read-only formats and `..`/directory targets

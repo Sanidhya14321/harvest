@@ -640,7 +640,10 @@
     {
       "id": "tool:web_search",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/web_search.rs"
+        ]
       },
       "verification": {
         "status": "unverified"

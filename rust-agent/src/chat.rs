@@ -50,57 +50,63 @@ struct ToolParameters {
 #[derive(Debug, Clone, Copy, Serialize)]
 struct ToolProperties {
 	#[serde(rename = "case", skip_serializing_if = "Option::is_none")]
-	case_sensitive: Option<BooleanProperty>,
+	case_sensitive:     Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	gitignore:      Option<BooleanProperty>,
+	gitignore:          Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	path:           Option<StringProperty>,
+	path:               Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	old:            Option<StringProperty>,
+	old:                Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	new:            Option<StringProperty>,
+	new:                Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	content:        Option<StringProperty>,
+	content:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	command:        Option<StringProperty>,
+	command:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pattern:        Option<StringProperty>,
+	pattern:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	input:          Option<StringProperty>,
+	input:              Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	hidden:         Option<BooleanProperty>,
+	hidden:             Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	limit:          Option<NumberProperty>,
+	limit:              Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	skip:           Option<NumberProperty>,
+	skip:               Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pat:            Option<StringProperty>,
+	pat:                Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	thoughts:       Option<StringProperty>,
+	query:              Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	goal:           Option<StringProperty>,
+	recency:            Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	report:         Option<StringProperty>,
+	num_search_results: Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	ops:            Option<RawSchema>,
+	thoughts:           Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	paths:          Option<RawSchema>,
+	goal:               Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	op:             Option<RawSchema>,
+	report:             Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	list:           Option<RawSchema>,
+	ops:                Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	task:           Option<StringProperty>,
+	paths:              Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	phase:          Option<StringProperty>,
+	op:                 Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	items:          Option<RawSchema>,
+	list:               Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	reason:         Option<StringProperty>,
+	task:               Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	timeout:        Option<NumberProperty>,
+	phase:              Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	cwd:            Option<StringProperty>,
+	items:              Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	reason:             Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	timeout:            Option<NumberProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	cwd:                Option<StringProperty>,
 }
 
 /// A literal JSON Schema fragment for shapes the typed properties cannot
@@ -271,6 +277,18 @@ pub fn specs() -> Vec<ToolSpec> {
 			&["ops", "paths"],
 		),
 		spec(
+			"web_search",
+			include_str!("prompts/tools/web-search.md").trim_end(),
+			&ToolProperties {
+				query: Some(STRING),
+				recency: Some(RawSchema(r#"{"type":"string","enum":["day","week","month","year"]}"#)),
+				limit: Some(NUMBER),
+				num_search_results: Some(NUMBER),
+				..EMPTY
+			},
+			&["query"],
+		),
+		spec(
 			"think",
 			"private scratchpad; not shown to user",
 			&ToolProperties { thoughts: Some(STRING), ..EMPTY },
@@ -292,32 +310,35 @@ pub fn specs() -> Vec<ToolSpec> {
 }
 
 const EMPTY: ToolProperties = ToolProperties {
-	case_sensitive: None,
-	gitignore:      None,
-	path:           None,
-	old:            None,
-	new:            None,
-	content:        None,
-	command:        None,
-	pattern:        None,
-	input:          None,
-	hidden:         None,
-	limit:          None,
-	skip:           None,
-	pat:            None,
-	thoughts:       None,
-	goal:           None,
-	report:         None,
-	ops:            None,
-	paths:          None,
-	op:             None,
-	list:           None,
-	task:           None,
-	phase:          None,
-	items:          None,
-	reason:         None,
-	timeout:        None,
-	cwd:            None,
+	case_sensitive:     None,
+	gitignore:          None,
+	path:               None,
+	old:                None,
+	new:                None,
+	content:            None,
+	command:            None,
+	pattern:            None,
+	input:              None,
+	hidden:             None,
+	limit:              None,
+	skip:               None,
+	pat:                None,
+	query:              None,
+	recency:            None,
+	num_search_results: None,
+	thoughts:           None,
+	goal:               None,
+	report:             None,
+	ops:                None,
+	paths:              None,
+	op:                 None,
+	list:               None,
+	task:               None,
+	phase:              None,
+	items:              None,
+	reason:             None,
+	timeout:            None,
+	cwd:                None,
 };
 
 const fn spec(
@@ -353,6 +374,7 @@ mod tests {
 			"todo",
 			"ast_grep",
 			"ast_edit",
+			"web_search",
 			"think",
 			"checkpoint",
 			"rewind"

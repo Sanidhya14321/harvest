@@ -41,6 +41,11 @@ struct Line {
 	age:   Option<String>,
 }
 
+/// `formatAge` for callers outside the tree renderer.
+pub(crate) fn format_age_label(seconds: u64) -> String {
+	format_age(seconds)
+}
+
 /// `formatAge`.
 fn format_age(seconds: u64) -> String {
 	if seconds == 0 {
