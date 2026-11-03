@@ -1,10 +1,20 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current native editing domain continuation base: `ea95e01`. Current owner: the active migration agent on `ts-to-rust`.
+Initial base: `64f3dd7`; current native editing domain continuation base: `ea95e01`. Current owner: the coordinator on the active integration branch in HANDOFF.md.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
+
+## November 3 parallel continuation
+
+Resume the three inherited Claude worktrees listed in HANDOFF.md: native TUI,
+managed/session/memory tools, and SQLite memory backend. Each has exclusive domain
+ownership; coordinator owns cross-domain integration and records. Existing native
+editing work stays in scope, including TUI rendering connections. Do not replace
+these inherited implementations with parallel alternatives. Checkpoints are
+conversion-only until recorded checks run; no legacy deletion or parity advance
+is implied.
 
 ## Current execution order: broad conversion sweep
 

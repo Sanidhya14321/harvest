@@ -12654,7 +12654,8 @@
       "external_dependencies": null,
       "rust_destination": null,
       "verification_requirements": null,
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:catalog-providers"
     },
     {
       "path": "packages/catalog/scripts/generate-models.ts",
@@ -16333,7 +16334,8 @@
       "external_dependencies": null,
       "rust_destination": null,
       "verification_requirements": null,
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "packages/coding-agent/scripts/generate-aria-snapshot.ts",
@@ -83660,7 +83662,8 @@
       "external_dependencies": "GitHub REST releases/latest over ureq with a 30 s timeout and 1 MiB response cap; harvest-runtime jailed atomic file access.",
       "rust_destination": "xtask/src/spoofed_versions.rs",
       "verification_requirements": "4 Rust tests cover drift rewrite of only the matched default, up-to-date/unfetchable/unextractable no-ops, tag parsing, and the real provider source matching. Live run of legacy and Rust against the GitHub API both reported 'Gemini CLI: 0.46.0 -> 0.66.0' and exited 1; the built binary produced the same with env -i PATH=/nonexistent on macOS arm64. --update was not exercised live to avoid changing the spoofed version.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/ci-macos-sign.sh",
@@ -83851,7 +83854,8 @@
       "external_dependencies": "gh release view --json assets (bounded 4 MiB capture) or --assets-file; HARVEST_REPO/OMP_REPO override; serde_json.",
       "rust_destination": "xtask/src/brew_formula.rs",
       "verification_requirements": "3 Rust tests port the legacy regressions (#2398 nounzip on all four urls next to their digests; completions only inside with_env(HOME: buildpath)) and add digest ordering/missing/unhashed errors. Legacy renderFormula and Rust output were byte-identical for default and HARVEST_REPO-overridden repositories, to stdout and --out; the built binary matched with env -i PATH=/nonexistent on macOS arm64.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/ci-update-brew-formula.ts",
@@ -83866,7 +83870,8 @@
       "external_dependencies": "gh release view --json assets (bounded 4 MiB capture) or --assets-file; HARVEST_REPO/OMP_REPO override; serde_json.",
       "rust_destination": "xtask/src/brew_formula.rs",
       "verification_requirements": "3 Rust tests port the legacy regressions (#2398 nounzip on all four urls next to their digests; completions only inside with_env(HOME: buildpath)) and add digest ordering/missing/unhashed errors. Legacy renderFormula and Rust output were byte-identical for default and HARVEST_REPO-overridden repositories, to stdout and --out; the built binary matched with env -i PATH=/nonexistent on macOS arm64.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/claude-trace.ts",
@@ -83945,7 +83950,8 @@
       "external_dependencies": "regex and serde_json string escaping; std filesystem reads with a 16 MiB per-report cap.",
       "rust_destination": "xtask/src/bench_runs.rs",
       "verification_requirements": "3 Rust tests cover JS parseInt/parseFloat/toFixed/toLocaleString/Number#toString semantics (including exact-tie and shortest-decimal rounding), report field extraction, and run pooling. A randomized parity sweep of 288 runs (6 seeds x 2 aggregate modes x 4 formats x 6 sort keys) against the legacy script under Bun: 200 byte-identical; the other 88 occur only for task/edit/tokens sorts where a row's metric is NaN. JavaScript leaves that order implementation-defined (Node and Bun's JSC differ); Rust deterministically places NaN rows last, so those outputs contain the same rows in a different order, and in 6 cases a group average differs in the last printed digit because floating-point summation follows row order. Intentional deviation.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/fix-changelogs.test.ts",
@@ -83960,7 +83966,8 @@
       "external_dependencies": "git for the two integration scenarios.",
       "rust_destination": "xtask/src/changelog/tests.rs",
       "verification_requirements": "All 12 legacy assertions groups reproduced in 11 Rust tests, which pass.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/fix-changelogs.ts",
@@ -83975,7 +83982,8 @@
       "external_dependencies": "git CLI (diff, describe, merge-base, tag, show, rev-list, update-ref, status) with bounded output; regex.",
       "rust_destination": "xtask/src/changelog.rs (fixer). The retained parser moves with rewrite-changelog.ts, which depends on the TS LLM client.",
       "verification_requirements": "11 Rust tests port every legacy fix-changelogs test, including the git-backed clog-baseline and idempotent-collapse scenarios. On the real repository, legacy and Rust reports and exit codes were identical for --dry-run, --recover, --since (tag, commit, HEAD~40), --check and argument errors; in clean worktrees the written changelogs were byte-identical for default, --since HEAD~40 and --recover runs. Only git failure wording differs (both exit 1). The reduced TS parser/renderer was proven identical to the original on all 14 changelogs. Delete the file when rewrite-changelog.ts migrates.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/fix-dt-verdef.test.ts",
@@ -84038,7 +84046,8 @@
       "external_dependencies": "regex, serde_json for package.json names; lexical path resolution without symlink following.",
       "rust_destination": "xtask/src/fix_test_imports.rs",
       "verification_requirements": "2 Rust tests cover module/index/.js/dynamic-import rewrites, asset skipping, quote preservation and dry-run immutability. On the real repository, legacy and Rust dry-run reports were byte-identical; with --write in two clean worktrees both produced an identical 7,839-line diff. The built binary matched with env -i PATH=/nonexistent.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/gen-clippy-bazelrc.ts",
@@ -84069,7 +84078,8 @@
       "external_dependencies": "bun2nix on PATH, else nix develop --command bun2nix, else bunx bun2nix@2.1.2; regex and harvest-runtime jailed files.",
       "rust_destination": "xtask/src/nix_bun_deps.rs",
       "verification_requirements": "All legacy assertions are reproduced in the 4 Rust tests.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/gen-nix-bun.ts",
@@ -84084,7 +84094,8 @@
       "external_dependencies": "bun2nix on PATH, else nix develop --command bun2nix, else bunx bun2nix@2.1.2; regex and harvest-runtime jailed files.",
       "rust_destination": "xtask/src/nix_bun_deps.rs",
       "verification_requirements": "4 Rust tests port generator preference, v2 restamp/v1 identity, v3/unstamped rejection and trailing-LF normalization. In two clean worktrees with bun.lock forced to v2 and extra trailing newlines on bun.nix, legacy and Rust each ran bunx bun2nix@2.1.2 end to end and produced byte-identical bun.lock and nix/bun.nix. Release tests (10) still pass. The generator is now resolved again at regeneration time rather than reused from the preflight object.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/host-detect.ts",
@@ -84259,7 +84270,8 @@
       "external_dependencies": "git and gh CLIs with bounded 4 MiB output capture; regex, serde_json.",
       "rust_destination": "xtask/src/merge_pr.rs",
       "verification_requirements": "All legacy assertions are reproduced in the 4 Rust tests.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/merge-pr.ts",
@@ -84274,7 +84286,8 @@
       "external_dependencies": "git and gh CLIs with bounded 4 MiB output capture; regex, serde_json.",
       "rust_destination": "xtask/src/merge_pr.rs",
       "verification_requirements": "4 Rust tests cover subject policy, oldest-compliant selection and branch-name PR inference. Live runs in this repository: legacy and Rust both resolved PR #11 through gh and failed identically with 'has no commits ahead of HEAD'; both rejected nonexistent refs with the same message and exit 1; Rust reports gh misses for unknown PRs. Rust errors omit the legacy 'error:' prefix and use clap's message for non-numeric --pr.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/musl-release.test.ts",
@@ -84641,7 +84654,8 @@
       "external_dependencies": "serde_json (workspace preserve_order) and harvest-runtime jailed bounded reads/atomic writes.",
       "rust_destination": "xtask/src/sync_versions.rs",
       "verification_requirements": "2 Rust tests: workspace-only rewrite with key order and exact bytes; mixed versions fail without writing. On copies of all 16 real package manifests forced to one version with stale specifiers, legacy and Rust wrote byte-identical files and the same 56 updates (report blocks equal as a set; Rust orders packages deterministically by name instead of readdir order, and omits emoji). Built binary ran with no Bun/Node on PATH.",
-      "retirement_reason": null
+      "retirement_reason": null,
+      "task_id": "migrate:tooling"
     },
     {
       "path": "scripts/test-loader.mjs",

@@ -2,7 +2,8 @@
 
 The user approved this replacement scope on 2026-10-22. It supersedes the older
 browser-JavaScript and installer-script exceptions in archived plans. Development
-and verified commits belong on `ts-to-rust`; publication and merging are separate.
+uses the active integration branch in HANDOFF.md; the November 3 authorized merge
+brought ts-to-rust into main. Publication remains separate.
 
 ## Executable ownership
 

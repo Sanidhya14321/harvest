@@ -1,5 +1,32 @@
 # Current Rust migration handoff
 
+## Active Codex continuation (2026-11-03)
+
+The user requested continuation in Claude’s parallel-worktree style, with shared
+documentation maintained for a later Claude handoff. Integration branch:
+`codex/continue-rust-migration`, based on main `485145a`. Do not restart from the
+older paused `ts-to-rust` tip; main already contains that branch. No publication
+or default-launcher cutover is part of this batch.
+
+Existing Claude worktrees are being resumed, preserving their inherited changes:
+- `agent-a54508e3b5ab6ad2c`: native TUI/editor/interactive CLI.
+- `agent-a674309bbf3672e71`: managed artifacts, memory/session tools and prompts.
+- `agent-adcc2ccfbfcc0fd96`: harvest-mnemopi SQLite memory backend.
+
+One coordinator owns integration, common records and shared interface resolution;
+workers write only their assigned worktrees. Conversion-first scheduling remains
+active. Written connections remain unverified until evidence is executed.
+Source-task ownership repair assigns the 14 previously unowned sources to the
+existing catalog/tooling tasks, without advancing implementation or verification.
+Existing xtask migration/capability inventory checks pass, with unchanged counts.
+Playbook status/next now pass ownership validation but fail with `expected a regular
+file`: Git enumerates the nested .claude/worktrees repositories as directory
+entries. This remains an explicit inventory integration issue; no exclusion or
+acceptance gate has been weakened.
+An aggregate compiler check after integration is justified by the inherited TUI
+and memory cross-crate interfaces; broad behavior/platform tests remain deferred.
+
+
 ## Merged into main (2026-11-03)
 
 The user re-authorized conversion and approved merging ts-to-rust into main.
@@ -30,8 +57,8 @@ ownership is in the common card. One writer; inspect actual run/process state.
 Existing hourly continuation does not prove execution and must not overlap runs.
 Work in whole connected conversion domains; compiler repair and broad behavioral/
 installed/platform stabilization are deferred to their recorded consolidated passes. Preserve
-unverified/partial states. Commit/push this branch without routine approval or a
-continue prompt; no main merge/publication/default-launcher cutover.
+unverified/partial states. Save coherent checkpoints on the active integration branch. No publication or
+default-launcher cutover. The older ts-to-rust-only instructions below are historical.
 
 Latest scheduling instruction: follow PLAYBOOK.md's full conversion sweep, then
 integration repair, then workflow/platform verification. Older per-helper compiler/

@@ -1,8 +1,9 @@
 # Harvest Rust migration playbook
 
-Work on `ts-to-rust`. Preserve its existing history and user changes. Commit one
-coherent migration checkpoint at a time; do not publish, release or merge to `main` as
-part of migration work. [SCOPE.md](SCOPE.md) records the user-approved target.
+Use the active integration branch named in HANDOFF.md. The November 3 authorized
+merge brought ts-to-rust into main; older branch-only instructions are historical.
+Preserve existing history and user changes. Save coherent migration checkpoints;
+do not publish, release or switch default launchers as part of conversion work. [SCOPE.md](SCOPE.md) records the user-approved target.
 
 ## Full conversion sweep (latest user instruction)
 
