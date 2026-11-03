@@ -89,7 +89,10 @@
     {
       "id": "command:agents",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/agents.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -167,7 +170,10 @@
     {
       "id": "command:cleanse",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/cleanse/mod.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -266,7 +272,10 @@
     {
       "id": "command:compress",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/compress.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -333,7 +342,10 @@
     {
       "id": "command:gc",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/gc.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -420,7 +432,10 @@
     {
       "id": "command:grievances",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/grievances.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -441,7 +456,10 @@
     {
       "id": "command:images",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/images/mod.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -570,7 +588,10 @@
     {
       "id": "command:ps",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/ps.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -699,7 +720,10 @@
     {
       "id": "command:render",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/render.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -720,7 +744,10 @@
     {
       "id": "command:ssh",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/ssh.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -783,7 +810,10 @@
     {
       "id": "command:usage",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/usage.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -846,7 +876,10 @@
     {
       "id": "command:ttsr",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/ttsr.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -867,7 +900,10 @@
     {
       "id": "command:worktree",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/commands/worktree.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
