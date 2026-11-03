@@ -135,3 +135,6 @@ pub(crate) fn format_number(n: f64) -> String {
 pub mod cleanse;
 pub(crate) mod rules;
 pub mod ttsr;
+pub mod say;
+mod secrets;
+pub mod share;
