@@ -64,6 +64,12 @@ enum Commands {
 	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Manage plugins (install, uninstall, list, etc.)")]
+	Plugin(crate::commands::plugin::PluginArgs),
+	#[command(about = "Check for and install updates")]
+	Update(crate::commands::update::UpdateArgs),
+	#[command(about = "Install a plugin from a local path, npm spec, or marketplace ref")]
+	Install(crate::commands::install::InstallArgs),
 	#[command(about = "Run on-disk storage maintenance")]
 	Gc(crate::commands::gc::GcArgs),
 	#[command(about = "Inspect and control daemon-broker supervised processes")]
@@ -475,6 +481,9 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Plugin(args) => crate::commands::plugin::execute(args),
+		Commands::Update(args) => crate::commands::update::execute(args),
+		Commands::Install(args) => crate::commands::install::execute(args),
 		Commands::Gc(args) => crate::commands::gc::execute(args),
 		Commands::Ps(args) => crate::commands::ps::execute(args),
 		Commands::Worktree(args) => crate::commands::worktree::execute(args),
