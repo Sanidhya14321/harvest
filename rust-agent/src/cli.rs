@@ -20,7 +20,7 @@ use crate::{
 #[command(name = "omp", version = env!("HARVEST_VERSION"), about = "Rust coding agent for Harvest")]
 struct Cli {
 	#[command(subcommand)]
-	command: Commands,
+	command: Option<Commands>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -54,6 +54,8 @@ enum Commands {
 	Browser(crate::browser_cli::BrowserArgs),
 	#[command(about = "Run one prompt against the workspace")]
 	Run(RunArgs),
+	#[command(about = "Open the interactive terminal UI (default with no subcommand)")]
+	Chat(RpcArgs),
 	#[command(about = "Serve the experimental Rust JSONL v1 RPC subset")]
 	Rpc(RpcArgs),
 	#[command(about = "Render a persisted branch with the portable Rust terminal layout")]
@@ -72,7 +74,10 @@ enum Commands {
 	Git(crate::commands::git::GitArgs),
 	#[command(about = "Manage the credential vault (auth broker)", arg_required_else_help = true)]
 	AuthBroker(crate::commands::auth_broker::AuthBrokerArgs),
-	#[command(about = "Run a forward proxy that injects auth from the broker", arg_required_else_help = true)]
+	#[command(
+		about = "Run a forward proxy that injects auth from the broker",
+		arg_required_else_help = true
+	)]
 	AuthGateway(crate::commands::auth_gateway::AuthGatewayArgs),
 	#[command(about = "View usage statistics dashboard")]
 	Stats(crate::commands::stats::StatsArgs),
@@ -451,7 +456,11 @@ pub(crate) fn execute() -> Result<u8> {
 }
 
 fn dispatch(cli: Cli) -> Result<u8> {
-	match cli.command {
+	let Some(command) = cli.command else {
+		return dispatch(Cli::try_parse_from(["omp", "chat"])?);
+	};
+	match command {
+		Commands::Chat(args) => chat(args),
 		Commands::Lsp(arguments) => crate::language_services::cli::execute("lsp", arguments),
 		Commands::Debug(arguments) => crate::language_services::cli::execute("debug", arguments),
 		Commands::Mcp(arguments) => crate::mcp::cli::execute(arguments),
@@ -596,6 +605,55 @@ fn inspect_session(args: SessionArgs) -> Result<u8> {
 	serde_json::to_writer(io::stdout().lock(), &report)?;
 	writeln!(io::stdout().lock())?;
 	Ok(0)
+}
+
+fn chat(args: RpcArgs) -> Result<u8> {
+	let workspace = args
+		.workspace
+		.canonicalize()
+		.context("failed to resolve chat workspace")?;
+	let environment = config::environment_from(|key| env::var(key).ok())?;
+	let resolved = args.configuration.load(
+		&workspace,
+		&Overrides {
+			model:     args.model,
+			base_url:  args.base_url,
+			api_key:   args.api_key,
+			max_steps: args.max_steps,
+		},
+		&environment,
+		args.api.as_deref(),
+		args.max_output_tokens,
+		args.agent_dir.clone(),
+	)?;
+	let max_model_turns = Some(resolved.settings.max_steps);
+	let model = HttpModel::from_configuration(
+		&workspace,
+		&resolved,
+		false,
+		args.configuration.allow_credential_commands,
+	)?;
+	let user_agent_dir =
+		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
+	crate::interactive::run(crate::interactive::ChatOptions {
+		model_id: model.model_id().to_owned(),
+		model: Arc::new(model),
+		workspace,
+		session: args.session,
+		leaf: args.leaf,
+		engine: SessionEngineOptions {
+			edit_mode: resolved.edit_mode,
+			max_model_turns,
+			plugins: resolved.plugins,
+			mcp: resolved.mcp,
+			lsp: resolved.lsp,
+			dap: resolved.dap,
+			user_agent_dir,
+			tags: args.tag.into_iter().collect(),
+			event_capacity: 256,
+			..Default::default()
+		},
+	})
 }
 
 fn rpc(args: RpcArgs) -> Result<u8> {

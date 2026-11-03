@@ -14,3 +14,6 @@ phf.workspace = true
 smallvec.workspace = true
 xutf.workspace = true
 syntect.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+crossterm.workspace = true
