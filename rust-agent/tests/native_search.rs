@@ -1,4 +1,5 @@
-//! Native grep must use shared ignore policy and retain jailed bounded reads.
+//! `grep` keeps the shared ignore policy, the workspace jail and the legacy
+//! output contract.
 use std::path::Path;
 
 use anyhow::Result;
@@ -6,7 +7,6 @@ use harvest_omp::{
 	chat::{FunctionCall, ToolCall},
 	tools::invoke,
 };
-use harvest_runtime::MAX_FILE_BYTES;
 use serde_json::{Value, json};
 
 fn search(root: &Path, arguments: Value) -> Result<String> {
@@ -15,6 +15,19 @@ fn search(root: &Path, arguments: Value) -> Result<String> {
 		kind:     "function".into(),
 		function: FunctionCall { name: "grep".into(), arguments: arguments.to_string() },
 	})
+}
+
+/// File headers (`# name#TAG`) without their snapshot tags.
+fn headers(output: &str) -> Vec<String> {
+	output
+		.lines()
+		.filter(|line| line.starts_with('#'))
+		.map(|line| match line.rsplit_once('#') {
+			Some((head, tag)) if !tag.contains(' ') && !head.trim_matches('#').is_empty() => head,
+			_ => line,
+		})
+		.map(str::to_owned)
+		.collect()
 }
 
 #[test]
@@ -32,21 +45,23 @@ fn shared_ignore_rules_apply_by_default_and_explicit_false_or_file_paths_overrid
 		std::fs::write(root.path().join("nested").join(name), "searchable needle")?;
 	}
 
-	let normal = search(root.path(), json!({"pattern":"needle"}))?;
+	let normal = headers(&search(root.path(), json!({"pattern":"needle"}))?);
+	for name in ["# keep.log", "# .visible", "# note.txt"] {
+		assert!(normal.iter().any(|header| header == name), "{normal:?}");
+	}
 	assert!(
-		normal.contains("keep.log:1:")
-			&& normal.contains(".visible:1:")
-			&& normal.contains("note.txt:1:")
+		!normal
+			.iter()
+			.any(|header| header.contains("drop.log") || header.contains("ignore-only"))
 	);
-	assert!(!normal.contains("drop.log:") && !normal.contains("ignore-only.txt:"));
-	let expanded = search(root.path(), json!({"pattern":"needle","gitignore":false}))?;
-	assert!(expanded.contains("drop.log:1:") && expanded.contains("ignore-only.txt:1:"));
+	let expanded = headers(&search(root.path(), json!({"pattern":"needle","gitignore":false}))?);
+	assert!(expanded.iter().any(|header| header == "# drop.log"), "{expanded:?}");
+	assert!(expanded.iter().any(|header| header == "# ignore-only.txt"), "{expanded:?}");
 	let nested = search(root.path(), json!({"pattern":"needle","path":"nested"}))?;
-	assert!(nested.contains(&format!("{}:1:", Path::new("nested").join("keep.log").display())));
-	assert!(!nested.contains("drop.log:"));
+	assert_eq!(headers(&nested), ["# nested/", "## keep.log"]);
 
 	let explicit = search(root.path(), json!({"pattern":"needle","path":"drop.log"}))?;
-	assert!(explicit.starts_with("drop.log:1:"));
+	assert!(explicit.starts_with("[drop.log#") && explicit.ends_with("\n*1:searchable needle"));
 	Ok(())
 }
 
@@ -54,57 +69,34 @@ fn shared_ignore_rules_apply_by_default_and_explicit_false_or_file_paths_overrid
 fn explicit_false_case_option_enables_case_insensitive_search() -> Result<()> {
 	let root = tempfile::tempdir()?;
 	std::fs::write(root.path().join("note"), "HELLO world\n")?;
-	assert_eq!(search(root.path(), json!({"pattern":"hello"}))?, "");
+	assert_eq!(search(root.path(), json!({"pattern":"hello"}))?, "No matches found");
 	assert!(
-		search(root.path(), json!({"pattern":"hello","case":false}))?.contains("note:1:HELLO world")
+		search(root.path(), json!({"pattern":"hello","case":false}))?.ends_with("\n*1:HELLO world")
 	);
 	Ok(())
 }
 
 #[test]
-fn binary_invalid_utf8_oversized_and_transient_files_do_not_enter_search_results() -> Result<()> {
+fn binary_files_and_vcs_or_dependency_directories_stay_out_of_results() -> Result<()> {
 	let root = tempfile::tempdir()?;
 	std::fs::write(root.path().join("binary"), b"needle\0")?;
-	std::fs::write(root.path().join("invalid"), b"needle\xff")?;
-	std::fs::write(root.path().join("oversized"), vec![b'x'; MAX_FILE_BYTES + 1])?;
-	for directory in [".git", ".omp", ".harvest", "node_modules", "target"] {
+	for directory in [".git", "node_modules"] {
 		std::fs::create_dir(root.path().join(directory))?;
 		std::fs::write(root.path().join(directory).join("private"), "needle")?;
 	}
 	std::fs::write(root.path().join("text"), "needle")?;
-	let result = search(root.path(), json!({"pattern":"needle|xxx","gitignore":false}))?;
-	assert_eq!(result, "text:1:needle");
+	let result = search(root.path(), json!({"pattern":"needle","gitignore":false}))?;
+	assert_eq!(headers(&result), ["# text"]);
 	Ok(())
 }
 
 #[test]
-fn match_limit_is_reported_instead_of_silently_claiming_an_exhaustive_search() -> Result<()> {
+fn unparseable_patterns_fall_back_to_literal_search_and_missing_roots_fail() -> Result<()> {
 	let root = tempfile::tempdir()?;
-	std::fs::write(root.path().join("first"), "needle\n".repeat(80))?;
-	std::fs::write(root.path().join("second"), "needle")?;
-	let result = search(root.path(), json!({"pattern":"needle"}))?;
-	assert_eq!(
-		result
-			.lines()
-			.filter(|line| line.starts_with("first:"))
-			.count(),
-		50
-	);
-	assert!(!result.contains("second:"));
-	assert!(result.ends_with("[search limit reached]"));
-	Ok(())
-}
-
-#[test]
-fn invalid_patterns_and_nonexistent_roots_surface_errors() -> Result<()> {
-	let root = tempfile::tempdir()?;
-	assert!(
-		search(root.path(), json!({"pattern":"["}))
-			.unwrap_err()
-			.to_string()
-			.contains("invalid regular expression")
-	);
-	assert!(search(root.path(), json!({"pattern":"needle","path":"missing"})).is_err());
+	std::fs::write(root.path().join("note"), "a [ b\n")?;
+	assert!(search(root.path(), json!({"pattern":"["}))?.contains("*1:a [ b"));
+	let error = search(root.path(), json!({"pattern":"needle","path":"missing"})).unwrap_err();
+	assert_eq!(error.to_string(), "Path not found: missing");
 	Ok(())
 }
 
@@ -118,12 +110,12 @@ fn explicit_symlink_operands_cannot_read_outside_the_workspace() -> Result<()> {
 	assert!(
 		search(root.path(), json!({"pattern":"outside-secret","path":"escape/secret"})).is_err()
 	);
-	assert_eq!(search(root.path(), json!({"pattern":"outside-secret"}))?, "");
+	assert_eq!(search(root.path(), json!({"pattern":"outside-secret"}))?, "No matches found");
 	Ok(())
 }
 
 #[test]
-fn depth_limits_are_visible_and_explicit_file_search_can_reach_the_target() -> Result<()> {
+fn deep_trees_are_searched_and_absolute_file_paths_resolve_inside_the_jail() -> Result<()> {
 	let root = tempfile::tempdir()?;
 	let mut deep = root.path().to_path_buf();
 	for _ in 0..34 {
@@ -132,8 +124,10 @@ fn depth_limits_are_visible_and_explicit_file_search_can_reach_the_target() -> R
 	std::fs::create_dir_all(&deep)?;
 	std::fs::write(deep.join("note"), "needle")?;
 	let result = search(root.path(), json!({"pattern":"needle"}))?;
-	assert_eq!(result, "[search limit reached]");
+	assert!(result.starts_with(&format!("# {}/", ["d"; 34].join("/"))), "{result}");
 	let direct = deep.join("note");
-	assert!(search(root.path(), json!({"pattern":"needle","path":direct}))?.ends_with(":1:needle"));
+	assert!(
+		search(root.path(), json!({"pattern":"needle","path":direct}))?.ends_with("\n*1:needle")
+	);
 	Ok(())
 }

@@ -140,11 +140,9 @@ fn invoke_authorized(
 		},
 		"write" => ToolOutput::text(write(root, &parse::<WriteArgs>(arguments)?, store, conflicts)?),
 		"edit" => ToolOutput::text(crate::edit::hashline(root, arguments, store, cancellation)?),
-		"grep" => ToolOutput::text(crate::search::grep(
-			root,
-			&parse::<crate::search::Args>(arguments)?,
-			cancellation,
-		)?),
+		"grep" => {
+			crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, store, cancellation)?
+		},
 		"glob" => ToolOutput::text(crate::glob::glob(
 			root,
 			&parse::<crate::glob::Args>(arguments)?,

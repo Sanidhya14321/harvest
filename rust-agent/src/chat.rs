@@ -71,6 +71,8 @@ struct ToolProperties {
 	hidden:         Option<BooleanProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	limit:          Option<NumberProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	skip:           Option<NumberProperty>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -156,6 +158,7 @@ pub fn specs() -> Vec<ToolSpec> {
 				path: Some(STRING),
 				case_sensitive: Some(BOOLEAN),
 				gitignore: Some(BOOLEAN),
+				skip: Some(NUMBER),
 				..EMPTY
 			},
 			&["pattern"],
@@ -193,6 +196,7 @@ const EMPTY: ToolProperties = ToolProperties {
 	input:          None,
 	hidden:         None,
 	limit:          None,
+	skip:           None,
 };
 
 const fn spec(

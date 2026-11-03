@@ -3798,6 +3798,7 @@ dependencies = [
  "harvest-tui",
  "pi-ast",
  "pi-edit",
+ "pi-grep",
  "pi-shell",
  "pi-walker",
  "predicates",

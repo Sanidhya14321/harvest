@@ -189,6 +189,32 @@ fn truncate_head(content: &str, max_bytes: usize, max_lines: usize) -> Truncatio
 	result
 }
 
+/// `truncateHead` with only a byte budget plus its `direction: "head"`
+/// notice (`OutputMetaBuilder.truncation` + `formatTruncationMetaNotice`).
+pub fn head_window(content: &str, max_bytes: usize) -> (String, Option<String>) {
+	let result = truncate_head(content, max_bytes, usize::MAX);
+	if !result.truncated {
+		return (result.content, None);
+	}
+	if result.first_exceeds {
+		let notice = format!(
+			"Showing line 1 (partial, {} of {}) of {}",
+			format_bytes(result.output_bytes),
+			format_bytes(result.total_bytes),
+			result.total_lines
+		);
+		return (result.content, Some(notice));
+	}
+	let end = result.output_lines;
+	let notice = format!(
+		"Showing lines 1-{end} of {} ({} limit). Use :{} to continue",
+		result.total_lines,
+		format_bytes(result.output_bytes),
+		end + 1
+	);
+	(result.content, Some(notice))
+}
+
 /// `truncateTail`: whole trailing lines within the budgets, or a byte window
 /// of an oversized last line.
 fn truncate_tail(content: &str, max_bytes: usize, max_lines: usize) -> Truncation {

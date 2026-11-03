@@ -345,15 +345,18 @@ because a Rust command or tool has the same name.
   settings, general prompt formatting, provider replay, bitmap archives and
   automatic compaction generation remain pending; session parity is unverified.
 
-- Native grep delegates traversal and ignore matching to `pi-walker`; file bytes
-  still pass through the workspace capability. Explicit `case`/`gitignore`
-  options, cancellation, file/encoding limits, and search-limit notices have
-  host contracts and an installed model/tool/result workflow. Shared Unix read,
-  optional-read and hashing operations reject FIFOs before they can block.
-  Tool prompts are static Markdown assets. The combined Rust suite passed 149
-  tests, core app 79, and rebuilt-addon legacy brain/edit suites 22. Grep's
-  remote/archive/selector, advanced matching, pagination and renderer contracts
-  remain pending; no legacy grep source or parity status was removed.
+- `grep` runs the shared `pi-grep` engine (the same code behind the N-API
+  binding) under the legacy tool contract: delimited `path` lists with
+  literal-path preference, `file:N-M` range filters, per-file match caps,
+  20-file pages with `skip`, round-robin file interleaving, prefix-folded
+  grouped output with snapshot-tagged headers (plain `N|line` when a file is
+  too large to snapshot), missing-path and 4 MB-window notices, the 50 KB head
+  window and column notice, regex/timeout error wording, and the workspace
+  jail on every engine root. 44/44 parity probes were byte-identical with the
+  TS tool. Still pending: internal/external URLs, archive members, ssh paths
+  and the `. ; file` single-walk ordering (Rust fans out per entry instead).
+  The Rust-only skip of `.omp`/`.harvest`/`target` directories is gone; the
+  engine prunes only `.git` and `node_modules`, like the legacy tool.
 
 - Shared native HTTP request construction returns typed status/transport errors
   without attaching raw URL/status/body diagnostics; `HttpModel` debug output

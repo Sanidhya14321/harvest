@@ -51,8 +51,8 @@ impl Args {
 /// An inclusive one-based range; `end: None` runs to EOF.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Range {
-	start: usize,
-	end:   Option<usize>,
+	pub(crate) start: usize,
+	pub(crate) end:   Option<usize>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -120,7 +120,7 @@ fn parse_chunk(chunk: &str) -> Result<Option<Range>> {
 }
 
 /// Parse a comma list, sorted with overlapping/adjacent ranges merged.
-fn parse_ranges(selector: &str) -> Result<Option<Vec<Range>>> {
+pub(crate) fn parse_ranges(selector: &str) -> Result<Option<Vec<Range>>> {
 	let mut parsed = Vec::new();
 	for chunk in selector.split(',') {
 		match parse_chunk(chunk)? {
