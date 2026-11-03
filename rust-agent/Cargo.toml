@@ -91,6 +91,8 @@ pi-grep = { path = "../crates/pi-grep" }
 pi-walker = { path = "../crates/pi-walker" }
 pi-shell = { path = "../crates/pi-shell", optional = true }
 regex.workspace = true
+fancy-regex.workspace = true
+globset.workspace = true
 serde_yaml_ng = "0.10.0"
 rusqlite = { version = "0.37", features = ["bundled"] }
 form_urlencoded = "1.2.2"

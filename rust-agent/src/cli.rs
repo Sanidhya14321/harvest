@@ -76,6 +76,10 @@ enum Commands {
 	Render(crate::commands::render::RenderArgs),
 	#[command(about = "Rewrite text files into the dense prompt register")]
 	Compress(crate::commands::compress::CompressArgs),
+	#[command(about = "Inspect and test Time-Traveling Stream Rules")]
+	Ttsr(crate::commands::ttsr::Args),
+	#[command(about = "Detect project diagnostics and dispatch file-disjoint repair agents")]
+	Cleanse(crate::commands::cleanse::Args),
 	#[command(about = "Show what the read tool returns for a path or URI")]
 	Read(crate::tool_cli::ReadArgs),
 	#[command(about = "Run the grep tool against the workspace")]
@@ -481,6 +485,8 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::Grievances(args) => crate::commands::grievances::execute(args),
 		Commands::Ssh(args) => crate::commands::ssh::execute(args),
 		Commands::Agents(args) => crate::commands::agents::execute(args),
+		Commands::Ttsr(args) => crate::commands::ttsr::execute(args),
+		Commands::Cleanse(args) => crate::commands::cleanse::execute(args),
 		Commands::Read(args) => crate::tool_cli::read(&args).map(|()| 0),
 		Commands::Grep(args) => crate::tool_cli::grep(&args).map(|()| 0),
 		Commands::Search(args) => crate::tool_cli::search(&args).map(|()| 0),
