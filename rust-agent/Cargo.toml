@@ -82,6 +82,7 @@ harvest-archive = { path = "../crates/harvest-archive" }
 harvest-runtime = { path = "../crates/harvest-runtime" }
 libc.workspace = true
 harvest-tui = { path = "../crates/harvest-tui" }
+crossterm.workspace = true
 harvest-media = { path = "../crates/harvest-media" }
 harvest-tokenizer = { path = "../crates/harvest-tokenizer" }
 pi-ast = { path = "../crates/pi-ast" }

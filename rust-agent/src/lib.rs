@@ -1,10 +1,10 @@
 //! Experimental Rust application runtime. Legacy capability parity is not yet
 //! met.
 pub mod agent;
-pub mod auth_storage;
 pub mod agent_session;
 pub mod anthropic;
 mod ast;
+pub mod auth_storage;
 mod brain_cli;
 pub mod catalog;
 pub mod chat;
@@ -19,6 +19,7 @@ pub mod durable_session;
 pub mod edit;
 pub mod edit_benchmark;
 mod glob;
+mod interactive;
 pub mod language_services;
 pub mod mcp;
 pub mod output;
@@ -38,14 +39,14 @@ mod sse;
 mod transport;
 pub use harvest_protocol as protocol;
 pub use harvest_terminal as terminal;
+mod agent_tools;
 mod streaming;
+mod task_tool;
 pub mod todo;
 mod tool_cli;
 pub mod tools;
-mod task_tool;
 mod tree;
 mod web_search;
-mod agent_tools;
 
 /// Document conversion, SVG previews and bounded SIXEL shared with the addon.
 pub use harvest_media as media;

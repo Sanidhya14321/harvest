@@ -12,3 +12,13 @@ pub mod output;
 pub mod paste;
 pub mod text;
 pub mod writer;
+
+// Native TUI core (port of packages/tui).
+pub mod component;
+pub mod editor;
+pub mod keyparse;
+pub mod layout;
+pub mod render;
+pub mod sanitize;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod terminal;

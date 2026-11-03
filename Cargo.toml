@@ -219,6 +219,7 @@ too_many_arguments = "allow" # Argument count is rarely the real complexity sign
 too_many_lines = "allow"     # Arbitrary limits don't account for necessary complexity
 
 [workspace.dependencies]
+crossterm = "0.29"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Internal Libraries
