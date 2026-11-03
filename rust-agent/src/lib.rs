@@ -8,6 +8,7 @@ mod brain_cli;
 pub mod catalog;
 pub mod chat;
 mod cli;
+mod commands;
 pub mod config;
 pub mod configuration;
 pub mod conflict;

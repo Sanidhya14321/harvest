@@ -64,6 +64,12 @@ enum Commands {
 	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Inspect and maintain image publication backends", visible_alias = "img")]
+	Images(crate::commands::images::ImagesArgs),
+	#[command(about = "Draw a session's entire thread through the transcript renderer")]
+	Render(crate::commands::render::RenderArgs),
+	#[command(about = "Rewrite text files into the dense prompt register")]
+	Compress(crate::commands::compress::CompressArgs),
 	#[command(about = "Show what the read tool returns for a path or URI")]
 	Read(crate::tool_cli::ReadArgs),
 	#[command(about = "Run the grep tool against the workspace")]
@@ -451,6 +457,9 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Images(args) => crate::commands::images::execute(args),
+		Commands::Render(args) => crate::commands::render::execute(args),
+		Commands::Compress(args) => crate::commands::compress::execute(args),
 		Commands::Read(args) => crate::tool_cli::read(&args).map(|()| 0),
 		Commands::Grep(args) => crate::tool_cli::grep(&args).map(|()| 0),
 		Commands::Search(args) => crate::tool_cli::search(&args).map(|()| 0),
