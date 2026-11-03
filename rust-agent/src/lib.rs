@@ -4,6 +4,7 @@ pub mod agent;
 pub mod agent_session;
 mod ast;
 mod brain_cli;
+pub mod catalog;
 pub mod chat;
 mod cli;
 pub mod config;

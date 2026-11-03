@@ -9,6 +9,8 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Catalog routing: `rust-agent/src/catalog.json` (`bun run gen:rust-catalog`, generated from `models.json` + `CATALOG_PROVIDERS` env vars) lets `--model provider/id` (thinking suffix tolerated) pick the provider base URL and its key env var (`GROQ_API_KEY`, ...). An explicit base URL still wins. Only `openai-completions` models (44 providers) are routed; Anthropic/Responses/Bedrock/Google wires, OAuth, the credential store and custom models are not ported.
+
 - Settings: `bun run gen:settings-schema` emits the 503-entry schema (type,
   default, enum values, credential marker) from `settings-schema.ts` into
   `rust-agent/src/settings-schema.json`. `rust-agent/src/settings.rs` loads

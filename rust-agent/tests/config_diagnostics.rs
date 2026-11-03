@@ -17,10 +17,11 @@ fn sdk_configuration_debug_omits_credentials_from_all_resolution_layers() -> Res
 		max_steps: Some(2),
 	};
 	let environment = Environment {
-		model:     Some("fixture".into()),
-		base_url:  Some(URL.into()),
-		api_key:   Some(KEY.into()),
+		model: Some("fixture".into()),
+		base_url: Some(URL.into()),
+		api_key: Some(KEY.into()),
 		max_steps: Some(2),
+		..Default::default()
 	};
 	let settings = config::resolve(root.path(), &flags, &environment)?;
 	// The public Debug boundary is commonly consumed by embedders' loggers.

@@ -11492,6 +11492,21 @@
       "retirement_reason": null
     },
     {
+      "path": "packages/catalog/scripts/gen-rust-catalog.ts",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
+      "legacy_removal": "retained",
+      "contract": null,
+      "consumers": null,
+      "persisted_formats": null,
+      "external_dependencies": null,
+      "rust_destination": null,
+      "verification_requirements": null,
+      "retirement_reason": null
+    },
+    {
       "path": "packages/catalog/scripts/generate-models.ts",
       "disposition": "review-required",
       "implementation": "absent",
@@ -14913,6 +14928,21 @@
     },
     {
       "path": "packages/coding-agent/scripts/format-prompts.ts",
+      "disposition": "review-required",
+      "implementation": "absent",
+      "behavioral_verification": "unverified",
+      "installed_verification": "unverified",
+      "legacy_removal": "retained",
+      "contract": null,
+      "consumers": null,
+      "persisted_formats": null,
+      "external_dependencies": null,
+      "rust_destination": null,
+      "verification_requirements": null,
+      "retirement_reason": null
+    },
+    {
+      "path": "packages/coding-agent/scripts/gen-settings-schema.ts",
       "disposition": "review-required",
       "implementation": "absent",
       "behavioral_verification": "unverified",
