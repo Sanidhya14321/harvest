@@ -74,10 +74,37 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	skip:           Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	op:             Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	list:           Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	task:           Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	phase:          Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	items:          Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	reason:         Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	timeout:        Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	cwd:            Option<StringProperty>,
 }
+
+/// A literal JSON Schema fragment for shapes the typed properties cannot
+/// express (enums, arrays of objects).
+#[derive(Debug, Clone, Copy)]
+struct RawSchema(&'static str);
+
+impl Serialize for RawSchema {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		serde_json::value::RawValue::from_string(self.0.to_owned())
+			.map_err(serde::ser::Error::custom)?
+			.serialize(serializer)
+	}
+}
+
+const STRING_ARRAY: RawSchema = RawSchema(r#"{"type":"array","items":{"type":"string"}}"#);
 
 #[derive(Debug, Clone, Copy, Serialize)]
 struct NumberProperty {
@@ -139,25 +166,25 @@ pub fn specs() -> Vec<ToolSpec> {
 		spec(
 			"read",
 			include_str!("prompts/tools/read.md").trim_end(),
-			ToolProperties { path: Some(STRING), ..EMPTY },
+			&ToolProperties { path: Some(STRING), ..EMPTY },
 			&["path"],
 		),
 		spec(
 			"write",
 			include_str!("prompts/tools/write.md").trim_end(),
-			ToolProperties { path: Some(STRING), content: Some(STRING), ..EMPTY },
+			&ToolProperties { path: Some(STRING), content: Some(STRING), ..EMPTY },
 			&["path", "content"],
 		),
 		spec(
 			"edit",
 			pi_edit::description(pi_edit::EditMode::Hashline).trim_end(),
-			ToolProperties { input: Some(STRING), ..EMPTY },
+			&ToolProperties { input: Some(STRING), ..EMPTY },
 			&["input"],
 		),
 		spec(
 			"grep",
 			include_str!("prompts/tools/grep.md").trim_end(),
-			ToolProperties {
+			&ToolProperties {
 				pattern: Some(STRING),
 				path: Some(STRING),
 				case_sensitive: Some(BOOLEAN),
@@ -170,7 +197,7 @@ pub fn specs() -> Vec<ToolSpec> {
 		spec(
 			"glob",
 			include_str!("prompts/tools/glob.md").trim_end(),
-			ToolProperties {
+			&ToolProperties {
 				path: Some(STRING),
 				hidden: Some(BOOLEAN),
 				gitignore: Some(BOOLEAN),
@@ -182,13 +209,31 @@ pub fn specs() -> Vec<ToolSpec> {
 		spec(
 			"bash",
 			include_str!("prompts/tools/bash.md").trim_end(),
-			ToolProperties {
+			&ToolProperties {
 				command: Some(STRING),
 				timeout: Some(NUMBER),
 				cwd: Some(STRING),
 				..EMPTY
 			},
 			&["command"],
+		),
+		spec(
+			"todo",
+			include_str!("prompts/tools/todo.md").trim_end(),
+			&ToolProperties {
+				op: Some(RawSchema(
+					r#"{"type":"string","enum":["init","start","done","rm","drop","block","unblock","append","view"]}"#,
+				)),
+				list: Some(RawSchema(
+					r#"{"type":"array","items":{"type":"object","properties":{"phase":{"type":"string"},"items":{"type":"array","items":{"type":"string"},"minItems":1}},"required":["phase","items"]}}"#,
+				)),
+				task: Some(STRING),
+				phase: Some(STRING),
+				items: Some(STRING_ARRAY),
+				reason: Some(STRING),
+				..EMPTY
+			},
+			&["op"],
 		),
 	]
 }
@@ -206,6 +251,12 @@ const EMPTY: ToolProperties = ToolProperties {
 	hidden:         None,
 	limit:          None,
 	skip:           None,
+	op:             None,
+	list:           None,
+	task:           None,
+	phase:          None,
+	items:          None,
+	reason:         None,
 	timeout:        None,
 	cwd:            None,
 };
@@ -213,7 +264,7 @@ const EMPTY: ToolProperties = ToolProperties {
 const fn spec(
 	name: &'static str,
 	description: &'static str,
-	properties: ToolProperties,
+	properties: &ToolProperties,
 	required: &'static [&'static str],
 ) -> ToolSpec {
 	ToolSpec {
@@ -221,7 +272,7 @@ const fn spec(
 		function: ToolFunction {
 			name,
 			description,
-			parameters: ToolParameters { kind: "object", properties, required },
+			parameters: ToolParameters { kind: "object", properties: *properties, required },
 		},
 	}
 }
@@ -233,7 +284,7 @@ mod tests {
 	#[test]
 	fn tool_catalog_names_the_workspace_tools() {
 		let names: Vec<&str> = specs().iter().map(|spec| spec.function.name).collect();
-		assert_eq!(names, ["read", "write", "edit", "grep", "glob", "bash"]);
+		assert_eq!(names, ["read", "write", "edit", "grep", "glob", "bash", "todo"]);
 	}
 
 	#[test]

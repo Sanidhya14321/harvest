@@ -18,6 +18,7 @@ mod session_context;
 pub mod session_format;
 mod shell;
 mod streaming;
+pub mod todo;
 pub mod tools;
 mod tree;
 

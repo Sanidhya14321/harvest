@@ -53,8 +53,8 @@ pub struct AgentSession {
 	edit_store: pi_edit::EditStore,
 	/// Spilled tool outputs, beside the session file.
 	artifacts:  Option<crate::output::ArtifactStore>,
-	/// Merge-conflict blocks surfaced by `read`, resolvable through `write`.
-	conflicts:  crate::conflict::ConflictHistory,
+	/// Merge-conflict blocks and the todo list.
+	tool_state: tools::SessionState,
 }
 impl AgentSession {
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
@@ -70,7 +70,7 @@ impl AgentSession {
 				.and_then(|fs| Ok(fs.root().join(fs.relative(path)?)))
 				.ok()
 				.and_then(|file| crate::output::ArtifactStore::for_session(&file)),
-			conflicts: crate::conflict::ConflictHistory::new(),
+			tool_state: tools::SessionState::default(),
 		})
 	}
 
@@ -220,7 +220,7 @@ impl AgentSession {
 					cancellation,
 					&self.edit_store,
 					self.artifacts.as_ref(),
-					&self.conflicts,
+					&self.tool_state,
 				) {
 					Ok(output) => output,
 					Err(error) => format!("error: {error:#}"),

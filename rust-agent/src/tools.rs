@@ -71,15 +71,15 @@ pub fn invoke_with_store(
 	store: &pi_edit::EditStore,
 ) -> Result<String> {
 	cancellation.heartbeat()?;
-	invoke_in_session(
-		root,
-		call,
-		policy,
-		cancellation,
-		store,
-		None,
-		&crate::conflict::ConflictHistory::new(),
-	)
+	invoke_in_session(root, call, policy, cancellation, store, None, &SessionState::default())
+}
+
+/// Session-scoped tool state: conflict ids from `read`/`write` and the todo
+/// list.
+#[derive(Default)]
+pub struct SessionState {
+	pub conflicts: crate::conflict::ConflictHistory,
+	pub todos:     crate::todo::TodoList,
 }
 
 /// Invoke inside a persisted session: results over 50 KB spill into
@@ -92,20 +92,20 @@ pub fn invoke_in_session(
 	cancellation: &harvest_runtime::cancel::CancelToken,
 	store: &pi_edit::EditStore,
 	artifacts: Option<&crate::output::ArtifactStore>,
-	conflicts: &crate::conflict::ConflictHistory,
+	state: &SessionState,
 ) -> Result<String> {
 	let name = call.function.name.as_str();
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
 	}
-	if !matches!(name, "read" | "write" | "edit" | "grep" | "glob" | "bash") {
+	if !matches!(name, "read" | "write" | "edit" | "grep" | "glob" | "bash" | "todo") {
 		bail!("unknown tool {name}");
 	}
 	if matches!(name, "write" | "edit" | "bash") && !policy.approve(call)? {
 		bail!("tool {name} requires human approval");
 	}
 	cancellation.heartbeat()?;
-	invoke_authorized(root, call, cancellation, store, artifacts, conflicts)
+	invoke_authorized(root, call, cancellation, store, artifacts, state)
 }
 
 #[cfg(test)]
@@ -116,7 +116,7 @@ fn invoke_approved(root: &Path, call: &ToolCall) -> Result<String> {
 		&Default::default(),
 		&pi_edit::EditStore::new(),
 		None,
-		&crate::conflict::ConflictHistory::new(),
+		&SessionState::default(),
 	)
 }
 
@@ -126,9 +126,10 @@ fn invoke_authorized(
 	cancellation: &harvest_runtime::cancel::CancelToken,
 	store: &pi_edit::EditStore,
 	artifacts: Option<&crate::output::ArtifactStore>,
-	conflicts: &crate::conflict::ConflictHistory,
+	state: &SessionState,
 ) -> Result<String> {
 	use crate::output::ToolOutput;
+	let conflicts = &state.conflicts;
 	let name = call.function.name.as_str();
 	let arguments = call.function.arguments.as_str();
 	let mut reading_artifact = false;
@@ -149,6 +150,7 @@ fn invoke_authorized(
 			cancellation,
 		)?),
 		"bash" => ToolOutput::text(bash(root, &parse::<BashArgs>(arguments)?, cancellation)?),
+		"todo" => ToolOutput::text(crate::todo::todo(&state.todos, arguments)),
 		_ => bail!("unknown tool {name}"),
 	};
 	Ok(match artifacts {
@@ -567,7 +569,7 @@ mod tests {
 				&Default::default(),
 				&store,
 				None,
-				&crate::conflict::ConflictHistory::new(),
+				&super::SessionState::default(),
 			)
 		};
 		assert!(
@@ -598,7 +600,7 @@ mod tests {
 			&Default::default(),
 			&store,
 			None,
-			&crate::conflict::ConflictHistory::new(),
+			&super::SessionState::default(),
 		)
 		.unwrap_err();
 		assert!(!error.to_string().is_empty());
@@ -625,7 +627,7 @@ mod tests {
 				&Default::default(),
 				&store,
 				Some(&artifacts),
-				&crate::conflict::ConflictHistory::new(),
+				&super::SessionState::default(),
 			)
 			.unwrap()
 		};

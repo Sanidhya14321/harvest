@@ -9,6 +9,12 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `todo` ports the legacy phased task model: all nine ops, `op` inference
+  from unambiguous payloads, single in-progress normalization, all-or-nothing
+  batches, blocker notes, the summary text and the Markdown round-trip. State
+  is session-scoped in memory; persistence into the session log, `/todo`
+  editing and the TUI renderer are pending.
+
 - `bash` follows the legacy foreground result contract: `env` (validated
   names), `timeout` (default 300 s, clamped to 1–3600 s with the clamp notice,
   `0` disables), jailed `cwd` with the legacy missing/not-a-directory errors,

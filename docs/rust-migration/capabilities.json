@@ -609,10 +609,16 @@
     {
       "id": "tool:todo",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/todo.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/todo.rs"
+        ]
       }
     },
     {
