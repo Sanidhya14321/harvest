@@ -60,6 +60,18 @@ enum Commands {
 	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Benchmark model latency and throughput")]
+	Bench(crate::commands::bench::BenchArgs),
+	#[command(name = "if-bench", about = "Instruction-following benchmark on an incremental array machine")]
+	IfBench(crate::commands::bench::IfBenchArgs),
+	#[command(name = "dry-balance", about = "Dry-run credential balancing across random session ids")]
+	DryBalance(crate::commands::bench::DryBalanceArgs),
+	#[command(about = "Render every built-in tool renderer across its lifecycle states")]
+	Gallery(crate::commands::bench::GalleryArgs),
+	#[command(name = "tiny-models", about = "List or download tiny local models")]
+	TinyModels(crate::commands::tiny_models::TinyModelsArgs),
+	#[command(name = "__complete", hide = true)]
+	Complete(crate::commands::complete::CompleteArgs),
 	#[command(about = "Launch the agent (non-interactive path forwards to run)")]
 	Launch(crate::commands::launch::LaunchArgs),
 	#[command(about = "Run Harvest as an ACP (Agent Client Protocol) server over stdio")]
@@ -491,6 +503,12 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Bench(args) => crate::commands::bench::bench(args),
+		Commands::IfBench(args) => crate::commands::bench::if_bench(args),
+		Commands::DryBalance(args) => crate::commands::bench::dry_balance(args),
+		Commands::Gallery(args) => crate::commands::bench::gallery(args),
+		Commands::TinyModels(args) => crate::commands::tiny_models::execute(args),
+		Commands::Complete(args) => crate::commands::complete::execute(args),
 		Commands::Launch(args) => crate::commands::launch::execute(args, redispatch_run),
 		Commands::Acp(args) => crate::commands::acp::execute(args, redispatch_run),
 		Commands::Join(args) => crate::commands::join::execute(args),

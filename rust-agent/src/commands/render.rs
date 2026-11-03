@@ -60,7 +60,7 @@ fn encode(prefix: &str, relative: &str) -> String {
 	}
 }
 
-fn default_session_dir(cwd: &Path) -> Result<PathBuf> {
+pub(crate) fn default_session_dir(cwd: &Path) -> Result<PathBuf> {
 	let canonical = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
 	let home = std::env::var_os("HOME").map(PathBuf::from).and_then(|h| h.canonicalize().ok());
 	let temp = std::env::temp_dir().canonicalize().ok();
@@ -77,7 +77,7 @@ fn default_session_dir(cwd: &Path) -> Result<PathBuf> {
 }
 
 /// Session files in `dir`, newest first by modification time.
-fn list_sessions(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn list_sessions(dir: &Path) -> Vec<PathBuf> {
 	let Ok(entries) = std::fs::read_dir(dir) else {
 		return Vec::new();
 	};

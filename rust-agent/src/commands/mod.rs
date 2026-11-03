@@ -153,3 +153,6 @@ pub mod auth_broker;
 pub mod auth_gateway;
 pub mod stats;
 pub mod setup;
+pub mod bench;
+pub mod complete;
+pub mod tiny_models;
