@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 4,
   "baseline": "Merged PR #4 plus supported legacy application contracts. Partial primitive implementations do not establish parity.",
   "capabilities": [
     {
@@ -9,6 +9,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -18,6 +30,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -27,6 +51,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -36,6 +72,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -45,6 +93,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -54,6 +114,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -63,6 +135,33 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-browser-control"
+        ],
+        "status": "removed",
+        "previous_implementation": {
+          "status": "absent"
+        },
+        "previous_verification": {
+          "status": "unverified"
+        },
+        "contract_suites": [
+          "rust-agent/tests/cli.rs",
+          "crates/harvest-browser/examples/verify_browser.rs",
+          "crates/harvest-browser/examples/verify_cli.rs",
+          "packages/coding-agent/test/cli-argv-routing.test.ts",
+          "packages/coding-agent/test/tools/browser-schema.test.ts"
+        ]
+      },
+      "legacy": {
+        "removable": true
       }
     },
     {
@@ -72,6 +171,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -81,30 +192,49 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "command:completions",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/cli.rs",
-          "rust-agent/src/shell.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/tests/cli.rs",
-          "rust-agent/src/shell.rs"
+          "rust-agent/tests/cli.rs"
         ]
       },
       "installation": "experimental-rust-cli",
       "legacy": {
         "paths": [
-          "packages/coding-agent/src/commands/"
+          "packages/coding-agent/src/cli/completion-gen.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -114,6 +244,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -123,15 +265,43 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "command:config",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/cli.rs",
+          "rust-agent/src/configuration.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -141,6 +311,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -150,6 +332,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -159,6 +353,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -168,6 +374,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -177,6 +395,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -186,6 +416,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -195,6 +437,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -204,6 +458,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -213,6 +479,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -222,6 +500,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -231,6 +521,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -240,6 +542,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -249,6 +563,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -258,6 +584,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -267,6 +605,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -276,6 +626,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -285,6 +647,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -294,6 +668,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -303,6 +689,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -312,6 +710,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -321,6 +731,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -330,6 +752,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -339,6 +773,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -348,6 +794,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -357,6 +815,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -366,6 +836,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -375,6 +857,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -384,6 +878,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -391,14 +897,19 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/read.rs",
-          "rust-agent/src/tools.rs"
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/edit/read.rs",
+          "crates/pi-edit/src/files.rs",
+          "crates/pi-edit/src/store.rs",
+          "rust-agent/src/edit/read",
+          "crates/harvest-runtime/src/filesystem.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/read.rs"
+          "rust-agent/src/tools.rs",
+          "rust-agent/tests/native_edit_sessions.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -407,6 +918,18 @@
           "packages/coding-agent/src/tools/read.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -416,6 +939,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -438,6 +973,18 @@
           "packages/coding-agent/src/tools/bash.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -446,14 +993,16 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/edit.rs",
-          "crates/pi-edit/src"
+          "crates/pi-edit/src",
+          "rust-agent/src/edit"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
           "rust-agent/tests/native_edit.rs",
-          "rust-agent/src/tools.rs"
+          "crates/pi-edit/tests",
+          "rust-agent/tests/native_edit_sessions.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -463,32 +1012,60 @@
           "packages/coding-agent/src/edit/index.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:ast_grep",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/ast.rs",
-          "crates/pi-ast/src/engine.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:ast_edit",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/ast.rs",
-          "rust-agent/src/tools.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -498,16 +1075,45 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:debug",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/language_services/dap.rs",
+          "rust-agent/src/language_services/runtime.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
-      }
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      },
+      "installation": "experimental-rust-cli"
     },
     {
       "id": "tool:eval",
@@ -516,6 +1122,24 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "scope": "retired",
+      "retirement": {
+        "decision": "remove-language-eval",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [],
+        "status": "pending",
+        "previous_implementation": {
+          "status": "absent"
+        },
+        "previous_verification": {
+          "status": "unverified"
+        }
+      },
+      "legacy": {
+        "removable": false
       }
     },
     {
@@ -525,23 +1149,39 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:glob",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/glob.rs",
-          "crates/pi-walker/src/glob.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
-        "status": "unverified",
-        "contract_suites": [
-          "rust-agent/src/glob.rs",
-          "crates/pi-walker/src/glob.rs"
-        ]
+        "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -550,14 +1190,15 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/search.rs",
-          "crates/pi-grep",
+          "crates/pi-walker",
           "crates/harvest-runtime/src/filesystem.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/search/tests.rs",
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/search.rs",
           "rust-agent/tests/native_search.rs"
         ]
       },
@@ -567,41 +1208,87 @@
           "packages/coding-agent/src/tools/grep.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:lsp",
       "implementation": {
-        "status": "absent"
-      },
-      "verification": {
-        "status": "unverified"
-      }
-    },
-    {
-      "id": "tool:checkpoint",
-      "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/tools.rs",
-          "rust-agent/src/agent_session.rs"
+          "rust-agent/src/language_services/lsp.rs",
+          "rust-agent/src/language_services/edits.rs",
+          "rust-agent/src/language_services/runtime.rs"
         ]
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      },
+      "installation": "experimental-rust-cli"
+    },
+    {
+      "id": "tool:checkpoint",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:rewind",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/tools.rs",
-          "rust-agent/src/agent_session.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -611,6 +1298,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -620,33 +1319,60 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:todo",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/todo.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
-        "status": "unverified",
-        "contract_suites": [
-          "rust-agent/src/todo.rs"
-        ]
+        "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "tool:web_search",
       "implementation": {
-        "status": "partial",
-        "paths": [
-          "rust-agent/src/web_search.rs"
-        ]
+        "status": "absent"
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -654,15 +1380,13 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/tools.rs",
-          "rust-agent/src/conflict.rs"
+          "rust-agent/src/tools.rs"
         ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/src/tools.rs",
-          "rust-agent/src/conflict/tests.rs"
+          "rust-agent/src/tools.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -671,6 +1395,18 @@
           "packages/coding-agent/src/tools/write.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -680,6 +1416,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -689,6 +1437,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -698,6 +1458,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -707,6 +1479,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -716,6 +1500,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -725,6 +1521,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -734,6 +1542,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -743,6 +1563,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -752,6 +1584,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -761,6 +1605,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -770,6 +1626,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -779,6 +1647,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -788,6 +1668,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -797,6 +1689,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -806,6 +1710,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -815,6 +1731,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -824,6 +1752,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -833,6 +1773,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -842,6 +1794,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -851,6 +1815,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -860,6 +1836,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -869,6 +1857,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -878,6 +1878,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -887,6 +1899,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -896,6 +1920,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -905,6 +1941,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -914,6 +1962,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -923,6 +1983,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -932,6 +2004,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -941,6 +2025,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -950,6 +2046,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -959,6 +2067,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -968,6 +2088,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -977,6 +2109,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -986,6 +2130,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -995,6 +2151,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1004,6 +2172,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1013,6 +2193,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1022,6 +2214,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1031,6 +2235,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1040,6 +2256,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1049,6 +2277,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1058,6 +2298,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1067,6 +2319,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1076,6 +2340,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1085,6 +2361,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1094,6 +2382,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1103,6 +2403,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1112,6 +2424,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1121,6 +2445,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1130,6 +2466,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1139,6 +2487,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1148,6 +2508,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1157,6 +2529,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1166,6 +2550,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1175,6 +2571,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1184,6 +2592,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1193,6 +2613,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1202,6 +2634,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1211,6 +2655,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1220,6 +2676,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1229,6 +2697,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1238,6 +2718,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1247,6 +2739,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1256,6 +2760,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1265,6 +2781,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1274,6 +2802,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1283,6 +2823,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1292,6 +2844,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1301,6 +2865,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1310,6 +2886,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1319,6 +2907,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1328,6 +2928,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1337,6 +2949,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1346,6 +2970,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1355,6 +2991,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1364,6 +3012,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1373,6 +3033,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1382,6 +3054,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1391,6 +3075,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1400,6 +3096,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1409,6 +3117,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1418,6 +3138,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1427,6 +3159,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1436,6 +3180,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1445,6 +3201,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1454,6 +3222,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1463,6 +3243,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1472,6 +3264,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1481,6 +3285,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1490,6 +3306,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1499,6 +3327,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1508,6 +3348,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1517,6 +3369,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1526,6 +3390,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1535,6 +3411,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1544,7 +3432,9 @@
         "paths": [
           "rust-agent/src/provider.rs",
           "rust-agent/src/streaming.rs",
-          "rust-agent/src/usage.rs"
+          "rust-agent/src/usage.rs",
+          "rust-agent/src/anthropic.rs",
+          "rust-agent/src/sse.rs"
         ]
       },
       "verification": {
@@ -1553,7 +3443,8 @@
           "rust-agent/src/streaming.rs",
           "rust-agent/tests/cli.rs",
           "rust-agent/tests/provider_usage.rs",
-          "rust-agent/tests/provider_diagnostics.rs"
+          "rust-agent/tests/provider_diagnostics.rs",
+          "rust-agent/tests/anthropic_provider.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -1562,6 +3453,18 @@
           "packages/ai/src/"
         ],
         "removable": false
+      },
+      "work_unit": "catalog-providers",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1571,6 +3474,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "catalog-providers",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1580,15 +3495,44 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "catalog-providers",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "surface:settings-profiles",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/configuration.rs",
+          "rust-agent/src/config.rs",
+          "rust-agent/src/cli.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1615,6 +3559,18 @@
           "packages/coding-agent/src/session/"
         ],
         "removable": false
+      },
+      "work_unit": "storage",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1639,6 +3595,18 @@
           "packages/coding-agent/src/session/"
         ],
         "removable": false
+      },
+      "work_unit": "storage",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1648,15 +3616,53 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "storage",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "surface:rpc-v1-v2",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/rpc.rs",
+          "rust-agent/src/session_engine.rs",
+          "crates/harvest-protocol/src/transcript.rs",
+          "crates/harvest-protocol/src/rpc_frame.rs",
+          "rust-agent/src/rpc/reader.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/tests/rpc.rs",
+          "crates/harvest-protocol/tests/transcript.rs",
+          "rust-agent/tests/rpc_cli.rs",
+          "crates/harvest-protocol/tests/rpc_frame.rs",
+          "rust-agent/tests/rpc_reader.rs"
+        ]
+      },
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1666,15 +3672,50 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "surface:terminal-inline-transcript",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "crates/harvest-terminal/src/frame.rs",
+          "crates/harvest-terminal/src/replay.rs",
+          "rust-agent/src/replay_cli.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-terminal/tests/frame.rs",
+          "crates/harvest-terminal/tests/replay.rs",
+          "crates/harvest-terminal/tests/text.rs",
+          "rust-agent/tests/replay.rs"
+        ]
+      },
+      "work_unit": "terminal",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1736,6 +3777,18 @@
           "packages/tui/src/mouse.ts"
         ],
         "removable": false
+      },
+      "work_unit": "terminal",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1761,15 +3814,45 @@
           "packages/coding-agent/src/sdk.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "surface:extension-process-abi-v1",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/plugins",
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/chat.rs",
+          "rust-agent/examples/native-plugin.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1779,6 +3862,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1788,25 +3883,79 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "surface:mcp",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/mcp",
+          "rust-agent/src/process_transport.rs",
+          "rust-agent/src/transport.rs",
+          "rust-agent/src/tools.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
-      }
+      },
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      },
+      "legacy": {
+        "paths": [
+          "packages/coding-agent/src/mcp"
+        ],
+        "removable": false
+      },
+      "installation": "experimental-rust-cli"
     },
     {
       "id": "surface:lsp-dap",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/language_services",
+          "rust-agent/src/process_transport.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
-      }
+      },
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      },
+      "installation": "experimental-rust-cli"
     },
     {
       "id": "surface:browser-wasm",
@@ -1815,6 +3964,39 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "browser",
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard"
+        ],
+        "status": "pending",
+        "previous_implementation": {
+          "status": "partial",
+          "paths": [
+            "crates/harvest-web/src/browser.rs",
+            "crates/harvest-web/src/lib.rs",
+            "xtask/src/web_replay.rs"
+          ]
+        },
+        "previous_verification": {
+          "status": "unverified",
+          "contract_suites": [
+            "crates/harvest-web/tests/replay_safety.rs",
+            "xtask/tests/web_replay.rs"
+          ]
+        }
+      },
+      "legacy": {
+        "removable": false
       }
     },
     {
@@ -1824,6 +4006,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "services",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1833,6 +4027,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1842,15 +4048,43 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
       "id": "surface:benchmarks",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/edit_benchmark",
+          "rust-agent/src/trace_report"
+        ]
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1860,6 +4094,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1869,9 +4115,9 @@
         "paths": [
           "crates/harvest-media/src/html.rs",
           "crates/harvest-media/src/svg.rs",
-          "rust-agent/src/lib.rs",
           "crates/harvest-media/src/sixel.rs",
-          "crates/harvest-media/src/pdf.rs"
+          "rust-agent/src/lib.rs",
+          "crates/harvest-media/src/docx.rs"
         ]
       },
       "verification": {
@@ -1879,9 +4125,14 @@
         "contract_suites": [
           "crates/harvest-media/src/html.rs",
           "crates/harvest-media/src/svg.rs",
+          "crates/harvest-media/src/sixel.rs",
           "packages/natives/test/native.test.ts",
           "packages/coding-agent/test/tools/fetch-binary-dispatch.test.ts",
-          "packages/coding-agent/test/git-tui-sidebar.test.ts"
+          "packages/coding-agent/test/git-tui-sidebar.test.ts",
+          "crates/harvest-media/tests/docx.rs",
+          "packages/utils/test/docx.test.ts",
+          "packages/coding-agent/test/utils/markit-cache.test.ts",
+          "rust-agent/tests/cli.rs"
         ]
       },
       "installation": "experimental-rust-sdk",
@@ -1892,6 +4143,18 @@
           "packages/coding-agent/src/cli/git-tui/state.ts"
         ],
         "removable": false
+      },
+      "work_unit": "media",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1901,6 +4164,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "browser",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1910,8 +4185,7 @@
         "paths": [
           "xtask/src/clippy_config.rs",
           "xtask/src/theme_index.rs",
-          "xtask/src/emit_extensions.rs",
-          "xtask/src/nix_bun_deps.rs"
+          "xtask/src/emit_extensions.rs"
         ]
       },
       "verification": {
@@ -1919,17 +4193,29 @@
         "contract_suites": [
           "xtask/src/clippy_config.rs",
           "xtask/src/theme_index.rs",
-          "xtask/src/emit_extensions.rs",
-          "xtask/src/nix_bun_deps.rs"
+          "xtask/src/emit_extensions.rs"
         ]
       },
       "installation": "native-xtask",
       "legacy": {
         "paths": [
           "packages/catalog/scripts/generate-models.ts",
-          "packages/coding-agent/scripts/generate-share-viewer.ts"
+          "packages/coding-agent/scripts/generate-share-viewer.ts",
+          "scripts/gen-nix-bun.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1962,6 +4248,18 @@
           ".github/workflows/release.yml"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1971,6 +4269,18 @@
       },
       "verification": {
         "status": "unverified"
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -1993,6 +4303,18 @@
           "packages/coding-agent/src/session/session-memory.ts"
         ],
         "removable": false
+      },
+      "work_unit": "memory",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     },
     {
@@ -2018,7 +4340,3068 @@
           "packages/coding-agent/src/session/session-loader.ts"
         ],
         "removable": false
+      },
+      "work_unit": "application",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "compat:single-engine-owner",
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-runtime/tests/filesystem.rs",
+          "scripts/rust-session-ownership.test.ts"
+        ]
+      },
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "crates/harvest-runtime/src/file_lock/",
+          "rust-agent/src/durable_session.rs"
+        ]
+      },
+      "work_unit": "plugins",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-replay",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-stats",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-collaboration",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-run-dashboard",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-automation-dashboard",
+      "work_unit": "terminal",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-browser-control",
+      "work_unit": "services",
+      "scope": "retained",
+      "implementation": {
+        "status": "partial",
+        "paths": [
+          "crates/harvest-browser/src/lib.rs",
+          "rust-agent/src/browser_cli.rs",
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/agent_session.rs",
+          "rust-agent/src/session_engine.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified",
+        "contract_suites": [
+          "crates/harvest-browser/src/lib.rs",
+          "crates/harvest-browser/examples/verify_browser.rs",
+          "crates/harvest-browser/examples/verify_cli.rs",
+          "rust-agent/tests/browser_tools.rs",
+          "rust-agent/examples/verify_browser_tool.rs"
+        ]
+      },
+      "installation": "experimental-rust-cli",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-command-completion",
+      "work_unit": "application",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:native-installation",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:performance-baselines",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:registry-installation",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "surface:artifact-signatures",
+      "work_unit": "tooling",
+      "scope": "retained",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "installation": "legacy-typescript",
+      "legacy": {
+        "removable": false
+      },
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "id": "sdk-import:typescript",
+      "work_unit": "application",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "rust-api-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:rust-sdk",
+          "surface:rpc-v1-v2"
+        ],
+        "status": "pending"
+      }
+    },
+    {
+      "id": "sdk-import:python-rpc",
+      "work_unit": "services",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "rust-api-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:rust-sdk",
+          "surface:rpc-v1-v2"
+        ],
+        "status": "pending"
+      }
+    },
+    {
+      "id": "compat:shell-completion-scripts",
+      "work_unit": "tooling",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-command-completion"
+        ],
+        "status": "pending"
+      }
+    },
+    {
+      "id": "compat:installer-scripts",
+      "work_unit": "tooling",
+      "implementation": {
+        "status": "absent"
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "legacy": {
+        "removable": false
+      },
+      "scope": "retired",
+      "retirement": {
+        "decision": "native-interface-replacement",
+        "reason": "User-approved strict Rust-only breaking release; preserve retained behavior through the named native interfaces.",
+        "evidence": "docs/rust-migration/SCOPE.md",
+        "replacement_capabilities": [
+          "surface:native-installation"
+        ],
+        "status": "pending"
+      }
+    },
+    {
+      "id": "surface:cleanup-discovery",
+      "implementation": {
+        "status": "complete",
+        "paths": [
+          "rust-agent/src/cleanup_scan",
+          "crates/pi-ast/src/cleanup.rs"
+        ]
+      },
+      "verification": {
+        "status": "unverified"
+      },
+      "work_unit": "tooling",
+      "lifecycle": {
+        "candidate": {
+          "status": "pending"
+        },
+        "legacy": {
+          "status": "pending"
+        },
+        "promotion": {
+          "status": "pending"
+        }
       }
     }
-  ]
+  ],
+  "execution": {
+    "units": [
+      {
+        "id": "protocol",
+        "paths": [
+          "crates/harvest-protocol",
+          "packages/wire"
+        ],
+        "depends_on": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "review": "pending",
+        "deletion_unit": "protocol",
+        "fixtures": [
+          "rust-agent/tests/session_format.rs",
+          "packages/collab-web/test"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "primitives",
+        "paths": [
+          "crates/harvest-terminal",
+          "crates/harvest-terminal-wasm",
+          "crates/pi-natives",
+          "crates/pi-ast",
+          "crates/pi-diff",
+          "crates/pi-edit",
+          "crates/pi-iso",
+          "crates/pi-vcs",
+          "crates/pi-walker",
+          "crates/pi-shell",
+          "crates/pi-builtins",
+          "crates/vendor",
+          "packages/natives",
+          "crates/harvest-tui",
+          "crates/harvest-tokenizer",
+          "crates/harvest-media"
+        ],
+        "depends_on": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "review": "pending",
+        "deletion_unit": "primitives",
+        "fixtures": [
+          "packages/tui/test",
+          "packages/natives/test"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "storage",
+        "paths": [
+          "crates/harvest-runtime",
+          "rust-agent/src/durable_session.rs",
+          "packages/coding-agent/src/session"
+        ],
+        "depends_on": [
+          "protocol"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-runtime"
+        ],
+        "review": "pending",
+        "deletion_unit": "storage",
+        "fixtures": [
+          "rust-agent/tests/session_format.rs",
+          "packages/coding-agent/test/session"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "catalog-providers",
+        "paths": [
+          "packages/catalog",
+          "packages/ai",
+          "rust-agent/src/provider.rs",
+          "rust-agent/src/transport.rs"
+        ],
+        "depends_on": [
+          "protocol"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "review": "pending",
+        "deletion_unit": "catalog-providers",
+        "fixtures": [
+          "packages/ai/test",
+          "packages/catalog/test"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "memory",
+        "paths": [
+          "crates/harvest-brain",
+          "packages/mnemopi",
+          "packages/harvest-memory",
+          "packages/harvest-schema",
+          "packages/coding-agent/src/memory-backend"
+        ],
+        "depends_on": [
+          "storage"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "review": "pending",
+        "deletion_unit": "memory",
+        "fixtures": [
+          "crates/harvest-brain/tests",
+          "packages/mnemopi/test"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "plugins",
+        "paths": [
+          "packages/coding-agent/src/extensibility"
+        ],
+        "depends_on": [
+          "protocol",
+          "storage"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-runtime"
+        ],
+        "review": "pending",
+        "deletion_unit": "plugins",
+        "fixtures": [
+          "packages/coding-agent/test/extensibility"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "application",
+        "paths": [
+          "rust-agent",
+          "packages/agent",
+          "packages/coding-agent"
+        ],
+        "depends_on": [
+          "storage",
+          "catalog-providers",
+          "memory",
+          "plugins",
+          "primitives"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-singleton",
+          "transition-runtime",
+          "transition-agent-native"
+        ],
+        "review": "pending",
+        "deletion_unit": "application",
+        "fixtures": [
+          "rust-agent/tests",
+          "packages/coding-agent/test"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "terminal",
+        "paths": [
+          "packages/tui",
+          "packages/coding-agent/src/modes",
+          "packages/coding-agent/src/tui"
+        ],
+        "depends_on": [
+          "protocol",
+          "primitives",
+          "application"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "transition-ui"
+        ],
+        "review": "pending",
+        "deletion_unit": "terminal",
+        "fixtures": [
+          "packages/tui/test",
+          "packages/coding-agent/test/modes"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "services",
+        "paths": [
+          "packages/coding-agent/src/collab",
+          "packages/coding-agent/src/rpc",
+          "packages/coding-agent/src/mcp",
+          "packages/coding-agent/src/lsp",
+          "packages/coding-agent/src/dap",
+          "packages/coding-agent/src/ssh",
+          "packages/coding-agent/src/blob-broker",
+          "packages/coding-agent/src/launch",
+          "packages/coding-agent/src/internal-urls"
+        ],
+        "depends_on": [
+          "application"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "transition-runtime",
+          "transition-agent-native"
+        ],
+        "review": "pending",
+        "deletion_unit": "services",
+        "fixtures": [
+          "packages/coding-agent/test"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "browser",
+        "paths": [
+          "packages/collab-web",
+          "packages/stats",
+          "packages/metaharness",
+          "packages/browser-relay",
+          "python/robomp",
+          "packages/coding-agent/src/export",
+          "crates/harvest-web",
+          "crates/harvest-browser",
+          "packages/coding-agent/src/tools/puppeteer"
+        ],
+        "depends_on": [
+          "protocol",
+          "services"
+        ],
+        "checks": [
+          "transition-native-build",
+          "transition-native",
+          "rust-format",
+          "rust-contracts",
+          "rust-web-wasm-check",
+          "replay-browser-contract"
+        ],
+        "review": "pending",
+        "deletion_unit": "browser",
+        "fixtures": [
+          "packages/stats/test",
+          "packages/collab-web/test",
+          "packages/metaharness/test",
+          "python/robomp/web/src"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64",
+          "harvest-browser"
+        ]
+      },
+      {
+        "id": "media",
+        "paths": [
+          "crates/pi-voice",
+          "packages/snapcompact",
+          "packages/coding-agent/src/tiny"
+        ],
+        "depends_on": [
+          "application"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "review": "pending",
+        "deletion_unit": "media",
+        "fixtures": [
+          "packages/coding-agent/test",
+          "packages/snapcompact/test"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      },
+      {
+        "id": "tooling",
+        "paths": [
+          "xtask",
+          "scripts",
+          ".github",
+          ".cargo",
+          ".config",
+          "package.json",
+          "Cargo.toml",
+          "Cargo.lock",
+          "bun.lock",
+          "rust-toolchain.toml",
+          "MODULE.bazel"
+        ],
+        "depends_on": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-workspace",
+          "npm-release-version-check",
+          "playbook-check"
+        ],
+        "review": "pending",
+        "deletion_unit": "tooling",
+        "fixtures": [
+          "xtask/tests",
+          "scripts/ci-test-ts.test.ts"
+        ],
+        "targets": [
+          "linux-x64",
+          "linux-arm64",
+          "linux-musl-x64",
+          "linux-musl-arm64",
+          "darwin-x64",
+          "darwin-arm64",
+          "windows-x64",
+          "windows-arm64"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "rust-format",
+        "command": [
+          "cargo",
+          "fmt",
+          "-p",
+          "harvest-runtime",
+          "-p",
+          "harvest-browser",
+          "-p",
+          "harvest-brain",
+          "-p",
+          "harvest-protocol",
+          "-p",
+          "harvest-terminal",
+          "-p",
+          "harvest-terminal-wasm",
+          "-p",
+          "harvest-web",
+          "-p",
+          "harvest-tui",
+          "-p",
+          "harvest-media",
+          "-p",
+          "harvest-tokenizer",
+          "-p",
+          "harvest-omp",
+          "-p",
+          "xtask",
+          "--",
+          "--check"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "check"
+      },
+      {
+        "id": "rust-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-tui",
+          "-p",
+          "harvest-tokenizer",
+          "-p",
+          "harvest-media",
+          "-p",
+          "harvest-runtime",
+          "-p",
+          "harvest-browser",
+          "-p",
+          "harvest-protocol",
+          "-p",
+          "harvest-brain",
+          "-p",
+          "harvest-terminal",
+          "-p",
+          "harvest-terminal-wasm",
+          "-p",
+          "harvest-omp",
+          "-p",
+          "xtask",
+          "--all-features",
+          "-p",
+          "harvest-web"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "contracts"
+      },
+      {
+        "id": "transition-native-build",
+        "command": [
+          "bun",
+          "run",
+          "build:native"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "build"
+      },
+      {
+        "id": "transition-workspace",
+        "command": [
+          "bun",
+          "scripts/ci-test-ts.ts",
+          "workspace"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "contracts"
+      },
+      {
+        "id": "transition-singleton",
+        "command": [
+          "bun",
+          "scripts/ci-test-ts.ts",
+          "coding-agent-singleton"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "contracts"
+      },
+      {
+        "id": "transition-runtime",
+        "command": [
+          "bun",
+          "scripts/ci-test-ts.ts",
+          "coding-agent-runtime"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "contracts"
+      },
+      {
+        "id": "transition-ui",
+        "command": [
+          "bun",
+          "scripts/ci-test-ts.ts",
+          "coding-agent-ui"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "contracts"
+      },
+      {
+        "id": "transition-native",
+        "command": [
+          "bun",
+          "scripts/ci-test-ts.ts",
+          "native"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "contracts"
+      },
+      {
+        "id": "transition-agent-native",
+        "command": [
+          "bun",
+          "scripts/ci-test-ts.ts",
+          "coding-agent-native"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "contracts"
+      },
+      {
+        "id": "rust-web-wasm-check",
+        "command": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--target",
+          "wasm32-unknown-unknown",
+          "-p",
+          "harvest-web",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "check"
+      },
+      {
+        "id": "replay-browser-contract",
+        "command": [
+          "cargo",
+          "xtask",
+          "web-replay",
+          "--session",
+          "crates/harvest-protocol/tests/fixtures/web_replay.jsonl",
+          "--leaf",
+          "browser-smoke",
+          "--out",
+          "target/web-replay/verification.html",
+          "--check-browser"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "contracts"
+      },
+      {
+        "id": "npm-release-version-check",
+        "command": [
+          "cargo",
+          "xtask",
+          "npm-versions",
+          "--check",
+          "--workspace"
+        ],
+        "timeout_seconds": 3600,
+        "kind": "check"
+      },
+      {
+        "id": "playbook-check",
+        "command": [
+          "cargo",
+          "xtask",
+          "playbook",
+          "check"
+        ],
+        "timeout_seconds": 60,
+        "kind": "check"
+      },
+      {
+        "id": "release-sdk",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "sdk"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "sdk"
+      },
+      {
+        "id": "release-plugins",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "plugins"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "plugins"
+      },
+      {
+        "id": "release-native-ui",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "native-ui"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "native-ui"
+      },
+      {
+        "id": "release-installed",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "installed"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "installed"
+      },
+      {
+        "id": "release-performance",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "performance"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "performance"
+      },
+      {
+        "id": "release-registry",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "registry"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "registry"
+      },
+      {
+        "id": "release-signatures",
+        "command": [
+          "cargo",
+          "xtask",
+          "acceptance",
+          "signatures"
+        ],
+        "timeout_seconds": 7200,
+        "kind": "signatures"
+      },
+      {
+        "id": "terminal-fixture-contracts",
+        "command": [
+          "bun",
+          "test",
+          "packages/coding-agent/test/utils/terminal-graphics.test.ts",
+          "packages/coding-agent/test/bash-execution-sixel.test.ts",
+          "packages/coding-agent/test/tools/bash-sixel-render.test.ts"
+        ],
+        "timeout_seconds": 120,
+        "kind": "contracts"
+      },
+      {
+        "id": "rpc-transcript-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-protocol",
+          "-p",
+          "harvest-omp"
+        ],
+        "timeout_seconds": 1200,
+        "kind": "contracts"
+      },
+      {
+        "id": "cleanup-discovery-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "cleanup_scan"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
+      },
+      {
+        "id": "trace-report-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "trace_report"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
+      },
+      {
+        "id": "benchmark-calibration-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "benchmark_calibration"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
+      },
+      {
+        "id": "edit-host-source-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "pi-edit",
+          "--test",
+          "host_source"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
+      },
+      {
+        "id": "native-edit-writer-contracts",
+        "command": [
+          "cargo",
+          "xtask",
+          "test",
+          "-p",
+          "harvest-omp",
+          "--test",
+          "native_edit_writer"
+        ],
+        "timeout_seconds": 900,
+        "kind": "contracts"
+      }
+    ],
+    "release_gates": [
+      "contracts",
+      "sdk",
+      "plugins",
+      "native-ui",
+      "installed",
+      "performance",
+      "registry",
+      "signatures"
+    ],
+    "acceptance": {
+      "sdk": {
+        "capabilities": [
+          "surface:rust-sdk",
+          "surface:rpc-v1-v2"
+        ],
+        "checks": []
+      },
+      "plugins": {
+        "capabilities": [
+          "surface:extension-process-abi-v1",
+          "surface:dynamic-tools"
+        ],
+        "checks": []
+      },
+      "native-ui": {
+        "capabilities": [
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard",
+          "surface:native-browser-control"
+        ],
+        "checks": []
+      },
+      "installed": {
+        "capabilities": [
+          "surface:installed-parity-without-legacy-runtimes",
+          "surface:native-installation"
+        ],
+        "checks": []
+      },
+      "performance": {
+        "capabilities": [
+          "surface:performance-baselines"
+        ],
+        "checks": []
+      },
+      "registry": {
+        "capabilities": [
+          "surface:registry-installation"
+        ],
+        "checks": []
+      },
+      "signatures": {
+        "capabilities": [
+          "surface:artifact-signatures"
+        ],
+        "checks": []
+      }
+    },
+    "tasks": [
+      {
+        "id": "application:conversion-first",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application",
+          "review:plugins",
+          "review:tooling",
+          "review:catalog-providers",
+          "review:services"
+        ],
+        "card": "docs/rust-migration/CONVERSION-PASS.md",
+        "capabilities": [
+          "surface:extension-process-abi-v1",
+          "surface:settings-profiles",
+          "surface:benchmarks",
+          "command:config",
+          "surface:mcp",
+          "tool:lsp",
+          "tool:debug",
+          "surface:lsp-dap",
+          "tool:read",
+          "tool:edit"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check",
+          "benchmark-calibration-contracts"
+        ],
+        "evidence": [
+          "User-directed conversion-first checkpoint: native plugin host/SDK, dynamic tool schemas, layered configuration/profiles and rust-v1 edit scoring are written and connected.",
+          "Aggregate cargo check --locked -p harvest-omp --all-targets --all-features passes; behavioral tests, Clippy, installation and full legacy cutover verification are deliberately deferred.",
+          "Task stays in_progress; no feature is marked verified/done or legacy-removed. Detailed ownership and remaining contracts are recorded in the Markdown card.",
+          "MCP stdio/streamable HTTP client, pagination, tools/resources/prompts, config/CLI and shared process/HTTP ownership are written and connected. Behavioral/installed checks stay deferred; OAuth, legacy SSE, idle notifications/reconnect and platform cleanup remain unfinished in NATIVE-MCP.md.",
+          "Native LSP/DAP clients, bounded Content-Length framing, UTF-16 workspace text edits, shared tool/config/session/CLI connections are written. Behavioral/installed/performance/platform checks stay deferred; full retained gaps are listed in NATIVE-LSP-DAP.md.",
+          "Native benchmark model orchestration is written and connected through shared sessions/configuration/provider/approval, isolated workspaces and bounded workers. Tests/installed/metaharness cutover remain pending. LANGUAGE-PROGRESS.md audits actual deletions separately from Rust additions.",
+          "Native fixture validation, pi-diff hunk preparation/re-solve, paired-tree task producer and bounded edit-shape calibration are written and connected. Package edit-shapes command moves to Rust and its TS script is removed, with verification explicitly pending. Hunk/task TS modules remain for live generator/metaharness consumers.",
+          "Native bounded staged edit-result metadata and explicit error status connect sync/async/RPC durable records to benchmark calibration/tool evidence; successful-tool requirements and lossless message export are connected. Native bounded tar.gz FixtureSource/unpack connects distributed fixtures to list/validate/run. Compiler/ownership only; behavioral/installed/platform checks remain deferred. No TS deletion or verified-completion claim in this batch.",
+          "Shared pi-ast mutation engine and native rust-ast-v1 generate/mutations CLI/SDK write 20 family implementations, seeded source/candidate selection, immutable snapshots, syntax revalidation, exact hunk tasks and provenance. Regex/binding/composite/corpus policies and legacy producer/metaharness consumers remain pending. Compiler/metadata only; no verified parity or source removal.",
+          "Benchmark continuation base 91ee52d: bounded same-session verification and no-edit retries, durable full-tool-batch exact-match stopping, numbered attempt/usage/score/message artifacts, and read-only rust-v1 summary CLI/SDK view are written and connected. Provider/timeout retry classification, guided/difficulty/prompts, full native views and metaharness cutover remain explicit pending prerequisites. Compiler/format/ownership only; zero TS deletion and no verified parity.",
+          "Continuation base 6dfa7cb: existing typed ProviderRequestError resolves the HTTP/transport classification prerequisite. Native benchmark retries selected typed pre-mutation failures with bounded shared-deadline backoff, command credential invalidation on auth, redacted retry artifacts and explicitly unavailable usage after failed requests. Attempt/first-event timeouts and broad provider recovery remain pending. Hashline guidance needs native read/edit host integration, tracked as application:hashline-host-bridge. No runtime parity or TS removal evidence.",
+          "Attempt-timeout continuation base b5ccadf: existing runtime cancellation now exposes typed AbortError with unchanged diagnostics; optional native benchmark child submit deadlines, bounded pre-mutation timeout recovery, per-attempt event/commit telemetry and outcome/view counts are connected. Timeout/provider retry admission rejects unresolved calls in every tool family. Parent deadline/cancellation remains authoritative; first-event timeout, noncooperative SDK enforcement and installed/runtime evidence remain pending. Zero TS deletion or verified parity.",
+          "Corpus continuation base 2d80e17: native corpus CLI/SDK read-only report and shared reviewed-tree/legacy-packages source policy connect to the existing mutation generator/task/archive/run pipeline. Shared bounded jailed traversal now supports pruning/cancellation; native generation snapshots sources once and records versioned policy/scanned/retained provenance. Difficulty/calibration/guidance/full grammar/metaharness cutover and runtime/installed verification remain pending. Zero TS removal or verified capability advance.",
+          "Difficulty/region continuation base 518458c: shared native corpus inspection and generator connect bounded lexical file metrics, easy/medium/hard/nightmare preferences and score thresholds, preferred/fallback candidate reservoirs, and source-hash-bound all-edit region exclusions. CLI/SDK/provenance and existing task/archive/run consumers are connected; no extra parser/scorer/history writer. Calibration, multi-case orchestration/quotas, guided hashline, full grammar/metaharness cutover and runtime/installed/platform evidence remain pending. Zero TS deletion or verified capability advance.",
+          "Multi-case continuation base 8c19c66: generate-batch CLI and Rust generate_batch execute a bounded explicit case plan against one immutable source snapshot, sharing the existing fixture publisher/lock through a collection owner and carrying successful source-bound regions. Plan/case journals, partial/cancel outcomes, copy/entry/depth preflight and actual 64 MiB output charging are connected. Shape calibration/quotas, full producer/metaharness cutover and behavioral/installed/platform verification remain pending; zero TS deletion or verified completion.",
+          "Calibration continuation base c99df19: existing edit-shape analyzer \u2192 explicit quota planning/apportionment \u2192 shared candidate materialization/hunk constraints/content history \u2192 existing seeded reservoir/batch snapshot/writer/archives/run are connected. Native CLI/SDK/package commands retain source-hash plan and measured/rejection metadata. Six focused contracts are written/compiled for consolidation; actual source removals zero and no behavioral/installed/platform parity claimed.",
+          "Latest user scheduling at 7c60c91: full retained-system conversion sweep precedes integration repair and workflow/platform verification. Native editing end-to-end is the next domain; no per-helper compiler/test/receipt loop or stopping after a foundation. Existing checks stay registered for consolidation; unrun checks, partial implementations and source removals retain honest states. No implementation/verified counter advances from this process update.",
+          "Native editing domain conversion from ea95e01: session-lifetime bounded EditStore; windowed shared-decoder read snapshots/tags and emitted-row provenance; explicit opt-in strict engine policy; native mode/config/schema/final approval; sync/async/RPC/SDK/resume callers; current-byte versioned benchmark guidance and multi-file result-shape consumers are written and connected. Compiler, behavioral, addon, installed and platform checks NOT RUN in the conversion sweep. All capabilities remain partial/unverified; zero TS deletions. Exact remaining callers/contracts are in CONVERSION-PASS.md and HASHLINE-HOST-BRIDGE.md.",
+          "Native editing read-domain continuation from 7a5257c: bounded line/tail/raw and disjoint-range selectors now connect native schema -> literal path probe -> shared read decoder -> displayed-row snapshot authority. Existing JailedFs owns literal-entry probing so inaccessible entries/dangling symlinks cannot silently redirect to another file. New range/literal/negative workflow scenarios written; no compiler, behavioral, installed or platform execution. TS read-selector/path-utils/read-format sources remain for the production SDK, grep and rich readers; zero TS deletions or verified advances."
+        ]
+      },
+      {
+        "id": "control:playbook",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [],
+        "card": "docs/rust-migration/tasks/CONTROL.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 105 contracts and doctest pass",
+          "cargo clippy --locked -p xtask --all-targets --all-features -- -D warnings",
+          "xtask/tests/playbook.rs",
+          "xtask/tests/verification.rs",
+          "cargo xtask migration; cargo xtask capabilities; cargo xtask playbook check"
+        ]
+      },
+      {
+        "id": "control:embedded-sources",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/EMBEDDED-SOURCES.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "All 118 xtask contracts plus doctests and strict Clippy pass. Runtime fixture tests classify source-named text wrappers, injected browser payloads and wrapped HTML consistently; unowned executable wrappers fail the migration gate. Nineteen omitted executable containers are appended as pending source rows; the immutable baseline and completed-removal claims are unchanged."
+        ]
+      },
+      {
+        "id": "browser:cdp-core",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/BROWSER-CDP.md",
+        "capabilities": [
+          "surface:native-browser-control"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Native CDP engine and CLI/shared synchronous and asynchronous session consumers implemented. Browser/runtime contracts, 111 core application tests and strict Clippy pass. Real Chrome verifies static-HTML navigation, DOM query, typing/form click, PNG capture, exclusive ownership and persistent cookies. Public Rust SDK verifies final-argument approval and jailed PNG output. A copied native CLI runs structured JSONL actions and profile reopen with language runtimes absent from PATH. This engine leaf does not claim legacy browser removal or full replacement capability parity."
+        ]
+      },
+      {
+        "id": "tooling:homebrew-tap",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/HOMEBREW-TAP.md",
+        "capabilities": [
+          "surface:release-installers"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Baseline shell selftest captured from blob 1c108d73978ba7b60061bd17bc2de6cac4253c2e at 838c33f. Five Rust integration contracts pass: compiled native CLI with Git-only PATH, new/no-op/update parity, exact formula/identity/HEAD/config preservation, dirty/staged/oversized/invalid/escaping input refusal, competing writer refusal and linked worktree isolation. All 117 xtask tests plus doctests and strict Clippy pass. Workflow consumers now call native tap-update; no live tap, push or publish was performed."
+        ]
+      },
+      {
+        "id": "tooling:spoofed-versions",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/SPOOFED-VERSIONS.md",
+        "capabilities": [
+          "surface:codegen"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 109 contracts passed plus doctests",
+          "cargo clippy --locked -p xtask --all-targets --all-features -- -D warnings: pass",
+          "xtask/tests/spoofed_versions.rs: compiled native CLI executes with empty runtime PATH against legacy oracle; source preservation and symlink refusal",
+          "xtask/src/spoofed_versions.rs: real loopback HTTP headers, bounded response and failed-status contracts",
+          "Live upstream freshness is not certified by captured metadata."
+        ]
+      },
+      {
+        "id": "control:terminal-fixtures",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "terminal",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/TERMINAL-FIXTURES.md",
+        "capabilities": [],
+        "checks": [
+          "terminal-fixture-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "All 38 affected terminal/SIXEL host contracts pass headlessly without FORCE_COLOR; coding-agent typecheck and targeted oxfmt/oxlint pass. Production color detection and every existing assertion remain intact."
+        ]
+      },
+      {
+        "id": "control:legacy-session-contracts",
+        "kind": "control",
+        "state": "blocked",
+        "review": "pending",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-SESSION-CONTRACTS.md",
+        "capabilities": [],
+        "checks": [
+          "transition-singleton",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Source-bound transition receipt at 747421f: 452 Rust contracts/doctests and workspace pass; singleton bucket fails 22 contracts. Receipt remains failed.",
+          "Python retirement continuation: 40 additional/current runtime contracts reproduce on unchanged 2ff0193 using exact failing chunk commands. See the runtime comparison section of LEGACY-SESSION-CONTRACTS.md and target/migration/python-retirement-runtime-comparison.json; no passing transition claim."
+        ],
+        "blocker": "Reproduce the writer-lease, discovery/path and error/label failure families against the baseline; review intended contracts and split bounded prerequisite cards before changing production semantics."
+      },
+      {
+        "id": "control:legacy-workspace",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-WORKSPACE.md",
+        "capabilities": [],
+        "checks": [
+          "transition-workspace",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Seven planner/watchdog contracts pass, independently checking complete nonduplicated AI file coverage",
+          "All 49 workspace chunks pass with no removed tests or raised thresholds",
+          "Utils keeps one file VM; all 414 AI test files are covered in 42 fresh process chunks"
+        ]
+      },
+      {
+        "id": "control:oauth-fixtures",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/OAUTH-FIXTURES.md",
+        "capabilities": [],
+        "checks": [
+          "transition-workspace",
+          "playbook-check"
+        ],
+        "evidence": [
+          "19 OAuth refresh-race contracts pass with all original CAS/disable/persistence assertions",
+          "AI TypeScript check, targeted repository formatter and linter pass",
+          "All eight workspace package suites pass via 49 bounded chunks; credential-dependent cases retain their existing skips"
+        ]
+      },
+      {
+        "id": "control:inert-data",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/INERT-DATA.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 111 contracts plus doctests passed",
+          "Strict Clippy passed for xtask all targets/features",
+          "Migration and task tests accept only fully verified retained data on the existing eight-path allowlist; unverified data and mislabeled executable workers cannot complete",
+          "No actual source-ledger row or immutable baseline was changed; retained-inert progress remains separate from Rust source removals"
+        ]
+      },
+      {
+        "id": "control:artifact-size",
+        "kind": "control",
+        "state": "blocked",
+        "review": "pending",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/ARTIFACT-SIZE.md",
+        "capabilities": [],
+        "checks": [
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "CI 39775015370/job 119811632401: native install/help/version/brain dry-run pass; binary size 121519040 exceeds unchanged 20971520-byte budget"
+        ],
+        "blocker": "Measure the release link map and review bounded native grammar/resource packaging contracts before changing architecture; preserve all retained AST languages and the 20 MiB budget."
+      },
+      {
+        "id": "tooling:version-wrapper",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/VERSION-WRAPPER.md",
+        "capabilities": [
+          "surface:codegen"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask: 109 contracts and doctests passed",
+          "xtask/tests/npm_versions.rs: native release and workspace-check commands execute with no language runtimes on PATH; existing captured-output, idempotency, invalid-input and symlink refusal contracts pass",
+          "Consumer search: scripts/release.ts already invokes cargo xtask npm-versions; no active repository caller of scripts/sync-versions.ts remains"
+        ]
+      },
+      {
+        "id": "control:terminal-reproducibility",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/TERMINAL-REPRODUCIBILITY.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask terminal-wasm and --check passed",
+          "Generated terminal.js bytes match in /workspace/harvest and /tmp/harvest-next with distinct Cargo-home paths",
+          "1668178-byte payload embeds stable /cargo paths; no /home, /workspace or /tmp build paths",
+          "43 host contracts passed including portable-terminal installation and rendering",
+          "260 Rust contracts plus media doctest passed"
+        ]
+      },
+      {
+        "id": "control:coverage",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/COVERAGE.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Linux x86_64, nightly-2026-08-08, source checkpoint 1a22bd5 plus additive workflow selection: 2,925 nextest contracts pass (five existing skips); unfiltered LCOV reports 107,698/144,597 lines (74.48%); cargo llvm-cov report --fail-under-lines 65 succeeds. All previous packages and all nine owned pi-* engine suites are included; no exclusions or threshold change. Logs/LCOV under target/migration/coverage-current*."
+        ]
+      },
+      {
+        "id": "control:portability",
+        "kind": "control",
+        "state": "blocked",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/PORTABILITY.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "149 runtime, memory and tooling contracts plus doctests passed on Linux",
+          "Strict Clippy passed for runtime, brain, tokenizer, media and xtask",
+          "RUSTDOCFLAGS=-D warnings cargo doc --locked -p harvest-tokenizer --no-deps passed",
+          "Windows/macOS installed and alias contracts remain pending CI verification",
+          "CI a024198 passes Linux/ARM/macOS contracts and Windows debug; Windows core release exposed inherited nonblocking fixture sockets (10035). Explicit blocking-mode follow-up passes five Linux provider-usage contracts; Windows rerun pending."
+        ],
+        "blocker": "Await Windows core/full release-profile CI for the accepted-socket blocking-mode fix; five Linux provider-usage contracts pass. Inspect Rust CI for the pushed fix before marking done."
+      },
+      {
+        "id": "media:sixel",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/SIXEL.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "evidence": [
+          "cargo xtask test -p harvest-media -p harvest-omp -p harvest-terminal -p harvest-terminal-wasm -p xtask: 260 contracts plus media doctest passed",
+          "bun run build:native: rebuilt and installed the shared-engine addon",
+          "43 host contracts passed across terminal graphics, shell SIXEL rendering and portable terminal installation",
+          "16 freshly Git-reconstructed baseline/shared Rust contracts passed with PATH=/nonexistent",
+          "16 rebuilt-addon oracle contracts plus early target-allocation rejection passed",
+          "crates/harvest-media/tests/fixtures/sixel-oracle.json; shared engine bounds and transparent roundtrip contracts"
+        ]
+      },
+      {
+        "id": "review:protocol",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "protocol",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/protocol.md",
+        "capabilities": [],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed packages/wire/src/index.ts and packages/wire/test/constants.test.ts as the protocol wire surface; 2 ledger rows already owned by migrate:protocol.",
+          "Confirmed crates/harvest-protocol owns portable session records and display projection; packages/wire is the sole TS wire consumer surface.",
+          "Split review output recorded in docs/rust-migration/tasks/protocol.md; migrate:protocol made ready with reviewed implementation contract."
+        ]
+      },
+      {
+        "id": "migrate:protocol",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "protocol",
+        "depends_on": [
+          "review:protocol"
+        ],
+        "card": "docs/rust-migration/tasks/protocol.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "evidence": [
+          "Ported collab wire types/constants to crates/harvest-protocol/src/wire.rs with serde round-trip tests.",
+          "cargo fmt -p harvest-protocol -- --check; cargo clippy --locked -p harvest-protocol --all-targets --all-features -- -D warnings; cargo test -p harvest-protocol pass.",
+          "TS packages/wire ownership transferred to migrate:browser for eventual consumer switch-over/deletion.",
+          "Rust wire types are implemented, but packages/wire still serves TypeScript/browser consumers; source ownership remains with this task until actual switch-over and installed verification."
+        ]
+      },
+      {
+        "id": "review:primitives",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/primitives.md",
+        "capabilities": [],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed native engine crates and packages/natives; 77 ledger rows are owned by migrate:primitives.",
+          "Confirmed ordinary Rust engines already exist; transitional adapters remain tracked.",
+          "Implementation contract recorded in docs/rust-migration/tasks/primitives.md; migrate:primitives made ready."
+        ]
+      },
+      {
+        "id": "migrate:primitives",
+        "kind": "migration",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "review:primitives"
+        ],
+        "card": "docs/rust-migration/tasks/primitives.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:storage",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "storage",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/storage.md",
+        "capabilities": [
+          "surface:session-v3",
+          "surface:session-v1-v2-import",
+          "surface:prototype-session-import"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed storage/session sources; 86 ledger rows owned by migrate:storage.",
+          "Implementation contract recorded; migrate:storage made ready."
+        ]
+      },
+      {
+        "id": "migrate:storage",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "storage",
+        "depends_on": [
+          "review:storage",
+          "migrate:protocol"
+        ],
+        "card": "docs/rust-migration/tasks/storage.md",
+        "capabilities": [
+          "surface:session-v3",
+          "surface:session-v1-v2-import",
+          "surface:prototype-session-import"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-runtime"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:catalog-providers",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/catalog-providers.md",
+        "capabilities": [
+          "surface:streaming-providers",
+          "surface:oauth-credentials",
+          "surface:kdl-catalog"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed catalog/provider sources; 850 ledger rows owned by migrate:catalog-providers.",
+          "Implementation contract recorded; migrate:catalog-providers made ready."
+        ]
+      },
+      {
+        "id": "migrate:catalog-providers",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "review:catalog-providers",
+          "migrate:protocol"
+        ],
+        "card": "docs/rust-migration/tasks/catalog-providers.md",
+        "capabilities": [
+          "surface:streaming-providers",
+          "surface:oauth-credentials",
+          "surface:kdl-catalog"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:memory",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "memory",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/memory.md",
+        "capabilities": [
+          "tool:memory_edit",
+          "slash:memory",
+          "surface:memory-backends",
+          "surface:automatic-session-learning"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed memory sources; ledger rows owned by migrate:memory.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:memory",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "memory",
+        "depends_on": [
+          "review:memory",
+          "migrate:storage"
+        ],
+        "card": "docs/rust-migration/tasks/memory.md",
+        "capabilities": [
+          "tool:memory_edit",
+          "slash:memory",
+          "surface:memory-backends",
+          "surface:automatic-session-learning"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-workspace"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:plugins",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "plugins",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/plugins.md",
+        "capabilities": [
+          "compat:single-engine-owner"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed plugins sources; ledger rows owned by migrate:plugins.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:plugins",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "plugins",
+        "depends_on": [
+          "review:plugins",
+          "migrate:protocol",
+          "migrate:storage"
+        ],
+        "card": "docs/rust-migration/tasks/plugins.md",
+        "capabilities": [
+          "compat:single-engine-owner"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-runtime"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:application",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/application.md",
+        "capabilities": [
+          "command:launch",
+          "command:acp",
+          "command:auth-broker",
+          "command:auth-gateway",
+          "command:agents",
+          "command:bench",
+          "command:browser-relay",
+          "command:cleanse",
+          "command:commit",
+          "command:completions",
+          "command:__complete",
+          "command:compress",
+          "command:config",
+          "command:dry-balance",
+          "command:gc",
+          "command:grep",
+          "command:gallery",
+          "command:git",
+          "command:grievances",
+          "command:images",
+          "command:if-bench",
+          "command:install",
+          "command:join",
+          "command:models",
+          "command:plugin",
+          "command:ps",
+          "command:say",
+          "command:share",
+          "command:setup",
+          "command:shell",
+          "command:read",
+          "command:render",
+          "command:ssh",
+          "command:update",
+          "command:usage",
+          "command:tiny-models",
+          "command:token",
+          "command:ttsr",
+          "command:worktree",
+          "command:search",
+          "tool:read",
+          "tool:security_scan",
+          "tool:bash",
+          "tool:edit",
+          "tool:ast_grep",
+          "tool:ast_edit",
+          "tool:ask",
+          "tool:debug",
+          "tool:eval",
+          "tool:github",
+          "tool:glob",
+          "tool:grep",
+          "tool:lsp",
+          "tool:checkpoint",
+          "tool:rewind",
+          "tool:task",
+          "tool:hub",
+          "tool:todo",
+          "tool:web_search",
+          "tool:write",
+          "tool:retain",
+          "tool:recall",
+          "tool:reflect",
+          "tool:learn",
+          "tool:manage_skill",
+          "tool:search_code",
+          "tool:sessions",
+          "tool:presets",
+          "hidden-tool:think",
+          "hidden-tool:yield",
+          "hidden-tool:goal",
+          "slash:security",
+          "slash:settings",
+          "slash:setup",
+          "slash:plan",
+          "slash:plan-review",
+          "slash:vibe",
+          "slash:goal",
+          "slash:guided-goal",
+          "slash:loop",
+          "slash:queue",
+          "slash:model",
+          "slash:switch",
+          "slash:fast",
+          "slash:skillful",
+          "slash:extended-context",
+          "slash:computer",
+          "slash:prewalk",
+          "slash:advisor",
+          "slash:export",
+          "slash:trace",
+          "slash:dump",
+          "slash:share",
+          "slash:collab",
+          "slash:join",
+          "slash:leave",
+          "slash:browser",
+          "slash:copy",
+          "slash:open",
+          "slash:todo",
+          "slash:session",
+          "slash:jobs",
+          "slash:usage",
+          "slash:changelog",
+          "slash:hotkeys",
+          "slash:tools",
+          "slash:context",
+          "slash:extensions",
+          "slash:agents",
+          "slash:skills",
+          "slash:git",
+          "slash:hub",
+          "slash:branch",
+          "slash:fork",
+          "slash:tree",
+          "slash:login",
+          "slash:logout",
+          "slash:ssh",
+          "slash:new",
+          "slash:fresh",
+          "slash:clear",
+          "slash:drop",
+          "slash:compact",
+          "slash:shake",
+          "slash:handoff",
+          "slash:resume",
+          "slash:tab",
+          "slash:diagnostics",
+          "slash:pin",
+          "slash:btw",
+          "slash:tan",
+          "slash:omfg",
+          "slash:cleanse",
+          "slash:retry",
+          "slash:debug",
+          "slash:rename",
+          "slash:move",
+          "slash:wt",
+          "slash:add-dir",
+          "slash:remove-dir",
+          "slash:dirs",
+          "slash:exit",
+          "slash:restart",
+          "slash:marketplace",
+          "slash:plugins",
+          "slash:reload-plugins",
+          "slash:force",
+          "slash:live",
+          "slash:pause",
+          "slash:quit",
+          "slash:commands",
+          "slash:sidebar",
+          "surface:settings-profiles",
+          "surface:rust-sdk",
+          "surface:extension-process-abi-v1",
+          "surface:dynamic-tools",
+          "surface:delegation-goals-advisor",
+          "surface:codegen",
+          "surface:release-installers",
+          "surface:installed-parity-without-legacy-runtimes",
+          "surface:session-tail-recovery",
+          "surface:native-command-completion",
+          "sdk-import:typescript"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed application sources; ledger rows owned by migrate:application.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:application",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "review:application",
+          "migrate:storage",
+          "migrate:catalog-providers",
+          "migrate:memory",
+          "migrate:plugins",
+          "migrate:primitives"
+        ],
+        "card": "docs/rust-migration/tasks/application.md",
+        "capabilities": [
+          "command:launch",
+          "command:acp",
+          "command:auth-broker",
+          "command:auth-gateway",
+          "command:agents",
+          "command:bench",
+          "command:browser-relay",
+          "command:cleanse",
+          "command:commit",
+          "command:completions",
+          "command:__complete",
+          "command:compress",
+          "command:config",
+          "command:dry-balance",
+          "command:gc",
+          "command:grep",
+          "command:gallery",
+          "command:git",
+          "command:grievances",
+          "command:images",
+          "command:if-bench",
+          "command:install",
+          "command:join",
+          "command:models",
+          "command:plugin",
+          "command:ps",
+          "command:say",
+          "command:share",
+          "command:setup",
+          "command:shell",
+          "command:read",
+          "command:render",
+          "command:ssh",
+          "command:update",
+          "command:usage",
+          "command:tiny-models",
+          "command:token",
+          "command:ttsr",
+          "command:worktree",
+          "command:search",
+          "tool:read",
+          "tool:security_scan",
+          "tool:bash",
+          "tool:edit",
+          "tool:ast_grep",
+          "tool:ast_edit",
+          "tool:ask",
+          "tool:debug",
+          "tool:eval",
+          "tool:github",
+          "tool:glob",
+          "tool:grep",
+          "tool:lsp",
+          "tool:checkpoint",
+          "tool:rewind",
+          "tool:task",
+          "tool:hub",
+          "tool:todo",
+          "tool:web_search",
+          "tool:write",
+          "tool:retain",
+          "tool:recall",
+          "tool:reflect",
+          "tool:learn",
+          "tool:manage_skill",
+          "tool:search_code",
+          "tool:sessions",
+          "tool:presets",
+          "hidden-tool:think",
+          "hidden-tool:yield",
+          "hidden-tool:goal",
+          "slash:security",
+          "slash:settings",
+          "slash:setup",
+          "slash:plan",
+          "slash:plan-review",
+          "slash:vibe",
+          "slash:goal",
+          "slash:guided-goal",
+          "slash:loop",
+          "slash:queue",
+          "slash:model",
+          "slash:switch",
+          "slash:fast",
+          "slash:skillful",
+          "slash:extended-context",
+          "slash:computer",
+          "slash:prewalk",
+          "slash:advisor",
+          "slash:export",
+          "slash:trace",
+          "slash:dump",
+          "slash:share",
+          "slash:collab",
+          "slash:join",
+          "slash:leave",
+          "slash:browser",
+          "slash:copy",
+          "slash:open",
+          "slash:todo",
+          "slash:session",
+          "slash:jobs",
+          "slash:usage",
+          "slash:changelog",
+          "slash:hotkeys",
+          "slash:tools",
+          "slash:context",
+          "slash:extensions",
+          "slash:agents",
+          "slash:skills",
+          "slash:git",
+          "slash:hub",
+          "slash:branch",
+          "slash:fork",
+          "slash:tree",
+          "slash:login",
+          "slash:logout",
+          "slash:ssh",
+          "slash:new",
+          "slash:fresh",
+          "slash:clear",
+          "slash:drop",
+          "slash:compact",
+          "slash:shake",
+          "slash:handoff",
+          "slash:resume",
+          "slash:tab",
+          "slash:diagnostics",
+          "slash:pin",
+          "slash:btw",
+          "slash:tan",
+          "slash:omfg",
+          "slash:cleanse",
+          "slash:retry",
+          "slash:debug",
+          "slash:rename",
+          "slash:move",
+          "slash:wt",
+          "slash:add-dir",
+          "slash:remove-dir",
+          "slash:dirs",
+          "slash:exit",
+          "slash:restart",
+          "slash:marketplace",
+          "slash:plugins",
+          "slash:reload-plugins",
+          "slash:force",
+          "slash:live",
+          "slash:pause",
+          "slash:quit",
+          "slash:commands",
+          "slash:sidebar",
+          "surface:settings-profiles",
+          "surface:rust-sdk",
+          "surface:extension-process-abi-v1",
+          "surface:dynamic-tools",
+          "surface:delegation-goals-advisor",
+          "surface:codegen",
+          "surface:release-installers",
+          "surface:installed-parity-without-legacy-runtimes",
+          "surface:session-tail-recovery",
+          "surface:native-command-completion",
+          "sdk-import:typescript"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-singleton",
+          "transition-runtime",
+          "transition-agent-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:terminal",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "terminal",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/terminal.md",
+        "capabilities": [
+          "surface:terminal-inline-transcript",
+          "surface:terminal-input-resize-restoration",
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed terminal sources; ledger rows owned by migrate:terminal.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:terminal",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "terminal",
+        "depends_on": [
+          "review:terminal",
+          "migrate:protocol",
+          "migrate:primitives",
+          "migrate:application"
+        ],
+        "card": "docs/rust-migration/tasks/terminal.md",
+        "capabilities": [
+          "surface:terminal-inline-transcript",
+          "surface:terminal-input-resize-restoration",
+          "surface:native-replay",
+          "surface:native-stats",
+          "surface:native-collaboration",
+          "surface:native-run-dashboard",
+          "surface:native-automation-dashboard"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "transition-ui"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:services",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "services",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/services.md",
+        "capabilities": [
+          "slash:mcp",
+          "surface:rpc-v1-v2",
+          "surface:acp-v1",
+          "surface:mcp",
+          "surface:lsp-dap",
+          "surface:eval-ssh",
+          "surface:native-browser-control",
+          "sdk-import:python-rpc"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed services sources; ledger rows owned by migrate:services.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:services",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "services",
+        "depends_on": [
+          "review:services",
+          "migrate:application"
+        ],
+        "card": "docs/rust-migration/tasks/services.md",
+        "capabilities": [
+          "slash:mcp",
+          "surface:rpc-v1-v2",
+          "surface:acp-v1",
+          "surface:mcp",
+          "surface:lsp-dap",
+          "surface:eval-ssh",
+          "surface:native-browser-control",
+          "sdk-import:python-rpc"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "transition-runtime",
+          "transition-agent-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:browser",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/browser.md",
+        "capabilities": [
+          "command:stats",
+          "slash:stats",
+          "surface:browser-wasm",
+          "surface:stats",
+          "surface:benchmarks",
+          "surface:collaboration",
+          "surface:python-automation"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed browser sources; ledger rows owned by migrate:browser.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:browser",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "review:browser",
+          "migrate:protocol",
+          "migrate:services"
+        ],
+        "card": "docs/rust-migration/tasks/browser.md",
+        "capabilities": [
+          "command:stats",
+          "slash:stats",
+          "surface:browser-wasm",
+          "surface:stats",
+          "surface:benchmarks",
+          "surface:collaboration",
+          "surface:python-automation"
+        ],
+        "checks": [
+          "transition-native-build",
+          "transition-native",
+          "rust-format",
+          "rust-contracts",
+          "rust-web-wasm-check",
+          "replay-browser-contract"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:media",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "media",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/media.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed media sources; ledger rows owned by migrate:media.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:media",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "media",
+        "depends_on": [
+          "review:media",
+          "migrate:application"
+        ],
+        "card": "docs/rust-migration/tasks/media.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "review:tooling",
+        "kind": "review",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/tooling.md",
+        "capabilities": [
+          "surface:native-installation",
+          "surface:performance-baselines",
+          "surface:registry-installation",
+          "surface:artifact-signatures",
+          "compat:shell-completion-scripts",
+          "compat:installer-scripts"
+        ],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed tooling sources; ledger rows owned by migrate:tooling.",
+          "Implementation contract recorded; migration task made ready."
+        ]
+      },
+      {
+        "id": "migrate:tooling",
+        "kind": "migration",
+        "state": "ready",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "review:tooling"
+        ],
+        "card": "docs/rust-migration/tasks/tooling.md",
+        "capabilities": [
+          "surface:native-installation",
+          "surface:performance-baselines",
+          "surface:registry-installation",
+          "surface:artifact-signatures",
+          "compat:shell-completion-scripts",
+          "compat:installer-scripts"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-workspace",
+          "npm-release-version-check",
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "browser:relay-retirement",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "browser:cdp-core",
+          "control:embedded-sources"
+        ],
+        "card": "docs/rust-migration/tasks/BROWSER-RELAY-RETIREMENT.md",
+        "capabilities": [
+          "command:browser-relay"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Approved Chrome extension/relay interface removed after native browser workflow verification at 1786b93. Eighteen source rows are verified retirements. Copied native CLI runs browser JSONL/profile reopen without language runtimes and seven installed CLI contracts including actionable retired-command rejection pass. All 112 core application tests and strict Clippy pass. Legacy argv/settings/browser contracts and typecheck pass; Bun lock and Nix workspace outputs regenerated. Native browser capability remains partial; unrelated retained browser consumers remain pending."
+        ]
+      },
+      {
+        "id": "media:docx",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook",
+          "tooling:host-detect"
+        ],
+        "card": "docs/rust-migration/tasks/MEDIA-DOCX.md",
+        "capabilities": [
+          "surface:media-local-inference"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Four actual 043709e DOCX documents and legacy API results captured before replacement; exact HTML/diagnostic comparison plus style, malformed ZIP/XML, DTD/depth, declared-size/table bounds, image attributes, cancellation and cyclic inheritance contracts pass.",
+          "cargo xtask test -p harvest-media -p harvest-omp --no-default-features --features core: 136 tests plus one doctest passed after integrating 6eefffc; strict media/application Clippy passed.",
+          "Copied native CLI with PATH=/nonexistent: eight installed CLI contracts pass, including DOCX JSON parity, Markdown, errors and unchanged source; jailed read tool refuses outside symlinks.",
+          "Rebuilt merged native addon; 11 DOCX/Markit tests including actual PNG extraction and callback errors/cancellation pass; native/coding-agent typechecks pass; all 49 legacy workspace groups pass.",
+          "Two private TS engines (847 lines) removed after their consumers moved. Public TS callback bridge and Markit remain pending. Full native TUI suite, whole-addon Clippy, inherited removal gate and previous singleton transition remain failed; no full media/product parity claim."
+        ]
+      },
+      {
+        "id": "control:concurrent-removals",
+        "kind": "control",
+        "state": "blocked",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/CONCURRENT-REMOVALS.md",
+        "capabilities": [],
+        "checks": [
+          "playbook-check"
+        ],
+        "evidence": [
+          "Preserved concurrent commits through 6eefffc. Invalid implementation=verified and unsupported verified removal claims are reset to honest pending review; original removal evidence remains in Git."
+        ],
+        "blocker": "37 removed source entries lack complete contracts/replacement or approved-retirement evidence; cargo xtask migration rejects the first unverified removal. See the card for exact sources and recovery."
+      },
+      {
+        "id": "tooling:host-detect",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/HOST-DETECT.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "transition-native-build",
+          "transition-native",
+          "playbook-check"
+        ],
+        "evidence": [
+          "cargo xtask test -p xtask -p harvest-protocol: 136 contracts passed; strict xtask Clippy and formatting passed.",
+          "Copied compiled detector with PATH=/nonexistent emits Node platform/arch, camelCase x64Variant and exact addon name. Native builder rebuilt/installed linux-x64-modern and regenerated 139 exports; actual DOCX/Markit imports load the addon successfully.",
+          "Supported host JSON branches are unit-tested; installed proof is Linux only. Wider native suite remains failed in unchanged TUI contracts, tracked separately."
+        ]
+      },
+      {
+        "id": "control:legacy-terminal-contracts",
+        "kind": "control",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "terminal",
+        "depends_on": [
+          "control:playbook"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-TERMINAL-CONTRACTS.md",
+        "capabilities": [],
+        "checks": [
+          "transition-native",
+          "playbook-check"
+        ],
+        "evidence": [
+          "The prior six failures reproduce in the full native suite and focused files; isolated ConPTY passes while partial OSC buffering fails. Rust Instant did not advance with the host timer clock.",
+          "Explicit monotonic host-clock selection/time validation connects the timer owner to existing Rust InputBuffer deadlines; native callers keep their default clock and no TS framing engine is introduced.",
+          "The resize fixture now checks the last settled full paint instead of an immediate heading-only probe; all existing reserved-column/erase assertions remain.",
+          "One optimized addon rebuild for the batch, 141 focused checks, all four full native groups, 127 Rust terminal contracts plus four doctests, and TUI/coding-agent typechecks pass.",
+          "Strict whole-addon Clippy remains failed with the same 14 prior diagnostic messages outside the changed stdin bridge; no diagnostic was suppressed."
+        ]
+      },
+      {
+        "id": "tooling:gen-nix",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook",
+          "tooling:host-detect"
+        ],
+        "card": "docs/rust-migration/tasks/GEN-NIX.md",
+        "capabilities": [],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Direct implementation resumed after the user cancelled the blocked OpenCode approach; no external model edits were made.",
+          "cargo xtask test -p xtask: all 125 contracts passed; strict Clippy and formatting passed.",
+          "Rust-only external generator fixtures exercise the compiled CLI with native-only PATH for bun2nix, nix-develop and portable invocation branches, lock restamping, canonical output, selected-generator failure and unsupported versions.",
+          "Both legacy source rows now have complete replacement contracts and verified Linux orchestration; actual third-party generator semantics and cross-platform release checks remain separate."
+        ]
+      },
+      {
+        "id": "services:rpc-transcript",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "services",
+        "depends_on": [
+          "control:playbook",
+          "review:services"
+        ],
+        "card": "docs/rust-migration/tasks/RPC-TRANSCRIPT.md",
+        "capabilities": [
+          "surface:rpc-v1-v2"
+        ],
+        "checks": [
+          "rpc-transcript-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Eight captured legacy pagination fixtures match exact cursor strings, messages and errors; shared Rust contracts cover large-history reconstruction, malformed/unsafe cursors, oversized messages and assistant copy semantics.",
+          "All 138 harvest-protocol/harvest-omp tests pass, including live owner busy/stale cursor behavior, lossless bounded pages when whole history exceeds v1 limits, and a copied native executable serving real loopback provider bytes with only its installation directory on PATH. Strict Clippy and formatting pass; three existing legacy pagination tests pass.",
+          "No legacy source deleted: production TS RPC consumers remain pending, and surface:rpc-v1-v2 remains partial/unverified. The source-bound plan selects a full transition, which was not rerun; inherited removal, singleton, whole-addon lint and platform gates remain unresolved."
+        ]
+      },
+      {
+        "id": "services:rpc-transport",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "services",
+        "depends_on": [
+          "control:playbook",
+          "review:services",
+          "services:rpc-transcript"
+        ],
+        "card": "docs/rust-migration/tasks/RPC-TRANSPORT.md",
+        "capabilities": [
+          "surface:rpc-v1-v2"
+        ],
+        "checks": [
+          "rpc-transcript-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Completed native server/client transport boundary: negotiated v1/v2, lazy 256 KiB chunk emission, 64 MiB logical ceiling, shared bounded physical reader, cancellation-safe SDK reads, ordered output and byte-budget backpressure.",
+          "Legacy encoder fixture hashes match exact physical lines at the v1/v2 boundary and across multibyte text. Native decoder rejects malformed metadata/base64/UTF-8/JSON, interrupted chunks and incomplete EOF. Native owner/installed CLI contracts cover v1 rejection followed by complete v2 history, pagination, provider streaming and writer shutdown.",
+          "Existing TypeScript RpcFrameDecoder successfully reads five physical chunks from the native server with no language runtime on the child PATH; two exact messages returned and session bytes unchanged. All 21 retained legacy frame/pagination contracts pass.",
+          "Affected Rust integration, strict lint/format and source-bound receipts are recorded under target/migration/rpc-transport-*. Full RPC capability remains partial: production commands/consumers, v1 display shortening and terminal compaction remain pending; no source removal or full transition is claimed."
+        ]
+      },
+      {
+        "id": "application:python-eval-retirement",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application"
+        ],
+        "card": "docs/rust-migration/tasks/PYTHON-EVAL-RETIREMENT.md",
+        "capabilities": [
+          "tool:eval"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Removed 25 reviewed executable kernel/prelude/private-test sources under the approved remove-language-eval policy; legacy Python execution interfaces now reject without probes, hooks, subprocesses or JS fallback.",
+          "74 focused contracts and 38 JS/schema/connection contracts pass. Historical display, JS owner isolation, cancellation, registry and ordinary setup behavior remain covered. Two native SDK/copied-CLI retirement checks pass with no language runtime on the candidate PATH.",
+          "JavaScript evaluation retirement remains blocked on native browser/computer consumers; tool:eval retirement stays pending. Transitional rejection/type facades and historical records remain pending Rust application cutover. Final source-bound results are recorded under target/migration/python-retirement-*.",
+          "All 49 legacy workspace groups and 125 Rust contracts pass. Runtime/session run failed 19/34 groups with 43 contracts: three retired Python-hook expectations corrected and targeted tests pass; all 40 others reproduce on unchanged 2ff0193 in exact chunk replay. The full runtime and migration gates remain failed; source-bound receipt preserves both results."
+        ]
+      },
+      {
+        "id": "catalog-providers:anthropic-text-tools",
+        "kind": "migration",
+        "state": "done",
+        "review": "reviewed",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook",
+          "review:catalog-providers",
+          "services:rpc-transport"
+        ],
+        "card": "docs/rust-migration/tasks/ANTHROPIC-TEXT-TOOLS.md",
+        "capabilities": [
+          "surface:streaming-providers"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Native Messages text/tool boundary shared by sync/async sessions, RPC and Rust SDK; explicit model/host selection avoids catalog policy guesses.",
+          "Bounded SSE/JSON, matched tool replay, additive lossless usage, cancellation and redacted failures checked by native contracts and copied CLI. Source-bound receipt: target/migration/anthropic-receipt.json.",
+          "Whole-provider parity and credentialed evidence remain pending; no TS source is eligible for deletion before production consumer cutover."
+        ]
+      },
+      {
+        "id": "application:hashline-host-bridge",
+        "kind": "migration",
+        "state": "planned",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application",
+          "application:edit-file-source",
+          "application:edit-write-contract"
+        ],
+        "card": "docs/rust-migration/tasks/HASHLINE-HOST-BRIDGE.md",
+        "capabilities": [
+          "tool:read",
+          "tool:edit",
+          "surface:benchmarks"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Reviewed native contract and code written under application:conversion-first: Native editing domain conversion from ea95e01: session-lifetime bounded EditStore; windowed shared-decoder read snapshots/tags and emitted-row provenance; explicit opt-in strict engine policy; native mode/config/schema/final approval; sync/async/RPC/SDK/resume callers; current-byte versioned benchmark guidance and multi-file result-shape consumers are written and connected. Compiler, behavioral, addon, installed and platform checks NOT RUN in the conversion sweep. All capabilities remain partial/unverified; zero TS deletions. Exact remaining callers/contracts are in CONVERSION-PASS.md and HASHLINE-HOST-BRIDGE.md. Formal leaf stays planned because source/writer verification prerequisites remain in_progress; do not mark them done to bypass the graph.",
+          "Native selector continuation from 7a5257c is written under the conversion coordinator; formal prerequisite evidence remains incomplete. See common register and reviewed card; uncompiled/unexecuted."
+        ]
+      },
+      {
+        "id": "tooling:cleanup-discovery",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "tooling",
+        "depends_on": [
+          "control:playbook",
+          "review:tooling"
+        ],
+        "card": "docs/rust-migration/tasks/CLEANUP-DISCOVERY.md",
+        "capabilities": [
+          "surface:cleanup-discovery"
+        ],
+        "checks": [
+          "rust-format",
+          "cleanup-discovery-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Whole six-report cleanup scanner port and native CLI/SDK/command-prompt cutover; scripts/cleanup-scan.ts deleted after final consumer move. Historical source baseline preserved.",
+          "Five focused Rust contracts plus doctests pass; copied Linux candidate JSON/text/invalid-top/unsafe-package checks pass without language runtimes in PATH. Legacy/default row sets match across all six reports with stable-order/numeric normalization; detailed receipts and intentional native diagnostics in the card.",
+          "Implementation complete is distinct from verification: source-removal validator, consolidated shared consumers/Clippy and all-platform installed artifact evidence remain pending. Task is in progress; no verified capability or removal count claimed."
+        ]
+      },
+      {
+        "id": "application:metaharness-trace-report",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "browser",
+        "depends_on": [
+          "control:playbook",
+          "review:application",
+          "review:browser",
+          "review:catalog-providers"
+        ],
+        "card": "docs/rust-migration/tasks/METAHARNESS-TRACE-REPORT.md",
+        "capabilities": [
+          "surface:benchmarks"
+        ],
+        "checks": [
+          "rust-format",
+          "trace-report-contracts",
+          "playbook-check"
+        ],
+        "evidence": [
+          "Whole native narrative report pipeline and HTTP/offline/selected persisted-session branch inputs are written and connected to CLI/SDK/package/README. Compiler/ownership only; six scripted contract scenarios are written for consolidation, not executed.",
+          "Stored/OAuth credential compatibility remains explicit in the old standalone TS reporter and legacy-auth alias; its deletion depends on application:legacy-provider-credentials. No source removal, verified parity or installed evidence claimed."
+        ]
+      },
+      {
+        "id": "application:legacy-provider-credentials",
+        "kind": "migration",
+        "state": "planned",
+        "review": "pending",
+        "work_unit": "catalog-providers",
+        "depends_on": [
+          "control:playbook",
+          "review:catalog-providers"
+        ],
+        "card": "docs/rust-migration/tasks/LEGACY-PROVIDER-CREDENTIALS.md",
+        "capabilities": [
+          "surface:oauth-credentials"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check"
+        ],
+        "evidence": []
+      },
+      {
+        "id": "application:edit-file-source",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "primitives",
+        "depends_on": [
+          "control:playbook",
+          "review:primitives",
+          "review:application"
+        ],
+        "card": "docs/rust-migration/tasks/EDIT-FILE-SOURCE.md",
+        "capabilities": [
+          "tool:read",
+          "tool:edit"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check",
+          "edit-host-source-contracts"
+        ],
+        "evidence": [
+          "Shared Session now owns an injected Send+Sync FileSource with exact policy equality, common fresh stage/apply and unchanged default constructor interface. Native exact replacement moves from direct engine staging through the shared session with the same jailed read/write capability.",
+          "Four focused host-source scenarios are written and compiled for consolidation; no tests, addon rebuild, installed/platform/source-removal or parity verification is claimed. Native multi-file publication review is separately owned by application:edit-write-contract."
+        ]
+      },
+      {
+        "id": "application:edit-write-contract",
+        "kind": "migration",
+        "state": "in_progress",
+        "review": "reviewed",
+        "work_unit": "application",
+        "depends_on": [
+          "control:playbook",
+          "review:application",
+          "review:primitives"
+        ],
+        "card": "docs/rust-migration/tasks/EDIT-WRITE-CONTRACT.md",
+        "capabilities": [
+          "tool:edit",
+          "surface:benchmarks"
+        ],
+        "checks": [
+          "rust-format",
+          "rust-contracts",
+          "playbook-check",
+          "native-edit-writer-contracts"
+        ],
+        "evidence": [
+          "Reviewed legacy sequential writer/move behavior; shared Session preflight hook and native jailed resource-owned/preimage-checked writer are connected to existing native replace consumers and explicit multi-file Rust SDK.",
+          "Eight contract scenarios written/compiled, not executed. Committed-prefix/partial-move errors are explicit; no all-file rollback, crash journal, default hashline mode, addon/installed/platform/source-removal parity claim."
+        ]
+      }
+    ]
+  }
 }

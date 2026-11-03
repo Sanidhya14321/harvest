@@ -10,7 +10,7 @@ interface FallbackTextBindings {
 
 const textBindings = createFallbackBindings() as unknown as FallbackTextBindings;
 
-describe("JavaScript terminal text fallback", () => {
+describe("Rust/WASM terminal text fallback", () => {
 	it("keeps an ST-terminated hyperlink intact when truncating its visible label", () => {
 		const open = "\x1b]8;id=join;https://example.com/session\x1b\\";
 		const close = "\x1b]8;;\x1b\\";

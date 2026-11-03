@@ -314,6 +314,16 @@ impl EditStore {
 			.get(path)
 			.filter(|(hash, _)| *hash == payload)
 			.map_or(1, |(_, count)| count + 1);
+		// Bound path-only guard state as well as full-file histories. Cycling
+		// through previously unseen paths must not grow a session indefinitely.
+		if state.max_paths == 0 {
+			return (count, count >= NOOP_HARD_LIMIT);
+		}
+		if !state.noop.contains_key(path) && state.noop.len() >= state.max_paths {
+			if let Some(evicted) = state.noop.keys().min().cloned() {
+				state.noop.remove(&evicted);
+			}
+		}
 		state.noop.insert(path.to_owned(), (payload, count));
 		(count, count >= NOOP_HARD_LIMIT)
 	}

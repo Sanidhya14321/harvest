@@ -4067,13 +4067,7 @@ export const SETTINGS_SCHEMA = {
 	// Eval (per-backend toggles; add more as new backends ship, e.g. eval.ts)
 	"eval.py": {
 		type: "boolean",
-		default: true,
-		ui: {
-			tab: "shell",
-			group: "Eval & Runtimes",
-			label: "Python Eval Backend",
-			description: "Allow the eval tool to dispatch Python cells to the IPython kernel",
-		},
+		default: false,
 	},
 
 	"eval.js": {
@@ -4132,25 +4126,11 @@ export const SETTINGS_SCHEMA = {
 		type: "enum",
 		values: ["session", "per-call"] as const,
 		default: "session",
-		ui: {
-			tab: "shell",
-			group: "Eval & Runtimes",
-			label: "Python Kernel Mode",
-			description: "Keep the IPython kernel alive across eval calls or start fresh each time",
-		},
 	},
 	"python.interpreter": {
 		type: "string",
 		default: "",
-		ui: {
-			tab: "shell",
-			group: "Eval & Runtimes",
-			label: "Python Interpreter",
-			description:
-				"Optional path to an exact Python executable. When set, automatic Python runtime discovery is skipped.",
-		},
 	},
-
 	// ────────────────────────────────────────────────────────────────────────
 	// Tools
 	// ────────────────────────────────────────────────────────────────────────
@@ -4592,29 +4572,6 @@ export const SETTINGS_SCHEMA = {
 			label: "Browser CDP URL",
 			description:
 				"Default HTTP CDP discovery endpoint (for example http://127.0.0.1:9222) to attach to instead of launching a browser. Explicit app.cdp_url or app.path on the tool call take precedence.",
-		},
-	},
-
-	"browser.relay": {
-		type: "boolean",
-		default: false,
-		ui: {
-			tab: "tools",
-			group: "Grep & Browser",
-			label: "Browser Relay",
-			description:
-				"Drive your own Chrome tabs through the omp browser relay. Install the extension once (`omp browser-relay install`); the relay server auto-starts when the browser prelude needs it. Takes precedence over Browser CDP URL; set PI_BROWSER_RELAY=0 or PI_BROWSER_RELAY=1 to override.",
-		},
-	},
-
-	"browser.relayUrl": {
-		type: "string",
-		default: undefined,
-		ui: {
-			tab: "tools",
-			group: "Grep & Browser",
-			label: "Browser Relay URL",
-			description: "harvest browser relay endpoint (default http://127.0.0.1:9224).",
 		},
 	},
 

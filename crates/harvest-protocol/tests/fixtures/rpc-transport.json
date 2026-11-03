@@ -1,0 +1,82 @@
+[
+  {
+    "name": "small",
+    "glyph": "x",
+    "repetitions": 16,
+    "logicalBytes": 111,
+    "logicalHash": "2425e0bbf20df58f8473aeb2fa377e8e65382c11f7ada1b224ad19a9a36b7ecb",
+    "lines": [
+      {
+        "bytes": 112,
+        "hash": "ec2032a6feda7d43386baf78c378183ffc239394d3fa8bb83179745cf1cb9ffc"
+      }
+    ]
+  },
+  {
+    "name": "last-single-line",
+    "glyph": "x",
+    "repetitions": 1048480,
+    "logicalBytes": 1048575,
+    "logicalHash": "50787422484507d9473bfcf9342159ebc4dcb8146943b83a6f515bca602934e1",
+    "lines": [
+      {
+        "bytes": 1048576,
+        "hash": "abf5f53f126bb8cee04d5b0e8782376fe15e0357a90dff88b0a3f90fb27f8849"
+      }
+    ]
+  },
+  {
+    "name": "exact-logical-boundary",
+    "glyph": "x",
+    "repetitions": 1048481,
+    "logicalBytes": 1048576,
+    "logicalHash": "96a8e498795ac1bf7abb5afd1f0c719208ca477284b12111713fb67b544449b5",
+    "lines": [
+      {
+        "bytes": 349618,
+        "hash": "82002422cc36ee0435e334bad9b9f7e56e058824a3ff2218433ec225070d3821"
+      },
+      {
+        "bytes": 349618,
+        "hash": "f8195402bcfd5832451cff158d4f6bde6270acb49ea757bc1b0123ffc587c9ac"
+      },
+      {
+        "bytes": 349618,
+        "hash": "8545f0afa33eea312f86820d44245f92c0be1f181d1c32b255bcccafadaa76ac"
+      },
+      {
+        "bytes": 349618,
+        "hash": "0ed1beb5cd48ed21aa7cb4529e6fd214507011bfad62b6e0811008ea195e6112"
+      }
+    ]
+  },
+  {
+    "name": "unicode",
+    "glyph": "😀",
+    "repetitions": 300000,
+    "logicalBytes": 1200095,
+    "logicalHash": "69606a8a8af20b28647f85b294b27d8f06644f0a27be3a3a809e7558b37883f3",
+    "lines": [
+      {
+        "bytes": 349618,
+        "hash": "1da6cdca0c805b74cfe945eac7356e2afa563da4b30b7e8f40329ffa8609c5f5"
+      },
+      {
+        "bytes": 349618,
+        "hash": "dba76f02b44f01f5cab58aa51818f749a0ac554d32c0904b8f09ab1b6273a8f4"
+      },
+      {
+        "bytes": 349618,
+        "hash": "1a030b66a680a6dd35bb0a5d77dccddaadd2f73101ed42539a40c13798e1f82b"
+      },
+      {
+        "bytes": 349618,
+        "hash": "274b027ad9bd113b02629fc4e6ff871a3bc74fbf0a9466ab33f3fef5b9c3c03e"
+      },
+      {
+        "bytes": 202118,
+        "hash": "65a1b8c16919cdf601816d11626543a9b22f29c3048c01cbc12528284213bec6"
+      }
+    ]
+  }
+]

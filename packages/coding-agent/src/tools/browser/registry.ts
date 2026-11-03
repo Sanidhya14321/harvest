@@ -15,15 +15,12 @@ import {
 	type UserAgentOverride,
 } from "./launch";
 import { reapOrphanSharedTargets } from "./orphan-registry";
-import { ensureRelayDaemon, isLoopbackRelayUrl } from "./relay/daemon";
-import type { RelayKind } from "./relay/kind";
 import { ensureSharedBrowser } from "./shared-daemon";
 
 export type PuppeteerBrowserKind =
 	| { kind: "headless"; headless: boolean }
 	| { kind: "spawned"; path: string }
-	| { kind: "connected"; cdpUrl: string }
-	| RelayKind;
+	| { kind: "connected"; cdpUrl: string };
 
 export type BrowserKind = PuppeteerBrowserKind | CmuxKind;
 
@@ -35,13 +32,6 @@ export type BrowserKindTag = BrowserKind["kind"];
  * forever (issue #5260), so we cap the wait and force-kill on timeout.
  */
 const HEADLESS_CLOSE_TIMEOUT_MS = 5_000;
-/**
- * How long a relay open waits for the extension handshake (503 → 200). A
- * reaped extension service worker is revived by its 30s keepalive alarm, so
- * the wait must cover one full alarm period plus the dial.
- */
-const RELAY_EXTENSION_WAIT_MS = 35_000;
-
 interface BrowserHandleCommon {
 	key: string;
 	kind: BrowserKind;
@@ -88,8 +78,6 @@ function browserKey(kind: BrowserKind): string {
 			return `spawned:${kind.path}`;
 		case "connected":
 			return `connected:${kind.cdpUrl}`;
-		case "relay":
-			return `relay:${kind.cdpUrl}`;
 		case "cmux":
 			return `cmux:${kind.socketPath}`;
 	}
@@ -198,45 +186,6 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 	if (kind.kind === "connected") {
 		const cdpUrl = normalizeConnectedCdpUrl(kind.cdpUrl);
 		await waitForCdp(cdpUrl, 5_000, opts.signal);
-		const puppeteer = await loadPuppeteer();
-		const browser = await puppeteer.connect({
-			browserURL: cdpUrl,
-			defaultViewport: null,
-			protocolTimeout: BROWSER_PROTOCOL_TIMEOUT_MS,
-		});
-		return {
-			key: browserKey(kind),
-			kind,
-			browser,
-			cdpUrl,
-			refCount: 0,
-			stealth: { browserSession: null, override: null },
-		};
-	}
-	if (kind.kind === "relay") {
-		const cdpUrl = normalizeConnectedCdpUrl(kind.cdpUrl);
-		// Loopback relays are owned by a machine-global broker and auto-started
-		// on demand (the extension dials in on its own). Hosts without a CLI
-		// worker entry (bun test, SDK embedding) never spawn brokers. Remote
-		// relay URLs must already be serving.
-		let autoStarted = false;
-		if (isLoopbackRelayUrl(cdpUrl) && (isCompiledBinary() || workerHostEntry() !== null)) {
-			autoStarted = await ensureRelayDaemon({ cdpUrl, signal: opts.signal });
-		}
-		// The relay answers /json/version with 503 until its extension dials in.
-		// A freshly revived extension service worker can take up to ~30s (its
-		// keepalive alarm) to reconnect, so give the handshake that long.
-		try {
-			await waitForCdp(cdpUrl, RELAY_EXTENSION_WAIT_MS, opts.signal);
-		} catch (err) {
-			if (err instanceof ToolAbortError) throw err;
-			if (err instanceof Error && err.name === "AbortError") throw err;
-			throw new ToolError(
-				autoStarted
-					? `harvest browser relay is serving at ${cdpUrl} but its extension never connected. Install it with \`harvest browser-relay install\` and check the toolbar badge shows "on".`
-					: `harvest browser relay is not reachable at ${cdpUrl}. Start it with \`harvest browser-relay\` (or check the endpoint), and make sure the Browser Relay extension is loaded in Chrome.`,
-			);
-		}
 		const puppeteer = await loadPuppeteer();
 		const browser = await puppeteer.connect({
 			browserURL: cdpUrl,
@@ -372,8 +321,8 @@ async function disposeBrowserHandle(handle: BrowserHandle, opts: ReleaseBrowserO
 		if (handle.userDataDir) await removeUserDataDir(handle.userDataDir);
 		return;
 	}
-	// Connected and relay browsers belong to the user: drop our CDP link, never kill.
-	if (handle.kind.kind === "connected" || handle.kind.kind === "relay") {
+	// Connected browsers belong to the user: drop our CDP link, never kill.
+	if (handle.kind.kind === "connected") {
 		if (handle.browser.connected) {
 			try {
 				handle.browser.disconnect();

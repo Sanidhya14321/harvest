@@ -118,15 +118,15 @@ describe("eval tool dynamic schema", () => {
 		}
 	});
 
-	it("advertises exactly py and js in the wire schema", () => {
+	it("advertises only the retained JS backend in the wire schema", () => {
 		const tool = new EvalTool(makeSession({}));
 		const fields = wireCellFields(tool);
-		expect(fields.languages).toEqual(["js", "py"]);
-		expect(fields.languageDescription).toBe('runtime: "py" for the IPython kernel, "js" for the persistent JS VM');
+		expect(fields.languages).toEqual(["js"]);
+		expect(fields.languageDescription).toBe('runtime: "js" for the persistent JS VM');
 		expect(fields.codeDescription).toBe("code to run in this eval call, verbatim. Use top-level await freely.");
-		expect(tool.summary).toBe("Execute Python or JavaScript code in an in-process eval backend");
+		expect(tool.summary).toBe("Execute JavaScript code in an in-process eval backend");
 		expect(tool.description).not.toMatch(/ruby|julia/i);
 		const exampleLangs = tool.examples.map(ex => ("call" in ex ? ex.call.language : null));
-		expect(exampleLangs).toEqual(["py", "py", "py"]);
+		expect(exampleLangs).toEqual([]);
 	});
 });

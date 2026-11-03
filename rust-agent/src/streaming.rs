@@ -1,11 +1,8 @@
 //! Bounded OpenAI-compatible SSE assembly. Partial output is never durable.
-use std::{
-	collections::BTreeMap,
-	io::{BufRead, BufReader, Read},
-};
+use std::{collections::BTreeMap, io::Read};
 
 use anyhow::{Context, Result, bail};
-use harvest_runtime::{MAX_EVENT_BYTES, MAX_HTTP_BYTES, cancel::CancelToken};
+use harvest_runtime::cancel::CancelToken;
 use serde::Deserialize;
 use serde_json::{Value, value::RawValue};
 
@@ -36,48 +33,15 @@ pub fn decode_response(
 	cancellation: &CancelToken,
 	on_text: &mut dyn FnMut(&str) -> Result<()>,
 ) -> Result<ModelResponse> {
-	let mut reader = BufReader::new(reader.take(u64::try_from(MAX_HTTP_BYTES)? + 1));
-	let mut line = Vec::new();
-	let mut event = String::new();
-	let mut consumed = 0;
+	let mut events = crate::sse::Events::new(reader);
 	let mut content = String::new();
 	let mut calls: BTreeMap<usize, ToolCall> = BTreeMap::new();
 	let mut finished = false;
 	let mut usage = None;
 	loop {
-		cancellation.heartbeat()?;
-		line.clear();
-		let count = (&mut reader)
-			.take(u64::try_from(MAX_EVENT_BYTES)? + 1)
-			.read_until(b'\n', &mut line)?;
-		consumed += count;
-		if consumed > MAX_HTTP_BYTES {
-			bail!("stream exceeds response limit");
-		}
-		if count == 0 {
-			bail!("stream ended without DONE");
-		}
-		if line.len() > MAX_EVENT_BYTES {
-			bail!("stream line exceeds frame limit");
-		}
-		let text = std::str::from_utf8(&line)
-			.context("stream is not UTF-8")?
-			.trim_end_matches(['\r', '\n']);
-		if !text.is_empty() {
-			if let Some(data) = text.strip_prefix("data:") {
-				if !event.is_empty() {
-					event.push('\n');
-				}
-				event.push_str(data.strip_prefix(' ').unwrap_or(data));
-				if event.len() > MAX_EVENT_BYTES {
-					bail!("stream event exceeds frame limit");
-				}
-			}
-			continue;
-		}
-		if event.is_empty() {
-			continue;
-		}
+		let event = events
+			.next(cancellation)?
+			.context("stream ended without DONE")?;
 		if event == "[DONE]" {
 			if !finished {
 				bail!("stream has no successful finish reason");
@@ -104,7 +68,6 @@ pub fn decode_response(
 			});
 		}
 		let chunk: StreamChunk = serde_json::from_str(&event).context("invalid stream event JSON")?;
-		event.clear();
 		if chunk.error.is_some() {
 			bail!("provider returned a stream error");
 		}
@@ -179,6 +142,7 @@ fn merge_tools(delta: &Value, calls: &mut BTreeMap<usize, ToolCall>) -> Result<(
 
 #[cfg(test)]
 mod tests {
+	use harvest_runtime::MAX_EVENT_BYTES;
 	use serde_json::json;
 
 	use super::*;

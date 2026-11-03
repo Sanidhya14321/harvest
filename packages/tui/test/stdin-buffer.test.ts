@@ -926,3 +926,21 @@ describe("StdinBuffer", () => {
 		});
 	});
 });
+
+describe("native input host-clock boundary", () => {
+	it("expires partial probes on the host deadline and preserves the following arrow", () => {
+		const buffer = new NativeStdinBuffer({ timeout: 50, hostTime: 0 });
+		expect(buffer.process(Buffer.from("\x1b]11;rgb:ff"), false, true)).toEqual([]);
+		buffer.setTime(49);
+		expect(buffer.tick(false)).toEqual([]);
+		buffer.setTime(50);
+		expect(buffer.tick(false)).toEqual([]);
+		expect(buffer.tick(false)).toEqual(["\x1b]11;rgb:ff"]);
+		expect(buffer.process(Buffer.from("\x1b[A"), false, true)).toEqual(["\x1b[A"]);
+		expect(() => buffer.setTime(49)).toThrow("backwards");
+		for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+			expect(() => buffer.setTime(invalid)).toThrow();
+		}
+		expect(() => new NativeStdinBuffer().setTime(0)).toThrow("construction");
+	});
+});

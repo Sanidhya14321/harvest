@@ -26,6 +26,7 @@ import {
 	replaceBinaryForUpdate,
 	resolveBunGlobalNodeModulesDirFromLocations,
 	resolveReleaseBinaryAsset,
+	resolveReleaseBinaryName,
 	resolveReleaseDist,
 	resolveReleaseRename,
 	resolveUpdateMethodForTest,
@@ -426,13 +427,17 @@ describe("update-cli install target detection", () => {
 
 describe("update-cli package manager commands", () => {
 	it("targets the Homebrew tap formula and switches to reinstall for forced updates", () => {
-		expect(buildHomebrewUpdateArgs(false)).toEqual(["upgrade", "harvest/tap/harvest"]);
-		expect(buildHomebrewUpdateArgs(true)).toEqual(["reinstall", "harvest/tap/harvest"]);
+		expect(buildHomebrewUpdateArgs(false)).toEqual(["upgrade", "Sanidhya14321/tap/omp"]);
+		expect(buildHomebrewUpdateArgs(true)).toEqual(["reinstall", "Sanidhya14321/tap/omp"]);
 	});
 
 	it("targets the mise GitHub backend tool and force-reinstalls the checked version when requested", () => {
-		expect(buildMiseUpgradeArgs()).toEqual(["upgrade", "github:harvest/harvest", "--bump"]);
-		expect(buildMiseForceInstallArgs("15.10.5")).toEqual(["install", "--force", "github:harvest/harvest@15.10.5"]);
+		expect(buildMiseUpgradeArgs()).toEqual(["upgrade", "github:Sanidhya14321/harvest", "--bump"]);
+		expect(buildMiseForceInstallArgs("15.10.5")).toEqual([
+			"install",
+			"--force",
+			"github:Sanidhya14321/harvest@15.10.5",
+		]);
 	});
 
 	it("pins npm package installs to the official registry and the checked native package versions", () => {
@@ -673,14 +678,14 @@ describe("update-cli bun cache pruning", () => {
 			path.join(dir, "react@19.2.6@@@1", "package.json"),
 			JSON.stringify({ name: "react", version: "19.2.6" }),
 		);
-		await Bun.write(path.join(dir, "@oh-my-pi", "pi-utils", "15.7.6@@@1"), "");
-		await Bun.write(path.join(dir, "@oh-my-pi", "pi-utils", "15.8.0@@@1"), "");
+		await Bun.write(path.join(dir, "@harvest", "pi-utils", "15.7.6@@@1"), "");
+		await Bun.write(path.join(dir, "@harvest", "pi-utils", "15.8.0@@@1"), "");
 		await Bun.write(
-			path.join(dir, "@oh-my-pi", "pi-utils@15.7.6@@@1", "package.json"),
+			path.join(dir, "@harvest", "pi-utils@15.7.6@@@1", "package.json"),
 			JSON.stringify({ name: "@harvest/pi-utils", version: "15.7.6" }),
 		);
 		await Bun.write(
-			path.join(dir, "@oh-my-pi", "pi-utils@15.8.0@@@1", "package.json"),
+			path.join(dir, "@harvest", "pi-utils@15.8.0@@@1", "package.json"),
 			JSON.stringify({ name: "@harvest/pi-utils", version: "15.8.0" }),
 		);
 		await Bun.write(path.join(dir, "chalk", "4.1.2@@@1"), "");
@@ -701,10 +706,10 @@ describe("update-cli bun cache pruning", () => {
 		expect(await Bun.file(path.join(dir, "react@18.3.1@@@1", "package.json")).exists()).toBe(false);
 		expect(await Bun.file(path.join(dir, "react", "19.2.6@@@1")).exists()).toBe(true);
 		expect(await Bun.file(path.join(dir, "react@19.2.6@@@1", "package.json")).exists()).toBe(true);
-		expect(await Bun.file(path.join(dir, "@oh-my-pi", "pi-utils", "15.7.6@@@1")).exists()).toBe(false);
-		expect(await Bun.file(path.join(dir, "@oh-my-pi", "pi-utils@15.7.6@@@1", "package.json")).exists()).toBe(false);
-		expect(await Bun.file(path.join(dir, "@oh-my-pi", "pi-utils", "15.8.0@@@1")).exists()).toBe(true);
-		expect(await Bun.file(path.join(dir, "@oh-my-pi", "pi-utils@15.8.0@@@1", "package.json")).exists()).toBe(true);
+		expect(await Bun.file(path.join(dir, "@harvest", "pi-utils", "15.7.6@@@1")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, "@harvest", "pi-utils@15.7.6@@@1", "package.json")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, "@harvest", "pi-utils", "15.8.0@@@1")).exists()).toBe(true);
+		expect(await Bun.file(path.join(dir, "@harvest", "pi-utils@15.8.0@@@1", "package.json")).exists()).toBe(true);
 		expect(await Bun.file(path.join(dir, "chalk", "4.1.2@@@1")).exists()).toBe(true);
 		expect(await Bun.file(path.join(dir, "chalk@4.1.2@@@1", "package.json")).exists()).toBe(true);
 	});
@@ -774,7 +779,7 @@ describe("update-cli bun cache pruning", () => {
 describe("update-cli release binary integrity", () => {
 	const tag = "v17.1.2";
 	const binaryName = "omp-linux-x64";
-	const url = `https://github.com/harvest/harvest/releases/download/${tag}/${binaryName}`;
+	const url = `https://github.com/Sanidhya14321/harvest/releases/download/${tag}/${binaryName}`;
 	const content = "verified binary";
 	const digest = `sha256:${createHash("sha256").update(content).digest("hex")}`;
 
@@ -1011,6 +1016,28 @@ describe("update-cli release binary integrity", () => {
 	});
 });
 
+describe("update-cli public artifact selection", () => {
+	for (const [platform, arch, musl, expected] of [
+		["linux", "x64", false, "omp-linux-x64"],
+		["linux", "arm64", false, "omp-linux-arm64"],
+		["linux", "x64", true, "omp-linux-musl-x64"],
+		["linux", "arm64", true, "omp-linux-musl-arm64"],
+		["darwin", "x64", false, "omp-darwin-x64"],
+		["darwin", "arm64", false, "omp-darwin-arm64"],
+		["win32", "x64", false, "omp-windows-x64.exe"],
+		["win32", "arm64", false, "omp-windows-arm64.exe"],
+	] as const) {
+		it(`selects the published ${expected} asset`, () => {
+			expect(resolveReleaseBinaryName({ platform, arch, alpineRelease: musl, lddOutput: "glibc" })).toBe(expected);
+		});
+	}
+
+	it("rejects unsupported platform and architecture instead of requesting nonexistent artifacts", () => {
+		expect(() => resolveReleaseBinaryName({ platform: "freebsd", arch: "x64" })).toThrow("Unsupported platform");
+		expect(() => resolveReleaseBinaryName({ platform: "darwin", arch: "ia32" })).toThrow("Unsupported architecture");
+	});
+});
+
 describe("update-cli binary replacement", () => {
 	it("restores the previous binary when the replacement fails verification", async () => {
 		const dir = await makeTempDir();
@@ -1028,7 +1055,7 @@ describe("update-cli binary replacement", () => {
 				expectedVersion: "15.1.8",
 				verifyInstalledVersion: async () => ({ ok: false, path: targetPath }),
 			}),
-		).rejects.toThrow("restored previous omp binary");
+		).rejects.toThrow("restored previous harvest binary");
 
 		expect(await Bun.file(targetPath).text()).toBe("old binary");
 		expect(await Bun.file(tempPath).exists()).toBe(false);
@@ -1197,7 +1224,7 @@ describe("update-cli binary-only release gating", () => {
 describe("update-cli script-shim takeover", () => {
 	const version = "18.0.0";
 	const binaryName = "omp-windows-x64.exe";
-	const url = `https://github.com/harvest/harvest/releases/download/v${version}/${binaryName}`;
+	const url = `https://github.com/Sanidhya14321/harvest/releases/download/v${version}/${binaryName}`;
 
 	function makeFetch(content: string, prerelease = false): (input: string | URL | Request) => Promise<Response> {
 		const digest = `sha256:${createHash("sha256").update(content).digest("hex")}`;
@@ -1258,6 +1285,27 @@ describe("update-cli script-shim takeover", () => {
 		}
 		const residue = (await fs.readdir(dir)).filter(name => name.endsWith(".bak") || name.endsWith(".new"));
 		expect(residue).toEqual([]);
+	});
+
+	it("takes over harvest shims using the published omp asset while preserving the other alias", async () => {
+		const dir = await makeTempDir();
+		for (const extension of ["", ".cmd", ".ps1"]) {
+			await Bun.write(path.join(dir, `harvest${extension}`), "old harvest launcher");
+		}
+		await Bun.write(path.join(dir, "omp.cmd"), "separate omp launcher");
+		const exe = `#!/bin/sh\necho harvest/${version}\n`;
+
+		await updateViaShimTakeover(path.join(dir, "harvest.cmd"), version, {
+			binaryName,
+			fetchImpl: makeFetch(exe),
+			githubToken: "test-token",
+		});
+
+		expect(await Bun.file(path.join(dir, "harvest.exe")).text()).toBe(exe);
+		for (const extension of ["", ".cmd", ".ps1"]) {
+			expect(await Bun.file(path.join(dir, `harvest${extension}`)).exists()).toBe(false);
+		}
+		expect(await Bun.file(path.join(dir, "omp.cmd")).text()).toBe("separate omp launcher");
 	});
 
 	it("installs a canary prerelease binary only when the caller opts in", async () => {
@@ -1392,7 +1440,7 @@ describe("update-cli script-shim takeover", () => {
 describe("update-cli concurrent binary updates", () => {
 	const version = "999.0.0";
 	const binaryName = "omp-linux-x64";
-	const url = `https://github.com/harvest/harvest/releases/download/v${version}/${binaryName}`;
+	const url = `https://github.com/Sanidhya14321/harvest/releases/download/v${version}/${binaryName}`;
 	const payload = Buffer.alloc(2048, 0x41);
 	const digest = `sha256:${createHash("sha256").update(payload).digest("hex")}`;
 

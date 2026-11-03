@@ -146,15 +146,24 @@ impl PlaybackWriter {
 		if current_queued.saturating_add(samples.len()) > MAX_PLAYBACK_QUEUED_SAMPLES {
 			return Err("Audio playback queue is full (buffer overflow)".to_owned());
 		}
-		self.state.queued_samples.fetch_add(samples.len(), Ordering::SeqCst);
+		self
+			.state
+			.queued_samples
+			.fetch_add(samples.len(), Ordering::SeqCst);
 		match self.tx.try_send(samples.to_vec()) {
 			Ok(()) => Ok(()),
 			Err(flume::TrySendError::Full(_)) => {
-				self.state.queued_samples.fetch_sub(samples.len(), Ordering::SeqCst);
+				self
+					.state
+					.queued_samples
+					.fetch_sub(samples.len(), Ordering::SeqCst);
 				Err("Audio playback queue is full".to_owned())
 			},
 			Err(flume::TrySendError::Disconnected(_)) => {
-				self.state.queued_samples.fetch_sub(samples.len(), Ordering::SeqCst);
+				self
+					.state
+					.queued_samples
+					.fetch_sub(samples.len(), Ordering::SeqCst);
 				Err("Native audio playback is closed".to_owned())
 			},
 		}
@@ -521,8 +530,11 @@ mod tests {
 		assert!(writer.write(&normal_chunk).is_ok());
 		assert_eq!(state.queued_samples(), 1000);
 
-		// 3. Overflowing aggregate queued samples returns error without mutating queued_samples.
-		state.queued_samples.store(MAX_PLAYBACK_QUEUED_SAMPLES - 500, Ordering::SeqCst);
+		// 3. Overflowing aggregate queued samples returns error without mutating
+		//    queued_samples.
+		state
+			.queued_samples
+			.store(MAX_PLAYBACK_QUEUED_SAMPLES - 500, Ordering::SeqCst);
 		let overflowing = vec![0.2f32; 1000];
 		assert!(writer.write(&overflowing).is_err());
 		assert_eq!(state.queued_samples(), MAX_PLAYBACK_QUEUED_SAMPLES - 500);

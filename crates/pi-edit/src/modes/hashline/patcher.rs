@@ -173,6 +173,74 @@ fn assert_seen_lines(
 	)))
 }
 
+/// Strict native policy does not promote diagnostic excerpts or inferred tags
+/// into authority. Validate resolved block spans, not just the block's anchor.
+fn assert_explicit_read(
+	section: &PatchSection,
+	canonical: &Path,
+	text: &str,
+	edits: &[Edit],
+	store: &EditStore,
+) -> Result<(), EditError> {
+	use super::types::{Cursor, PasteTarget};
+	let reject = || {
+		EditError::apply(format!(
+			"Read the current affected lines of {} before editing; snapshot/line authority is \
+			 missing or stale.",
+			section.path
+		))
+	};
+	let snapshot = store.by_content(canonical, text).ok_or_else(reject)?;
+	if section.file_hash.as_deref() != Some(snapshot.hash.as_str()) {
+		return Err(reject());
+	}
+	let seen = snapshot.seen_lines.as_ref().ok_or_else(reject)?;
+	if seen.is_empty() {
+		return Err(reject());
+	}
+	let count = u32::try_from(super::format::split_addressable_file_lines(text).len())
+		.map_err(|_| reject())?;
+	let line = |n: u32| -> Result<(), EditError> {
+		if n == 0 || n > count || !seen.contains(&n) {
+			Err(reject())
+		} else {
+			Ok(())
+		}
+	};
+	let range = |start: u32, end: u32| -> Result<(), EditError> {
+		if start == 0 || end < start || end > count {
+			return Err(reject());
+		}
+		for n in start..=end {
+			line(n)?;
+		}
+		Ok(())
+	};
+	let cursor = |cursor: &Cursor| -> Result<(), EditError> {
+		match cursor {
+			Cursor::Bof => line(1),
+			Cursor::Eof => line(count),
+			Cursor::BeforeAnchor(anchor) | Cursor::AfterAnchor(anchor) => line(anchor.line),
+		}
+	};
+	if section.file_op()?.is_some() {
+		range(1, count)?;
+	}
+	for edit in edits {
+		match edit {
+			Edit::Delete { anchor, .. } => line(anchor.line)?,
+			Edit::Insert { cursor: at, .. } => cursor(at)?,
+			Edit::Cut { range: span, .. }
+			| Edit::Paste { at: PasteTarget::Span { range: span }, .. } => {
+				range(span.start.line, span.end.line)?
+			},
+			Edit::Paste { at: PasteTarget::Gap { cursor: at }, .. } => cursor(at)?,
+			Edit::Block { .. } => return Err(reject()),
+		}
+	}
+	Ok(())
+}
+
 pub(crate) fn apply_with_recovery(
 	section: &PatchSection,
 	canonical: &Path,
@@ -181,6 +249,7 @@ pub(crate) fn apply_with_recovery(
 	clipboard: &mut Clipboard,
 	store: &EditStore,
 	enforce_seen_lines: bool,
+	require_read_provenance: bool,
 ) -> Result<ApplyResult, EditError> {
 	let expected = section.file_hash.as_deref().unwrap_or_default();
 	let live_matches = file_hash(normalized).eq_ignore_ascii_case(expected);
@@ -206,6 +275,9 @@ pub(crate) fn apply_with_recovery(
 	} else {
 		edits.to_vec()
 	};
+	if require_read_provenance {
+		assert_explicit_read(section, canonical, normalized, &resolved, store)?;
+	}
 	validate_clipboard_sequence(&resolved, clipboard)?;
 	if live_matches {
 		if enforce_seen_lines {
@@ -315,6 +387,18 @@ pub fn stage_patch(
 	files: &mut dyn FileSource,
 	store: &EditStore,
 ) -> Result<Vec<StagedFile>, EditError> {
+	stage_patch_with_provenance(patch, raw_input, enforce_seen_lines, false, files, store)
+}
+
+/// Shared staging with an opt-in strict host read contract.
+pub fn stage_patch_with_provenance(
+	patch: &Patch,
+	raw_input: &str,
+	enforce_seen_lines: bool,
+	require_read_provenance: bool,
+	files: &mut dyn FileSource,
+	store: &EditStore,
+) -> Result<Vec<StagedFile>, EditError> {
 	let mut clipboard = store.start_clipboard_batch();
 	let mut staged = Vec::with_capacity(patch.sections.len());
 	let mut canonical_paths = HashMap::<std::path::PathBuf, String>::new();
@@ -364,7 +448,42 @@ pub fn stage_patch(
 			&mut clipboard,
 			store,
 			enforce_seen_lines,
+			require_read_provenance,
 		)?;
+		if require_read_provenance {
+			// Boundary repair may touch more than the authored anchors. Check
+			// the final transformation before any writer sees staged bytes.
+			let snapshot = store
+				.by_content(&read.canonical, &read.text)
+				.ok_or_else(|| EditError::apply("Read the current file before editing"))?;
+			let seen = snapshot
+				.seen_lines
+				.as_ref()
+				.ok_or_else(|| EditError::apply("Read the affected lines before editing"))?;
+			let mut source_line = 1u32;
+			for change in pi_diff::line_changes_str(&read.text, &apply.text) {
+				let count = change.value.split_inclusive('\n').count();
+				if !change.added {
+					if change.removed {
+						for offset in 0..count {
+							let number = source_line.saturating_add(
+								u32::try_from(offset)
+									.map_err(|_| EditError::apply("Edit line count exceeds limit"))?,
+							);
+							if !seen.contains(&number) {
+								return Err(EditError::apply(
+									"Edit repair touches undisplayed lines; read them before retrying",
+								));
+							}
+						}
+					}
+					source_line = source_line.saturating_add(
+						u32::try_from(count)
+							.map_err(|_| EditError::apply("Edit line count exceeds limit"))?,
+					);
+				}
+			}
+		}
 		let mut warnings = parsed.warnings.clone();
 		if section.path != original.path {
 			warnings.push(path_recovered_from_tag_message(&original.path, &section.path, tag));

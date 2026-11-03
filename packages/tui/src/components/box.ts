@@ -1,5 +1,6 @@
 import type { Component } from "../tui";
 import {
+	canCarryWidthWithPadding,
 	Ellipsis,
 	getPaddingX,
 	getPublishedLineWidths,
@@ -207,7 +208,10 @@ export class Box implements Component {
 					const line = lines[j] ?? "";
 					const row = paddingX > 0 ? leftPad + line : line;
 					const carried = widths?.[j];
-					const visLen = carried !== undefined ? carried + paddingX : visibleWidth(row);
+					const visLen =
+						carried !== undefined && (paddingX === 0 || canCarryWidthWithPadding(line))
+							? carried + paddingX
+							: visibleWidth(row);
 					pushRow(row, visLen);
 				}
 			}

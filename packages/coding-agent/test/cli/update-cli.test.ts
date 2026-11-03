@@ -4,6 +4,56 @@ import { getLatestRelease, runUpdateCommand } from "../../src/cli/update-cli";
 type FetchInput = string | URL | Request;
 type FetchInit = RequestInit | BunFetchRequestInit;
 
+describe("update repository routing", () => {
+	for (const [override, repository] of [
+		["", "Sanidhya14321/harvest"],
+		["fixture-owner/custom-harvest", "fixture-owner/custom-harvest"],
+	]) {
+		it(`${override ? "keeps an explicit repository override" : "uses the public repository for an empty override"} for asset validation and mise updates`, async () => {
+			const moduleUrl = new URL("../../src/cli/update-cli.ts", import.meta.url).href;
+			const url = `https://github.com/${repository}/releases/download/v1.2.3/omp-linux-x64`;
+			const source = `
+				import { buildMiseUpgradeArgs, buildMiseForceInstallArgs, resolveReleaseBinaryAsset } from ${JSON.stringify(moduleUrl)};
+				const release = {
+					tag_name: "v1.2.3", draft: false, prerelease: false,
+					assets: [{ name: "omp-linux-x64", state: "uploaded", size: 1,
+						digest: "sha256:" + "a".repeat(64), browser_download_url: ${JSON.stringify(url)} }]
+				};
+				const asset = resolveReleaseBinaryAsset(release, "v1.2.3", "omp-linux-x64");
+				release.assets[0].browser_download_url = "https://github.com/harvest/harvest/releases/download/v1.2.3/omp-linux-x64";
+				let rejectedOtherRepository = false;
+				try { resolveReleaseBinaryAsset(release, "v1.2.3", "omp-linux-x64"); }
+				catch { rejectedOtherRepository = true; }
+				process.stdout.write(JSON.stringify({
+					url: asset.url,
+					upgrade: buildMiseUpgradeArgs(),
+					force: buildMiseForceInstallArgs("1.2.3"),
+					rejectedOtherRepository
+				}));
+			`;
+			// A fresh process exercises module-load environment defaults without
+			// mutating this test runner's shared environment or module registry.
+			const child = Bun.spawn([process.execPath, "--eval", source], {
+				env: { ...process.env, HARVEST_REPO: override },
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(child.stdout).text(),
+				new Response(child.stderr).text(),
+				child.exited,
+			]);
+			expect(exitCode, stderr).toBe(0);
+			expect(JSON.parse(stdout)).toEqual({
+				url,
+				upgrade: ["upgrade", `github:${repository}`, "--bump"],
+				force: ["install", "--force", `github:${repository}@1.2.3`],
+				rejectedOtherRepository: true,
+			});
+		});
+	}
+});
+
 describe("runUpdateCommand fetch cancellation", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();

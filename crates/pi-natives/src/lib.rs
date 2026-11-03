@@ -33,6 +33,7 @@ pub mod deccara;
 pub mod desktop;
 pub mod devicecheck;
 pub mod diff;
+pub mod docx;
 pub mod edit;
 pub mod fd;
 pub mod file_lock;
@@ -63,6 +64,7 @@ pub use pi_ast::language;
 pub mod power;
 
 pub mod iso;
+mod portable_terminal;
 pub mod prof;
 pub mod ps;
 pub mod pty;

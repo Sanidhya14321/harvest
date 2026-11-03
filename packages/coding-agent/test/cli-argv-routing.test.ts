@@ -92,3 +92,21 @@ describe("resolveCliArgv strips launch-global flags before non-launch subcommand
 		expect(resolveCliArgv(["--cwd", "/x", "acp"])).toEqual({ argv: ["acp", "--cwd", "/x"] });
 	});
 });
+
+describe("retired browser relay", () => {
+	test("returns migration guidance instead of forwarding commands into a prompt", () => {
+		for (const args of [
+			["browser-relay"],
+			["browser-relay", "install"],
+			["--cwd", "/tmp", "browser-relay", "--port", "9333"],
+		]) {
+			expect(resolveCliArgv(args)).toEqual({
+				error: expect.stringContaining("harvest browser --chrome PATH --profile NEW_DIRECTORY"),
+			});
+		}
+		expect(resolveCliArgv(["--", "browser-relay"])).toEqual({ argv: ["launch", "--", "browser-relay"] });
+		expect(resolveCliArgv(["--model", "browser-relay", "hello"])).toEqual({
+			argv: ["launch", "--model", "browser-relay", "hello"],
+		});
+	});
+});

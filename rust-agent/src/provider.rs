@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{fmt, path::Path, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,15 @@ pub trait Model {
 	)]
 	fn model_id(&self) -> &str {
 		"unknown"
+	}
+	/// Invalidate command-backed credentials after a host-classified auth
+	/// failure. Defaults to no refresh for SDK models; never implies
+	/// OAuth/account rotation.
+	fn invalidate_command_credentials(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		cancellation.heartbeat()
 	}
 	fn complete(&self, messages: &[ChatMessage], tools: &[ToolSpec]) -> Result<ChatMessage>;
 
@@ -67,16 +76,24 @@ pub trait Model {
 
 #[derive(Clone)]
 pub struct HttpModel {
-	settings:      Settings,
-	request_usage: bool,
+	settings:       Settings,
+	request_usage:  bool,
+	output_limit:   Option<u32>,
+	message_tokens: Option<u32>,
+	values:         Option<Arc<LiveValues>>,
 }
 
+struct LiveValues {
+	sources:  crate::configuration::ProviderValues,
+	resolver: crate::configuration::ValueResolver,
+}
 impl fmt::Debug for HttpModel {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		formatter
 			.debug_struct("HttpModel")
 			.field("model", &self.settings.model)
 			.field("request_usage", &self.request_usage)
+			.field("anthropic_messages", &self.message_tokens.is_some())
 			.finish_non_exhaustive()
 	}
 }
@@ -84,12 +101,16 @@ impl fmt::Debug for HttpModel {
 /// Stable error categories; URLs, headers and server reason text are excluded.
 #[derive(Debug)]
 pub enum ProviderRequestError {
+	InvalidRequest,
+	InvalidResponse,
 	Status(u16),
 	Transport(ureq::ErrorKind),
 }
 impl fmt::Display for ProviderRequestError {
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
+			Self::InvalidRequest => formatter.write_str("invalid model request configuration"),
+			Self::InvalidResponse => formatter.write_str("invalid model response encoding"),
 			Self::Status(code) => write!(formatter, "model request failed with HTTP {code}"),
 			Self::Transport(kind) => write!(formatter, "model transport failed ({kind:?})"),
 		}
@@ -99,7 +120,133 @@ impl std::error::Error for ProviderRequestError {}
 
 impl HttpModel {
 	pub const fn new(settings: Settings) -> Self {
-		Self { settings, request_usage: false }
+		Self {
+			settings,
+			request_usage: false,
+			output_limit: None,
+			message_tokens: None,
+			values: None,
+		}
+	}
+
+	/// Shared native CLI/SDK builder: retain configured value sources, explicit
+	/// wire API and request accounting options instead of reducing to Settings.
+	pub fn from_configuration(
+		root: &Path,
+		resolved: &crate::configuration::Resolved,
+		request_usage: bool,
+		allow_commands: bool,
+	) -> Result<Self> {
+		let model = Self::new(resolved.settings.clone())
+			.request_usage(request_usage)
+			.with_config_values(root, resolved.provider_values.clone(), allow_commands)?;
+		if resolved.api == crate::configuration::Api::AnthropicMessages {
+			model.anthropic_messages(resolved.max_output_tokens)
+		} else {
+			Ok(model)
+		}
+	}
+
+	/// Interpret file credential/header sources at request time. Commands
+	/// require explicit host opt-in; plain Settings API keys remain literal by
+	/// default.
+	pub fn with_config_values(
+		mut self,
+		root: &Path,
+		values: crate::configuration::ProviderValues,
+		allow_commands: bool,
+	) -> Result<Self> {
+		values.validate()?;
+		self.values = if values.is_empty() {
+			None
+		} else {
+			Some(Arc::new(LiveValues {
+				sources:  values,
+				resolver: crate::configuration::ValueResolver::new(root, allow_commands)?,
+			}))
+		};
+		Ok(self)
+	}
+
+	/// Auth-retry owners can invalidate ALL command-backed secrets,
+	/// including headers; invalidation itself never runs a command or request.
+	pub fn invalidate_config_commands(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		if let Some(values) = &self.values {
+			if let Some(key) = &values.sources.api_key {
+				values.resolver.invalidate(key, cancellation)?;
+			}
+			for source in values.sources.headers.values() {
+				values.resolver.invalidate(source, cancellation)?;
+			}
+		}
+		Ok(())
+	}
+
+	/// Explicit bounded text-completion output; existing callers keep their
+	/// policy.
+	pub fn with_output_limit(mut self, tokens: u32) -> Result<Self> {
+		if !(1..=65536).contains(&tokens) {
+			bail!("invalid model output limit");
+		}
+		if self.message_tokens.is_some() {
+			self.message_tokens = Some(tokens);
+		} else {
+			self.output_limit = Some(tokens);
+		}
+		Ok(self)
+	}
+
+	fn headers(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<Vec<(String, String)>> {
+		let Some(values) = &self.values else {
+			return Ok(if self.message_tokens.is_some() {
+				vec![
+					("x-api-key".into(), self.settings.api_key.clone()),
+					("anthropic-version".into(), "2023-06-01".into()),
+				]
+			} else if self.settings.api_key.is_empty() {
+				Vec::new()
+			} else {
+				vec![("Authorization".into(), format!("Bearer {}", self.settings.api_key))]
+			});
+		};
+		let mut headers = values
+			.resolver
+			.headers(&[&values.sources.headers], cancellation)?;
+		let key = match &values.sources.api_key {
+			Some(source) => values
+				.resolver
+				.resolve(source, false, cancellation)?
+				.ok_or_else(|| anyhow::anyhow!("configured provider credential is unavailable"))?,
+			None => self.settings.api_key.clone(),
+		};
+		if self.message_tokens.is_some() {
+			headers
+				.entry("anthropic-version".into())
+				.or_insert_with(|| "2023-06-01".into());
+			if !key.is_empty() {
+				headers.insert("x-api-key".into(), key);
+			}
+		} else if !key.is_empty() {
+			headers.insert("authorization".into(), format!("Bearer {key}"));
+		}
+		crate::configuration::values::check_headers(&headers)?;
+		Ok(headers.into_iter().collect())
+	}
+
+	/// Select the Anthropic Messages wire API explicitly. Endpoint/model policy
+	/// remains the caller's responsibility until catalog resolution is ported.
+	pub fn anthropic_messages(mut self, max_output_tokens: u32) -> Result<Self> {
+		if max_output_tokens == 0 {
+			bail!("max output tokens must be at least 1");
+		}
+		self.message_tokens = Some(max_output_tokens);
+		Ok(self)
 	}
 
 	/// Explicit opt-in until compatible-host request policy is catalog-resolved.
@@ -109,29 +256,26 @@ impl HttpModel {
 		self
 	}
 
-	fn request(&self, request: CompletionRequest<'_>, streaming: bool) -> Result<ureq::Response> {
-		let agent = ureq::AgentBuilder::new()
-			.timeout(Duration::from_secs(60))
-			.build();
-		let mut call = agent.post(&endpoint(&self.settings.base_url));
-		if streaming {
-			call = call.set("Accept", "text/event-stream");
-		}
-		if !self.settings.api_key.is_empty() {
-			call = call.set("Authorization", &format!("Bearer {}", self.settings.api_key));
-		}
-		call.send_json(request).map_err(|error| {
-			match error {
-				ureq::Error::Status(code, _) => ProviderRequestError::Status(code),
-				ureq::Error::Transport(transport) => ProviderRequestError::Transport(transport.kind()),
-			}
-			.into()
-		})
+	fn request(
+		&self,
+		request: CompletionRequest<'_>,
+		streaming: bool,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<crate::transport::Response> {
+		crate::transport::Response::open(
+			endpoint(&self.settings.base_url),
+			self.headers(cancellation)?,
+			serde_json::to_vec(&request)?,
+			streaming,
+			cancellation,
+		)
 	}
 }
 
 #[derive(Debug, Serialize)]
 struct CompletionRequest<'a> {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	max_tokens:     Option<u32>,
 	model:          &'a str,
 	messages:       &'a [ChatMessage],
 	tools:          &'a [ToolSpec],
@@ -159,6 +303,13 @@ struct Choice {
 }
 
 impl Model for HttpModel {
+	fn invalidate_command_credentials(
+		&self,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		self.invalidate_config_commands(cancellation)
+	}
+
 	fn model_id(&self) -> &str {
 		&self.settings.model
 	}
@@ -172,16 +323,26 @@ impl Model for HttpModel {
 		messages: &[ChatMessage],
 		tools: &[ToolSpec],
 	) -> Result<ModelResponse> {
+		if let Some(tokens) = self.message_tokens {
+			return crate::anthropic::complete(
+				&self.settings,
+				tokens,
+				messages,
+				tools,
+				self.headers(&Default::default())?,
+			);
+		}
 		let request = CompletionRequest {
+			max_tokens: self.output_limit,
 			model: &self.settings.model,
 			messages,
 			tools,
 			stream: false,
 			stream_options: None,
 		};
-		let response = self.request(request, false)?;
-		let bytes =
-			harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
+		let response =
+			self.request(request, false, &harvest_runtime::cancel::CancelToken::default())?;
+		let bytes = harvest_runtime::read_bounded(response, harvest_runtime::MAX_HTTP_BYTES)?;
 		let parsed: CompletionResponse =
 			serde_json::from_slice(&bytes).context("model response was not valid JSON")?;
 		parsed.into_response()
@@ -206,9 +367,21 @@ impl Model for HttpModel {
 		cancellation: &harvest_runtime::cancel::CancelToken,
 		on_text: &mut dyn FnMut(&str) -> Result<()>,
 	) -> Result<ModelResponse> {
+		if let Some(tokens) = self.message_tokens {
+			return crate::anthropic::stream(
+				&self.settings,
+				tokens,
+				messages,
+				tools,
+				cancellation,
+				on_text,
+				self.headers(cancellation)?,
+			);
+		}
 		cancellation.heartbeat()?;
 		let response = self.request(
 			CompletionRequest {
+				max_tokens: self.output_limit,
 				model: &self.settings.model,
 				messages,
 				tools,
@@ -218,17 +391,12 @@ impl Model for HttpModel {
 					.then_some(StreamOptions { include_usage: true }),
 			},
 			true,
+			cancellation,
 		)?;
-		if response.header("Content-Type").is_some_and(|value| {
-			value
-				.split(';')
-				.next()
-				.is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/event-stream"))
-		}) {
-			crate::streaming::decode_response(response.into_reader(), cancellation, on_text)
+		if response.sse {
+			crate::streaming::decode_response(response, cancellation, on_text)
 		} else {
-			let bytes =
-				harvest_runtime::read_bounded(response.into_reader(), harvest_runtime::MAX_HTTP_BYTES)?;
+			let bytes = harvest_runtime::read_bounded(response, harvest_runtime::MAX_HTTP_BYTES)?;
 			let response: CompletionResponse = serde_json::from_slice(&bytes)?;
 			let response = response.into_response()?;
 			cancellation.heartbeat()?;
@@ -331,8 +499,6 @@ mod tests {
 			base_url:   format!("http://{address}/v1"),
 			api_key:    String::new(),
 			max_steps:  1,
-			wire:       Default::default(),
-			max_tokens: None,
 		});
 		let response = model.complete_response(&[user("hi")], &[]).unwrap();
 		assert_eq!(response.message.content.as_deref(), Some("done"));

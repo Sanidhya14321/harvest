@@ -1345,6 +1345,7 @@ fn truncate_to_width_impl(
 	let text_len = text.len();
 
 	let mut saw_sgr = false;
+	let mut hyperlink_open = false;
 
 	while i < text_len {
 		if text[i] == ESC {
@@ -1380,6 +1381,9 @@ fn truncate_to_width_impl(
 				out.extend_from_slice(seq);
 				if is_sgr_u16(seq) {
 					saw_sgr = true;
+				}
+				if let Some(uri) = osc8_uri_u16(seq) {
+					hyperlink_open = !uri.is_empty();
 				}
 				i += seq_len;
 				continue;
@@ -1426,6 +1430,9 @@ fn truncate_to_width_impl(
 		}
 	}
 
+	if hyperlink_open {
+		out.extend("\x1b]8;;\x1b\\".encode_utf16());
+	}
 	// Only reset if we actually copied SGR codes into the output.
 	if saw_sgr {
 		out.extend_from_slice(&[ESC, b'[' as u16, b'0' as u16, b'm' as u16]);

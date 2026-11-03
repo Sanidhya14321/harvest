@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { TempDir } from "@harvest/pi-utils";
 import { checkPythonSetup } from "../src/cli/setup-cli";
@@ -51,71 +50,21 @@ async function runSetup(cwd: string, ...setupArgs: string[]): Promise<CliProcess
 	return { exitCode, output: stdout, error: stderr };
 }
 
-describe("omp setup python", () => {
-	let projectDir: TempDir | undefined;
-
-	afterEach(async () => {
-		await projectDir?.remove();
-		projectDir = undefined;
+describe("omp setup python retirement", () => {
+	it("reports the approved removal without locating an interpreter", async () => {
+		using projectDir = TempDir.createSync("@python-retired-");
+		const check = await checkPythonSetup(projectDir.path(), "/never/execute");
+		expect(check.available).toBe(false);
+		expect(check.reason).toContain("Python evaluation was retired");
+		expect(check.pythonPath).toBeUndefined();
 	});
-
-	it.skipIf(process.platform === "win32")(
-		"probes the project-configured interpreter instead of the PATH interpreter",
-		async () => {
-			projectDir = TempDir.createSync("@omp-setup-python-");
-			const cwd = projectDir.path();
-			const interpreter = path.join(cwd, "configured-python");
-			await Bun.write(interpreter, "#!/bin/sh\nexit 0\n");
-			await fs.chmod(interpreter, 0o755);
-			await Bun.write(path.join(cwd, ".omp", "config.yml"), `python:\n  interpreter: ${interpreter}\n`);
-
-			const result = await runSetupPython(cwd);
-
-			expect(result.error).toBe("");
-			expect(result.exitCode).toBe(0);
-			expect(JSON.parse(result.output)).toMatchObject({
-				available: true,
-				pythonPath: interpreter,
-				usingManagedEnv: false,
-			});
-		},
-	);
-	it.skipIf(process.platform === "win32")("prefers the project venv over the PATH interpreter", async () => {
-		projectDir = TempDir.createSync("@omp-setup-python-");
-		const cwd = projectDir.path();
-		const interpreter = path.join(cwd, ".venv", "bin", "python");
-		await Bun.write(interpreter, "#!/bin/sh\nexit 0\n");
-		await fs.chmod(interpreter, 0o755);
-
-		const result = await checkPythonSetup(cwd);
-
-		expect(result).toMatchObject({
-			available: true,
-			pythonPath: interpreter,
-			usingManagedEnv: false,
-		});
-	});
-	it.skipIf(process.platform === "win32")("does not let the global probe bypass skip setup validation", async () => {
-		projectDir = TempDir.createSync("@omp-setup-python-");
-		const cwd = projectDir.path();
-		const interpreter = path.join(cwd, "configured-python");
-		await Bun.write(interpreter, "#!/bin/sh\nexit 23\n");
-		await fs.chmod(interpreter, 0o755);
-
-		const previousSkipCheck = process.env.PI_PYTHON_SKIP_CHECK;
-		process.env.PI_PYTHON_SKIP_CHECK = "1";
-		try {
-			const result = await checkPythonSetup(cwd, interpreter);
-			expect(result).toMatchObject({
-				available: false,
-				pythonPath: interpreter,
-				usingManagedEnv: false,
-			});
-		} finally {
-			if (previousSkipCheck === undefined) delete process.env.PI_PYTHON_SKIP_CHECK;
-			else process.env.PI_PYTHON_SKIP_CHECK = previousSkipCheck;
-		}
-	});
+	it("the real CLI returns structured migration guidance", async () => {
+		using projectDir = TempDir.createSync("@python-retired-cli-");
+		const result = await runSetupPython(projectDir.path());
+		expect(result.exitCode).toBe(1);
+		expect(JSON.parse(result.output)).toMatchObject({ available: false, retired: true });
+		expect(JSON.parse(result.output).reason).toContain("Rust SDK");
+	}, 20000);
 });
 
 describe("omp setup without a component", () => {

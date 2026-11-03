@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { DocxConverter } from "../../src/markit/converters/docx";
 import { Markit } from "@harvest/pi-coding-agent/markit";
 import { convertBufferWithMarkit, convertFileWithMarkit } from "@harvest/pi-coding-agent/utils/markit";
 import { pruneMarkitConversionCache } from "@harvest/pi-coding-agent/utils/markit-cache";
@@ -133,5 +134,20 @@ describe("document conversion cache", () => {
 
 		expect(await fs.exists(stalePath)).toBe(false);
 		expect(await fs.exists(freshPath)).toBe(true);
+	});
+	it("converts actual DOCX images through the native engine and preserves image extraction", async () => {
+		const bytes = Buffer.from(
+			await fs.readFile(
+				new URL("../../../../crates/harvest-media/tests/fixtures/docx/images.docx", import.meta.url),
+			),
+		);
+		const converter = new DocxConverter();
+		const inline = await converter.convert(bytes, { extension: ".docx" });
+		expect(inline.markdown).toBe("<!-- image: image\\_1 -->");
+		const extracted = await converter.convert(bytes, { extension: ".docx", imageDir: testDir });
+		expect(extracted.markdown).toContain("image_1.png");
+		expect((await fs.readFile(path.join(testDir, "image_1.png"))).subarray(0, 8)).toEqual(
+			Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+		);
 	});
 });

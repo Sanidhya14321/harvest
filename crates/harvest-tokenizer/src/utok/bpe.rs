@@ -5,7 +5,7 @@
 //! container (see `data/families.json` for the format) after zstd
 //! decompression in [`tables`](crate::utok::tables).
 //!
-//! Input is encoding-generic: [`BpeEncoding::count`]/[`encode`]
+//! Input is encoding-generic: [`BpeEncoding::count`]/[`BpeEncoding::encode`]
 //! (`BpeEncoding::encode`) take `&[U: Unit]`. Pre-tokenization scans the
 //! units natively; each piece is then UTF-8-encoded into a reused buffer
 //! for the byte-keyed rank table (`str` input skips that copy entirely,
@@ -99,8 +99,8 @@ fn pack(key: &[u8]) -> Option<u128> {
 ///
 /// - 2 bytes — direct-indexed table: the merge seed loop queries every adjacent
 ///   byte pair, so over half of all lookups land here as one array load.
-/// - other ≤15 bytes — [`pack`]ed `u128` keys in an Fx map: KV inline in the
-///   table, no `Box` pointer chase, no byte-wise compare.
+/// - other ≤15 bytes — packed `u128` keys in an Fx map: KV inline in the table,
+///   no `Box` pointer chase, no byte-wise compare.
 /// - >15 bytes — plain byte-keyed Fx map (~3% of vocab; spans this long are
 ///   > almost always misses).
 pub struct RankTable {

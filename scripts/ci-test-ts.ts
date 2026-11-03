@@ -207,8 +207,37 @@ function workspaceTestCommand(pkg: string, parallel: number, options: { extraArg
 		label: pkg,
 		cwd: pkg,
 		command: ["bun", "test", ...extraArgs],
-		parallel,
+		// Keep one isolated file VM for global AI fixtures and the utils
+		// timing contracts. Multiple workers exhaust constrained runners or
+		// distort the benchmark; all files and assertions still execute.
+		parallel: pkg === "packages/ai" || pkg === "packages/utils" ? 1 : parallel,
 	};
+}
+
+// AI's hundreds of file VMs retain native/JSC memory even with one worker.
+// Reuse the bounded-process approach already used by coding-agent suites.
+export async function workspaceTestCommands(
+	pkg: string,
+	parallel: number,
+	options: { extraArgs?: string[] } = {},
+): Promise<TestCommand[]> {
+	const base = workspaceTestCommand(pkg, parallel, options);
+	if (pkg !== "packages/ai") return [base];
+	const directory = path.join(repoRoot, pkg);
+	const files = (await collectTestsUnder(path.join(directory, "test"), directory)).sort();
+	if (files.length === 0) return [base];
+	const chunkSize = 10;
+	const commands: TestCommand[] = [];
+	for (let start = 0; start < files.length; start += chunkSize) {
+		const chunk = files.slice(start, start + chunkSize);
+		commands.push({
+			...base,
+			label: `${pkg} (chunk ${Math.floor(start / chunkSize) + 1}/${Math.ceil(files.length / chunkSize)}; ${chunk.length} files)`,
+			command: [...base.command, ...chunk],
+			parallel: 1,
+		});
+	}
+	return commands;
 }
 
 // The Rust suite as one pooled command, so root `bun run test` reports TS and
@@ -326,7 +355,7 @@ async function codingAgentTestCommands(bucket: CodingAgentBucket): Promise<TestC
 async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 	switch (mode) {
 		case "workspace":
-			return fastWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 8));
+			return (await Promise.all(fastWorkspacePackages.map(pkg => workspaceTestCommands(pkg, 8)))).flat();
 		case "native":
 			return nativeAndIntegrationPackages.map(pkg => workspaceTestCommand(pkg, 4));
 		case "coding-agent-singleton":
@@ -357,7 +386,11 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 		// one failure report. Repo script tests remain available via `test:scripts`.
 		case "local-ts":
 			return [
-				...fastWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 8, { extraArgs: onlyFailuresArgs })),
+				...(
+					await Promise.all(
+						fastWorkspacePackages.map(pkg => workspaceTestCommands(pkg, 8, { extraArgs: onlyFailuresArgs })),
+					)
+				).flat(),
 				...nativeAndIntegrationPackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
 				...localOnlyWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
 				...(await commandsForMode("coding-agent-heavy")),

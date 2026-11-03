@@ -1,0 +1,1 @@
+The previous turn made no edit or write attempt. Continue the original task using the available edit or write tool to apply the requested fix. Read the current workspace as needed. Do not merely describe a proposed change.

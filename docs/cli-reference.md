@@ -212,7 +212,7 @@ Run `harvest <command> --help` for each command's own flags and examples.
 | `auth-gateway` | Run an auth-gateway forward proxy backed by the configured broker. | [auth broker / gateway](./auth-broker-gateway.md) |
 | `agents` | Manage bundled task agents. | [task agent discovery](./task-agent-discovery.md) |
 | `bench` | Benchmark models: TTFT/prefill vs decode throughput with p50/p95 across chat, prefill, generation, and prompt-cache workloads, rendered in a live dashboard (`--prefill-bytes` sizes the synthetic prefill input). | |
-| `browser-relay` | Run the local CDP relay used by Eval's browser API to drive your own Chrome tabs. | [computer use](./computer-use.md) |
+| `browser` (native Rust candidate) | Control a dedicated persistent Chrome profile with structured CDP actions. | [browser migration](./browser-migration.md) |
 | `cleanse` | Detect and fix project diagnostics with weighted parallel subagents. | |
 | `commit` | Generate a commit message and update changelogs. | |
 | `completions` | Print a shell completion script (bash, zsh, or fish). | |
@@ -247,7 +247,7 @@ Run `harvest <command> --help` for each command's own flags and examples.
 | `worktree`, `wt` | List or clear agent-managed git worktrees (`~/.harvest/wt`). | |
 | `search`, `q` | Test web search providers from the CLI. | [web_search tool](./tools/web_search.md) |
 
-> `install`, `join`, `browser-relay`, `auth-gateway`, and `tiny-models` are also
+> `install`, `join`, `auth-gateway`, and `tiny-models` are also
 > reachable through related mechanisms (the `plugin` command, the `/join` slash
 > command, and so on). The table lists each as it is registered in
 > `packages/coding-agent/src/cli-commands.ts`.

@@ -1,0 +1,22 @@
+load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+exports_files(["Cargo.toml"])
+
+rust_library(
+    name = "harvest-terminal-wasm",
+    srcs = glob(["src/**/*.rs"]),
+    aliases = aliases(),
+    crate_name = "harvest_terminal_wasm",
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    version = "0.1.0",
+    deps = all_crate_deps(normal = True),
+)
+
+rust_test(
+    name = "abi_test",
+    crate = ":harvest-terminal-wasm",
+    edition = "2024",
+)

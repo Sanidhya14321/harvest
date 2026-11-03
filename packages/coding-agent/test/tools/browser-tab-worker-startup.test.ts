@@ -220,6 +220,24 @@ describe("browser init deadline carry-over", () => {
 	);
 });
 describe("visible OMP-owned browser tabs", () => {
+	let fixture: ReturnType<typeof Bun.serve>;
+	beforeAll(() => {
+		fixture = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch(request) {
+				const title = new URL(request.url).searchParams.get("title") ?? "viewport";
+				return new Response(`<!doctype html><title>${Bun.escapeHTML(title)}</title><main>viewport fixture</main>`, {
+					headers: { "Content-Type": "text/html" },
+				});
+			},
+		});
+	});
+	afterAll(async () => {
+		await fixture.stop(true);
+	});
+	const pageUrl = (title: string) => `${fixture.url}?title=${encodeURIComponent(title)}`;
+
 	it.skipIf(!VISIBLE_BROWSER_AVAILABLE)(
 		"creates independent pages without pinning the resizable window viewport",
 		async () => {
@@ -230,7 +248,7 @@ describe("visible OMP-owned browser tabs", () => {
 				if (!("browser" in browser)) throw new Error("Expected a Puppeteer browser");
 
 				const firstName = `visible-owned-a-${process.pid}-${Math.random().toString(36).slice(2)}`;
-				const firstUrl = `data:text/html,<title>${firstName}</title><main>first</main>`;
+				const firstUrl = pageUrl(firstName);
 				const first = await acquireTab(firstName, browser, { url: firstUrl, timeoutMs: 30_000 });
 				names.push(firstName);
 
@@ -255,7 +273,7 @@ describe("visible OMP-owned browser tabs", () => {
 				expect(after.height).toBeGreaterThan(before.height + 100);
 
 				const secondName = `visible-owned-b-${process.pid}-${Math.random().toString(36).slice(2)}`;
-				const secondUrl = `data:text/html,<title>${secondName}</title><main>second</main>`;
+				const secondUrl = pageUrl(secondName);
 				const second = await acquireTab(secondName, browser, { url: secondUrl, timeoutMs: 30_000 });
 				names.push(secondName);
 				expect(second.tab.targetId).not.toBe(first.tab.targetId);
@@ -278,7 +296,7 @@ describe("visible OMP-owned browser tabs", () => {
 			try {
 				browser = await acquireBrowser({ kind: "headless", headless: true }, { cwd: process.cwd() });
 				if (!("browser" in browser)) throw new Error("Expected a Puppeteer browser");
-				const url = `data:text/html,<title>${name}</title><main>hidden</main>`;
+				const url = pageUrl(name);
 				await acquireTab(name, browser, { url, timeoutMs: 30_000 });
 				opened = true;
 				const page = (await browser.browser.pages()).find(candidate => candidate.url() === url);

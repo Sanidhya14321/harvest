@@ -1,0 +1,13 @@
+{
+  "value": "<h1>Title &amp; More</h1><p><strong>Bold</strong> and <em>IU</em><s>Strike</s><br />linepage<sub>sub</sub><sup>sup</sup></p><p>Unknown<sup><a href=\"#footnote-2\" id=\"footnote-ref-2\">[1]</a></sup></p><ol><li id=\"footnote-2\"><p>Foot <strong>note</strong> <a href=\"#footnote-ref-2\">↑</a></p></li></ol>",
+  "messages": [
+    {
+      "type": "warning",
+      "message": "Unrecognised paragraph style: 'Mystery Style' (Style ID: Mystery)"
+    },
+    {
+      "type": "warning",
+      "message": "Unrecognised run style: 'Odd Style' (Style ID: Odd)"
+    }
+  ]
+}

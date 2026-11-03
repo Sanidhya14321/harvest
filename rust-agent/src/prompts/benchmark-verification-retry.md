@@ -1,0 +1,1 @@
+The previous attempt did not satisfy the benchmark output or required tool-use checks. Continue the original task in the current workspace and session. Inspect the current files and your previous tool results, then correct the requested change using the available tools.

@@ -18,7 +18,7 @@ NEVER touch: `**/*-gen/**`, `**/vendor/**`, generated JSON catalogs, `.d.ts`, te
 
 ## 1. Discover
 
-First run `bun scripts/cleanup-scan.ts`; `--json`: machine output; `--pkg=<a,b>|all`: widen scope. It reports god-object candidates, clone clusters/line ranges, junk drawers, tiered dead-export candidates, deep relative imports, defensive-check hotspots. Output is EVIDENCE, not verdict: read every entry before action. Where scanner misses semantic duplication or wrong-home modules with shallow imports, use `lsp references` and targeted grep.
+First run `cargo run --quiet --locked -p harvest-omp --bin harvest -- cleanup-scan`; `--json`: machine output; `--pkg=<a,b>|all`: widen scope. It reports god-object candidates, clone clusters/line ranges, junk drawers, tiered dead-export candidates, deep relative imports, defensive-check hotspots. Output is EVIDENCE, not verdict: read every entry before action. Where scanner misses semantic duplication or wrong-home modules with shallow imports, use `lsp references` and targeted grep.
 
 Candidate classes:
 

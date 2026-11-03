@@ -31,7 +31,7 @@ export interface EvalPreludeDefinition {
 	/** JavaScript source installed into an ordinary JavaScript eval realm. */
 	javascript: string;
 	/** Python source installed into a Python eval kernel. */
-	python: string;
+	python?: string;
 	/** Globals owned by the snippets and removed when the prelude is replaced or disabled. */
 	exports: readonly string[];
 	/** Optional declarations appended to code-mode TypeScript context while enabled. */

@@ -12,6 +12,7 @@ pub mod development;
 pub mod elf;
 pub mod emit_extensions;
 pub mod fix_test_imports;
+pub mod gen_nix;
 mod generated;
 pub mod merge_pr;
 pub mod migration;
@@ -25,3 +26,26 @@ pub mod sync_versions;
 pub mod testing;
 pub mod theme_index;
 pub mod version;
+
+pub mod npm_versions;
+
+pub mod registry;
+
+pub mod verification;
+
+pub mod baseline;
+
+pub mod terminal_wasm;
+
+pub mod web_replay;
+
+pub mod source_audit;
+
+mod browser_check;
+
+pub mod acceptance;
+pub mod playbook;
+pub mod versions;
+
+pub mod homebrew_tap;
+pub mod host_detect;

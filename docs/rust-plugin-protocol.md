@@ -1,0 +1,108 @@
+# Native executable plugin protocol v1
+
+Conversion checkpoint: implementation is connected to the Rust candidate;
+behavioral, installed-platform and failure-path verification is pending. The TS
+application plugin loader has not switched over. This is the approved breaking
+replacement contract, not a claim of compatibility with TS extension callbacks.
+
+Host entrypoints: `harvest run --plugin PATH`, `harvest rpc --plugin PATH`,
+`AgentSession::configure_plugins`, and `SessionEngineOptions::plugins`.
+Configuration-declared executables require `--enable-plugins`; `harvest config`
+only inspects configuration and never starts plugins. Plugins are trusted native
+programs, not OS-sandboxed processes. They must use host calls for application
+mutations; the host applies its existing jail and final-argument approval.
+
+Frames are UTF-8 JSON objects, one per newline, at most 1 MiB including newline.
+Stdout contains frames only. Stderr is drained separately into an 8 KiB tail.
+No JavaScript runtime or plugin module loader is started. Language module paths
+and known interpreter executables produce migration guidance.
+
+1. Host sends `{"type":"initialize","id":0,"versions":[1]}`.
+2. Plugin responds with `initialized`, matching `id`, `version:1`, a name and
+   `tools`: ordinary function schemas with name, description and object parameters.
+3. Host sends `call` with numeric `id`, registered tool `name` and object
+   `arguments`. One call owns the process at a time; different processes may own
+   separate sessions. Tool names may not collide with builtins or other plugins.
+4. Plugin emits zero or more `event` frames for the active ID, then `result`
+   with `value`, or `error` with `{code,message}`. Errors remain structured and
+   untrusted diagnostic text is not automatically inserted into model output.
+5. A plugin may send `host_call` with a distinct callback ID, `parent_id` equal
+   to the active request, and an ordinary `ToolCall`. Host replies `host_result`
+   with a string value or structured error. Each nested mutation needs its own
+   final-argument approval; plugin declarations never grant blanket approval.
+6. Host cancellation sends `cancel` and terminates the process on a failed or
+   interrupted exchange. No ambiguous late response is reused. The Rust SDK
+   delivers cancellation to the handler while its reader owns stdin.
+7. Host sends `shutdown` on disposal and reaps the process. The shared process
+   owner also serves MCP and offers a 100 ms stdin-close drain before direct-child
+   termination. Full graceful exit/draining
+   behavior and descendant-process cleanup still need stabilization review.
+
+Queues are bounded (8 outbound, 16 inbound frames). Calls have a host timeout
+(default 30 seconds, maximum 10 minutes), at most 1024 events, 64 host callbacks
+and a 16 MiB consumed response-wire budget. Requests and callbacks must match
+their owner IDs. The shared reader now retains each incoming frame's actual byte
+count before decoding; whitespace, newline and ignored fields count toward the
+plugin exchange limit. Admission is checked before dispatching that frame's event,
+host call or result. Prefetch remains bounded by the existing reader/output queues;
+this is a consumed-frame admission quota, not a cap on what an external process
+may write or on bytes already prefetched by those queues. Runtime boundary tests
+are still pending.
+
+Declarative events are progress, notification and choice data. The host SDK
+exposes an event callback. Native sync/async session streams now forward them as
+provisional `plugin_event` data, tagged with the parent model tool-call ID and the
+existing session/run/sequence envelope. They are not committed as model messages
+or persisted as executable/prompt content. Rust SDK callers can use
+`ToolRuntime::invoke_with_events` / `invoke_detailed_with_events`; the older
+methods retain no-event-callback behavior.
+
+The RPC v1/v2 adapter emits an additive `plugin_event` notification containing
+`sessionId`, `run`, `runGeneration`, `sequence`, `toolCallId` and the declarative
+`event` object. It goes through the same bounded output queue/chunking owner.
+Native CLI --events and the SDK serialize the same typed session events. The
+async worker sends through the existing bounded worker channel, and its owner
+assigns sequence numbers. Parent assistant commit precedes plugin events; the
+tool-result commit follows them. This does not introduce another durable writer.
+
+Both author SDK and host enforce at most 16 KiB of serialized event data, 1 MiB
+aggregate event data and 1,024 events per call, with at most 64 choices in a choice
+event. Parent model call IDs must be nonempty and no more than 256 bytes. These
+payload limits apply before session enqueueing and are separate from the raw
+frame limit. Invalid/excessive plugin events fail the call and terminate the
+ambiguous exchange; callbacks retain existing cancellation/error ownership.
+
+Native TUI rendering, widget/status persistence, reconnect UI replay and
+interactive choice replies are unfinished. Choices are currently display data:
+sending one does not wait for or return a user answer. No executable UI callback
+compatibility exists. Event subscribers must handle broadcast lag/reconnect via
+the existing committed snapshot contract; UI events themselves are provisional.
+Do not advertise the unfinished interaction workflows as supported.
+
+Implement `harvest_omp::plugins::sdk::Handler` and call `sdk::serve_stdio` from a
+Rust executable. `rust-agent/examples/native-plugin.rs` demonstrates a jailed
+host read through this same protocol. Configuration arguments/environment are
+trusted host inputs and omitted from Debug; do not put credentials on argv.
+
+## Event-connection stabilization
+
+Continuation base `165827d`; code-written/connected, unverified. Consolidate an
+external Rust plugin emitting progress/notifications/choice data through direct
+SDK, sync run --events, async session and RPC v1/v2. Verify parent IDs and monotonic
+sequence/order, unchanged model transcript and durable records, bounded/adversarial
+events, author/host admission agreement, slow/lagged/closed subscribers, malformed
+IDs, cancellation/callback failure/process exit, final-argument nested approvals
+and writer shutdown. Cover raw incoming-byte accounting in the shared process
+owner, including whitespace and ignored fields. Behavioral/installed/
+platform evidence remains deferred; compilation is connection evidence only.
+
+Raw-byte continuation base `34e1876`: `Process::receive_with_size` preserves exact
+JSONL frame bytes or Content-Length header-plus-body bytes while ordinary receive
+and try_receive callers retain their typed-value APIs. Plugin exchange admission
+now uses that count instead of re-serializing a frame. The SDK stdin reader keeps
+the existing value-only helper and per-frame limit. No second reader/queue/process
+owner or retained-data buffer is introduced. Verify near/at/over aggregate limits,
+ignored large fields, whitespace-heavy frames, consecutive calls, malformed frames,
+Content-Length extra headers, exact round trips, cancellation and the existing
+MCP/LSP/DAP consumers during consolidated stabilization. Compiler evidence alone
+does not verify this corrected accounting contract.

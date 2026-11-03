@@ -217,7 +217,12 @@ fn archive_with_wrong_alias_payload_is_rejected_even_when_raw_binary_is_intact()
 		("LICENSE", b"license bytes\n"),
 		("THIRD-PARTY-NOTICES.txt", b"native notices\n"),
 	] {
-		writer.start_file(name, SimpleFileOptions::default().unix_permissions(0o755))?;
+		writer.start_file(
+			name,
+			SimpleFileOptions::default()
+				.system(zip::System::Unix)
+				.unix_permissions(0o755),
+		)?;
 		writer.write_all(bytes)?;
 	}
 	fs::write(root.path().join("dist/omp-windows-arm64.zip"), writer.finish()?.into_inner())?;
@@ -357,7 +362,12 @@ fn matching_archive_checksums_cannot_authorize_injected_manifest_fields() -> Res
 		if name == "Pulkitxm.Omp.installer.yaml" {
 			bytes.extend_from_slice(b"InstallerSwitches:\n  Custom: unexpected-executable-argument\n");
 		}
-		writer.start_file(name, SimpleFileOptions::default().unix_permissions(0o644))?;
+		writer.start_file(
+			name,
+			SimpleFileOptions::default()
+				.system(zip::System::Unix)
+				.unix_permissions(0o644),
+		)?;
 		writer.write_all(&bytes)?;
 	}
 	fs::write(&path, writer.finish()?.into_inner())?;

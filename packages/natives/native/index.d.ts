@@ -7,6 +7,8 @@
 export declare class AudioCapture {
   /** Open the default microphone and deliver low-latency mono PCM chunks. */
   constructor(sampleRate: number, onAudio: (error: Error | null, samples: Float32Array) => void)
+  /** Total number of microphone chunks dropped due to queue saturation. */
+  droppedChunks(): number
   /** Stop capture immediately and release the microphone. */
   stop(): void
 }
@@ -17,6 +19,8 @@ export declare class AudioPlayback {
   constructor(sampleRate: number)
   /** Queue mono floating-point PCM in playback order. */
   write(samples: Float32Array): void
+  /** Return the number of unrendered samples currently in the playback queue. */
+  queuedSamples(): number
   /** Scale audio at render time so gain changes affect already queued samples. */
   setGain(gain: number): void
   /**
@@ -258,6 +262,11 @@ export declare class NativeOAuthCallback {
 
 export declare class NativeStdinBuffer {
   constructor(options?: NativeStdinBufferOptions | undefined | null)
+  /**
+   * Advance a host-owned monotonic clock; timers and framing share its
+   * domain.
+   */
+  setTime(elapsedMs: number): void
   get chunkBytes(): number
   process(bytes: Buffer, kittyActive: boolean, endOfRead: boolean): Array<string | NativePasteEvent>
   tick(kittyActive: boolean): Array<string | NativePasteEvent>
@@ -357,6 +366,18 @@ export declare class PtySession {
   kill(): void
 }
 
+export declare class SelectorFuzzyMatcher {
+  constructor()
+  matches(query: string, text: string): SelectorFuzzyMatch
+  rank(query: string, texts: Array<string>): Array<SelectorFuzzyRank>
+  clear(): void
+}
+
+export declare class SelectorFuzzyText {
+  constructor(text: string)
+  matches(query: string): SelectorFuzzyMatch
+}
+
 /** Persistent brush-core shell session. */
 export declare class Shell {
   /**
@@ -386,6 +407,15 @@ export declare class Shell {
    * dropping it (which would SIGKILL them via kill-on-drop).
    */
   liveBackgroundJobCount(): Promise<number>
+}
+
+/** Transitional host adapter; the native terminal calls the same plain engines. */
+export declare class TerminalInput {
+  constructor()
+  scan(data: string, resumeSearchFrom: number): TerminalInputScan
+  decodePrintableKey(data: string): string | null
+  extractPrintableText(data: string): string | null
+  decodeKeypadText(data: string): string | null
 }
 
 /** Dedicated output pump owning a duplicate of the supplied Unix descriptor. */
@@ -964,10 +994,14 @@ export interface BlockRangeOptions {
   line: number
 }
 
+export declare function canPrefixTerminalWidth(line: string): boolean
+
 export interface CaptureCaps {
   maxWidth?: number
   maxHeight?: number
 }
+
+export declare function chunkTerminalOutput(data: string, maxBytes: number): Array<string>
 
 /** Clipboard image payload encoded as PNG bytes. */
 export interface ClipboardImage {
@@ -976,6 +1010,8 @@ export interface ClipboardImage {
   /** MIME type for the encoded image payload. */
   mimeType: string
 }
+
+export declare function coalesceTerminalSgr(line: string): string
 
 /**
  * Return UTF-16 end offsets so JavaScript slices preserve original code units,
@@ -1240,6 +1276,12 @@ export interface DiffStreamResult {
  * post-pass dedupes whitespace across change boundaries.
  */
 export declare function diffWords(oldText: string, newText: string): Array<DiffChange>
+
+export declare function docxFinish(prepared: string, attributes: string, signal?: unknown | undefined | null): Promise<string>
+
+export declare function docxPrepare(bytes: Buffer, options: string, signal?: unknown | undefined | null): Promise<string>
+
+export declare function docxPrepareFile(path: string, options: string, signal?: unknown | undefined | null): Promise<string>
 
 /**
  * Whole-call apply outcome. `is_error` carries the model-facing failure in
@@ -2250,6 +2292,8 @@ export interface NativeSgrMouseEvent {
 
 export interface NativeStdinBufferOptions {
   timeout?: number
+  /** Explicit monotonic host clock, selected before the first input. */
+  hostTime?: number
   partialHoldTimeout?: number
   pasteTimeout?: number
   pasteByteLimit?: number
@@ -2556,6 +2600,16 @@ export interface SearchResult {
   error?: string
 }
 
+export interface SelectorFuzzyMatch {
+  matches: boolean
+  score: number
+}
+
+export interface SelectorFuzzyRank {
+  index: number
+  score: number
+}
+
 export declare function setHangulCompatJamoWidthOverride(value: number): void
 
 /** Options for executing a shell command via brush-core. */
@@ -2764,6 +2818,13 @@ export interface SummarySegment {
  * mapping.
  */
 export declare function supportsLanguage(lang: string): boolean
+
+export interface TerminalInputScan {
+  ranges: Uint32Array
+  remainderStart: number
+  resumeSearchFrom: number
+  discardFrom?: number
+}
 
 /**
  * Truncate text to a visible width, preserving ANSI codes.

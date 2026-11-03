@@ -4,6 +4,8 @@
 
 ### Added
 
+- Portable Rust terminal text and selector bindings support installations without the native addon.
+
 - Expose bounded native rectangular-fill analysis, encoding and frame planning helpers.
 
 - Expose terminal output chunk boundaries and backlog progress detection for Rust SDK and TUI consumers.

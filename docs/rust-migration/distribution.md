@@ -35,10 +35,13 @@ verification.
 
 Both native bootstrap installers use `SHA256SUMS.txt`. Linux selection detects
 musl; macOS detects Rosetta; Windows ARM64 selects its native artifact. Aliases
-are installed independently of completion registration. An existing unrelated
+are installed independently of completion registration. Transitional installers
+now stop after native alias installation/PATH handling and never execute the
+downloaded binary to install shell completions. An existing unrelated
 `harvest` command causes refusal before replacing either installed command.
-Completion setup accepts matching real binaries, hardlinks and relative package
-manager symlinks. Per-target cargo-binstall ZIP overrides follow its
+Native completion/bootstrap generation is retired under SCOPE.md; its command
+returns migration guidance without emitting scripts or creating wrappers. Existing
+user-installed completions are not automatically removed. Per-target cargo-binstall ZIP overrides follow its
 [documented metadata contract](https://github.com/cargo-bins/cargo-binstall/blob/main/SUPPORT.md).
 
 ## Evidence and remaining cutover constraints
@@ -117,3 +120,31 @@ emulated execution; they do not establish native ARM hardware, macOS or Windows
 coverage. Direct driver probes also checked relative/whitespace paths,
 repeatable output, caller-owned reproducers, prior-output preservation, and
 rejection of traversal, absolute, symlink, duplicate and oversized tar entries.
+
+## Strict-scope native completion retirement
+
+Continuation base `c4aef9a`, conversion-only. The Rust candidate no longer depends
+on `clap_complete`, emits executable shell completion source, installs shell files,
+or writes Windows `.cmd` bootstrap wrappers. Deleted `rust-agent/src/shell.rs`
+contained that retired installer/generator helper and its behavior-specific tests;
+manual/help and the archive's paired real native aliases remain. Every legacy
+`completions` invocation returns a nonzero migration diagnostic with empty stdout.
+`harvest --help` remains available. Native in-application command completion is
+still absent, so the retained `command:completions` record is corrected from
+partial to absent rather than counting a retired generator as implementation.
+`compat:shell-completion-scripts` remains pending: the legacy TS generator and
+installed/native acceptance have not completed retirement.
+
+Both retained native installer scripts have had their completion subprocess calls
+removed; otherwise they would abort after installing a new candidate that rejects
+the retired command. Their checksum/target/alias/PATH logic remains. Script and
+Rust CLI expectations now cover rejection and no generation rather than preserving
+the retired behavior. These executable installer/test scripts, plus existing
+embedded test helpers, still require Rust replacement; changing these connections
+does not satisfy the final no-shell source rule. No existing user files are purged.
+
+Historical completion/bootstrap verification above describes older revisions.
+Current compiler and format checks are connection evidence only; changed native
+and installer tests, installed workflows and all platform checks are deferred to
+consolidated stabilization. Run native CLI contracts and retained installer
+workflows together, then preserve eight-artifact alias/update/uninstall checks.

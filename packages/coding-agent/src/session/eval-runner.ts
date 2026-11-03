@@ -2,12 +2,7 @@ import type { Agent } from "@harvest/pi-agent-core";
 import { logger } from "@harvest/pi-utils";
 import type { Settings } from "../config/settings";
 import { disposeVmContextsByOwner } from "../eval/js/context-manager";
-import { namespaceSessionId as namespacePythonSessionId } from "../eval/py";
-import {
-	disposeKernelSessionsByOwner,
-	executePython as executePythonCommand,
-	type PythonResult,
-} from "../eval/py/executor";
+import { disposeKernelSessionsByOwner, type PythonResult, PYTHON_EVAL_RETIRED } from "../eval/py/executor";
 import { defaultEvalSessionId } from "../eval/session-id";
 import type { ExtensionRunner } from "../extensibility/extensions";
 import { outputMeta } from "../tools/output-meta";
@@ -42,48 +37,11 @@ export class EvalRunner {
 
 	/** Executes Python in the session's shared kernel. */
 	async executePython(
-		code: string,
-		onChunk?: (chunk: string) => void,
-		options?: { excludeFromContext?: boolean },
+		_code: string,
+		_onChunk?: (chunk: string) => void,
+		_options?: { excludeFromContext?: boolean },
 	): Promise<PythonResult> {
-		const excludeFromContext = options?.excludeFromContext === true;
-		const cwd = this.#host.sessionManager.getCwd();
-		this.assertExecutionAllowed();
-		const abortController = new AbortController();
-		const execution = (async (): Promise<PythonResult> => {
-			const extensionRunner = this.#host.extensionRunner();
-			if (extensionRunner?.hasHandlers("user_python")) {
-				const hookResult = await extensionRunner.emitUserPython({
-					type: "user_python",
-					code,
-					excludeFromContext,
-					cwd,
-				});
-				this.assertExecutionAllowed();
-				if (hookResult?.result) {
-					this.recordPythonResult(code, hookResult.result, options);
-					return hookResult.result;
-				}
-			}
-			const sessionId =
-				this.getSessionId() ??
-				defaultEvalSessionId({
-					cwd,
-					getSessionFile: () => this.#host.sessionManager.getSessionFile() ?? null,
-				});
-			const result = await executePythonCommand(code, {
-				cwd,
-				sessionId: namespacePythonSessionId(sessionId),
-				kernelOwnerId: this.#kernelOwnerId,
-				kernelMode: this.#host.settings.get("python.kernelMode"),
-				interpreter: this.#host.settings.get("python.interpreter")?.trim() || undefined,
-				onChunk,
-				signal: abortController.signal,
-			});
-			this.recordPythonResult(code, result, options);
-			return result;
-		})();
-		return await this.trackExecution(execution, abortController);
+		throw new Error(PYTHON_EVAL_RETIRED);
 	}
 
 	/** Rejects new eval work once session disposal begins. */

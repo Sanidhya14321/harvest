@@ -210,13 +210,6 @@ function Install-Omp {
         Move-Item -LiteralPath $stagedBinary -Destination $destination -Force
         $stagedBinary = $null
 
-        Write-Info "installing PowerShell completions"
-        & $destination completions powershell --install --automatic | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "could not install PowerShell completions"
-        }
-        Write-Info "installed harvest on PATH; start a new PowerShell session only to enable completions"
-
         Write-Output "`nOmp was installed to $destination"
 
         $processPath = [Environment]::GetEnvironmentVariable("Path", "Process")

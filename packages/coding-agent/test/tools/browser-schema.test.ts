@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createContext, runInContext } from "node:vm";
-import { Settings } from "@harvest/pi-coding-agent/config/settings";
+import { Settings, type RawSettings } from "@harvest/pi-coding-agent/config/settings";
 import type { ToolSession } from "@harvest/pi-coding-agent/sdk";
 import { createBrowserPrelude } from "@harvest/pi-coding-agent/tools/browser";
 
@@ -110,5 +110,31 @@ describe("browser prelude", () => {
 				parameters: { action: "close", all: true },
 			},
 		]);
+	});
+});
+
+describe("retired relay requests", () => {
+	it("refuses enabled and endpoint configuration before opening a browser", async () => {
+		for (const overrides of [
+			{ "browser.relay": true },
+			{ "browser.relayUrl": "http://127.0.0.1:9224" },
+		] satisfies RawSettings[]) {
+			const session = makeSession(Settings.isolated({ ...overrides, "browser.enabled": true }));
+			await expect(
+				createBrowserPrelude(session).invoke(
+					{ action: "open", url: "about:blank" },
+					{ session, toolCallId: "retired-relay" },
+				),
+			).rejects.toThrow("Remove browser.relay/browser.relayUrl");
+		}
+	});
+	it("refuses explicit relay selection even alongside an app path", async () => {
+		const session = makeSession();
+		await expect(
+			createBrowserPrelude(session).invoke(
+				{ action: "open", app: { relay: true, path: "/not-a-browser" } },
+				{ session, toolCallId: "retired-relay" },
+			),
+		).rejects.toThrow("Remove app.relay and PI_BROWSER_RELAY");
 	});
 });

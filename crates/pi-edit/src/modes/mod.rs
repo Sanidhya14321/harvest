@@ -21,7 +21,9 @@ pub fn engine_for(
 		EditMode::ApplyPatch => {
 			Box::new(apply_patch::ApplyPatchEngine { allow_fuzzy, fuzzy_threshold })
 		},
-		EditMode::Hashline => Box::new(hashline::HashlineEngine { enforce_seen_lines }),
+		EditMode::Hashline => {
+			Box::new(hashline::HashlineEngine { enforce_seen_lines, require_read_provenance: false })
+		},
 		EditMode::Sloppy => Box::new(sloppy::SloppyEngine { allow_fuzzy, fuzzy_threshold }),
 	}
 }

@@ -9,14 +9,10 @@ use serde::Deserialize;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Settings {
-	pub model:      String,
-	pub base_url:   String,
-	pub api_key:    String,
-	pub max_steps:  u32,
-	/// Request protocol; catalog-routed selectors may switch it.
-	pub wire:       crate::catalog::Wire,
-	/// Output-token cap from the catalog (required by the Anthropic wire).
-	pub max_tokens: Option<u64>,
+	pub model:     String,
+	pub base_url:  String,
+	pub api_key:   String,
+	pub max_steps: u32,
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -29,20 +25,18 @@ pub struct Overrides {
 
 #[derive(Clone, Default)]
 pub struct Environment {
-	pub model:         Option<String>,
-	pub base_url:      Option<String>,
-	pub api_key:       Option<String>,
-	pub max_steps:     Option<u32>,
-	/// Catalog provider key variables (`GROQ_API_KEY`, ...) that are set.
-	pub provider_keys: std::collections::BTreeMap<String, String>,
+	pub model:     Option<String>,
+	pub base_url:  Option<String>,
+	pub api_key:   Option<String>,
+	pub max_steps: Option<u32>,
 }
 
-#[derive(Deserialize, Default)]
-struct FileSettings {
-	model:     Option<String>,
-	base_url:  Option<String>,
-	api_key:   Option<String>,
-	max_steps: Option<u32>,
+#[derive(Clone, Deserialize, Default)]
+pub(crate) struct FileSettings {
+	pub model:     Option<String>,
+	pub base_url:  Option<String>,
+	pub api_key:   Option<String>,
+	pub max_steps: Option<u32>,
 }
 
 impl fmt::Debug for Settings {
@@ -98,52 +92,37 @@ pub fn agent_dir_from(
 		.map(|home| PathBuf::from(home).join(".harvest/agent"))
 }
 
+/// Resolve primitive settings only. Native model hosts should retain the full
+/// configuration::Resolved and use HttpModel::from_configuration so live value
+/// sources and configured headers are not discarded.
 pub fn resolve(root: &Path, flags: &Overrides, environment: &Environment) -> Result<Settings> {
-	let file = read_file(root)?;
-	let mut model =
-		choose(flags.model.clone(), environment.model.clone(), file.model, DEFAULT_MODEL.to_owned());
-	let explicit_url = flags
-		.base_url
-		.clone()
-		.or_else(|| environment.base_url.clone())
-		.or(file.base_url);
-	let explicit_key = flags
-		.api_key
-		.clone()
-		.or_else(|| environment.api_key.clone())
-		.or(file.api_key);
-	// A catalog `provider/id` selector supplies the endpoint and key variable
-	// unless an explicit base URL pins a custom endpoint.
-	let route = explicit_url
-		.is_none()
-		.then(|| crate::catalog::route(&model))
-		.flatten();
-	let wire = route
-		.as_ref()
-		.map_or_else(Default::default, |route| route.wire);
-	let max_tokens = route.as_ref().and_then(|route| route.max_tokens);
-	let (base_url, api_key) = match route {
-		Some(route) => {
-			let key = flags.api_key.clone().or_else(|| {
-				route
-					.env_vars
-					.iter()
-					.find_map(|name| environment.provider_keys.get(name).cloned())
-			});
-			route.model.clone_into(&mut model);
-			(route.base_url.to_owned(), key.or(explicit_key).unwrap_or_default())
-		},
-		None => (
-			explicit_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
-			explicit_key.unwrap_or_default(),
-		),
-	};
+	Ok(crate::configuration::load(root, flags, environment, &Default::default())?.settings)
+}
+
+pub(crate) fn resolve_file_values(
+	flags: &Overrides,
+	environment: &Environment,
+	file: FileSettings,
+) -> Result<Settings> {
 	Ok(Settings {
-		model,
-		base_url,
-		api_key,
-		wire,
-		max_tokens,
+		model:     choose(
+			flags.model.clone(),
+			environment.model.clone(),
+			file.model,
+			DEFAULT_MODEL.to_owned(),
+		),
+		base_url:  choose(
+			flags.base_url.clone(),
+			environment.base_url.clone(),
+			file.base_url,
+			DEFAULT_BASE_URL.to_owned(),
+		),
+		api_key:   choose(
+			flags.api_key.clone(),
+			environment.api_key.clone(),
+			file.api_key,
+			String::new(),
+		),
 		max_steps: checked_steps(
 			flags
 				.max_steps
@@ -171,9 +150,6 @@ pub fn environment_from(read: impl Fn(&str) -> Option<String>) -> Result<Environ
 		base_url: read("OMP_BASE_URL"),
 		api_key: read("OMP_API_KEY").or_else(|| read("OPENAI_API_KEY")),
 		max_steps,
-		provider_keys: crate::catalog::env_vars()
-			.filter_map(|name| read(name).map(|value| (name.to_owned(), value)))
-			.collect(),
 	})
 }
 
@@ -184,23 +160,6 @@ fn choose(
 	default: String,
 ) -> String {
 	flag.or(environment).or(file).unwrap_or(default)
-}
-
-fn read_file(root: &Path) -> Result<FileSettings> {
-	let fs = harvest_runtime::JailedFs::open(root)?;
-	let Some(bytes) = fs.read_optional(Path::new(".omp/config.toml"), 256 * 1024)? else {
-		return Ok(FileSettings::default());
-	};
-	let text = std::str::from_utf8(&bytes).context("configuration is not UTF-8")?;
-	// TOML diagnostics include the source line and can expose an unterminated
-	// API key, URL credentials or a nearby secret. Do not retain their chain.
-	toml::from_str(text).map_err(|error: toml::de::Error| {
-		if let Some(span) = error.span() {
-			anyhow::anyhow!("failed to parse .omp/config.toml at byte {}", span.start)
-		} else {
-			anyhow::anyhow!("failed to parse .omp/config.toml")
-		}
-	})
 }
 
 fn parse_steps(value: &str) -> Result<u32> {
@@ -240,11 +199,10 @@ mod tests {
 				max_steps: Some(5),
 			},
 			&super::Environment {
-				model: Some("env-model".to_owned()),
-				base_url: Some("http://env".to_owned()),
-				api_key: Some("env-key".to_owned()),
+				model:     Some("env-model".to_owned()),
+				base_url:  Some("http://env".to_owned()),
+				api_key:   Some("env-key".to_owned()),
 				max_steps: Some(4),
-				..Default::default()
 			},
 		)
 		.unwrap();
@@ -285,33 +243,5 @@ mod tests {
 		let error =
 			environment_from(|key| (key == "OMP_MAX_STEPS").then(|| "0".to_owned())).unwrap_err();
 		assert!(error.to_string().contains("at least 1"));
-	}
-
-	#[test]
-	fn catalog_selectors_pick_endpoint_and_provider_key_unless_url_is_pinned() {
-		let root = tempfile::tempdir().unwrap();
-		let (id, url) = {
-			let route =
-				crate::catalog::route("groq/llama-3.3-70b-versatile").expect("bundled groq model");
-			(route.model, route.base_url)
-		};
-		let environment = environment_from(|name| match name {
-			"OMP_MODEL" => Some(format!("groq/{id}")),
-			"GROQ_API_KEY" => Some("groq-key".to_owned()),
-			"OPENAI_API_KEY" => Some("openai-key".to_owned()),
-			_ => None,
-		})
-		.unwrap();
-		let routed = resolve(root.path(), &Overrides::default(), &environment).unwrap();
-		assert_eq!((routed.model.as_str(), routed.base_url.as_str()), (id, url));
-		assert_eq!(routed.api_key, "groq-key");
-		let pinned = resolve(
-			root.path(),
-			&Overrides { base_url: Some("http://local".to_owned()), ..Default::default() },
-			&environment,
-		)
-		.unwrap();
-		assert_eq!(pinned.model, format!("groq/{id}"));
-		assert_eq!(pinned.api_key, "openai-key");
 	}
 }

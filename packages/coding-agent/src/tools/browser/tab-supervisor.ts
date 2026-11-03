@@ -788,7 +788,7 @@ async function buildInitPayload(browser: PuppeteerBrowserHandle, opts: AcquireTa
 	// Connected and relay browsers are user-driven. When no target is requested,
 	// adopt the visible tab and avoid raising it before screenshots. An explicit
 	// target may be backgrounded, so retain activation for target-correct pixels.
-	const userDriven = browser.kind.kind === "connected" || browser.kind.kind === "relay";
+	const userDriven = browser.kind.kind === "connected";
 	const activateForScreenshot = !userDriven || !shouldPreserveConnectedBrowserFocus(opts.target);
 	const page = await pickElectronTarget(browser.browser, {
 		matcher: opts.target,

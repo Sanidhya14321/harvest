@@ -30,7 +30,7 @@ fn omp() -> Command {
 			command.env("PATH", "/nonexistent");
 			command
 		},
-		None => or_abort(Command::cargo_bin("omp")),
+		None => Command::new(env!("CARGO_BIN_EXE_omp")),
 	};
 	let _configured: &mut Command = command.env("OMP_SKIP_INTEGRATIONS", "1");
 	command
@@ -100,13 +100,30 @@ fn version_help_and_tools_work() {
 			.stdout(contains("grep")),
 	);
 	keep(omp().arg("man").assert().success().stdout(contains("omp")));
-	keep(
-		omp()
-			.args(["completions", "bash"])
-			.assert()
-			.success()
-			.stdout(contains("omp")),
-	);
+}
+
+#[test]
+fn retired_shell_completions_emit_no_scripts_or_installed_files() {
+	let root = or_abort(tempfile::tempdir());
+	for arguments in [
+		vec!["completions", "bash"],
+		vec!["completions", "powershell", "--install"],
+		vec!["completions", "--automatic"],
+	] {
+		keep(
+			omp()
+				.args(arguments)
+				.env("HOME", root.path())
+				.env("USERPROFILE", root.path())
+				.env("XDG_DATA_HOME", root.path())
+				.env("XDG_STATE_HOME", root.path())
+				.assert()
+				.failure()
+				.stdout("")
+				.stderr(contains("retired")),
+		);
+	}
+	assert_eq!(or_abort(fs::read_dir(root.path())).count(), 0);
 }
 
 #[test]
@@ -320,4 +337,66 @@ fn executable_streams_events_and_resumes_its_v3_session() {
 	let bytes = or_abort(fs::read(root.path().join("current.jsonl")));
 	let document = or_abort(harvest_omp::session_format::SessionDocument::decode(&bytes));
 	assert_eq!(document.entries().len(), 4);
+}
+
+#[test]
+fn retired_browser_relay_never_installs_or_starts_a_service() {
+	for arguments in [
+		vec!["browser-relay"],
+		vec!["browser-relay", "install", "--dir", "/unreachable"],
+		vec!["browser-relay", "--help"],
+	] {
+		keep(
+			omp()
+				.args(arguments)
+				.assert()
+				.failure()
+				.stderr(contains("harvest browser --chrome PATH --profile NEW_DIRECTORY"))
+				.stderr(contains("Sign in separately")),
+		);
+	}
+}
+
+#[test]
+fn document_conversion_preserves_html_and_rejects_invalid_or_escaping_inputs() {
+	let root = or_abort(tempfile::tempdir());
+	let input = include_bytes!("../../crates/harvest-media/tests/fixtures/docx/formatting.docx");
+	or_abort(fs::write(root.path().join("note.docx"), input));
+	let expected: serde_json::Value = or_abort(serde_json::from_str(include_str!(
+		"../../crates/harvest-media/tests/fixtures/docx/formatting.json"
+	)));
+	let mut command = omp();
+	command
+		.args(["document", "--workspace"])
+		.arg(root.path())
+		.args(["--format", "json", "note.docx"]);
+	let output = command.assert().success().get_output().stdout.clone();
+	assert_eq!(or_abort(serde_json::from_slice::<serde_json::Value>(&output)), expected);
+	keep(
+		omp()
+			.args(["document", "--workspace"])
+			.arg(root.path())
+			.arg("note.docx")
+			.assert()
+			.success()
+			.stdout(contains("Title & More")),
+	);
+	or_abort(fs::write(root.path().join("bad.docx"), "invalid archive"));
+	keep(
+		omp()
+			.args(["document", "--workspace"])
+			.arg(root.path())
+			.arg("bad.docx")
+			.assert()
+			.failure(),
+	);
+	keep(
+		omp()
+			.args(["document", "--workspace"])
+			.arg(root.path())
+			.arg("../outside.docx")
+			.assert()
+			.failure(),
+	);
+	assert_eq!(or_abort(fs::read(root.path().join("note.docx"))), input);
 }

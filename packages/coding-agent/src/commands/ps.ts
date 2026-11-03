@@ -28,7 +28,7 @@ export default class Ps extends Command {
 		json: Flags.boolean({ char: "j", description: "Emit machine-readable JSON" }),
 		plain: Flags.boolean({ description: "Static listing instead of the interactive monitor (list)" }),
 		dir: Flags.string({ description: "Target another project directory instead of the current one" }),
-		global: Flags.string({ description: "Target a machine-global service scope (e.g. browser-relay)" }),
+		global: Flags.string({ description: "Target a machine-global service scope (e.g. local-service)" }),
 		follow: Flags.boolean({ char: "f", description: "Keep streaming new output (logs)" }),
 		head: Flags.boolean({ description: "Read from the beginning instead of the tail (logs)" }),
 		lines: Flags.integer({ char: "n", description: "Number of log lines, max 1000 (logs)" }),
@@ -42,7 +42,7 @@ export default class Ps extends Command {
 		"harvest ps logs web --follow",
 		"harvest ps stop web",
 		"harvest ps kill web",
-		"harvest ps info relay --global browser-relay",
+		"harvest ps info worker --global local-service",
 	];
 
 	async run(): Promise<void> {

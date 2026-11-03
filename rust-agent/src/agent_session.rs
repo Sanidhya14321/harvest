@@ -31,6 +31,7 @@ impl RunHandle {
 pub enum EventKind {
 	Started,
 	TextDelta { text: String },
+	PluginEvent { tool_call_id: String, event: crate::plugins::protocol::Event },
 	Committed { entry_id: String, role: String },
 	Completed,
 	Failed,
@@ -44,38 +45,94 @@ pub struct SessionEvent {
 }
 
 pub struct AgentSession {
+	tools:      tools::ToolRuntime,
 	root:       PathBuf,
 	log:        DurableSession,
 	generation: u64,
 	sequence:   u64,
 	active:     Option<(RunHandle, CancelToken)>,
-	/// Snapshots shared by `read` and `edit` across this session's tool calls.
-	edit_store: pi_edit::EditStore,
-	/// Spilled tool outputs, beside the session file.
-	artifacts:  Option<crate::output::ArtifactStore>,
-	/// Merge-conflict blocks and the todo list.
-	tool_state: tools::SessionState,
 }
 impl AgentSession {
 	pub fn open(root: &Path, path: &Path, leaf: Option<&str>) -> Result<Self> {
-		let log = DurableSession::open(root, path, leaf)?;
+		Self::open_with_storage(root, root, path, leaf)
+	}
+
+	/// Keep the session writer in an explicitly owned artifact directory while
+	/// tools remain jailed to the workspace. Both roots are host-authorized.
+	pub fn open_with_storage(
+		root: &Path,
+		storage: &Path,
+		path: &Path,
+		leaf: Option<&str>,
+	) -> Result<Self> {
+		let log = DurableSession::open_for_workspace(storage, path, leaf, root)?;
+		let mut tools = tools::ToolRuntime::default();
+		tools.configure_core(
+			crate::settings::Settings::load(
+				crate::config::agent_dir_from(None, |key| std::env::var_os(key)).as_deref(),
+				root,
+				&[],
+			)?,
+			harvest_runtime::JailedFs::open(storage)
+				.and_then(|fs| Ok(fs.root().join(fs.relative(path)?)))
+				.ok()
+				.and_then(|file| crate::output::ArtifactStore::for_session(&file)),
+		);
 		Ok(Self {
+			tools,
 			root: root.canonicalize()?,
 			log,
 			generation: 0,
 			sequence: 0,
 			active: None,
-			edit_store: pi_edit::EditStore::new(),
-			artifacts: harvest_runtime::JailedFs::open(root)
-				.and_then(|fs| Ok(fs.root().join(fs.relative(path)?)))
-				.ok()
-				.and_then(|file| crate::output::ArtifactStore::for_session(&file)),
-			tool_state: tools::SessionState::with_settings(crate::settings::Settings::load(
-				crate::config::agent_dir_from(None, |key| std::env::var_os(key)).as_deref(),
-				root,
-				&[],
-			)?),
 		})
+	}
+
+	/// Select before a run. Snapshots remain volatile and are cleared on mode
+	/// changes.
+	pub fn configure_edit(&mut self, mode: crate::edit::Mode) -> Result<()> {
+		if self.active.is_some() {
+			bail!("cannot change edit mode during an active run");
+		}
+		self.tools.configure_edit(mode);
+		Ok(())
+	}
+
+	pub fn configure_plugins(
+		&mut self,
+		configurations: &[crate::plugins::Configuration],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		self
+			.tools
+			.configure_plugins(&self.root, configurations, cancellation)
+	}
+
+	pub fn configure_mcp(
+		&mut self,
+		configurations: &[crate::mcp::Configuration],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		self
+			.tools
+			.configure_mcp(&self.root, configurations, cancellation)
+	}
+
+	pub fn configure_language_services(
+		&mut self,
+		lsp: Vec<crate::language_services::LspConfiguration>,
+		dap: Vec<crate::language_services::DapConfiguration>,
+	) -> Result<()> {
+		self.tools.configure_language_services(&self.root, lsp, dap)
+	}
+
+	pub fn configure_browser(&mut self, options: harvest_browser::Options) {
+		self.tools.configure_browser(options);
+	}
+
+	/// Immutable persisted payloads, including host tool details and raw usage.
+	pub fn stored_messages(&self) -> &[Box<serde_json::value::RawValue>] {
+		self.log.stored_messages()
 	}
 
 	pub fn session_id(&self) -> &str {
@@ -112,6 +169,23 @@ impl AgentSession {
 		self.execute(&handle, prompt, model, approval, options, sink)
 	}
 
+	/// Stop successfully at a durable tool-batch boundary when the host's
+	/// checkpoint returns true. Every call in the batch has its result
+	/// committed; no synthetic assistant response or provider usage is
+	/// recorded.
+	pub fn submit_until_tool_checkpoint(
+		&mut self,
+		prompt: &str,
+		model: &dyn Model,
+		approval: &dyn tools::Approval,
+		options: &RunOptions,
+		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+		checkpoint: &mut dyn FnMut(&[Box<serde_json::value::RawValue>]) -> Result<bool>,
+	) -> Result<String> {
+		let handle = self.begin(options.cancellation.clone())?;
+		self.execute_until(&handle, prompt, model, approval, options, sink, checkpoint)
+	}
+
 	pub fn execute(
 		&mut self,
 		handle: &RunHandle,
@@ -121,6 +195,19 @@ impl AgentSession {
 		options: &RunOptions,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
 	) -> Result<String> {
+		self.execute_until(handle, prompt, model, approval, options, sink, &mut |_| Ok(false))
+	}
+
+	fn execute_until(
+		&mut self,
+		handle: &RunHandle,
+		prompt: &str,
+		model: &dyn Model,
+		approval: &dyn tools::Approval,
+		options: &RunOptions,
+		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+		checkpoint: &mut dyn FnMut(&[Box<serde_json::value::RawValue>]) -> Result<bool>,
+	) -> Result<String> {
 		let Some((active, cancellation)) = &self.active else {
 			bail!("run is not active");
 		};
@@ -128,7 +215,7 @@ impl AgentSession {
 			bail!("stale run generation");
 		}
 		let cancellation = cancellation.clone();
-		let result = self.drive(prompt, model, approval, options, &cancellation, sink);
+		let result = self.drive(prompt, model, approval, options, &cancellation, sink, checkpoint);
 		self.active = None;
 		// Failure to deliver the terminal event is surfaced too, never hidden.
 		self.emit(
@@ -165,15 +252,24 @@ impl AgentSession {
 		model: &dyn Model,
 		usage: Option<&crate::usage::UsageReport>,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
-	) -> Result<String> {
+	) -> Result<()> {
+		self.commit_details(message, model, usage, None, None, sink)
+	}
+
+	fn commit_details(
+		&mut self,
+		message: &chat::ChatMessage,
+		model: &dyn Model,
+		usage: Option<&crate::usage::UsageReport>,
+		details: Option<&serde_json::Value>,
+		tool_error: Option<bool>,
+		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+	) -> Result<()> {
 		let entry_id = self
 			.log
-			.commit_with_usage(message, model.model_id(), usage)?;
-		self.emit(
-			EventKind::Committed { entry_id: entry_id.clone(), role: message.role.clone() },
-			sink,
-		)?;
-		Ok(entry_id)
+			.commit_with_metadata_receipt(message, model.model_id(), usage, details, tool_error)?
+			.entry_id;
+		self.emit(EventKind::Committed { entry_id, role: message.role.clone() }, sink)
 	}
 
 	fn drive(
@@ -184,6 +280,7 @@ impl AgentSession {
 		options: &RunOptions,
 		cancellation: &CancelToken,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
+		checkpoint: &mut dyn FnMut(&[Box<serde_json::value::RawValue>]) -> Result<bool>,
 	) -> Result<String> {
 		if prompt.is_empty() || options.max_steps == 0 {
 			bail!("prompt and positive max steps are required");
@@ -194,21 +291,15 @@ impl AgentSession {
 		let context = agent::context(&self.root, prompt, options)?;
 		self.emit(EventKind::Started, sink)?;
 		self.commit(&chat::user(prompt), model, None, sink)?;
-		let preamble = {
-			let mut preamble = vec![agent::system_message()];
-			if !context.is_empty() {
-				preamble.push(chat::system(&context));
-			}
-			preamble
-		};
-		let mut messages = preamble.clone();
+		let mut messages = vec![agent::system_message()];
+		if !context.is_empty() {
+			messages.push(chat::system(&context));
+		}
 		messages.extend_from_slice(self.log.messages());
-		// `checkpoint` result entry and the active-context length after it.
-		let mut checkpoint: Option<(String, usize)> = None;
 		for _ in 0..options.max_steps {
 			cancellation.heartbeat()?;
 			let response =
-				model.stream_response(&messages, &chat::specs(), cancellation, &mut |text| {
+				model.stream_response(&messages, &self.tools.specs(), cancellation, &mut |text| {
 					cancellation.heartbeat()?;
 					self.emit(EventKind::TextDelta { text: text.into() }, sink)
 				})?;
@@ -227,36 +318,40 @@ impl AgentSession {
 			}
 			for call in calls {
 				cancellation.heartbeat()?;
-				let output = match tools::invoke_in_session(
-					&self.root,
+				// Temporarily move the sole runtime owner so the event callback may
+				// use the session's existing sequence/sink without aliasing tools.
+				let mut runtime = std::mem::take(&mut self.tools);
+				let root = self.root.clone();
+				let result = runtime.invoke_detailed_with_events(
+					&root,
 					&call,
 					approval,
 					cancellation,
-					&self.edit_store,
-					self.artifacts.as_ref(),
-					&self.tool_state,
-				) {
+					&mut |event| {
+						self.emit(EventKind::PluginEvent { tool_call_id: call.id.clone(), event }, sink)
+					},
+				);
+				self.tools = runtime;
+				let output = match result {
 					Ok(output) => output,
-					Err(error) => format!("error: {error:#}"),
+					Err(error) => tools::ToolOutput::failure(format!("error: {error:#}")),
 				};
-				let succeeded = !output.starts_with("error: ");
-				let result = chat::tool_result(&call.id, output);
-				let entry_id = self.commit(&result, model, None, sink)?;
+				let result = chat::tool_result(&call.id, output.content);
+				self.commit_details(
+					&result,
+					model,
+					None,
+					output.details.as_ref(),
+					Some(output.is_error),
+					sink,
+				)?;
 				messages.push(result);
-				if call.function.name == "checkpoint" && succeeded {
-					checkpoint = Some((entry_id, self.log.messages().len()));
-				}
 			}
-			if let Some(report) = self.tool_state.take_rewind() {
-				// `#applyRewind`: branch back to the checkpoint result and retain
-				// only the report.
-				if let Some((entry_id, count)) = checkpoint.take() {
-					self.log.rewind_to(&entry_id, count)?;
-				}
-				let text = include_str!("prompts/rewind-report.md").replace("{{report}}", &report);
-				self.commit(&chat::user(text.trim_end()), model, None, sink)?;
-				messages.clone_from(&preamble);
-				messages.extend_from_slice(self.log.messages());
+			cancellation.heartbeat()?;
+			let stop = checkpoint(self.stored_messages())?;
+			cancellation.heartbeat()?;
+			if stop {
+				return Ok(String::new());
 			}
 		}
 		bail!("stopped after {} steps", options.max_steps)

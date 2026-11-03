@@ -324,25 +324,6 @@ STAGED_ALIAS=
 mv -f "${STAGED_BINARY}" "${DESTINATION}" || fail "could not install Omp to ${DESTINATION}"
 STAGED_BINARY=
 
-install_completions() {
-    configured_shell=${SHELL:-}
-    shell_name=${configured_shell##*/}
-    case "${shell_name}" in
-        bash | elvish | fish | zsh) ;;
-        '')
-            shell_name=bash
-            info "SHELL is not set; using bash completion paths"
-            ;;
-        *) return ;;
-    esac
-    info "installing ${shell_name} completions"
-    "${DESTINATION}" completions "${shell_name}" --install --automatic >/dev/null ||
-        fail "could not install ${shell_name} completions"
-    info "installed harvest beside Omp; start a new ${shell_name} session only to enable completions"
-}
-
-install_completions
-
 path_contains_bin_dir() {
     path_contains "${BIN_DIR}"
 }

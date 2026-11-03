@@ -3,8 +3,7 @@ import { INTENT_FIELD } from "@harvest/pi-wire";
 import { EvalKernelNotRunningError } from "../eval/executor-base";
 import { invokeJsTool } from "../eval/js/context-manager";
 import { resolveJsKernelIdentity } from "../eval/js";
-import { callPythonTool, describePythonTools } from "../eval/py/executor";
-import { resolvePythonKernelIdentity } from "../eval/py";
+import { PYTHON_EVAL_RETIRED } from "../eval/py/executor";
 import type { EvalToolDescriptor, EvalToolInvokeResult } from "../eval/types";
 import type { CustomTool } from "../extensibility/custom-tools/types";
 import type { ToolSession } from "../tools";
@@ -18,23 +17,6 @@ interface EvalToolQueryResult {
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-async function queryPythonTools(
-	session: ToolSession,
-	names: string[],
-	signal?: AbortSignal,
-): Promise<EvalToolQueryResult> {
-	try {
-		return await describePythonTools(names, {
-			...resolvePythonKernelIdentity(session),
-			toolSession: session,
-			signal,
-		});
-	} catch (error) {
-		if (error instanceof EvalKernelNotRunningError) return { tools: [], missing: names };
-		throw error;
-	}
 }
 
 async function queryJsTools(session: ToolSession, names: string[], signal?: AbortSignal): Promise<EvalToolQueryResult> {
@@ -57,21 +39,7 @@ async function queryAllEvalTools(
 	names: string[],
 	signal?: AbortSignal,
 ): Promise<EvalToolDescriptor[]> {
-	const [python, js] = await Promise.all([
-		queryPythonTools(session, names, signal),
-		queryJsTools(session, names, signal),
-	]);
-	const byName = new Map<string, EvalToolDescriptor>();
-	for (const descriptor of [...python.tools, ...js.tools]) {
-		const existing = byName.get(descriptor.name);
-		if (existing && existing.language !== descriptor.language) {
-			throw new ToolError(
-				`eval tool "${descriptor.name}" is defined in both the Python and JS kernels; undefine one`,
-			);
-		}
-		byName.set(descriptor.name, descriptor);
-	}
-	return [...byName.values()];
+	return (await queryJsTools(session, names, signal)).tools;
 }
 
 /** Whether this session may expose kernel-defined tools to subagents (`eval.tools.enabled`). */
@@ -158,11 +126,7 @@ export function createEvalCustomTools(session: ToolSession, descriptors: EvalToo
 			let result: EvalToolInvokeResult;
 			try {
 				if (descriptor.language === "python") {
-					result = await callPythonTool(descriptor.name, args, {
-						...resolvePythonKernelIdentity(session),
-						toolSession: session,
-						signal,
-					});
+					result = { ok: false, error: PYTHON_EVAL_RETIRED };
 				} else {
 					const jsResult = await invokeJsTool(
 						{ op: "call", name: descriptor.name, args },

@@ -41,11 +41,13 @@ export type StdinBufferEventMap = {
 export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 	readonly #native: NativeStdinBuffer;
 	readonly #chunkBytes: number;
+	readonly #clockStart = performance.now();
+	#lastTime = 0;
 	#timer?: ReturnType<typeof setTimeout>;
 
 	constructor(options: StdinBufferOptions = {}) {
 		super();
-		this.#native = new NativeStdinBuffer(options);
+		this.#native = new NativeStdinBuffer({ ...options, hostTime: 0 });
 		this.#chunkBytes = this.#native.chunkBytes;
 	}
 
@@ -57,6 +59,7 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 				: data.toString()
 			: data;
 		const bytes = Buffer.from(text);
+		this.#syncClock();
 		this.#cancelTimer();
 		try {
 			if (bytes.length === 0) {
@@ -105,13 +108,20 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		this.#timer = undefined;
 	}
 
+	#syncClock(): void {
+		this.#lastTime = Math.max(this.#lastTime, performance.now() - this.#clockStart);
+		this.#native.setTime(this.#lastTime);
+	}
+
 	#armTimer(): void {
 		this.#cancelTimer();
+		this.#syncClock();
 		const delay = this.#native.delay();
 		if (delay === null) return;
 		this.#timer = setTimeout(() => {
 			this.#timer = undefined;
 			try {
+				this.#syncClock();
 				this.#dispatch(this.#native.tick(isKittyProtocolActive()));
 			} finally {
 				this.#armTimer();

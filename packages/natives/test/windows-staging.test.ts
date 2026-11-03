@@ -27,6 +27,7 @@ import {
 	cleanupStaleNativeVersions,
 	getAddonFilenames,
 	initLoaderContext,
+	loadNative,
 	prepareNativeVersionDir,
 	resolveLoaderCandidates,
 	shouldStageNodeModulesAddon,
@@ -194,14 +195,15 @@ describe("windows native addon staging", () => {
 
 	it("removes only older version directories after the current native version loads", async () => {
 		const nativesDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-natives-cache-"));
-		const currentMajor = Number.parseInt(packageJson.version, 10);
-		const futureVersion = `${currentMajor + 1}.0.0`;
-		const staleVersion = "15.10.11";
-		const freshVersion = "15.10.12";
+		// Keep the cleanup contract independent of repository release numbering.
+		const currentVersion = "2.0.0";
+		const futureVersion = "3.0.0";
+		const staleVersion = "1.0.0";
+		const freshVersion = "1.1.0";
 		try {
 			await fs.mkdir(path.join(nativesDir, staleVersion));
 			await fs.mkdir(path.join(nativesDir, freshVersion));
-			await fs.mkdir(path.join(nativesDir, packageJson.version));
+			await fs.mkdir(path.join(nativesDir, currentVersion));
 			await fs.mkdir(path.join(nativesDir, futureVersion));
 			await fs.mkdir(path.join(nativesDir, "not-a-version"));
 			await Bun.write(path.join(nativesDir, "README.txt"), "not a version directory");
@@ -209,11 +211,11 @@ describe("windows native addon staging", () => {
 			await fs.utimes(path.join(nativesDir, freshVersion), new Date(0), new Date(0));
 			prepareNativeVersionDir(path.join(nativesDir, freshVersion));
 
-			const removed = cleanupStaleNativeVersions({ nativesDir, currentVersion: packageJson.version });
+			const removed = cleanupStaleNativeVersions({ nativesDir, currentVersion });
 
 			expect(removed.map(filePath => path.basename(filePath))).toEqual([staleVersion]);
 			expect((await fs.readdir(nativesDir)).sort()).toEqual(
-				["README.txt", freshVersion, packageJson.version, futureVersion, "not-a-version"].sort(),
+				["README.txt", freshVersion, currentVersion, futureVersion, "not-a-version"].sort(),
 			);
 		} finally {
 			await fs.rm(nativesDir, { recursive: true, force: true });
@@ -222,15 +224,11 @@ describe("windows native addon staging", () => {
 });
 
 describe("pi-natives version sentinel", () => {
-	it("Rust `js_name` matches the package version", async () => {
-		// The JS loader (`packages/natives/native/index.js`) computes its expected
-		// sentinel from `package.json#version`; if the Rust source falls out of
-		// sync we ship a `.node` that the loader will refuse to use. Pinning the
-		// pairing here catches release-script regressions before they reach CI.
-		const libRs = await Bun.file(path.join(import.meta.dir, "../../../crates/pi-natives/src/lib.rs")).text();
-		const sentinelMatch = libRs.match(/js_name = "(__piNativesV[A-Za-z0-9_]+)"/);
-		expect(sentinelMatch, 'Rust sentinel `js_name = "__piNativesV…"` not found in lib.rs').not.toBeNull();
+	it("loads the current addon instead of falling back after a version mismatch", () => {
+		const bindings = loadNative();
 		const expected = `__piNativesV${packageJson.version.replace(/[^A-Za-z0-9]/g, "_")}`;
-		expect(sentinelMatch?.[1]).toBe(expected);
+		// A rejected/missing addon returns fallback bindings with a boolean
+		// sentinel. The installed artifact must expose its compiled function.
+		expect(typeof Reflect.get(bindings, expected)).toBe("function");
 	});
 });

@@ -68,19 +68,11 @@ Sources: [`packages/metaharness/README.md`](../packages/metaharness/README.md), 
 - Outputs include Harbor trial directories, `_bench/<jobName>/report.md`, per-run logs, edit reports, normalized traces, dashboard metrics, and REST/SSE updates.
 - Limits: deleting an experiment or run also deletes its job directories and is rejected while the target is running. Harbor requires Docker or Apple Container plus the Harbor CLI; backend-specific network and mount constraints are documented in the package README.
 
-### `packages/browser-relay` — drive existing Chrome tabs
+### Native browser controller
 
-Sources: [`packages/browser-relay/README.md`](../packages/browser-relay/README.md), [`packages/browser-relay/package.json`](../packages/browser-relay/package.json), [`packages/coding-agent/src/tools/browser/relay/`](../packages/coding-agent/src/tools/browser/relay/).
-
-- Package: private `@harvest/browser-relay`; user command: `harvest browser-relay`.
-- Setup: run `harvest browser-relay install`, load the unpacked extension from
-  `~/.harvest/browser-relay/extension`, then opt in per call with `app.relay: true` — or set
-  `browser.relay`, which makes the relay the profile-wide default across projects (scope
-  details in the package README).
-- Behavior: the relay auto-starts through the global daemon broker; `app.target` selects a tab by
-  URL/title substring, otherwise the visible tab is adopted.
-- Security/limits: it binds loopback; use `--token` when local processes are untrusted. Chrome
-  internal pages, DevTools, Web Store, extension pages, and tabs with DevTools open cannot attach.
+The Chrome extension relay has been retired. Use the [Rust browser controller](./browser-migration.md)
+with a dedicated persistent Chrome profile. The native CLI and SDK use CDP directly;
+users sign in separately in that profile.
 
 ### `packages/collab-web` — browser client for collaborative sessions
 

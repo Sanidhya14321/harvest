@@ -1,0 +1,1 @@
+Python evaluation was retired for Harvest's Rust-only release. Use the normal shell tool for user-requested external programs, or implement integrations with the Rust SDK and executable plugin protocol. Python kernel state and injected Python preludes are no longer available.

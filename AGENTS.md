@@ -1,5 +1,14 @@
 # Development Rules
 
+## Rust migration work
+
+For the full-workspace migration on `ts-to-rust`, read
+`docs/rust-migration/PLAYBOOK.md`, `SCOPE.md`, and the live `HANDOFF.md`.
+The user-approved strict Rust-only target supersedes historical browser-glue and
+installer-script exceptions. Bun/TypeScript rules below apply to retained
+transitional consumers, not to new ordinary Rust engines. Use the existing
+source/capability/task gates and preserve the original baseline.
+
 ## Default Context
 
 This repo contains multiple packages, but **`packages/coding-agent/`** is the primary focus. Unless otherwise specified, assume work refers to this package.
@@ -24,7 +33,7 @@ This repo contains multiple packages, but **`packages/coding-agent/`** is the pr
 | `packages/wire/`                | Shared collab live-session protocol types                          |
 | `packages/collab-web/`          | Browser guest client + local relay for collab sessions             |
 | `packages/snapcompact/`         | Bitmap-frame context compression                                   |
-| `packages/browser-relay/`       | Extension relay for Eval browser API                               |
+| `crates/harvest-browser/`       | Native dedicated-profile CDP browser engine (extension relay retired) |
 | `packages/harvest-memory/`, `packages/harvest-schema/` | Memory backend + shared schema                       |
 | `packages/typescript-edit-benchmark/` | Edit benchmark suite                                         |
 | `crates/pi-*` (`crates/harvest-*` mirrors) | Rust natives: shell, ast, iso, voice, walker, edit, vcs, diff |
@@ -281,7 +290,7 @@ For the bash tool specifically:
 - NEVER commit unless asked.
 - Never use `tsc`/`npx tsc` — the typecheck gate is `bun run check` (root: `check:ts` + `check:rs`; in `packages/coding-agent/`: oxlint + oxfmt + `tsgo -p tsconfig.json --noEmit` via `check:types`).
 - Never run `cargo test` directly for Rust tests — use `bun run test:rs`. It runs `cargo nextest run` (config: `.config/nextest.toml`) followed by a `cargo test --doc` pass, because nextest does not execute doctests. The doctest pass currently executes nothing (pi-natives is a `cdylib`, which rustdoc skips; pi-builtins' examples are `ignore`d vendored uutils docs) and exists so the first runnable doctest added to a lib crate is actually run.
-- Fresh clone: `bun setup` (installs workspaces + builds `@harvest/pi-natives`), then `bun dev`. Non-interactive smoke: `bun dev -- --version`. Re-run `bun run build:native` after changing Rust crates or `packages/natives`.
+- Fresh clone: `bun setup` (installs workspaces + builds `@harvest/pi-natives`), then `bun dev`. Non-interactive smoke: `bun dev -- --version`. Re-run `bun run build:native` after changing native bindings or Rust engines consumed by the addon. For xtask-only or Rust-application-only changes outside that dependency path, run the affected Cargo/consumer checks. Group connected addon changes into one verified batch and rebuild once before its consumer checks.
 - Focused verification: `bun --cwd=packages/coding-agent run check` (gate), `run check:types` (types only), `run lint`, `bun test <path>` (single file). Full TS suites go through `bun scripts/ci-test-ts.ts <suite>` — never bare root `bun test` (it walks the whole tree; `bunfig.toml` only prunes known scratch dirs). New worker kinds: validate with `harvest --smoke-test` (wired into `ci:test:smoke`).
 - Codegen after editing sources: `bun run gen:compat` (KDL → `rules.json`), `bun run gen:models` (catalog → `models.json`), `bun run gen:nix` only when `bun.lock` changes (never edit `nix/bun.nix` manually). Python: `bun run lint:py` / `fix:py` (ruff).
 - Merge commits follow standard conventional commit subjects: `Merge PR #<number>: <conventional PR subject>`.

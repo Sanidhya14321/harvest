@@ -1,35 +1,38 @@
 //! SIXEL terminal-image encoding and bounded decoding.
 //!
-//! Encodes PNG/JPEG/WebP/GIF/BMP images for terminal display and decodes
-//! captured SIXEL control strings back to bounded PNG attachments. Every
-//! dimension is checked before the corresponding allocation happens.
+//! Encodes PNG/JPEG/WebP/GIF images for terminal display and decodes captured
+//! SIXEL control strings back to bounded PNG attachments.
+//!
+//! Shared by native Rust consumers and the temporary N-API host adapter.
+
 use std::io::Cursor;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use icy_sixel::{EncodeOptions, SixelImage, sixel_encode};
-use image::{DynamicImage, ImageFormat, ImageReader, Limits, RgbaImage, imageops::FilterType};
+use image::{
+	DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits, RgbaImage, imageops::FilterType,
+};
 
-/// Largest decoded or encoded image, in pixels.
-pub const MAX_DECODED_PIXELS: usize = 4 * 1024 * 1024;
-/// Largest image edge, in pixels.
-pub const MAX_IMAGE_EDGE: usize = 8192;
-/// Largest accepted SIXEL payload.
-pub const MAX_SIXEL_BYTES: usize = 20 * 1024 * 1024;
-/// Largest PNG produced from a decoded SIXEL.
-pub const MAX_PNG_BYTES: usize = 20 * 1024 * 1024;
-/// Largest source image decoded for encoding, in pixels.
-pub const MAX_SOURCE_PIXELS: u64 = 64 * 1024 * 1024;
-/// Largest source image file accepted for encoding.
-pub const MAX_SOURCE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_IMAGE_INPUT_BYTES: usize = 20 * 1024 * 1024;
+const MAX_SOURCE_PIXELS: u64 = 16 * 1024 * 1024;
+const MAX_SOURCE_EDGE: u32 = 16384;
+const MAX_SOURCE_ALLOC: u64 = 128 * 1024 * 1024;
+const MAX_ENCODE_WORK_BYTES: u64 = 128 * 1024 * 1024;
 
-/// Decode one complete SIXEL control string into PNG bytes.
+const MAX_DECODED_PIXELS: usize = 4 * 1024 * 1024;
+const MAX_IMAGE_EDGE: usize = 8192;
+const MAX_SIXEL_BYTES: usize = 20 * 1024 * 1024;
+const MAX_PNG_BYTES: usize = 20 * 1024 * 1024;
+
+/// Decode one complete SIXEL control string into a PNG.
 ///
-/// Raster declarations, repeats and row advances are scanned first so hostile
-/// dimensions cannot make the decoder allocate its much larger internal
-/// maximum.
+/// The decoder is deliberately bounded before handing the stream to
+/// `icy_sixel`: raster declarations, repeats, and row advances are scanned
+/// first so hostile dimensions cannot make the dependency allocate its much
+/// larger internal maximum.
 pub fn decode_sixel_to_png(bytes: &[u8]) -> Result<Vec<u8>> {
 	if bytes.len() > MAX_SIXEL_BYTES {
-		bail!("SIXEL payload exceeds the 20 MiB limit");
+		return Err(anyhow::Error::msg("SIXEL payload exceeds the 20 MiB limit"));
 	}
 	preflight_sixel_dimensions(bytes)?;
 
@@ -48,62 +51,9 @@ pub fn decode_sixel_to_png(bytes: &[u8]) -> Result<Vec<u8>> {
 		.write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
 		.map_err(|err| anyhow::Error::msg(format!("Failed to encode decoded SIXEL as PNG: {err}")))?;
 	if png.len() > MAX_PNG_BYTES {
-		bail!("Decoded SIXEL PNG exceeds the 20 MiB limit");
+		return Err(anyhow::Error::msg("Decoded SIXEL PNG exceeds the 20 MiB limit"));
 	}
 	Ok(png)
-}
-
-/// Encode image bytes into a SIXEL escape sequence, resized to exactly
-/// `target_width_px` × `target_height_px`.
-///
-/// Target and source dimensions are validated before decoding or resizing.
-pub fn encode_sixel(bytes: &[u8], target_width_px: u32, target_height_px: u32) -> Result<String> {
-	if target_width_px == 0 || target_height_px == 0 {
-		bail!("Target SIXEL dimensions must be greater than zero");
-	}
-	if guard_dimensions(target_width_px as usize, target_height_px as usize).is_err() {
-		bail!("Target SIXEL dimensions exceed the encode limit");
-	}
-
-	let source = decode_image_from_bytes(bytes)?;
-	let resized = if source.width() == target_width_px && source.height() == target_height_px {
-		source
-	} else {
-		source.resize_exact(target_width_px, target_height_px, FilterType::Lanczos3)
-	};
-	let rgba = resized.to_rgba8();
-	let options = EncodeOptions::default();
-	sixel_encode(rgba.as_raw(), target_width_px as usize, target_height_px as usize, &options)
-		.map_err(|err| anyhow::Error::msg(format!("Failed to encode SIXEL: {err}")))
-}
-
-fn decode_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage> {
-	if bytes.len() > MAX_SOURCE_BYTES {
-		bail!("Source image exceeds the 64 MiB limit");
-	}
-	let reader = || {
-		ImageReader::new(Cursor::new(bytes))
-			.with_guessed_format()
-			.map_err(|e| anyhow::Error::msg(format!("Failed to detect image format: {e}")))
-	};
-	// `Limits` is not strictly enforced by every decoder, so check the header
-	// dimensions explicitly before any pixel allocation.
-	let (width, height) = reader()?
-		.into_dimensions()
-		.map_err(|e| anyhow::Error::msg(format!("Failed to decode image: {e}")))?;
-	if u64::from(width) * u64::from(height) > MAX_SOURCE_PIXELS {
-		bail!("Source image dimensions exceed the decode limit");
-	}
-
-	let mut limits = Limits::default();
-	limits.max_image_width = Some(width);
-	limits.max_image_height = Some(height);
-	limits.max_alloc = Some(MAX_SOURCE_PIXELS * 4 * 2);
-	let mut reader = reader()?;
-	reader.limits(limits);
-	reader
-		.decode()
-		.map_err(|e| anyhow::Error::msg(format!("Failed to decode image: {e}")))
 }
 
 fn guard_dimensions(width: usize, height: usize) -> Result<()> {
@@ -113,7 +63,7 @@ fn guard_dimensions(width: usize, height: usize) -> Result<()> {
 		|| height > MAX_IMAGE_EDGE
 		|| width.saturating_mul(height) > MAX_DECODED_PIXELS
 	{
-		bail!("SIXEL image dimensions exceed the decode limit");
+		return Err(anyhow::Error::msg("SIXEL image dimensions exceed the decode limit"));
 	}
 	Ok(())
 }
@@ -206,66 +156,168 @@ fn decimal(bytes: &[u8], mut index: usize) -> (usize, usize) {
 	(value, index)
 }
 
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	fn png(width: u32, height: u32) -> Vec<u8> {
-		let image = RgbaImage::from_fn(width, height, |x, y| {
-			image::Rgba([(x * 40) as u8, (y * 40) as u8, 128, 255])
-		});
-		let mut out = Vec::new();
-		DynamicImage::ImageRgba8(image)
-			.write_to(&mut Cursor::new(&mut out), ImageFormat::Png)
-			.unwrap();
-		out
+/// Encode image bytes into a SIXEL escape sequence for terminal rendering.
+///
+/// The input image is decoded and resized to the requested pixel dimensions
+/// before encoding.
+///
+/// # Errors
+/// Returns an error if decoding, resizing, or SIXEL encoding fails.
+pub fn encode_sixel(bytes: &[u8], target_width_px: u32, target_height_px: u32) -> Result<String> {
+	if target_width_px == 0 || target_height_px == 0 {
+		return Err(anyhow::Error::msg("Target SIXEL dimensions must be greater than zero"));
 	}
 
+	if target_width_px as usize > MAX_IMAGE_EDGE
+		|| target_height_px as usize > MAX_IMAGE_EDGE
+		|| u64::from(target_width_px) * u64::from(target_height_px) > MAX_DECODED_PIXELS as u64
+	{
+		return Err(anyhow::Error::msg("Target SIXEL dimensions exceed the encode allocation limit"));
+	}
+	// Bound dimensions before arithmetic. The pinned encoder emits at most
+	// one byte per column/color/band, five bytes per color row, and a bounded
+	// header/palette. String growth can reserve twice this finite budget.
+	let bands = u64::from(target_height_px).div_ceil(6);
+	let worst_payload = bands * (u64::from(target_width_px) + 5) * 256 + bands + 8192;
+	if worst_payload > MAX_ENCODE_WORK_BYTES {
+		return Err(anyhow::Error::msg("Target SIXEL dimensions exceed the encode allocation limit"));
+	}
+	if bytes.len() > MAX_IMAGE_INPUT_BYTES {
+		return Err(anyhow::Error::msg("SIXEL source image exceeds the 20 MiB limit"));
+	}
+	let source = decode_image_from_bytes(bytes)?;
+	let resized = if source.width() == target_width_px && source.height() == target_height_px {
+		source
+	} else {
+		source.resize_exact(target_width_px, target_height_px, FilterType::Lanczos3)
+	};
+	let rgba = resized.to_rgba8();
+	let options = EncodeOptions::default();
+	let encoded =
+		sixel_encode(rgba.as_raw(), target_width_px as usize, target_height_px as usize, &options)
+			.map_err(|err| anyhow::Error::msg(format!("Failed to encode SIXEL: {err}")))?;
+	if encoded.len() > MAX_SIXEL_BYTES {
+		return Err(anyhow::Error::msg("Encoded SIXEL payload exceeds the 20 MiB limit"));
+	}
+	Ok(encoded)
+}
+
+fn decode_image_from_bytes(bytes: &[u8]) -> Result<DynamicImage> {
+	let mut reader = ImageReader::new(Cursor::new(bytes))
+		.with_guessed_format()
+		.map_err(|error| anyhow::Error::msg(format!("Failed to detect image format: {error}")))?;
+	let mut limits = Limits::default();
+	limits.max_image_width = Some(MAX_SOURCE_EDGE);
+	limits.max_image_height = Some(MAX_SOURCE_EDGE);
+	limits.max_alloc = Some(MAX_SOURCE_ALLOC);
+	reader.limits(limits);
+	let decoder = reader
+		.into_decoder()
+		.map_err(|error| anyhow::Error::msg(format!("Failed to decode image: {error}")))?;
+	let (width, height) = decoder.dimensions();
+	if width == 0
+		|| height == 0
+		|| u64::from(width) * u64::from(height) > MAX_SOURCE_PIXELS
+		|| decoder.total_bytes() > MAX_SOURCE_ALLOC
+	{
+		return Err(anyhow::Error::msg(
+			"SIXEL source image dimensions exceed the decode allocation limit",
+		));
+	}
+	DynamicImage::from_decoder(decoder)
+		.map_err(|error| anyhow::Error::msg(format!("Failed to decode image: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+	use base64::{Engine, engine::general_purpose::STANDARD};
+	use serde_json::Value;
+
+	use super::*;
+
 	#[test]
-	fn encode_then_decode_roundtrips_dimensions() -> Result<()> {
-		let sixel = encode_sixel(&png(4, 6), 8, 12)?;
-		assert!(sixel.starts_with("\x1bP"));
-		let decoded = image::load_from_memory(&decode_sixel_to_png(sixel.as_bytes())?)?;
-		assert_eq!((decoded.width(), decoded.height()), (8, 12));
+	fn shared_engine_preserves_captured_native_frames_pngs_and_error_contracts() -> Result<()> {
+		let oracle: Value =
+			serde_json::from_str(include_str!("../tests/fixtures/sixel-oracle.json"))?;
+		for case in oracle["encode"].as_array().expect("encode fixture rows") {
+			let input = STANDARD.decode(case["input"].as_str().expect("base64 input"))?;
+			let result = encode_sixel(
+				&input,
+				case["width"].as_u64().expect("width") as u32,
+				case["height"].as_u64().expect("height") as u32,
+			);
+			if let Some(error) = case["error"].as_str() {
+				assert_eq!(result.unwrap_err().to_string(), error);
+			} else {
+				assert_eq!(result?, case["output"].as_str().expect("SIXEL output"));
+			}
+		}
+		for case in oracle["decode"].as_array().expect("decode fixture rows") {
+			let input = STANDARD.decode(case["input"].as_str().expect("base64 input"))?;
+			let result = decode_sixel_to_png(&input);
+			if let Some(error) = case["error"].as_str() {
+				assert_eq!(result.unwrap_err().to_string(), error);
+			} else {
+				assert_eq!(result?, STANDARD.decode(case["output"].as_str().expect("PNG output"))?);
+			}
+		}
 		Ok(())
 	}
 
 	#[test]
-	fn oversized_encode_target_is_rejected_before_decoding() {
-		// Garbage source bytes prove the target check runs before any decode.
-		let err = encode_sixel(b"not an image", 9000, 10).unwrap_err();
-		assert_eq!(err.to_string(), "Target SIXEL dimensions exceed the encode limit");
-		let err = encode_sixel(b"not an image", 0, 10).unwrap_err();
-		assert_eq!(err.to_string(), "Target SIXEL dimensions must be greater than zero");
-	}
-
-	#[test]
-	fn hostile_raster_declaration_is_rejected() {
-		let err = decode_sixel_to_png(b"\x1bPq\"1;1;100000;100000#0~\x1b\\").unwrap_err();
-		assert_eq!(err.to_string(), "SIXEL image dimensions exceed the decode limit");
-	}
-
-	#[test]
-	fn repeat_count_overflow_is_rejected() {
-		let err = decode_sixel_to_png(b"\x1bPq!99999999~\x1b\\").unwrap_err();
-		assert_eq!(err.to_string(), "SIXEL image dimensions exceed the decode limit");
-	}
-
-	#[test]
-	fn missing_introducers_map_to_errors() {
-		assert_eq!(
-			decode_sixel_to_png(b"q~").unwrap_err().to_string(),
-			"SIXEL data is missing a DCS introducer"
+	fn oversized_targets_are_rejected_before_source_decode_or_dimension_arithmetic() {
+		// Ordinary full-HD display targets still reach source decoding.
+		assert!(
+			encode_sixel(b"not an image", 1920, 1080)
+				.unwrap_err()
+				.to_string()
+				.starts_with("Failed to decode image:")
 		);
+		for (width, height) in [(u32::MAX, u32::MAX), (8192, 8192), (8192, 512)] {
+			let error = encode_sixel(b"not an image", width, height).unwrap_err();
+			assert_eq!(
+				error.to_string(),
+				"Target SIXEL dimensions exceed the encode allocation limit"
+			);
+		}
+	}
+
+	#[test]
+	fn oversized_compressed_source_is_rejected_before_format_parsing() {
+		let input = vec![0; MAX_IMAGE_INPUT_BYTES + 1];
 		assert_eq!(
-			decode_sixel_to_png(b"\x1bP~").unwrap_err().to_string(),
-			"SIXEL data is missing its q introducer"
+			encode_sixel(&input, 1, 1).unwrap_err().to_string(),
+			"SIXEL source image exceeds the 20 MiB limit"
 		);
 	}
 
 	#[test]
-	fn undecodable_source_maps_to_decode_error() {
-		let err = encode_sixel(b"definitely not an image", 4, 4).unwrap_err();
-		assert!(err.to_string().starts_with("Failed to"), "{err}");
+	fn source_dimensions_are_checked_before_allocating_a_decoded_bitmap() -> Result<()> {
+		let mut bitmap = Vec::new();
+		DynamicImage::ImageRgb8(image::RgbImage::new(1, 1))
+			.write_to(&mut Cursor::new(&mut bitmap), ImageFormat::Bmp)?;
+		bitmap[18..22].copy_from_slice(&6000_u32.to_le_bytes());
+		bitmap[22..26].copy_from_slice(&6000_u32.to_le_bytes());
+		assert!(
+			encode_sixel(&bitmap, 1, 1)
+				.unwrap_err()
+				.to_string()
+				.contains("allocation limit")
+		);
+		Ok(())
+	}
+
+	#[test]
+	fn encoded_transparent_pixels_remain_transparent_after_decoding() -> Result<()> {
+		let mut pixels = image::RgbaImage::new(2, 6);
+		pixels.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+		let mut png = Vec::new();
+		DynamicImage::ImageRgba8(pixels).write_to(&mut Cursor::new(&mut png), ImageFormat::Png)?;
+		let encoded = encode_sixel(&png, 2, 6)?;
+		let decoded = image::load_from_memory(&decode_sixel_to_png(encoded.as_bytes())?)?.to_rgba8();
+		assert_eq!(decoded.dimensions(), (2, 6));
+		assert_eq!(decoded.get_pixel(0, 0).0, [255, 0, 0, 255]);
+		assert_eq!(decoded.get_pixel(1, 0).0[3], 0);
+		Ok(())
 	}
 }

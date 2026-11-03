@@ -153,21 +153,59 @@ omitted from the benchmark prompt. Override infrastructure with
 
 ## Trace reports
 
-`scripts/trace-report.ts` turns one run trace into a narrative markdown report
-(numbered Turn Log with one grounded sentence per assistant turn, harness
-notices in place, then a Story Arc and — for failed runs — a failure analysis).
-It map/reduces the normalized trace through two cheap OpenRouter models
-(defaults: `inclusionai/ling-2.6-flash` per turn, `openai/gpt-oss-120b` for the
-arc; ~$0.001 per report). API keys resolve through omp's auth storage.
+Native `harvest trace-report` turns one normalized run trace into a numbered
+Turn Log, parallel per-turn model summaries, then a Story Arc and failure analysis.
+It also reads actual persisted session JSONL through the shared Rust branch codec.
+No transcript tool/code is executed. Model prose is analysis, not proof of success.
 
 ```bash
-bun scripts/trace-report.ts <run> <trace> [--focus "reviewer notes"] [--out report.md]
-bun scripts/trace-report.ts "sb3-ntg|django__django-12325__ddQroP4"   # run|trace also accepted
+cargo run --quiet --locked -p harvest-omp --bin harvest -- trace-report <run> <trace> --workspace . --config trace-models.toml --tiny-profile trace-tiny --synth-profile trace-synth --out report.md
+# Offline normalized input, or a selected native/compatible persisted branch:
+harvest trace-report 'run|trace' --workspace . --input trace.json --metadata run.json --tiny-profile trace-tiny --synth-profile trace-synth
+harvest trace-report run trace --workspace . --session session.jsonl --leaf ENTRY_ID --tiny-profile trace-tiny --synth-profile trace-synth
 ```
 
-Flags: `--base` (server, default `http://localhost:4700`), `--tiny` / `--synth`
-(`<provider>/<model-id>` overrides), `--focus` (extra reviewer context, e.g. the
-known-correct fix for a failed task), `--concurrency` (default 8).
+`bun run trace:report -- ...` is the package convenience entrypoint to the same
+Rust CLI. Model selection uses native profiles, with explicit endpoints/API and
+credential sources (literal, environment, or opt-in command), rather than assuming
+that a provider/model string establishes catalog or credential policy. For example:
+
+```toml
+[profiles.trace-tiny]
+model = "inclusionai/ling-2.6-flash"
+base_url = "https://openrouter.ai/api/v1"
+api_key = "OPENROUTER_API_KEY"
+
+[profiles.trace-synth]
+extends = "trace-tiny"
+model = "openai/gpt-oss-120b"
+```
+
+Native configuration precedence remains profile < environment < flags; unset
+OMP_MODEL/OMP_BASE_URL overrides when selecting different profile models. Use
+`--config FILE` for a native-schema overlay; no old auth database is modified.
+Set OPENROUTER_API_KEY before using the example (the shared value resolver uses an
+exact environment name, with literal fallback). `--allow-credential-commands`
+explicitly authorizes command-backed secrets.
+`--base` defaults to http://localhost:4700; `--concurrency` defaults to 8 (1..32),
+`--timeout-seconds` bounds the whole job (default 600, max 3600), `--focus` supplies
+reviewer notes, and `--json` includes separate map/reduce usage and diagnostics.
+Output/input paths stay inside `--workspace`; output is atomic and only written
+when the whole report succeeds. Unknown usage/pricing stays unavailable.
+
+The server fetch requests its maximum 2,000-entry tail; upstream normalization
+may already truncate result bodies. Unsupported question/answer/conversation
+formats and orphan results fail explicitly. Offline/session input avoids the
+server dependency but remains bounded; a branch containing an orphan result must
+be repaired/selected correctly, never guessed into an assistant turn.
+
+**Credential compatibility pending:** the standalone `scripts/trace-report.ts`
+and explicit `trace:report:legacy-auth` entrypoint remain for consumers using
+stored/OAuth credentials in the legacy auth database. They are transitional TS,
+not a native fallback or completed removal. Native profiles do not yet import or
+refresh those credentials. The native CLI never silently launches Bun. Shared
+credential migration and its installed checks must pass before deleting that
+last legacy path. See `docs/rust-migration/tasks/METAHARNESS-TRACE-REPORT.md`.
 
 ## Caveats
 

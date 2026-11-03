@@ -65,7 +65,9 @@ function captureWrites(term: VirtualTerminal): string[] {
  * never contains a newline, so the split keeps each span intact.
  */
 function headingAndSpacers(writes: string[], spacerCount: number): { heading: string; spacers: string[] } {
-	const paint = writes.find(write => write.includes(OSC66));
+	// The immediate resize probe can write the heading alone with absolute cursor
+	// addressing. Inspect the settled full paint whose rows carry the spacers.
+	const paint = writes.findLast(write => write.includes(OSC66) && write.includes("\r\n"));
 	expect(paint).toBeDefined();
 	const rows = paint!.split("\r\n");
 	const idx = rows.findIndex(row => row.includes(OSC66));

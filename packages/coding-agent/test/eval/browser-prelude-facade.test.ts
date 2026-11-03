@@ -66,7 +66,6 @@ function makeSession(getPreludes?: () => readonly EvalPreludeDefinition[]): Tool
 		settings: Settings.isolated({
 			"browser.enabled": true,
 			"browser.headless": true,
-			"browser.relay": false,
 			"browser.cmux": false,
 		}),
 		...(getPreludes === undefined ? {} : { getEvalPreludes: getPreludes }),

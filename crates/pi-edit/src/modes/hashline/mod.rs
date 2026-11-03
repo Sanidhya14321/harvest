@@ -35,10 +35,15 @@ use crate::{
 };
 
 pub struct HashlineEngine {
-	pub enforce_seen_lines: bool,
+	pub enforce_seen_lines:      bool,
+	pub require_read_provenance: bool,
 }
 
 impl ModeEngine for HashlineEngine {
+	fn require_read_provenance(&mut self) {
+		self.require_read_provenance = true;
+	}
+
 	fn mode(&self) -> EditMode {
 		EditMode::Hashline
 	}
@@ -77,7 +82,14 @@ impl ModeEngine for HashlineEngine {
 		if patch.sections.is_empty() {
 			return Err(EditError::apply("No hashline sections found in input."));
 		}
-		patcher::stage_patch(&patch, input, self.enforce_seen_lines, files, store)
+		patcher::stage_patch_with_provenance(
+			&patch,
+			input,
+			self.enforce_seen_lines,
+			self.require_read_provenance,
+			files,
+			store,
+		)
 	}
 
 	fn inspect(&self, args: &ArgSnapshot) -> Inspection {

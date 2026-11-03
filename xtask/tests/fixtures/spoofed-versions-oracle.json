@@ -1,0 +1,67 @@
+{
+  "provenance": "Original scripts/check-spoofed-versions.ts at d811cb2; isolated source fixture with mocked upstream HTTP responses.",
+  "cases": [
+    {
+      "name": "current",
+      "release": {
+        "tag_name": "v0.46.0"
+      },
+      "http_status": 200,
+      "update": false,
+      "source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "expected_source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "exit_code": 0
+    },
+    {
+      "name": "drift",
+      "release": {
+        "tag_name": "v0.48.2"
+      },
+      "http_status": 200,
+      "update": false,
+      "source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "expected_source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "exit_code": 1
+    },
+    {
+      "name": "update",
+      "release": {
+        "tag_name": "release/v0.48.2"
+      },
+      "http_status": 200,
+      "update": true,
+      "source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "expected_source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.48.2\";\nconst untouched = \"0.46.0\";\n",
+      "exit_code": 0
+    },
+    {
+      "name": "no-tag",
+      "release": {},
+      "http_status": 200,
+      "update": true,
+      "source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "expected_source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "exit_code": 1
+    },
+    {
+      "name": "bad-tag",
+      "release": {
+        "tag_name": "latest"
+      },
+      "http_status": 200,
+      "update": true,
+      "source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "expected_source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "exit_code": 1
+    },
+    {
+      "name": "unavailable",
+      "release": {},
+      "http_status": 503,
+      "update": true,
+      "source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "expected_source": "const version = process.env.PI_AI_GEMINI_CLI_VERSION || \"0.46.0\";\nconst untouched = \"0.46.0\";\n",
+      "exit_code": 1
+    }
+  ]
+}

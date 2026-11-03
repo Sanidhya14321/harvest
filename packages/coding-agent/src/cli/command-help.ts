@@ -19,10 +19,6 @@ export const benchHelp = {
 		"Benchmark models: TTFT/prefill vs decode throughput with p50/p95, across chat, prefill, generation, and prompt-cache workloads",
 } satisfies CommandMetadata;
 
-export const browserRelayHelp = {
-	description: "Run the local CDP relay that lets the browser prelude drive your own Chrome tabs",
-} satisfies CommandMetadata;
-
 export const cleanseHelp = {
 	description: "Detect and fix project diagnostics with weighted parallel subagents",
 } satisfies CommandMetadata;

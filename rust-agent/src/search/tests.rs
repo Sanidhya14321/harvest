@@ -147,7 +147,7 @@ fn settings_drive_grep_context_lines() -> Result<()> {
 		root.path().join(".harvest/config.yml"),
 		"grep:\n  contextBefore: 0\n  contextAfter: 0\n",
 	)?;
-	let mut state = crate::tools::SessionState::default();
+	let mut state = crate::core_tools::SessionState::default();
 	state.settings = crate::settings::Settings::load(None, root.path(), &[])?;
 	let call = crate::chat::ToolCall {
 		id:       "g".into(),
@@ -163,7 +163,7 @@ fn settings_drive_grep_context_lines() -> Result<()> {
 			Ok(true)
 		}
 	}
-	let out = crate::tools::invoke_in_session(
+	let out = crate::core_tools::invoke_in_session(
 		root.path(),
 		&call,
 		&Allow,

@@ -25,6 +25,13 @@ fn execute() -> Result<()> {
 	let selection: Vec<String> = arguments.collect();
 	match task.as_str() {
 		"dev" => xtask::development::execute(selection),
+		"path-versions" => xtask::versions::execute(selection),
+		"npm-versions" => xtask::npm_versions::execute(selection),
+		"registry" => xtask::registry::execute(selection),
+		"tap-update" => xtask::homebrew_tap::execute(selection),
+		"source-audit" => xtask::source_audit::execute(selection),
+		"terminal-wasm" => xtask::terminal_wasm::execute(selection),
+		"web-replay" => xtask::web_replay::execute(selection),
 		"checksums" => xtask::checksums::execute(selection),
 		"clippy-config" => xtask::clippy_config::execute(selection),
 		"fix-elf-verdef" => xtask::elf::execute(selection),
@@ -34,6 +41,9 @@ fn execute() -> Result<()> {
 		"version" => xtask::version::execute(selection),
 		"package" => packaging::execute(selection),
 		"migration" => xtask::migration::execute(selection),
+		"playbook" => xtask::playbook::execute(selection),
+		"acceptance" => xtask::acceptance::execute(selection),
+		"spoofed-versions" => xtask::spoofed_versions::execute(selection),
 		"secrets" => xtask::secrets::execute(selection),
 		"fix-changelogs" => xtask::changelog::execute(selection),
 		"bench-runs" => xtask::bench_runs::execute(selection),
@@ -57,40 +67,25 @@ fn execute() -> Result<()> {
 			check.extend(selection);
 			cargo(&check)
 		},
-		"capabilities" => {
-			let manifest: serde_json::Value =
-				serde_json::from_str(include_str!("../../docs/rust-migration/capabilities.json"))?;
-			let progress = xtask::capabilities::inspect(&manifest)?;
-			println!(
-				"{}/{} capabilities have Rust implementations (partial or complete)",
-				progress.implemented, progress.total
-			);
-			println!(
-				"{}/{} legacy capabilities verified for Rust parity",
-				progress.verified, progress.total
-			);
-			if selection
-				.iter()
-				.any(|argument| argument == "--require-complete")
-				&& progress.verified != progress.total
-			{
-				bail!(
-					"distribution cutover blocked: legacy capabilities still lack verified Rust parity"
-				);
-			}
-			Ok(())
-		},
+		"capabilities" => xtask::capabilities::execute(selection),
+		"host-detect" => xtask::host_detect::execute(),
+		"gen-nix" => xtask::gen_nix::execute(),
 		"help" | "--help" | "-h" => {
 			println!(
-				"cargo xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums OUTPUT \
+				"cargo xtask tap-update --formula FILE --tap CHECKOUT --tag TAG\ncargo xtask \
+				 npm-versions [--check] [--release VERSION|--workspace]\ncargo xtask path-versions \
+				 [VERSION] [--check]\ncargo xtask registry --help\ncargo xtask source-audit \
+				 --help\ncargo xtask terminal-wasm [--check]\ncargo xtask web-replay --help\ncargo \
+				 xtask dev <check|fmt|lint|fix|test> [--always]\ncargo xtask checksums OUTPUT \
 				 ASSET...\ncargo xtask emit-extensions --help\ncargo xtask theme-index --help\ncargo \
 				 xtask clippy-config --help\ncargo xtask fix-elf-verdef --help\ncargo xtask \
-				 release-notes --help\ncargo xtask version [--set VERSION --expect CURRENT]\ncargo \
+				 release-notes --help\ncargo xtask spoofed-versions [--root ROOT] [--update] \
+				 [--release-json FILE]\ncargo xtask version [--set VERSION --expect CURRENT]\ncargo \
 				 xtask check [Cargo package selectors]\ncargo xtask test [Cargo package and target \
 				 selectors]\ncargo xtask capabilities [--require-complete]\nTests require \
 				 cargo-nextest and include doctests.\ncargo xtask package <homebrew|winget> \
 				 --help\ncargo xtask secrets --help\ncargo xtask spoofed-versions [--update]\ncargo \
-				 xtask brew-formula TAG [--out FILE]\ncargo xtask migration [--require-complete]"
+				 xtask brew-formula TAG [--out FILE]\ncargo xtask migration [--require-complete]\ncargo xtask playbook <check|status|next> [--json]"
 			);
 			Ok(())
 		},

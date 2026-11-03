@@ -1,0 +1,18 @@
+[package]
+name = "harvest-terminal-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Portable WebAssembly bindings for Harvest's shared terminal engines"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+harvest-terminal = { path = "../harvest-terminal", version = "=0.1.0" }
+serde.workspace = true
+serde_json.workspace = true

@@ -3,11 +3,10 @@
  *
  * Handles `omp setup` for onboarding and `omp setup <component>` for optional dependencies.
  */
-import * as path from "node:path";
-import { APP_NAME, getProjectDir, getPythonEnvDir } from "@harvest/pi-utils";
+import { APP_NAME, getProjectDir } from "@harvest/pi-utils";
 import chalk from "@harvest/pi-utils/chalk";
 import { Settings, settings } from "../config/settings";
-import { checkPythonKernelAvailability } from "../eval/py/kernel";
+import { PYTHON_EVAL_RETIRED } from "../eval/py/executor";
 import { theme } from "../modes/theme/theme";
 import { downloadSttModel, isSttModelCached } from "../stt/downloader";
 import { isSttModelKey, STT_MODEL_OPTIONS } from "../stt/models";
@@ -25,8 +24,6 @@ export interface SetupCommandArgs {
 }
 
 const VALID_COMPONENTS: SetupComponent[] = ["python", "speech"];
-
-const MANAGED_PYTHON_ENV = getPythonEnvDir();
 
 /**
  * Parse setup subcommand arguments.
@@ -68,37 +65,16 @@ export function parseSetupArgs(args: string[]): SetupCommandArgs | undefined {
 
 export interface PythonCheckResult {
 	available: boolean;
+	reason?: string;
 	pythonPath?: string;
 	usingManagedEnv?: boolean;
 	managedEnvPath?: string;
 }
 
-function managedPythonPath(): string {
-	return process.platform === "win32"
-		? path.join(MANAGED_PYTHON_ENV, "Scripts", "python.exe")
-		: path.join(MANAGED_PYTHON_ENV, "bin", "python");
+/** Recognize the retired setup command without probing or starting Python. */
+export async function checkPythonSetup(_cwd: string, _interpreter?: string): Promise<PythonCheckResult> {
+	return { available: false, reason: PYTHON_EVAL_RETIRED };
 }
-
-/**
- * Check Python environment and kernel dependencies.
- */
-export async function checkPythonSetup(cwd: string, interpreter?: string): Promise<PythonCheckResult> {
-	const availability = await checkPythonKernelAvailability(cwd, interpreter, { forceProbe: true });
-	return {
-		available: availability.ok,
-		pythonPath: availability.pythonPath,
-		usingManagedEnv: availability.pythonPath === managedPythonPath(),
-		managedEnvPath: MANAGED_PYTHON_ENV,
-	};
-}
-
-/**
- * Install Python packages using uv (preferred) or pip.
- */
-// Python installation helper removed: the subprocess runner has no Python
-// package dependencies beyond a working interpreter. `omp setup python --check`
-// remains as a probe; users install optional libs (pandas, matplotlib, ...)
-// directly via pip or the in-process `%pip` magic.
 
 /**
  * Run the setup command.
@@ -115,35 +91,9 @@ export async function runSetupCommand(cmd: SetupCommandArgs): Promise<void> {
 }
 
 async function handlePythonSetup(flags: { json?: boolean; check?: boolean }): Promise<void> {
-	const cwd = getProjectDir();
-	const projectSettings = await Settings.init({ cwd });
-	const interpreter = projectSettings.get("python.interpreter")?.trim() || undefined;
-	const check = await checkPythonSetup(cwd, interpreter);
-
-	if (flags.json) {
-		console.log(JSON.stringify(check, null, 2));
-		if (!check.available) process.exit(1);
-		return;
-	}
-
-	if (!check.pythonPath) {
-		console.error(chalk.red(`${theme.status.error} Python not found`));
-		console.error(chalk.dim("Install Python 3.8+ or set python.interpreter to its executable path"));
-		process.exit(1);
-	}
-
-	console.log(chalk.dim(`Python: ${check.pythonPath}`));
-	if (check.usingManagedEnv) {
-		console.log(chalk.dim(`Using managed environment: ${check.managedEnvPath}`));
-	}
-
-	if (check.available) {
-		console.log(chalk.green(`\n${theme.status.success} Python execution is ready`));
-		return;
-	}
-
-	console.error(chalk.red(`\n${theme.status.error} Python interpreter reported failure`));
-	process.exit(1);
+	if (flags.json) console.log(JSON.stringify({ available: false, retired: true, reason: PYTHON_EVAL_RETIRED }));
+	else console.error(PYTHON_EVAL_RETIRED);
+	process.exitCode = 1;
 }
 
 /**
@@ -295,7 +245,7 @@ ${chalk.bold("Usage:")}
   ${APP_NAME} setup <component> [options]
 
 ${chalk.bold("Components:")}
-  python    Verify a Python 3 interpreter is reachable for code execution
+  python    Retired; prints migration guidance
   speech    Pick and download speech-to-text and text-to-speech models
 
 ${chalk.bold("Options:")}
@@ -304,9 +254,9 @@ ${chalk.bold("Options:")}
 
 ${chalk.bold("Examples:")}
   ${APP_NAME} setup                  Run the onboarding wizard
-  ${APP_NAME} setup python           Check Python execution dependencies
+  ${APP_NAME} setup python           Show Python evaluation migration guidance
   ${APP_NAME} setup speech           Pick and download the STT and TTS models
   ${APP_NAME} setup speech --check   Check if speech dependencies are available
-  ${APP_NAME} setup python --check   Check if Python execution is available
+  ${APP_NAME} setup python --check   Report retired Python evaluation
 `);
 }

@@ -157,6 +157,21 @@
     url = "https://registry.npmjs.org/@emnapi/wasi-threads/-/wasi-threads-1.2.2.tgz";
     hash = "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==";
   };
+  "@harvest/collab-web" = copyPathToStore ../packages/collab-web;
+  "@harvest/omp-stats" = copyPathToStore ../packages/stats;
+  "@harvest/omptype" = copyPathToStore ../packages/omptype;
+  "@harvest/pi-agent-core" = copyPathToStore ../packages/agent;
+  "@harvest/pi-ai" = copyPathToStore ../packages/ai;
+  "@harvest/pi-catalog" = copyPathToStore ../packages/catalog;
+  "@harvest/pi-coding-agent" = copyPathToStore ../packages/coding-agent;
+  "@harvest/pi-metaharness" = copyPathToStore ../packages/metaharness;
+  "@harvest/pi-mnemopi" = copyPathToStore ../packages/mnemopi;
+  "@harvest/pi-natives" = copyPathToStore ../packages/natives;
+  "@harvest/pi-tui" = copyPathToStore ../packages/tui;
+  "@harvest/pi-utils" = copyPathToStore ../packages/utils;
+  "@harvest/pi-wire" = copyPathToStore ../packages/wire;
+  "@harvest/snapcompact" = copyPathToStore ../packages/snapcompact;
+  "@harvest/typescript-edit-benchmark" = copyPathToStore ../packages/typescript-edit-benchmark;
   "@huggingface/blake3-jit@0.0.2" = fetchurl {
     url = "https://registry.npmjs.org/@huggingface/blake3-jit/-/blake3-jit-0.0.2.tgz";
     hash = "sha512-Bq7B5qabyjrJfhBsl85Jd2QBtf+HzRD7h7A9GfN2lzrrsABhOa5evVPgzoCTxR7Ub0QFj7YDK1YkYRWBU25+2w==";
@@ -641,22 +656,6 @@
     url = "https://registry.npmjs.org/@octokit/types/-/types-18.0.0.tgz";
     hash = "sha512-l6bAF43PNxkJp6g+W4PjoUSSkxHomXw2nOum5CTftJz1NlV3vu93NImgOYtLf6CbBUb5j+fiuzW0PPQ5JTSvZA==";
   };
-  "@harvest/browser-relay" = copyPathToStore ../packages/browser-relay;
-  "@harvest/collab-web" = copyPathToStore ../packages/collab-web;
-  "@harvest/omp-stats" = copyPathToStore ../packages/stats;
-  "@harvest/omptype" = copyPathToStore ../packages/omptype;
-  "@harvest/pi-agent-core" = copyPathToStore ../packages/agent;
-  "@harvest/pi-ai" = copyPathToStore ../packages/ai;
-  "@harvest/pi-catalog" = copyPathToStore ../packages/catalog;
-  "@harvest/pi-coding-agent" = copyPathToStore ../packages/coding-agent;
-  "@harvest/pi-metaharness" = copyPathToStore ../packages/metaharness;
-  "@harvest/pi-mnemopi" = copyPathToStore ../packages/mnemopi;
-  "@harvest/pi-natives" = copyPathToStore ../packages/natives;
-  "@harvest/pi-tui" = copyPathToStore ../packages/tui;
-  "@harvest/pi-utils" = copyPathToStore ../packages/utils;
-  "@harvest/pi-wire" = copyPathToStore ../packages/wire;
-  "@harvest/snapcompact" = copyPathToStore ../packages/snapcompact;
-  "@harvest/typescript-edit-benchmark" = copyPathToStore ../packages/typescript-edit-benchmark;
   "@opentelemetry/api-logs@0.220.0" = fetchurl {
     url = "https://registry.npmjs.org/@opentelemetry/api-logs/-/api-logs-0.220.0.tgz";
     hash = "sha512-CmVa4ImJ+ynfrPMNaAXHET6Bhb44SwzmfyVJFq9ni2jgXJR/l7C6gfVFddNmHP+ZOkP9cf4f9DBe68qVLTHc9w==";

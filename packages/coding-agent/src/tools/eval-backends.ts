@@ -9,7 +9,7 @@ export interface EvalBackendsAllowance {
 /** Read per-backend allowance from settings (py/js default on). */
 export function readEvalBackendsAllowance(session: ToolSession): EvalBackendsAllowance {
 	return {
-		python: session.settings.get("eval.py") ?? true,
+		python: false,
 		js: session.settings.get("eval.js") ?? true,
 	};
 }
@@ -21,7 +21,7 @@ export function readEvalBackendsAllowance(session: ToolSession): EvalBackendsAll
 export function resolveEvalBackends(session: ToolSession): EvalBackendsAllowance {
 	const settings = readEvalBackendsAllowance(session);
 	return {
-		python: $flag("PI_PY", settings.python),
+		python: false,
 		js: $flag("PI_JS", settings.js),
 	};
 }

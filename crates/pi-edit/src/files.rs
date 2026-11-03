@@ -1,11 +1,12 @@
 //! Read-through file access for engines.
 //!
-//! [`FileSource`] resolves authored paths through [`PathPolicy`], recovers
-//! missing paths by unique suffix, enforces the auto-generated guard, decodes
-//! notebooks to their editable text, and caches reads by `(path, mtime, len)`
-//! for the lifetime of one preview/apply pass. Engines never touch
-//! `std::fs` directly; the session clears the cache before `apply` so a final
-//! stage always sees fresh bytes.
+//! The default [`FileCache`] resolves paths through [`PathPolicy`], recovers
+//! missing paths by unique suffix, enforces the generated-file guard, decodes
+//! notebooks and caches reads by `(path, mtime, len)` for a preview/apply pass.
+//! Hosts may inject a [`FileSource`] with capability-relative reads,
+//! cancellation and stricter exact-path resolution. Engines never touch
+//! `std::fs` directly; the session clears the source before final staging/apply
+//! so previews cannot authorize stale bytes.
 
 use std::{
 	collections::HashMap,

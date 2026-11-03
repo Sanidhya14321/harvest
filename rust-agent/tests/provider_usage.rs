@@ -44,6 +44,27 @@ fn assistant(root: &Path) -> Result<SessionObject> {
 	Ok(serde_json::from_str(raw.get())?)
 }
 
+#[test]
+fn async_session_keeps_lossless_usage_in_the_durable_record() -> Result<()> {
+	let root = tempfile::tempdir()?;
+	let raw = r#"{"prompt_tokens":100,"completion_tokens":20,"future":900719925474099312345,"unbounded_future_number":1e400}"#;
+	let server = common::HttpFixture::spawn(200, "OK", "text/event-stream", stream(raw, true))?;
+	let output = Command::new(env!("CARGO_BIN_EXE_harvest"))
+		.args(["run", "--async-session", "--request-usage", "--workspace"])
+		.arg(root.path())
+		.args(["--prompt", "Account for this turn", "--model", "fixture", "--base-url"])
+		.arg(server.base_url())
+		.args(["--api-key", "", "--max-steps", "1"])
+		.output()?;
+	assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+	assert_eq!(server.finish()?["stream_options"], json!({"include_usage":true}));
+	let message = assistant(root.path())?;
+	assert_eq!(message["providerUsage"].get(), raw);
+	let usage: Value = serde_json::from_str(message["usage"].get())?;
+	assert_eq!(usage["totalTokens"], 120);
+	Ok(())
+}
+
 fn stream(usage: &str, done: bool) -> String {
 	format!(
 		"data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"done\"}},\"finish_reason\":\"\

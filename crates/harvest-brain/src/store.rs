@@ -216,7 +216,7 @@ impl BrainStore {
 		} else {
 			self.brain.join("generated").join(id).with_extension("md")
 		};
-		path.to_string_lossy().into_owned()
+		crate::document_path(&path)
 	}
 
 	fn managed_path(&self, path: &str) -> Result<()> {

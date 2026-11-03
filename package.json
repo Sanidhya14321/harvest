@@ -82,6 +82,7 @@
 		"collab:mock-host": "bun --cwd=packages/collab-web run mock-host",
 		"collab:web:build": "bun --cwd=packages/collab-web run build",
 		"meta": "bun --cwd=packages/metaharness run dev",
+		"cleanup:scan": "cargo run --quiet --locked -p harvest-omp --bin harvest -- cleanup-scan",
 		"claude:trace": "bun scripts/claude-trace.ts",
 		"build": "bun run --workspaces --if-present build",
 		"build:native": "bun --cwd=packages/natives run build",

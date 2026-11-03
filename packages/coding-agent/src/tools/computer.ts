@@ -14,7 +14,6 @@ import type { ComputerScreenshot, ComputerSessionSnapshot } from "./computer/pro
 import computerCodeModeDeclarations from "./computer/declarations.d.ts" with { type: "text" };
 // @ts-expect-error Bun imports this JavaScript source as text instead of evaluating its module shape.
 import computerJavascript from "./computer/prelude.js" with { type: "text" };
-import computerPython from "./computer/prelude.py" with { type: "text" };
 import { type ComputerController, ComputerSupervisor, registerComputerController } from "./computer/supervisor";
 import type { ToolSession } from "./index";
 import { renderFunctionRun } from "./run-code";
@@ -136,7 +135,6 @@ export function createComputerPrelude(
 		name: "computer",
 		documentation: computerDescription,
 		javascript: computerJavascript,
-		python: computerPython,
 		exports: ["computer"],
 		codeModeDeclarations: computerCodeModeDeclarations,
 		approval: computerApproval,

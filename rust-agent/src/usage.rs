@@ -43,6 +43,39 @@ struct CompletionDetails {
 }
 
 impl UsageReport {
+	/// Anthropic input tokens exclude cache reads/writes. Missing or invalid
+	/// counters remain unavailable; raw provider data is always retained.
+	pub fn from_anthropic_raw(raw: Box<RawValue>) -> Self {
+		#[derive(Deserialize)]
+		struct Counters {
+			#[serde(rename = "input_tokens")]
+			input:       u64,
+			#[serde(rename = "output_tokens")]
+			output:      u64,
+			#[serde(default, rename = "cache_read_input_tokens")]
+			cache_read:  u64,
+			#[serde(default, rename = "cache_creation_input_tokens")]
+			cache_write: u64,
+		}
+		let tokens = serde_json::from_str::<Counters>(raw.get())
+			.ok()
+			.and_then(|c| {
+				Some(TokenUsage {
+					input:            c.input,
+					output:           c.output,
+					cache_read:       c.cache_read,
+					cache_write:      c.cache_write,
+					total_tokens:     c
+						.input
+						.checked_add(c.output)?
+						.checked_add(c.cache_read)?
+						.checked_add(c.cache_write)?,
+					reasoning_tokens: None,
+				})
+			});
+		Self { raw, tokens }
+	}
+
 	/// Preserve original bytes even when counters are partial, invalid or new.
 	pub fn from_raw(raw: Box<RawValue>) -> Self {
 		let tokens = serde_json::from_str::<WireUsage>(raw.get())

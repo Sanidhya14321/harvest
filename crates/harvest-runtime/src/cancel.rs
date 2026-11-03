@@ -6,7 +6,7 @@ use std::{
 	time::{Duration, Instant},
 };
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use tokio::sync::Notify;
 
 #[derive(Debug, Clone, Copy)]
@@ -17,6 +17,19 @@ pub enum AbortReason {
 	Signal  = 3,
 	User    = 4,
 }
+
+/// Typed cancellation cause. Display preserves the existing public diagnostic;
+/// recovery owners can inspect the cause without matching error text.
+#[derive(Debug, Clone, Copy)]
+pub struct AbortError {
+	pub reason: AbortReason,
+}
+impl std::fmt::Display for AbortError {
+	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(formatter, "Aborted: {:?}", self.reason)
+	}
+}
+impl std::error::Error for AbortError {}
 
 impl TryFrom<u8> for AbortReason {
 	type Error = ();
@@ -91,16 +104,31 @@ impl CancelToken {
 		Self { deadline: timeout.map(|duration| Instant::now() + duration), flag: None }
 	}
 
+	/// Bound a consumer operation without extending its caller's deadline or
+	/// losing the caller's cancellation owner.
+	#[must_use]
+	pub fn child_with_timeout(&self, timeout: Duration) -> Self {
+		let deadline = Instant::now() + timeout;
+		Self {
+			deadline: Some(
+				self
+					.deadline
+					.map_or(deadline, |current| current.min(deadline)),
+			),
+			flag:     self.flag.clone(),
+		}
+	}
+
 	pub fn heartbeat(&self) -> Result<()> {
 		if let Some(flag) = &self.flag
 			&& let Some(reason) = flag.cause()
 		{
-			return Err(Error::msg(format!("Aborted: {reason:?}")));
+			return Err(AbortError { reason }.into());
 		}
 		if let Some(deadline) = self.deadline
 			&& deadline < Instant::now()
 		{
-			return Err(Error::msg("Aborted: Timeout"));
+			return Err(AbortError { reason: AbortReason::Timeout }.into());
 		}
 		Ok(())
 	}
@@ -165,5 +193,37 @@ impl AbortToken {
 		{
 			flag.abort(reason);
 		}
+	}
+}
+
+#[cfg(test)]
+mod deadline_tests {
+	use super::*;
+
+	#[test]
+	fn child_budgets_preserve_parent_deadlines_and_cancellation() {
+		let parent = CancelToken::with_timeout(Some(Duration::from_millis(100)));
+		let child = parent.child_with_timeout(Duration::from_secs(10));
+		assert_eq!(child.deadline, parent.deadline);
+		let shorter = parent.child_with_timeout(Duration::ZERO);
+		assert!(shorter.deadline < parent.deadline);
+		let mut parent = CancelToken::default();
+		let abort = parent.emplace_abort_token();
+		let child = parent.child_with_timeout(Duration::from_secs(1));
+		abort.abort(AbortReason::User);
+		assert!(child.heartbeat().is_err());
+		assert!(parent.heartbeat().is_err());
+	}
+}
+
+/// Cooperatively wait without extending the caller's deadline.
+pub fn wait(duration: std::time::Duration, cancellation: &CancelToken) -> anyhow::Result<()> {
+	let deadline = std::time::Instant::now() + duration;
+	loop {
+		cancellation.heartbeat()?;
+		let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+			return Ok(());
+		};
+		std::thread::sleep(remaining.min(std::time::Duration::from_millis(20)));
 	}
 }

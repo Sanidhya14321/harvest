@@ -1,11 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { TempDir } from "@harvest/pi-utils";
 import { Settings } from "../../src/config/settings";
 import { resolveOwnerScopedSessionKey, type SessionOwners } from "../../src/eval/executor-base";
 import { disposeAllVmContexts, disposeVmContextsByOwner } from "../../src/eval/js/context-manager";
 import { executeJs } from "../../src/eval/js/executor";
-import { disposeAllKernelSessions, executePython } from "../../src/eval/py/executor";
-import { PythonKernel } from "../../src/eval/py/kernel";
 import type { ToolSession } from "../../src/tools";
 
 function makeSession(cwd: string): ToolSession {
@@ -119,58 +117,5 @@ describe("JS eval owner-scoped reset forking", () => {
 		// the context rather than needlessly forking another worker.
 		const reset = await run("return typeof shared;", "agent-a", true);
 		expect(reset.output.trim()).toBe("undefined");
-	});
-});
-
-describe("Python cold-start reset race", () => {
-	afterEach(async () => {
-		await disposeAllKernelSessions();
-		vi.restoreAllMocks();
-	});
-
-	it("forks a reset issued while the shared kernel is still starting", async () => {
-		using tempDir = TempDir.createSync("@omp-py-owner-race-");
-		const shutdowns = [0, 0];
-		const kernels: PythonKernel[] = [];
-		const firstStartEntered = Promise.withResolvers<void>();
-		const releaseFirstStart = Promise.withResolvers<void>();
-		vi.spyOn(PythonKernel, "start").mockImplementation(async () => {
-			const index = kernels.length;
-			const kernel = {
-				isAlive: () => true,
-				execute: async () => ({ status: "ok" as const, cancelled: false, timedOut: false }),
-				shutdown: async () => {
-					shutdowns[index] += 1;
-					return { confirmed: true };
-				},
-			} as unknown as PythonKernel;
-			kernels.push(kernel);
-			if (index === 0) {
-				firstStartEntered.resolve();
-				await releaseFirstStart.promise;
-			}
-			return kernel;
-		});
-
-		const sessionId = `py-owner-race:${crypto.randomUUID()}`;
-		const common = { cwd: tempDir.path(), sessionId };
-		// The parent's kernel start is deferred, so its session sits in
-		// startingSessions when the subagent's reset arrives.
-		const parentRun = executePython("x = 1", { ...common, kernelOwnerId: "agent-a" });
-		await firstStartEntered.promise;
-
-		// Pre-fix, the reset resolved to the shared base key, awaited the
-		// parent's gated startup inside resetSession, and then shut the
-		// parent's brand-new kernel down. Post-fix it forks immediately and
-		// completes without ever touching the gated startup.
-		const childResult = await executePython("y = 2", { ...common, kernelOwnerId: "agent-b", reset: true });
-		expect(childResult.exitCode).toBe(0);
-		expect(kernels.length).toBe(2);
-
-		releaseFirstStart.resolve();
-		const parentResult = await parentRun;
-		expect(parentResult.exitCode).toBe(0);
-		// The parent's kernel must never be reaped by the subagent's reset.
-		expect(shutdowns[0]).toBe(0);
 	});
 });
