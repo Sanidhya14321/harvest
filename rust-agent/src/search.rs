@@ -568,6 +568,54 @@ pub(crate) fn resolve_scope(ws: &Workspace, raw: &[String], fan_out: bool) -> Re
 	Ok(scope)
 }
 
+/// Marks in-memory archive matches; the rest is the display path.
+const VIRTUAL_PREFIX: &str = "\u{0}archive:";
+
+/// An `archive.ext:member` entry's UTF-8 text, or why it cannot be searched;
+/// `None` when the entry is not an archive member.
+fn archive_member(ws: &Workspace, entry: &str) -> Option<std::result::Result<String, String>> {
+	let (archive_path, member) = harvest_archive::path_candidates(entry)
+		.into_iter()
+		.find(|(archive, sub)| !sub.is_empty() && archive != entry)?;
+	let read = || -> std::result::Result<String, String> {
+		let relative = ws
+			.relative(&archive_path)
+			.map_err(|e| format!("cannot open archive: {e}"))?;
+		let bytes = ws
+			.fs
+			.read(&relative, 256 * 1024 * 1024)
+			.map_err(|e| format!("cannot open archive: {e}"))?;
+		let archive = harvest_archive::Archive::open(Path::new(&archive_path), bytes)
+			.map_err(|e| format!("cannot open archive: {e}"))?;
+		let bytes = archive.read(&member).map_err(|e| e.to_string())?;
+		if bytes.contains(&0) {
+			return Err("binary archive entry".to_owned());
+		}
+		String::from_utf8(bytes).map_err(|_| "non-UTF-8 archive entry".to_owned())
+	};
+	Some(read())
+}
+
+/// Keep a match (and its context) only inside `ranges`.
+fn filter_ranges(mut m: GrepMatch, ranges: &[Range]) -> Option<GrepMatch> {
+	if !line_in_ranges(m.line_number, ranges) {
+		return None;
+	}
+	let keep = |lines: Option<Vec<pi_grep::ContextLine>>| {
+		lines
+			.map(|lines| {
+				lines
+					.into_iter()
+					.filter(|line| line_in_ranges(line.line_number, ranges))
+					.collect::<Vec<_>>()
+			})
+			.filter(|lines| !lines.is_empty())
+	};
+	m.context_before = keep(m.context_before.take());
+	m.context_after = keep(m.context_after.take());
+	Some(m)
+}
+
 fn line_in_ranges(line: u32, ranges: &[Range]) -> bool {
 	let line = line as usize;
 	ranges
@@ -860,11 +908,40 @@ pub(crate) fn grep(
 	};
 	let entries = expand_entries(&ws, &effective)?;
 	let specs = parse_specs(&ws, &entries)?;
-	let searchable: Vec<String> = specs.iter().map(|spec| spec.clean.clone()).collect();
-	let scope = resolve_scope(&ws, &searchable, true)?;
+	// `resolveArchiveSearchPaths`: text members are searched in memory.
+	let mut members: Vec<(usize, String)> = Vec::new();
+	let mut unreadable: Vec<String> = Vec::new();
+	let mut fs_specs: Vec<&PathSpec> = Vec::new();
+	for (index, spec) in specs.iter().enumerate() {
+		match archive_member(&ws, &spec.clean) {
+			None => fs_specs.push(spec),
+			Some(Ok(text)) => members.push((index, text)),
+			Some(Err(reason)) => unreadable.push(format!("{} ({reason})", spec.clean)),
+		}
+	}
+	if !unreadable.is_empty() && fs_specs.is_empty() && members.is_empty() {
+		bail!(
+			"Cannot search archive member(s): {}. Read the member with `read <archive>:<member>` and \
+			 inspect the returned text, or pass a UTF-8 text member.",
+			unreadable.join(", ")
+		);
+	}
+	let scope = if fs_specs.is_empty() {
+		Scope {
+			search_path:  ws.root.clone(),
+			is_directory: false,
+			glob:         None,
+			targets:      Some(Vec::new()),
+			exact_files:  None,
+			missing:      Vec::new(),
+		}
+	} else {
+		let searchable: Vec<String> = fs_specs.iter().map(|spec| spec.clean.clone()).collect();
+		resolve_scope(&ws, &searchable, true)?
+	};
 
 	let mut ranges_by_path: HashMap<PathBuf, Vec<Range>> = HashMap::new();
-	for spec in &specs {
+	for spec in &fs_specs {
 		let Some(ranges) = &spec.ranges else { continue };
 		match ws.stat(&spec.clean)? {
 			None => bail!("Path not found for line-range selector: {}", spec.original),
@@ -879,7 +956,14 @@ pub(crate) fn grep(
 			.extend(ranges.iter().copied());
 	}
 
-	let multi_scope = scope.is_directory || scope.exact_files.is_some() || scope.targets.is_some();
+	let multi_scope = if fs_specs.is_empty() {
+		members.len() > 1
+	} else {
+		scope.is_directory
+			|| scope.exact_files.is_some()
+			|| scope.targets.is_some()
+			|| !members.is_empty()
+	};
 	let per_file_cap = if multi_scope {
 		MULTI_FILE_PER_FILE_MATCHES
 	} else {
@@ -911,28 +995,50 @@ pub(crate) fn grep(
 	if !ranges_by_path.is_empty() {
 		matches = matches
 			.into_iter()
-			.filter_map(|mut m| {
-				let Some(ranges) = ranges_by_path.get(&absolute_of(&m.path)) else {
-					return Some(m);
-				};
-				if !line_in_ranges(m.line_number, ranges) {
-					return None;
-				}
-				let keep = |lines: Option<Vec<pi_grep::ContextLine>>| {
-					lines
-						.map(|lines| {
-							lines
-								.into_iter()
-								.filter(|line| line_in_ranges(line.line_number, ranges))
-								.collect::<Vec<_>>()
-						})
-						.filter(|lines| !lines.is_empty())
-				};
-				m.context_before = keep(m.context_before.take());
-				m.context_after = keep(m.context_after.take());
-				Some(m)
+			.filter_map(|m| match ranges_by_path.get(&absolute_of(&m.path)) {
+				None => Some(m),
+				Some(ranges) => filter_ranges(m, ranges),
 			})
 			.collect();
+	}
+
+	for (index, text) in &members {
+		let spec = &specs[*index];
+		let result = pi_grep::search_sync(text.as_bytes(), pi_grep::SearchOptions {
+			pattern:        args.pattern.clone(),
+			ignore_case:    Some(!args.case_sensitive.unwrap_or(true)),
+			multiline:      Some(args.pattern.contains('\n') || args.pattern.contains("\\n")),
+			max_count:      Some(native_per_file as u32),
+			offset:         None,
+			context_before: Some(CONTEXT_BEFORE),
+			context_after:  Some(CONTEXT_AFTER),
+			context:        None,
+			max_columns:    Some(MAX_COLUMNS),
+			mode:           Some(GrepOutputMode::Content),
+		});
+		if let Some(error) = result.error {
+			let lower = error.to_ascii_lowercase();
+			if lower.starts_with("regex error") || lower.starts_with("regex parse error") {
+				let rest = error.split_once("error").map_or("", |(_, rest)| rest);
+				bail!("Invalid regex: {}", rest.trim_start_matches(':').trim_start());
+			}
+			bail!("{error}");
+		}
+		for found in result.matches {
+			let m = GrepMatch {
+				path:           format!("{VIRTUAL_PREFIX}{}", spec.clean),
+				line_number:    found.line_number,
+				line:           found.line,
+				context_before: found.context_before,
+				context_after:  found.context_after,
+				truncated:      found.truncated,
+				match_count:    None,
+			};
+			match &spec.ranges {
+				None => matches.push(m),
+				Some(ranges) => matches.extend(filter_ranges(m, ranges)),
+			}
+		}
 	}
 
 	let mut file_order: Vec<String> = Vec::new();
@@ -1026,7 +1132,13 @@ pub(crate) fn grep(
 	});
 	let missing_note = (!scope.missing.is_empty())
 		.then(|| format!("Skipped missing paths: {}", scope.missing.join(", ")));
-	let warning: Vec<String> = [missing_note, oversized_note, scan_note]
+	let archive_note = (!unreadable.is_empty()).then(|| {
+		format!(
+			"Skipped archive entries (search supports text members only): {}",
+			unreadable.join(", ")
+		)
+	});
+	let warning: Vec<String> = [missing_note, archive_note, oversized_note, scan_note]
 		.into_iter()
 		.flatten()
 		.collect();
@@ -1048,6 +1160,9 @@ pub(crate) fn grep(
 	// `formatResultPath`: directory scopes resolve under the search path; a
 	// file scope always names the file itself.
 	let format_path = |match_path: &str| -> String {
+		if let Some(display) = match_path.strip_prefix(VIRTUAL_PREFIX) {
+			return display.to_owned();
+		}
 		if scope.is_directory {
 			ws.display(&scope.search_path.join(match_path.trim_start_matches('/')))
 		} else {

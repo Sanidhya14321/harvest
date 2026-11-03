@@ -35,7 +35,10 @@ because a Rust command or tool has the same name.
   (immutable: no tag, no numbers, block-context windows) and the binary-member
   notice; 7/7 probes match TS. Still pending: bz2/xz/Z/lzma tars, rar, 7z,
   iso, cab, cpio, rpm, ar/deb, lzh, arj, asar (explicit unsupported error),
-  archive `write`, and grep inside archives.
+  and archive formats beyond zip/tar for `write`. `grep` searches
+  `archive:member` text members in memory with the shared engine (untagged,
+  range filters, the binary/non-UTF-8 skip note and the all-unreadable
+  error); 7/7 probes match TS.
 
 - `think`, `checkpoint` and `rewind` follow the legacy tools: the scratchpad
   result, the single active checkpoint, and the empty/missing/already-done

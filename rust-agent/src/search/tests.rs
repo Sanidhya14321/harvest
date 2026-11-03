@@ -104,3 +104,37 @@ fn grep_skips_symlinked_directories() -> Result<()> {
 	assert!(run(root.path(), r#"{"pattern":"outside-secret","path":"link"}"#).is_err());
 	Ok(())
 }
+
+#[test]
+fn archive_members_are_searched_in_memory_under_their_archive_path() -> Result<()> {
+	use std::io::Write as _;
+	let root = workspace();
+	let mut out = std::io::Cursor::new(Vec::new());
+	let mut zip = zip::ZipWriter::new(&mut out);
+	zip.start_file("lib/x.rs", zip::write::SimpleFileOptions::default())?;
+	zip.write_all(b"one\nneedle zip\n")?;
+	zip.start_file("bin", zip::write::SimpleFileOptions::default())?;
+	zip.write_all(b"needle\0")?;
+	zip.finish()?;
+	fs::write(root.path().join("pkg.zip"), out.into_inner())?;
+	assert_eq!(
+		run(root.path(), r#"{"pattern":"needle","path":"pkg.zip:lib/x.rs"}"#)?,
+		" 1|one\n*2|needle zip"
+	);
+	let both = run(root.path(), r#"{"pattern":"needle","path":"top.txt; pkg.zip:bin"}"#)?;
+	assert!(
+		both.ends_with(
+			"Skipped archive entries (search supports text members only): pkg.zip:bin (binary \
+			 archive entry)"
+		),
+		"{both}"
+	);
+	let error = run(root.path(), r#"{"pattern":"needle","path":"pkg.zip:bin"}"#)
+		.unwrap_err()
+		.to_string();
+	assert!(
+		error.starts_with("Cannot search archive member(s): pkg.zip:bin (binary archive entry)."),
+		"{error}"
+	);
+	Ok(())
+}
