@@ -64,6 +64,12 @@ enum Commands {
 	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Run on-disk storage maintenance")]
+	Gc(crate::commands::gc::GcArgs),
+	#[command(about = "Inspect and control daemon-broker supervised processes")]
+	Ps(crate::commands::ps::PsArgs),
+	#[command(about = "List and clean up agent-managed git worktrees", visible_alias = "wt")]
+	Worktree(crate::commands::worktree::WorktreeArgs),
 	#[command(about = "Show what the read tool returns for a path or URI")]
 	Read(crate::tool_cli::ReadArgs),
 	#[command(about = "Run the grep tool against the workspace")]
@@ -451,6 +457,9 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Gc(args) => crate::commands::gc::execute(args),
+		Commands::Ps(args) => crate::commands::ps::execute(args),
+		Commands::Worktree(args) => crate::commands::worktree::execute(args),
 		Commands::Read(args) => crate::tool_cli::read(&args).map(|()| 0),
 		Commands::Grep(args) => crate::tool_cli::grep(&args).map(|()| 0),
 		Commands::Search(args) => crate::tool_cli::search(&args).map(|()| 0),

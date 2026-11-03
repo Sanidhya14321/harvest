@@ -80,6 +80,7 @@ flume = { workspace = true, optional = true }
 harvest-brain = { path = "../crates/harvest-brain" }
 harvest-archive = { path = "../crates/harvest-archive" }
 harvest-runtime = { path = "../crates/harvest-runtime" }
+libc.workspace = true
 harvest-tui = { path = "../crates/harvest-tui" }
 harvest-media = { path = "../crates/harvest-media" }
 harvest-tokenizer = { path = "../crates/harvest-tokenizer" }
