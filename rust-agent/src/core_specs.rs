@@ -82,6 +82,22 @@ struct ToolProperties {
 	timeout:            Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	cwd:                Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	agent: Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	name: Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	context: Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	error: Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	objective: Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	questions: Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	data: Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	token_budget: Option<NumberProperty>,
 }
 
 /// A literal JSON Schema fragment for shapes the typed properties cannot
@@ -254,6 +270,48 @@ pub(crate) fn core_specs() -> Vec<ToolSpec> {
 			&ToolProperties { report: Some(STRING), ..EMPTY },
 			&["report"],
 		),
+		spec(
+			"task",
+			include_str!("prompts/tools/task.md").trim_end(),
+			&ToolProperties {
+				agent: Some(STRING),
+				name: Some(STRING),
+				context: Some(STRING),
+				task: Some(STRING),
+				..EMPTY
+			},
+			&["task"],
+		),
+		spec(
+			"ask",
+			include_str!("prompts/tools/ask.md").trim_end(),
+			&ToolProperties {
+				questions: Some(RawSchema(
+					r#"{"type":"array","minItems":1,"items":{"type":"object","properties":{"id":{"type":"string"},"question":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"}},"required":["label"]}},"multi":{"type":"boolean"},"recommended":{"type":"number"}},"required":["id","question","options"]}}"#,
+				)),
+				..EMPTY
+			},
+			&["questions"],
+		),
+		spec(
+			"yield",
+			include_str!("prompts/tools/yield.md").trim_end(),
+			&ToolProperties { data: Some(RawSchema("{}")), error: Some(STRING), ..EMPTY },
+			&[],
+		),
+		spec(
+			"goal",
+			include_str!("prompts/tools/goal.md").trim_end(),
+			&ToolProperties {
+				op: Some(RawSchema(
+					r#"{"type":"string","enum":["create","get","resume","complete","drop"]}"#,
+				)),
+				objective: Some(STRING),
+				token_budget: Some(NUMBER),
+				..EMPTY
+			},
+			&["op"],
+		),
 	]
 }
 
@@ -287,6 +345,14 @@ const EMPTY: ToolProperties = ToolProperties {
 	reason:             None,
 	timeout:            None,
 	cwd:                None,
+	agent: None,
+	name: None,
+	context: None,
+	error: None,
+	objective: None,
+	questions: None,
+	data: None,
+	token_budget: None,
 };
 
 const fn spec(

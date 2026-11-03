@@ -42,6 +42,7 @@ mod streaming;
 pub mod todo;
 mod tool_cli;
 pub mod tools;
+mod task_tool;
 mod tree;
 mod web_search;
 

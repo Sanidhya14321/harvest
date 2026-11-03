@@ -114,6 +114,11 @@ fn to_frontmatter(source: &Mapping) -> (String, Mapping) {
 	(name, out)
 }
 
+/// System prompt body of a bundled agent definition, for the `task` tool.
+pub(crate) fn bundled_agent_body(name: &str) -> Option<String> {
+	bundled_agents().into_iter().find(|agent| agent.name == name).map(|agent| agent.body)
+}
+
 fn bundled_agents() -> Vec<Agent> {
 	let mut agents = Vec::new();
 	for content in [SCOUT, REVIEWER, SECURITY_REVIEWER] {

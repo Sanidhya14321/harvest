@@ -150,6 +150,11 @@ impl AgentSession {
 		Ok(handle)
 	}
 
+	/// The `yield` submission of the last run, consumed once.
+	pub fn take_yield(&self) -> Option<Result<String, String>> {
+		self.tools.core_state().take_yield()
+	}
+
 	pub fn submit(
 		&mut self,
 		prompt: &str,
@@ -315,15 +320,20 @@ impl AgentSession {
 				// use the session's existing sequence/sink without aliasing tools.
 				let mut runtime = std::mem::take(&mut self.tools);
 				let root = self.root.clone();
-				let result = runtime.invoke_detailed_with_events(
-					&root,
-					&call,
-					approval,
-					cancellation,
-					&mut |event| {
-						self.emit(EventKind::PluginEvent { tool_call_id: call.id.clone(), event }, sink)
-					},
-				);
+				let result = if call.function.name == "task" {
+					crate::task_tool::run(&root, &call.function.arguments, model, approval, options)
+						.map(tools::ToolOutput::text)
+				} else {
+					runtime.invoke_detailed_with_events(
+						&root,
+						&call,
+						approval,
+						cancellation,
+						&mut |event| {
+							self.emit(EventKind::PluginEvent { tool_call_id: call.id.clone(), event }, sink)
+						},
+					)
+				};
 				self.tools = runtime;
 				let output = match result {
 					Ok(output) => output,

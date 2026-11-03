@@ -54,6 +54,8 @@ pub struct SessionState {
 	checkpoint:    std::sync::Mutex<CheckpointState>,
 	/// Effective legacy settings for this workspace.
 	pub settings:  crate::settings::Settings,
+	/// Subagent `yield` submission and goal-mode objective.
+	pub(crate) agent: crate::task_tool::AgentState,
 }
 
 #[derive(Default)]
@@ -74,6 +76,11 @@ impl SessionState {
 			.checkpoint
 			.lock()
 			.unwrap_or_else(std::sync::PoisonError::into_inner)
+	}
+
+	/// The subagent's `yield` submission, consumed once by the `task` host.
+	pub fn take_yield(&self) -> Option<Result<String, String>> {
+		self.agent.take()
 	}
 
 	/// The report of a successful `rewind`, consumed once by the session loop.
@@ -296,6 +303,10 @@ fn invoke_authorized(
 			ToolOutput::text(bash(root, &args, cancellation)?)
 		},
 		"todo" => ToolOutput::text(crate::todo::todo(&state.todos, arguments)),
+		"ask" => ToolOutput::text(crate::task_tool::ask(arguments)?),
+		"yield" => ToolOutput::text(state.agent.submit(arguments)?),
+		"goal" => ToolOutput::text(state.agent.goal(arguments)?),
+		"task" => bail!("task requires a host session with a model"),
 		"ast_grep" => ToolOutput::text(crate::ast::ast_grep(
 			root,
 			&parse::<crate::ast::Args>(arguments)?,

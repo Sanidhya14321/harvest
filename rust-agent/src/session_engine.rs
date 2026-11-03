@@ -842,9 +842,22 @@ impl Driver {
 			// Once an assistant tool batch is durable, every call must get a result,
 			// including calls skipped by cancellation. Never strand replay pairs.
 			for call in calls {
-				let output = self
-					.tools
-					.invoke_detailed_with_events(
+				let output = if call.function.name == "task" {
+					crate::task_tool::run(
+						&self.root,
+						&call.function.arguments,
+						self.model.as_ref(),
+						self.approval.as_ref(),
+						&crate::agent::RunOptions {
+							max_steps:      16,
+							user_agent_dir: None,
+							tags:           Default::default(),
+							cancellation:   cancellation.clone(),
+						},
+					)
+					.map(tools::ToolOutput::text)
+				} else {
+					self.tools.invoke_detailed_with_events(
 						&self.root,
 						&call,
 						self.approval.as_ref(),
@@ -860,7 +873,8 @@ impl Driver {
 								.map_err(|_| anyhow::anyhow!("session event owner closed"))
 						},
 					)
-					.unwrap_or_else(|error| tools::ToolOutput::failure(format!("error: {error:#}")));
+				}
+				.unwrap_or_else(|error| tools::ToolOutput::failure(format!("error: {error:#}")));
 				let message = chat::tool_result(&call.id, output.content);
 				self.commit_with_details(
 					run,
