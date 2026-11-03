@@ -103,6 +103,7 @@ reqwest = { version = "0.12.24", default-features = false, features = ["rustls-t
 harvest-protocol = { path = "../crates/harvest-protocol" }
 harvest-terminal = { path = "../crates/harvest-terminal" }
 toml.workspace = true
+aes-gcm = "0.10.3"
 ureq = { version = "2.12.1", default-features = false, features = [
   "json",
   "tls",

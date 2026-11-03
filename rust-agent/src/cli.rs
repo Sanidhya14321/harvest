@@ -88,6 +88,10 @@ enum Commands {
 	Ttsr(crate::commands::ttsr::Args),
 	#[command(about = "Get the API key or OAuth token for a provider")]
 	Token(crate::commands::token::Args),
+	#[command(about = "Share a saved session as an encrypted link")]
+	Share(crate::commands::share::ShareArgs),
+	#[command(about = "Synthesize text with the local TTS engine")]
+	Say(crate::commands::say::SayArgs),
 	#[command(about = "Detect project diagnostics and dispatch file-disjoint repair agents")]
 	Cleanse(crate::commands::cleanse::Args),
 	#[command(about = "Show what the read tool returns for a path or URI")]
@@ -490,6 +494,8 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::Plugin(args) => crate::commands::plugin::execute(args),
 		Commands::Update(args) => crate::commands::update::execute(args),
 		Commands::Install(args) => crate::commands::install::execute(args),
+		Commands::Share(args) => crate::commands::share::execute(args),
+		Commands::Say(args) => crate::commands::say::execute(args),
 		Commands::Gc(args) => crate::commands::gc::execute(args),
 		Commands::Ps(args) => crate::commands::ps::execute(args),
 		Commands::Worktree(args) => crate::commands::worktree::execute(args),

@@ -4025,6 +4025,7 @@ dependencies = [
 name = "harvest-omp"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "anyhow",
  "assert_cmd",
  "async-trait",

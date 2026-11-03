@@ -98,7 +98,7 @@ fn matches(path: &Path, arg: &str) -> bool {
 	(!id.is_empty() && id.starts_with(&arg)) || stem.starts_with(&arg)
 }
 
-fn resolve_target(arg: Option<&str>, cwd: &Path) -> Result<PathBuf> {
+pub(crate) fn resolve_target(arg: Option<&str>, cwd: &Path) -> Result<PathBuf> {
 	let local = default_session_dir(cwd)?;
 	let Some(arg) = arg else {
 		return list_sessions(&local).into_iter().next().with_context(|| {

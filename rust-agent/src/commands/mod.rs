@@ -141,3 +141,6 @@ pub mod plugin;
 pub mod update;
 pub mod install;
 mod plugin_store;
+pub mod say;
+mod secrets;
+pub mod share;
