@@ -18,6 +18,7 @@ mod search;
 mod session_context;
 pub mod session_format;
 mod shell;
+mod sqlite;
 mod streaming;
 pub mod todo;
 pub mod tools;

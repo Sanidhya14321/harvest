@@ -85,6 +85,8 @@ pi-walker = { path = "../crates/pi-walker" }
 async-trait.workspace = true
 pi-shell = { path = "../crates/pi-shell", optional = true }
 regex.workspace = true
+rusqlite = { version = "0.37", features = ["bundled"] }
+form_urlencoded = "1.2.2"
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 tokio = { workspace = true, optional = true }

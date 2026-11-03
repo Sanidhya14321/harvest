@@ -903,9 +903,13 @@ pub(crate) fn read(
 		&& fs
 			.relative(Path::new(&args.path))
 			.is_ok_and(|path| fs.exists(&path).unwrap_or(true)))
-		&& let Some(output) = read_archive(&fs, &args.path, store, conflicts)?
 	{
-		return Ok(output);
+		if let Some(output) = read_archive(&fs, &args.path, store, conflicts)? {
+			return Ok(output);
+		}
+		if let Some(output) = crate::sqlite::read_sqlite(&fs, &args.path)? {
+			return Ok(output);
+		}
 	}
 	// A real file whose name ends in selector syntax keeps its colon.
 	let literal_exists = || {

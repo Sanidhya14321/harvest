@@ -9,6 +9,14 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `read` opens SQLite databases (`.db`, `.db3`, `.sqlite`, `.sqlite3`, magic
+  checked) query-only through bundled `rusqlite`: table listing with bounded
+  row counts and `sqlite_stat1` estimates, `:table` schema plus samples,
+  `:table:key` rows by primary key or ROWID, `?limit&offset&order&where`
+  pages with the comment/terminator/keyword `where` guard, and `?q=` raw
+  queries capped at 1000 rows, all through the legacy ASCII-table, vertical
+  and row renderers. 16/16 probes match TS. SQLite writes are pending.
+
 - `harvest-archive` (new crate) recognizes every legacy archive extension and
   splits `archive.ext:member` paths like `parseArchivePathCandidates`; it
   indexes ZIP, tar (ustar/GNU long names/pax paths), tar.gz, tar.zst and
