@@ -1,0 +1,23 @@
+[package]
+name = "harvest-mnemopi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Native Mnemopi memory engine (BEAM working/episodic memory over SQLite), schema-compatible with the TypeScript package"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+regex.workspace = true
+harvest-runtime = { path = "../harvest-runtime" }
+rusqlite = { version = "0.37", features = ["bundled", "limits"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10.9"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
