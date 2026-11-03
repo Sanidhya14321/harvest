@@ -84,6 +84,14 @@ enum Commands {
 	Search(crate::tool_cli::SearchArgs),
 	#[command(about = "List bundled catalog models the native runtime can route")]
 	Models(crate::tool_cli::ModelsArgs),
+	#[command(about = "Show provider usage limits for every authenticated account")]
+	Usage(crate::commands::usage::UsageArgs),
+	#[command(about = "View, clean, and push reported tool issues from automated QA")]
+	Grievances(crate::commands::grievances::GrievancesArgs),
+	#[command(about = "Manage SSH host configurations")]
+	Ssh(crate::commands::ssh::SshArgs),
+	#[command(about = "Manage bundled task agents")]
+	Agents(crate::commands::agents::AgentsArgs),
 	#[command(about = "Inspect compatible session JSONL without changing its source")]
 	Session(SessionArgs),
 	#[command(name = "completions", hide = true, disable_help_flag = true)]
@@ -469,6 +477,10 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::Images(args) => crate::commands::images::execute(args),
 		Commands::Render(args) => crate::commands::render::execute(args),
 		Commands::Compress(args) => crate::commands::compress::execute(args),
+		Commands::Usage(args) => crate::commands::usage::execute(args),
+		Commands::Grievances(args) => crate::commands::grievances::execute(args),
+		Commands::Ssh(args) => crate::commands::ssh::execute(args),
+		Commands::Agents(args) => crate::commands::agents::execute(args),
 		Commands::Read(args) => crate::tool_cli::read(&args).map(|()| 0),
 		Commands::Grep(args) => crate::tool_cli::grep(&args).map(|()| 0),
 		Commands::Search(args) => crate::tool_cli::search(&args).map(|()| 0),

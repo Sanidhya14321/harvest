@@ -15,7 +15,6 @@ use anyhow::Result;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-mod wyhash;
 
 const DESTINATIONS: &str = include_str!("destinations.json");
 const DEFAULT_BACKENDS: [&str; 4] = ["provider-files", "tailscale", "cloudflared", "litterbox"];
