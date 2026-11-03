@@ -61,26 +61,26 @@ struct PathSpec {
 }
 
 /// One engine invocation: a base path and an optional glob under it.
-struct Target {
-	base: PathBuf,
-	glob: Option<String>,
+pub(crate) struct Target {
+	pub(crate) base: PathBuf,
+	pub(crate) glob: Option<String>,
 }
 
-struct Scope {
+pub(crate) struct Scope {
 	/// Absolute search root (common ancestor for several entries).
-	search_path:  PathBuf,
-	is_directory: bool,
-	glob:         Option<String>,
-	targets:      Option<Vec<Target>>,
-	exact_files:  Option<Vec<PathBuf>>,
-	missing:      Vec<String>,
+	pub(crate) search_path:  PathBuf,
+	pub(crate) is_directory: bool,
+	pub(crate) glob:         Option<String>,
+	pub(crate) targets:      Option<Vec<Target>>,
+	pub(crate) exact_files:  Option<Vec<PathBuf>>,
+	pub(crate) missing:      Vec<String>,
 }
 
 fn has_glob(text: &str) -> bool {
 	text.contains(GLOB_CHARS)
 }
 
-fn is_url_like(text: &str) -> bool {
+pub(crate) fn is_url_like(text: &str) -> bool {
 	let Some((scheme, _)) = text.split_once("://") else {
 		return false;
 	};
@@ -102,7 +102,7 @@ fn normalize_input(input: &str) -> String {
 }
 
 /// `toPathList`: a JSON-encoded string array is several entries.
-fn to_path_list(input: Option<&str>) -> Vec<String> {
+pub(crate) fn to_path_list(input: Option<&str>) -> Vec<String> {
 	let Some(input) = input else {
 		return Vec::new();
 	};
@@ -178,9 +178,9 @@ fn split_top_level(entry: &str, mode: Option<SplitMode>) -> Vec<String> {
 	parts
 }
 
-struct Workspace {
-	fs:   JailedFs,
-	root: PathBuf,
+pub(crate) struct Workspace {
+	pub(crate) fs:   JailedFs,
+	pub(crate) root: PathBuf,
 }
 
 impl Workspace {
@@ -189,7 +189,7 @@ impl Workspace {
 		self.fs.relative(Path::new(path))
 	}
 
-	fn absolute(&self, path: &str) -> Result<PathBuf> {
+	pub(crate) fn absolute(&self, path: &str) -> Result<PathBuf> {
 		Ok(self.root.join(self.relative(path)?))
 	}
 
@@ -208,7 +208,7 @@ impl Workspace {
 
 	/// Stat through the capability as `(is_file, is_dir)`; `Ok(None)` when the
 	/// path does not exist.
-	fn stat(&self, path: &str) -> Result<Option<(bool, bool)>> {
+	pub(crate) fn stat(&self, path: &str) -> Result<Option<(bool, bool)>> {
 		let relative = self.relative(path)?;
 		match self.fs.file_type(&relative) {
 			Ok(kind) => Ok(Some((kind.is_file(), kind.is_dir()))),
@@ -218,7 +218,7 @@ impl Workspace {
 	}
 
 	/// Canonical search root for the engine, refused if it leaves the jail.
-	fn engine_path(&self, path: &Path) -> Result<PathBuf> {
+	pub(crate) fn engine_path(&self, path: &Path) -> Result<PathBuf> {
 		let canonical = std::fs::canonicalize(path)?;
 		if !canonical.starts_with(&self.root) {
 			bail!("path escapes the authorized root");
@@ -226,7 +226,7 @@ impl Workspace {
 		Ok(canonical)
 	}
 
-	fn display(&self, absolute: &Path) -> String {
+	pub(crate) fn display(&self, absolute: &Path) -> String {
 		let relative = absolute
 			.strip_prefix(&self.root)
 			.map_or_else(|_| absolute.to_path_buf(), Path::to_path_buf);
@@ -246,7 +246,7 @@ fn is_missing(error: &std::io::Error) -> bool {
 }
 
 /// `splitDelimitedPathEntry` + `expandDelimitedPathEntries`.
-fn expand_entries(ws: &Workspace, entries: &[String]) -> Result<Vec<String>> {
+pub(crate) fn expand_entries(ws: &Workspace, entries: &[String]) -> Result<Vec<String>> {
 	let mut expanded = Vec::new();
 	for entry in entries {
 		let normalized = normalize_input(entry);
@@ -383,7 +383,7 @@ fn common_base(paths: &[PathBuf]) -> PathBuf {
 	common.iter().collect()
 }
 
-fn posix_relative(base: &Path, path: &Path) -> String {
+pub(crate) fn posix_relative(base: &Path, path: &Path) -> String {
 	let text = path
 		.strip_prefix(base)
 		.map_or_else(|_| path.to_string_lossy().into_owned(), |p| p.to_string_lossy().into_owned())
@@ -421,7 +421,7 @@ fn brace_union(patterns: &[String]) -> Option<String> {
 
 /// `resolveToolSearchScope` for local paths (`fanOutFileTargets`,
 /// `surfaceExactFilePaths`).
-fn resolve_scope(ws: &Workspace, raw: &[String]) -> Result<Scope> {
+pub(crate) fn resolve_scope(ws: &Workspace, raw: &[String], fan_out: bool) -> Result<Scope> {
 	let mut inputs = Vec::new();
 	for entry in raw {
 		let normalized = normalize_input(entry);
@@ -530,14 +530,15 @@ fn resolve_scope(ws: &Workspace, raw: &[String]) -> Result<Scope> {
 			})
 			.collect();
 		let common_requested = items.iter().any(|item| item.absolute == base);
-		let demotes_file = !all_exact && items.iter().any(|item| item.glob.is_none() && item.is_file);
+		let demotes_file =
+			fan_out && !all_exact && items.iter().any(|item| item.glob.is_none() && item.is_file);
 		let targets = (items.len() > 1 && (!common_requested || demotes_file)).then(|| {
 			items
 				.iter()
 				.map(|item| Target { base: item.absolute.clone(), glob: item.glob.clone() })
 				.collect::<Vec<_>>()
 		});
-		let exact_files = all_exact.then(|| {
+		let exact_files = (fan_out && all_exact).then(|| {
 			items
 				.iter()
 				.map(|item| item.absolute.clone())
@@ -752,7 +753,7 @@ fn search_scope(
 
 /// `formatGroupedFiles`: a prefix-folded tree with one `#` per level and a
 /// blank line before every directory header and root-level file.
-fn format_grouped_files(
+pub(crate) fn format_grouped_files(
 	files: &[String],
 	render: &mut dyn FnMut(&str) -> (Vec<String>, String),
 ) -> Vec<String> {
@@ -860,7 +861,7 @@ pub(crate) fn grep(
 	let entries = expand_entries(&ws, &effective)?;
 	let specs = parse_specs(&ws, &entries)?;
 	let searchable: Vec<String> = specs.iter().map(|spec| spec.clean.clone()).collect();
-	let scope = resolve_scope(&ws, &searchable)?;
+	let scope = resolve_scope(&ws, &searchable, true)?;
 
 	let mut ranges_by_path: HashMap<PathBuf, Vec<Range>> = HashMap::new();
 	for spec in &specs {

@@ -468,7 +468,11 @@
     {
       "id": "tool:ast_grep",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/ast.rs",
+          "crates/pi-ast/src/engine.rs"
+        ]
       },
       "verification": {
         "status": "unverified"

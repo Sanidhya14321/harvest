@@ -74,6 +74,8 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	skip:           Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	pat:            Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	op:             Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	list:           Option<RawSchema>,
@@ -235,6 +237,12 @@ pub fn specs() -> Vec<ToolSpec> {
 			},
 			&["op"],
 		),
+		spec(
+			"ast_grep",
+			include_str!("prompts/tools/ast-grep.md").trim_end(),
+			&ToolProperties { pat: Some(STRING), path: Some(STRING), skip: Some(NUMBER), ..EMPTY },
+			&["pat"],
+		),
 	]
 }
 
@@ -251,6 +259,7 @@ const EMPTY: ToolProperties = ToolProperties {
 	hidden:         None,
 	limit:          None,
 	skip:           None,
+	pat:            None,
 	op:             None,
 	list:           None,
 	task:           None,
@@ -284,7 +293,7 @@ mod tests {
 	#[test]
 	fn tool_catalog_names_the_workspace_tools() {
 		let names: Vec<&str> = specs().iter().map(|spec| spec.function.name).collect();
-		assert_eq!(names, ["read", "write", "edit", "grep", "glob", "bash", "todo"]);
+		assert_eq!(names, ["read", "write", "edit", "grep", "glob", "bash", "todo", "ast_grep"]);
 	}
 
 	#[test]

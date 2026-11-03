@@ -9,6 +9,17 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `pi_ast::engine` owns the ast-grep file search, in-memory match and rewrite
+  orchestration; the N-API `astGrep`/`astMatch`/`astEdit` exports are thin
+  adapters with unchanged bindings (23 TS ast tests pass on the rebuilt addon).
+  The Rust `ast_grep` tool uses it with the grep scope resolver: grouped
+  snapshot-tagged output, `meta:` bindings, `skip` paging, multi-target merge
+  and the legacy parse-issue and limit notices; probes match the TS tool except
+  where a plain file in a `;` list is fanned out: TS renders it as
+  `# file/` + `## file` (it joins the match path onto the file itself) and
+  loses the tag, Rust renders the file directly. `ast_edit` (preview plus the
+  `resolve` apply queue) is pending.
+
 - `todo` ports the legacy phased task model: all nine ops, `op` inference
   from unambiguous payloads, single in-progress normalization, all-or-nothing
   batches, blocker notes, the summary text and the Markdown round-trip. State

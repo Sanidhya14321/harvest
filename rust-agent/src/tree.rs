@@ -86,7 +86,7 @@ fn primary_weight(ch: char) -> (u8, u32) {
 
 /// Approximates ICU `localeCompare` for file names: primary weights first,
 /// then lowercase before uppercase at the first case difference.
-fn locale_compare(a: &str, b: &str) -> Ordering {
+pub(crate) fn locale_compare(a: &str, b: &str) -> Ordering {
 	let primary = a
 		.chars()
 		.map(primary_weight)

@@ -98,7 +98,7 @@ pub fn invoke_in_session(
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
 	}
-	if !matches!(name, "read" | "write" | "edit" | "grep" | "glob" | "bash" | "todo") {
+	if !matches!(name, "read" | "write" | "edit" | "grep" | "glob" | "bash" | "todo" | "ast_grep") {
 		bail!("unknown tool {name}");
 	}
 	if matches!(name, "write" | "edit" | "bash") && !policy.approve(call)? {
@@ -151,6 +151,12 @@ fn invoke_authorized(
 		)?),
 		"bash" => ToolOutput::text(bash(root, &parse::<BashArgs>(arguments)?, cancellation)?),
 		"todo" => ToolOutput::text(crate::todo::todo(&state.todos, arguments)),
+		"ast_grep" => ToolOutput::text(crate::ast::ast_grep(
+			root,
+			&parse::<crate::ast::Args>(arguments)?,
+			store,
+			cancellation,
+		)?),
 		_ => bail!("unknown tool {name}"),
 	};
 	Ok(match artifacts {
