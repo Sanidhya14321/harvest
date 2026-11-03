@@ -9,6 +9,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `think`, `checkpoint` and `rewind` follow the legacy tools: the scratchpad
+  result, the single active checkpoint, and the empty/missing/already-done
+  rewind errors. A successful rewind branches the durable session back to the
+  checkpoint result entry (the exploration branch stays in the log) and
+  commits the rendered `rewind-report` prompt, so the next model turn and a
+  reopened session see only the report. The rewind reminder before yielding
+  and display-only custom entries are pending. The tool allowlist now derives
+  from the tool specs.
+
 - `pi_ast::engine` owns the ast-grep file search, in-memory match and rewrite
   orchestration; the N-API `astGrep`/`astMatch`/`astEdit` exports are thin
   adapters with unchanged bindings (23 TS ast tests pass on the rebuilt addon).

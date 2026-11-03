@@ -581,7 +581,11 @@
     {
       "id": "tool:checkpoint",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/agent_session.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -590,7 +594,11 @@
     {
       "id": "tool:rewind",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/agent_session.rs"
+        ]
       },
       "verification": {
         "status": "unverified"

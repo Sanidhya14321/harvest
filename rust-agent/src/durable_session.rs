@@ -88,6 +88,18 @@ impl DurableSession {
 		self.leaf.as_deref()
 	}
 
+	/// Branch the active path back to `entry_id`, the leaf when the active
+	/// context held `message_count` messages; later commits fork from there
+	/// (`branchWithSummary`). The abandoned branch stays in the log.
+	pub fn rewind_to(&mut self, entry_id: &str, message_count: usize) -> Result<()> {
+		if message_count > self.messages.len() {
+			bail!("rewind target is past the active branch");
+		}
+		self.messages.truncate(message_count);
+		self.leaf = Some(entry_id.to_owned());
+		Ok(())
+	}
+
 	pub fn ensure_ready(&self) -> Result<()> {
 		validate_pairs(&self.messages, true)
 	}

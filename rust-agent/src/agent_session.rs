@@ -161,11 +161,15 @@ impl AgentSession {
 		model: &dyn Model,
 		usage: Option<&crate::usage::UsageReport>,
 		sink: &mut dyn FnMut(SessionEvent) -> Result<()>,
-	) -> Result<()> {
+	) -> Result<String> {
 		let entry_id = self
 			.log
 			.commit_with_usage(message, model.model_id(), usage)?;
-		self.emit(EventKind::Committed { entry_id, role: message.role.clone() }, sink)
+		self.emit(
+			EventKind::Committed { entry_id: entry_id.clone(), role: message.role.clone() },
+			sink,
+		)?;
+		Ok(entry_id)
 	}
 
 	fn drive(
@@ -186,11 +190,17 @@ impl AgentSession {
 		let context = agent::context(&self.root, prompt, options)?;
 		self.emit(EventKind::Started, sink)?;
 		self.commit(&chat::user(prompt), model, None, sink)?;
-		let mut messages = vec![agent::system_message()];
-		if !context.is_empty() {
-			messages.push(chat::system(&context));
-		}
+		let preamble = {
+			let mut preamble = vec![agent::system_message()];
+			if !context.is_empty() {
+				preamble.push(chat::system(&context));
+			}
+			preamble
+		};
+		let mut messages = preamble.clone();
 		messages.extend_from_slice(self.log.messages());
+		// `checkpoint` result entry and the active-context length after it.
+		let mut checkpoint: Option<(String, usize)> = None;
 		for _ in 0..options.max_steps {
 			cancellation.heartbeat()?;
 			let response =
@@ -225,9 +235,24 @@ impl AgentSession {
 					Ok(output) => output,
 					Err(error) => format!("error: {error:#}"),
 				};
+				let succeeded = !output.starts_with("error: ");
 				let result = chat::tool_result(&call.id, output);
-				self.commit(&result, model, None, sink)?;
+				let entry_id = self.commit(&result, model, None, sink)?;
 				messages.push(result);
+				if call.function.name == "checkpoint" && succeeded {
+					checkpoint = Some((entry_id, self.log.messages().len()));
+				}
+			}
+			if let Some(report) = self.tool_state.take_rewind() {
+				// `#applyRewind`: branch back to the checkpoint result and retain
+				// only the report.
+				if let Some((entry_id, count)) = checkpoint.take() {
+					self.log.rewind_to(&entry_id, count)?;
+				}
+				let text = include_str!("prompts/rewind-report.md").replace("{{report}}", &report);
+				self.commit(&chat::user(text.trim_end()), model, None, sink)?;
+				messages.clone_from(&preamble);
+				messages.extend_from_slice(self.log.messages());
 			}
 		}
 		bail!("stopped after {} steps", options.max_steps)

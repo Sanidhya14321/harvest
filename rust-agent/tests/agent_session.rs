@@ -223,3 +223,49 @@ fn failed_streams_do_not_persist_provisional_assistant_output() -> Result<()> {
 	);
 	Ok(())
 }
+
+fn tool_call(id: &str, name: &str, arguments: &str) -> ChatMessage {
+	ChatMessage {
+		tool_calls: Some(vec![ToolCall {
+			id:       id.into(),
+			kind:     "function".into(),
+			function: FunctionCall { name: name.into(), arguments: arguments.into() },
+		}]),
+		..answer("")
+	}
+}
+
+#[test]
+fn rewind_branches_back_to_the_checkpoint_and_keeps_only_the_report() -> Result<()> {
+	let root = tempfile::tempdir()?;
+	std::fs::write(root.path().join("noise.txt"), "exploration noise")?;
+	let path = Path::new("session.jsonl");
+	let model = script(vec![
+		tool_call("c1", "checkpoint", r#"{"goal":"find the bug"}"#),
+		tool_call("r1", "read", r#"{"path":"noise.txt"}"#),
+		tool_call("w1", "rewind", r#"{"report":"bug is in parse()"}"#),
+		answer("done"),
+	]);
+	let mut session = AgentSession::open(root.path(), path, None)?;
+	let mut options = options();
+	options.max_steps = 6;
+	assert_eq!(session.submit("investigate", &model, &Approve, &options, &mut |_| Ok(()))?, "done");
+	let last = model.histories.borrow().last().cloned().unwrap();
+	let text: Vec<String> = last.iter().filter_map(|m| m.content.clone()).collect();
+	assert!(!text.iter().any(|t| t.contains("exploration noise")), "{text:?}");
+	assert!(
+		text
+			.iter()
+			.any(|t| t.contains("Report:\nbug is in parse()")),
+		"{text:?}"
+	);
+	drop(session);
+	let reopened = DurableSession::open(root.path(), path, None)?;
+	let roles: Vec<&str> = reopened
+		.messages()
+		.iter()
+		.map(|m| m.role.as_str())
+		.collect();
+	assert_eq!(roles, ["user", "assistant", "tool", "user", "assistant"]);
+	Ok(())
+}

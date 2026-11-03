@@ -76,6 +76,12 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pat:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	thoughts:       Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	goal:           Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	report:         Option<StringProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	ops:            Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	paths:          Option<RawSchema>,
@@ -165,6 +171,11 @@ pub fn tool_result(id: &str, content: String) -> ChatMessage {
 		tool_calls:   None,
 		tool_call_id: Some(id.to_owned()),
 	}
+}
+
+/// Whether `name` is one of the tools offered to the model.
+pub fn is_tool(name: &str) -> bool {
+	specs().iter().any(|spec| spec.function.name == name)
 }
 
 pub fn specs() -> Vec<ToolSpec> {
@@ -259,6 +270,24 @@ pub fn specs() -> Vec<ToolSpec> {
 			},
 			&["ops", "paths"],
 		),
+		spec(
+			"think",
+			"private scratchpad; not shown to user",
+			&ToolProperties { thoughts: Some(STRING), ..EMPTY },
+			&["thoughts"],
+		),
+		spec(
+			"checkpoint",
+			include_str!("prompts/tools/checkpoint.md").trim_end(),
+			&ToolProperties { goal: Some(STRING), ..EMPTY },
+			&["goal"],
+		),
+		spec(
+			"rewind",
+			include_str!("prompts/tools/rewind.md").trim_end(),
+			&ToolProperties { report: Some(STRING), ..EMPTY },
+			&["report"],
+		),
 	]
 }
 
@@ -276,6 +305,9 @@ const EMPTY: ToolProperties = ToolProperties {
 	limit:          None,
 	skip:           None,
 	pat:            None,
+	thoughts:       None,
+	goal:           None,
+	report:         None,
 	ops:            None,
 	paths:          None,
 	op:             None,
@@ -312,7 +344,18 @@ mod tests {
 	fn tool_catalog_names_the_workspace_tools() {
 		let names: Vec<&str> = specs().iter().map(|spec| spec.function.name).collect();
 		assert_eq!(names, [
-			"read", "write", "edit", "grep", "glob", "bash", "todo", "ast_grep", "ast_edit"
+			"read",
+			"write",
+			"edit",
+			"grep",
+			"glob",
+			"bash",
+			"todo",
+			"ast_grep",
+			"ast_edit",
+			"think",
+			"checkpoint",
+			"rewind"
 		]);
 	}
 

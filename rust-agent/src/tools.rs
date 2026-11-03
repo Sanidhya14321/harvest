@@ -83,6 +83,44 @@ pub struct SessionState {
 	/// Staged previews (`ast_edit`), newest last; `xd://resolve` applies the
 	/// newest, `xd://reject` discards it.
 	pending:       std::sync::Mutex<Vec<crate::ast::EditPlan>>,
+	/// Active `checkpoint` (goal) and the report of a `rewind` waiting for the
+	/// session loop to branch the context.
+	checkpoint:    std::sync::Mutex<CheckpointState>,
+}
+
+#[derive(Default)]
+struct CheckpointState {
+	active:         bool,
+	completed:      bool,
+	pending_report: Option<String>,
+}
+
+impl SessionState {
+	fn checkpoint(&self) -> std::sync::MutexGuard<'_, CheckpointState> {
+		self
+			.checkpoint
+			.lock()
+			.unwrap_or_else(std::sync::PoisonError::into_inner)
+	}
+
+	/// The report of a successful `rewind`, consumed once by the session loop.
+	pub fn take_rewind(&self) -> Option<String> {
+		let mut state = self.checkpoint();
+		let report = state.pending_report.take()?;
+		state.active = false;
+		state.completed = true;
+		Some(report)
+	}
+}
+
+#[derive(Deserialize)]
+struct CheckpointArgs {
+	goal: String,
+}
+
+#[derive(Deserialize)]
+struct RewindArgs {
+	report: String,
 }
 
 impl SessionState {
@@ -152,10 +190,7 @@ pub fn invoke_in_session(
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
 	}
-	if !matches!(
-		name,
-		"read" | "write" | "edit" | "grep" | "glob" | "bash" | "todo" | "ast_grep" | "ast_edit"
-	) {
+	if !crate::chat::is_tool(name) {
 		bail!("unknown tool {name}");
 	}
 	if matches!(name, "write" | "edit" | "bash") && !policy.approve(call)? {
@@ -202,6 +237,38 @@ fn invoke_authorized(
 				Some(result) => ToolOutput::text(result?),
 				None => ToolOutput::text(write(root, &args, store, conflicts)?),
 			}
+		},
+		"think" => ToolOutput::text("------"),
+		"checkpoint" => {
+			let args = parse::<CheckpointArgs>(arguments)?;
+			let mut checkpoint = state.checkpoint();
+			if checkpoint.active {
+				bail!("Checkpoint already active.");
+			}
+			checkpoint.active = true;
+			ToolOutput::text(format!(
+				"Checkpoint: {}\nFinish exploration and formulate findings.",
+				args.goal
+			))
+		},
+		"rewind" => {
+			let args = parse::<RewindArgs>(arguments)?;
+			let mut checkpoint = state.checkpoint();
+			if !checkpoint.active {
+				if checkpoint.completed {
+					bail!(
+						"Checkpoint already completed; continue from the retained rewind report instead \
+						 of calling rewind again."
+					);
+				}
+				bail!("No active checkpoint. Create a checkpoint before calling rewind.");
+			}
+			let report = args.report.trim();
+			if report.is_empty() {
+				bail!("Report cannot be empty.");
+			}
+			checkpoint.pending_report = Some(report.to_owned());
+			ToolOutput::text("Rewind requested.\nReport captured for context replacement.")
 		},
 		"ast_edit" => {
 			let (text, plan) = crate::ast::ast_edit(
