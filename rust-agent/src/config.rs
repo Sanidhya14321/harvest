@@ -25,10 +25,10 @@ pub struct Overrides {
 
 #[derive(Clone, Default)]
 pub struct Environment {
-	pub model:     Option<String>,
-	pub base_url:  Option<String>,
-	pub api_key:   Option<String>,
-	pub max_steps: Option<u32>,
+	pub model:         Option<String>,
+	pub base_url:      Option<String>,
+	pub api_key:       Option<String>,
+	pub max_steps:     Option<u32>,
 	/// Catalog provider key variables (`GROQ_API_KEY`, ...) that are set.
 	pub provider_keys: std::collections::BTreeMap<String, String>,
 }
@@ -204,9 +204,9 @@ mod tests {
 				max_steps: Some(5),
 			},
 			&super::Environment {
-				model:     Some("env-model".to_owned()),
-				base_url:  Some("http://env".to_owned()),
-				api_key:   Some("env-key".to_owned()),
+				model: Some("env-model".to_owned()),
+				base_url: Some("http://env".to_owned()),
+				api_key: Some("env-key".to_owned()),
 				max_steps: Some(4),
 				..Default::default()
 			},
@@ -261,9 +261,13 @@ mod tests {
 			_ => None,
 		})
 		.unwrap();
-		let routed =
-			crate::configuration::load(root.path(), &Overrides::default(), &environment, &Default::default())
-				.unwrap();
+		let routed = crate::configuration::load(
+			root.path(),
+			&Overrides::default(),
+			&environment,
+			&Default::default(),
+		)
+		.unwrap();
 		assert_eq!(routed.api, crate::configuration::Api::AnthropicMessages);
 		assert_eq!(routed.settings.model, "claude-sonnet-4-5");
 		assert_eq!(routed.settings.base_url, "https://api.anthropic.com");

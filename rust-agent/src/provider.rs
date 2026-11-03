@@ -495,10 +495,10 @@ mod tests {
 			socket.write_all(response.as_bytes()).unwrap();
 		});
 		let model = HttpModel::new(Settings {
-			model:      "test".to_owned(),
-			base_url:   format!("http://{address}/v1"),
-			api_key:    String::new(),
-			max_steps:  1,
+			model:     "test".to_owned(),
+			base_url:  format!("http://{address}/v1"),
+			api_key:   String::new(),
+			max_steps: 1,
 		});
 		let response = model.complete_response(&[user("hi")], &[]).unwrap();
 		assert_eq!(response.message.content.as_deref(), Some("done"));

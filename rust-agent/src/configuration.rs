@@ -280,7 +280,8 @@ pub fn load(
 			.unwrap_or_default(),
 		provider_values,
 		settings: {
-			let mut settings = config::resolve_file_values(flags, environment, document.layer.settings)?;
+			let mut settings =
+				config::resolve_file_values(flags, environment, document.layer.settings)?;
 			if let Some(route) = &route {
 				route.model.clone_into(&mut settings.model);
 				if flags.api_key.is_none()

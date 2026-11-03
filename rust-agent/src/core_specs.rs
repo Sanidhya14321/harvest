@@ -305,7 +305,6 @@ const fn spec(
 	}
 }
 
-
 /// Main's tool schemas as `(name, description, parameters)` for the runtime
 /// spec list.
 pub(crate) fn schemas() -> Vec<(String, String, serde_json::Value)> {
@@ -316,7 +315,10 @@ pub(crate) fn schemas() -> Vec<(String, String, serde_json::Value)> {
 			let function = &value["function"];
 			(
 				function["name"].as_str().unwrap_or_default().to_owned(),
-				function["description"].as_str().unwrap_or_default().to_owned(),
+				function["description"]
+					.as_str()
+					.unwrap_or_default()
+					.to_owned(),
 				function["parameters"].clone(),
 			)
 		})

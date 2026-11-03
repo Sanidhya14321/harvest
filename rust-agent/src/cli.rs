@@ -64,6 +64,14 @@ enum Commands {
 	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Show what the read tool returns for a path or URI")]
+	Read(crate::tool_cli::ReadArgs),
+	#[command(about = "Run the grep tool against the workspace")]
+	Grep(crate::tool_cli::GrepArgs),
+	#[command(about = "Run a web search through the configured providers", visible_alias = "q")]
+	Search(crate::tool_cli::SearchArgs),
+	#[command(about = "List bundled catalog models the native runtime can route")]
+	Models(crate::tool_cli::ModelsArgs),
 	#[command(about = "Inspect compatible session JSONL without changing its source")]
 	Session(SessionArgs),
 	#[command(name = "completions", hide = true, disable_help_flag = true)]
@@ -443,6 +451,10 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Read(args) => crate::tool_cli::read(&args).map(|()| 0),
+		Commands::Grep(args) => crate::tool_cli::grep(&args).map(|()| 0),
+		Commands::Search(args) => crate::tool_cli::search(&args).map(|()| 0),
+		Commands::Models(args) => crate::tool_cli::models(&args).map(|()| 0),
 		Commands::Session(args) => inspect_session(args),
 		Commands::RetiredCompletions { .. } => bail!(
 			"Executable shell completion and bootstrap scripts are retired by the Rust-only \

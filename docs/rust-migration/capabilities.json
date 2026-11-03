@@ -209,12 +209,17 @@
     {
       "id": "command:completions",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/cli.rs",
+          "rust-agent/src/shell.rs"
+        ]
       },
       "verification": {
         "status": "unverified",
         "contract_suites": [
-          "rust-agent/tests/cli.rs"
+          "rust-agent/tests/cli.rs",
+          "rust-agent/src/shell.rs"
         ]
       },
       "installation": "experimental-rust-cli",
@@ -349,7 +354,10 @@
     {
       "id": "command:grep",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tool_cli.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -517,7 +525,10 @@
     {
       "id": "command:models",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tool_cli.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -664,7 +675,10 @@
     {
       "id": "command:read",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tool_cli.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -874,7 +888,10 @@
     {
       "id": "command:search",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tool_cli.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1029,7 +1046,11 @@
     {
       "id": "tool:ast_grep",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/ast.rs",
+          "crates/pi-ast/src/engine.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1050,7 +1071,11 @@
     {
       "id": "tool:ast_edit",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/ast.rs",
+          "rust-agent/src/tools.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1166,10 +1191,18 @@
     {
       "id": "tool:glob",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/glob.rs",
+          "crates/pi-walker/src/glob.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/glob.rs",
+          "crates/pi-walker/src/glob.rs"
+        ]
       },
       "work_unit": "application",
       "lifecycle": {
@@ -1252,7 +1285,11 @@
     {
       "id": "tool:checkpoint",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/agent_session.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1273,7 +1310,11 @@
     {
       "id": "tool:rewind",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/tools.rs",
+          "rust-agent/src/agent_session.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1336,10 +1377,16 @@
     {
       "id": "tool:todo",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/todo.rs"
+        ]
       },
       "verification": {
-        "status": "unverified"
+        "status": "unverified",
+        "contract_suites": [
+          "rust-agent/src/todo.rs"
+        ]
       },
       "work_unit": "application",
       "lifecycle": {
@@ -1357,7 +1404,10 @@
     {
       "id": "tool:web_search",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/web_search.rs"
+        ]
       },
       "verification": {
         "status": "unverified"

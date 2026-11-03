@@ -78,14 +78,7 @@ impl AgentSession {
 				.ok()
 				.and_then(|file| crate::output::ArtifactStore::for_session(&file)),
 		);
-		Ok(Self {
-			tools,
-			root: root.canonicalize()?,
-			log,
-			generation: 0,
-			sequence: 0,
-			active: None,
-		})
+		Ok(Self { tools, root: root.canonicalize()?, log, generation: 0, sequence: 0, active: None })
 	}
 
 	/// Select before a run. Snapshots remain volatile and are cleared on mode

@@ -489,7 +489,8 @@ impl ToolRuntime {
 			let output = ToolOutput::text(self.invoke_core(root, call, policy, cancellation)?);
 			if call.function.name == "write"
 				&& let Ok(args) = parse::<CoreWriteArgs>(&call.function.arguments)
-				&& let Ok(key) = JailedFs::open(root).and_then(|fs| fs.resource_path(Path::new(&args.path)))
+				&& let Ok(key) =
+					JailedFs::open(root).and_then(|fs| fs.resource_path(Path::new(&args.path)))
 			{
 				// A direct write invalidates snapshots rather than granting unseen lines.
 				self

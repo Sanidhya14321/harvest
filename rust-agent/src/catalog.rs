@@ -39,6 +39,16 @@ static CATALOG: LazyLock<BTreeMap<String, CatalogProvider>> = LazyLock::new(|| {
 	serde_json::from_str(include_str!("catalog.json")).expect("generated model catalog")
 });
 
+/// Every routable `(provider, model id, row)`, sorted.
+pub fn models() -> impl Iterator<Item = (&'static str, &'static str, &'static CatalogModel)> {
+	CATALOG.iter().flat_map(|(provider, entry)| {
+		entry
+			.models
+			.iter()
+			.map(move |(id, model)| (provider.as_str(), id.as_str(), model))
+	})
+}
+
 /// Every env var a catalog provider may read its key from.
 pub fn env_vars() -> impl Iterator<Item = &'static str> {
 	CATALOG
