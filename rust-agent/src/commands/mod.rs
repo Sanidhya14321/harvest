@@ -144,3 +144,7 @@ mod plugin_store;
 pub mod say;
 mod secrets;
 pub mod share;
+pub mod auth_broker;
+pub mod auth_gateway;
+pub mod stats;
+pub mod setup;

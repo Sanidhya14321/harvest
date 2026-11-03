@@ -233,6 +233,81 @@ impl AuthStorage {
 	}
 }
 
+impl AuthStorage {
+	fn db(&self) -> Result<&Connection> {
+		match &self.db {
+			Some(db) => Ok(db),
+			None => bail!("credential store is not initialized; run the TypeScript application once first"),
+		}
+	}
+
+	/// `deleteAuthCredentialsForProvider`: soft-disable every enabled row.
+	pub fn disable_provider(&self, provider: &str, cause: &str) -> Result<()> {
+		let cause = if cause.trim().is_empty() { "disabled" } else { cause.trim() };
+		self.db()?.execute(
+			&format!(
+				"UPDATE auth_credentials SET disabled_cause = ?1, updated_at = {SQLITE_NOW_EPOCH} \
+				 WHERE provider = ?2 AND disabled_cause IS NULL"
+			),
+			params![cause, provider],
+		)?;
+		Ok(())
+	}
+
+	/// Simplified `upsertAuthCredentialForProvider` for OAuth rows: api_key rows
+	/// are replaced, and an OAuth row with the same email/accountId is updated.
+	/// `identity_key` is left NULL so TS re-derives it from the data.
+	pub fn upsert_oauth(&self, provider: &str, credential: &Map<String, Value>) -> Result<()> {
+		let db = self.db()?;
+		let mut data = credential.clone();
+		data.remove("type");
+		let data_text = Value::Object(data).to_string();
+		let ident = |c: &Credential, f: &str| c.oauth_str(f).map(str::to_owned);
+		let want_email = credential.get("email").and_then(Value::as_str);
+		let want_account = credential.get("accountId").and_then(Value::as_str);
+		let mut target = None;
+		for row in self.list(Some(provider))? {
+			match &row.credential {
+				Credential::ApiKey { .. } => {
+					db.execute(
+						&format!(
+							"UPDATE auth_credentials SET disabled_cause = 'replaced by oauth login', \
+							 updated_at = {SQLITE_NOW_EPOCH} WHERE id = ?1"
+						),
+						params![row.id],
+					)?;
+				},
+				c @ Credential::OAuth(_) => {
+					let same = (want_email.is_some() && ident(c, "email").as_deref() == want_email)
+						|| (want_account.is_some() && ident(c, "accountId").as_deref() == want_account)
+						|| (want_email.is_none() && want_account.is_none());
+					if same && target.is_none() {
+						target = Some(row.id);
+					}
+				},
+			}
+		}
+		match target {
+			Some(id) => db.execute(
+				&format!(
+					"UPDATE auth_credentials SET credential_type = 'oauth', data = ?1, identity_key = \
+					 NULL, updated_at = {SQLITE_NOW_EPOCH} WHERE id = ?2"
+				),
+				params![data_text, id],
+			)?,
+			None => db.execute(
+				&format!(
+					"INSERT INTO auth_credentials (provider, credential_type, data, identity_key, \
+					 created_at, updated_at) VALUES (?1, 'oauth', ?2, NULL, {SQLITE_NOW_EPOCH}, \
+					 {SQLITE_NOW_EPOCH})"
+				),
+				params![provider, data_text],
+			)?,
+		};
+		Ok(())
+	}
+}
+
 /// Stored API key for `provider` from the default store, ignoring store errors.
 pub fn stored_api_key(provider: &str) -> Option<String> {
 	AuthStorage::discover().ok()?.api_key(provider, None).ok().flatten()
