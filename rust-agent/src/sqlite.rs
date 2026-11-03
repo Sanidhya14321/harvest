@@ -774,6 +774,210 @@ pub(crate) fn read_sqlite(fs: &JailedFs, path: &str) -> Result<Option<ToolOutput
 	Ok(None)
 }
 
+fn json_binding(value: &serde_json::Value, column: &str) -> Result<rusqlite::types::Value> {
+	use rusqlite::types::Value;
+	Ok(match value {
+		serde_json::Value::Null => Value::Null,
+		serde_json::Value::Bool(flag) => Value::Integer(i64::from(*flag)),
+		serde_json::Value::Number(number) => match number.as_i64() {
+			Some(integer) => Value::Integer(integer),
+			None => Value::Real(number.as_f64().unwrap_or(f64::NAN)),
+		},
+		serde_json::Value::String(text) => Value::Text(text.clone()),
+		_ => bail!("SQLite column '{column}' only accepts JSON scalar values or null"),
+	})
+}
+
+/// `validateWriteColumns`.
+fn write_columns(
+	db: &Connection,
+	table: &str,
+	data: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Vec<(String, rusqlite::types::Value)>> {
+	let columns: Vec<String> = table_info(db, table)?.into_iter().map(|c| c.name).collect();
+	data
+		.iter()
+		.map(|(column, value)| {
+			if !columns.contains(column) {
+				bail!("SQLite table '{table}' has no column named '{column}'");
+			}
+			Ok((column.clone(), json_binding(value, column)?))
+		})
+		.collect()
+}
+
+/// The `WHERE` clause and key binding for a row write
+/// (`resolveTableRowLookup`).
+fn row_target(db: &Connection, table: &str, key: &str) -> Result<(String, rusqlite::types::Value)> {
+	let mut primary: Vec<ColumnInfo> = table_info(db, table)?
+		.into_iter()
+		.filter(|c| c.pk > 0)
+		.collect();
+	primary.sort_by_key(|c| c.pk);
+	match primary.as_slice() {
+		[column] => {
+			let kind = column.kind.trim().to_uppercase();
+			let value = if kind.contains("INT") {
+				rusqlite::types::Value::Integer(coerce_integer(key, &format!("Primary key '{key}'"))?)
+			} else if (kind.contains("REAL") || kind.contains("FLOA") || kind.contains("DOUB"))
+				&& let Ok(number) = key.trim().parse::<f64>()
+			{
+				rusqlite::types::Value::Real(number)
+			} else {
+				rusqlite::types::Value::Text(key.to_owned())
+			};
+			Ok((format!("{} = ?", quote(&column.name)), value))
+		},
+		[] => {
+			let upper = table_sql(db, table)?.unwrap_or_default().to_uppercase();
+			if upper
+				.split_whitespace()
+				.collect::<Vec<_>>()
+				.windows(2)
+				.any(|w| w == ["WITHOUT", "ROWID"])
+			{
+				bail!("SQLite table '{table}' does not expose ROWID; use '?where=' instead");
+			}
+			Ok((
+				"rowid = ?".to_owned(),
+				rusqlite::types::Value::Integer(coerce_integer(key, "SQLite ROWID")?),
+			))
+		},
+		_ => bail!("SQLite table '{table}' has a composite primary key; use '?where=' instead"),
+	}
+}
+
+/// `parseSqliteWriteTarget`.
+fn write_target(sub: &str, query: &str) -> Result<(String, Option<String>)> {
+	if !query.trim().is_empty() {
+		bail!("SQLite write paths do not support query parameters");
+	}
+	let normalized = sub.trim_start_matches(':').trim();
+	if normalized.is_empty() {
+		bail!("SQLite write path must target a table");
+	}
+	let (table, key) = normalized
+		.split_once(':')
+		.map_or((normalized, None), |(t, k)| (t, Some(k)));
+	if table.is_empty() {
+		bail!("SQLite write path must target a table");
+	}
+	if key.is_some_and(str::is_empty) {
+		bail!("SQLite row writes require a non-empty row key");
+	}
+	Ok((table.to_owned(), key.map(str::to_owned)))
+}
+
+/// `#resolveSqliteWritePath` + `#writeSqliteRow`: insert (no key), update
+/// (key + JSON object) or delete (key + empty content). `None` when the path
+/// names no SQLite database.
+pub(crate) fn write_sqlite(fs: &JailedFs, path: &str, content: &str) -> Result<Option<String>> {
+	let candidates: Vec<_> = candidates(path)
+		.into_iter()
+		.filter(|(db, ..)| db != path)
+		.collect();
+	let Some(fallback) = candidates.last() else {
+		return Ok(None);
+	};
+	let fallback_target = write_target(&fallback.1, &fallback.2)?;
+	fs.relative(Path::new(&fallback.0))?;
+	let mut saw_non_sqlite = false;
+	let mut resolved = None;
+	for (db_path, sub, query) in &candidates {
+		let target = write_target(sub, query)?;
+		let relative = fs.relative(Path::new(db_path))?;
+		match fs.file_type(&relative) {
+			Ok(kind) if kind.is_dir() => continue,
+			Ok(_) => {},
+			Err(_) => continue,
+		}
+		let canonical = std::fs::canonicalize(fs.root().join(&relative))?;
+		if !canonical.starts_with(fs.root()) {
+			bail!("path escapes the authorized root");
+		}
+		let mut header = [0u8; 16];
+		let is_sqlite = std::fs::File::open(&canonical)
+			.and_then(|mut file| std::io::Read::read_exact(&mut file, &mut header))
+			.is_ok()
+			&& &header == MAGIC;
+		if !is_sqlite {
+			saw_non_sqlite = true;
+			continue;
+		}
+		resolved = Some((canonical, target));
+		break;
+	}
+	let Some((db_path, (table, key))) = resolved else {
+		if saw_non_sqlite {
+			return Ok(None);
+		}
+		let _ = fallback_target;
+		bail!("SQLite database '{path}' not found");
+	};
+	let db = Connection::open_with_flags(
+		&db_path,
+		OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+	)
+	.map_err(|error| anyhow!("{error}"))?;
+	db.execute_batch("PRAGMA busy_timeout = 3000;")?;
+	let run = || -> Result<String> {
+		if content.trim().is_empty() {
+			let Some(key) = &key else {
+				bail!("SQLite deletes require a row key in the path")
+			};
+			let (clause, value) = row_target(&db, &table, key)?;
+			let deleted =
+				db.execute(&format!("DELETE FROM {} WHERE {clause}", quote(&table)), [value])?;
+			return Ok(if deleted > 0 {
+				format!("Deleted row '{key}' from {table}")
+			} else {
+				format!("No row deleted from {table} for key '{key}'")
+			});
+		}
+		let parsed: serde_json::Value = serde_json::from_str(content)
+			.map_err(|error| anyhow!("SQLite write content must be valid JSON5: {error}"))?;
+		let serde_json::Value::Object(data) = parsed else {
+			bail!("SQLite write content must be a JSON object");
+		};
+		table_sql(&db, &table)?;
+		let entries = write_columns(&db, &table, &data)?;
+		if let Some(key) = &key {
+			if entries.is_empty() {
+				bail!("SQLite updates require at least one column value");
+			}
+			let (clause, value) = row_target(&db, &table, key)?;
+			let assignments: Vec<String> = entries
+				.iter()
+				.map(|(c, _)| format!("{} = ?", quote(c)))
+				.collect();
+			let mut bindings: Vec<rusqlite::types::Value> =
+				entries.into_iter().map(|(_, v)| v).collect();
+			bindings.push(value);
+			let updated = db.execute(
+				&format!("UPDATE {} SET {} WHERE {clause}", quote(&table), assignments.join(", ")),
+				rusqlite::params_from_iter(bindings),
+			)?;
+			return Ok(if updated > 0 {
+				format!("Updated row '{key}' in {table}")
+			} else {
+				format!("No row updated in {table} for key '{key}'")
+			});
+		}
+		if entries.is_empty() {
+			db.execute(&format!("INSERT INTO {} DEFAULT VALUES", quote(&table)), [])?;
+		} else {
+			let columns: Vec<String> = entries.iter().map(|(c, _)| quote(c)).collect();
+			let marks = vec!["?"; entries.len()].join(", ");
+			db.execute(
+				&format!("INSERT INTO {} ({}) VALUES ({marks})", quote(&table), columns.join(", ")),
+				rusqlite::params_from_iter(entries.into_iter().map(|(_, v)| v)),
+			)?;
+		}
+		Ok(format!("Inserted row into {table}"))
+	};
+	run().map(Some).map_err(|error| anyhow!("{error}"))
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -808,6 +1012,30 @@ mod tests {
 		);
 		let raw = run(root.path(), "app.db?q=SELECT%20bio%20FROM%20users%20WHERE%20id%3D1")?;
 		assert!(raw.contains("| line\\nbreak |"), "{raw}");
+		Ok(())
+	}
+
+	#[test]
+	fn writes_insert_update_and_delete_rows_by_key() -> Result<()> {
+		let root = fixture();
+		let fs = JailedFs::open(root.path())?;
+		let write = |path: &str, content: &str| write_sqlite(&fs, path, content).map(Option::unwrap);
+		assert_eq!(write("app.db:users", r#"{"name":"dee"}"#)?, "Inserted row into users");
+		assert_eq!(write("app.db:users:4", r#"{"bio":"new"}"#)?, "Updated row '4' in users");
+		assert_eq!(run(root.path(), "app.db:users:4")?, "id: 4\nname: dee\nbio: new");
+		assert_eq!(write("app.db:users:4", "")?, "Deleted row '4' from users");
+		assert_eq!(write("app.db:users:4", "")?, "No row deleted from users for key '4'");
+		for (path, content, message) in [
+			("app.db:users", r#"{"nope":1}"#, "has no column named 'nope'"),
+			("app.db:users", r#"{"name":[1]}"#, "only accepts JSON scalar values"),
+			("app.db:users", "[1]", "must be a JSON object"),
+			("app.db:users", "", "deletes require a row key"),
+			("app.db:users?x=1", "{}", "do not support query parameters"),
+			("other.db:users", "{}", "SQLite database 'other.db:users' not found"),
+		] {
+			let error = write_sqlite(&fs, path, content).unwrap_err().to_string();
+			assert!(error.contains(message), "{path}: {error}");
+		}
 		Ok(())
 	}
 

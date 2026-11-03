@@ -449,6 +449,21 @@ fn write_file(
 		);
 	}
 	let fs = JailedFs::open(root)?;
+	let (clean, stripped) = crate::conflict::strip_write_content(content);
+	let note = |mut text: String| {
+		if stripped {
+			text.push_str(
+				"\nNote: auto-stripped hashline display prefixes from content before writing.",
+			);
+		}
+		text
+	};
+	if let Some(result) = write_archive_member(&fs, path, &clean)? {
+		return Ok(note(result));
+	}
+	if let Some(result) = crate::sqlite::write_sqlite(&fs, path, &clean)? {
+		return Ok(note(result));
+	}
 	let relative = fs.relative(Path::new(path))?;
 	let literal_missing = || !fs.exists(&relative).unwrap_or(true);
 	// A `;`-joined list of read selectors is never a real write target.
@@ -485,7 +500,6 @@ fn write_file(
 			bail!("{message}");
 		}
 	}
-	let (clean, stripped) = crate::conflict::strip_write_content(content);
 	if clean.len() > MAX_FILE_BYTES {
 		bail!("write exceeds file limit");
 	}
@@ -510,6 +524,90 @@ fn write_file(
 		result.push_str(EXECUTABLE_NOTICE);
 	}
 	Ok(result)
+}
+
+/// `#resolveArchiveWritePath` + `#writeArchiveEntry`: rewrite the whole
+/// archive with one member set, through the workspace capability.
+fn write_archive_member(fs: &JailedFs, path: &str, content: &str) -> Result<Option<String>> {
+	let candidates: Vec<(String, String)> = harvest_archive::path_candidates(path)
+		.into_iter()
+		.filter(|(archive, _)| archive != path)
+		.collect();
+	let Some(fallback) = candidates.last().cloned() else {
+		return Ok(None);
+	};
+	let member = |raw: &str| -> Result<String> {
+		let unified = raw.replace('\\', "/");
+		if unified.is_empty() {
+			bail!("Archive write path must target a file inside the archive");
+		}
+		if unified.ends_with('/') {
+			bail!("Archive write path must target a file, not a directory");
+		}
+		let mut parts = Vec::new();
+		for part in unified.split('/') {
+			match part {
+				"" | "." => {},
+				".." => bail!("Archive path cannot contain '..'"),
+				part => parts.push(part),
+			}
+		}
+		if parts.is_empty() {
+			bail!("Archive write path must target a file inside the archive");
+		}
+		Ok(parts.join("/"))
+	};
+	let mut target = (fallback.0.clone(), member(&fallback.1)?, false);
+	fs.relative(Path::new(&fallback.0))?;
+	for (archive, sub) in &candidates {
+		let relative = fs.relative(Path::new(archive))?;
+		match fs.file_type(&relative) {
+			Ok(kind) if kind.is_dir() => {},
+			Ok(_) => {
+				target = (archive.clone(), member(sub)?, true);
+				break;
+			},
+			Err(_) => {},
+		}
+	}
+	let (archive_path, member, exists) = target;
+	let relative = fs.relative(Path::new(&archive_path))?;
+	let format = harvest_archive::format_from_path(&archive_path).unwrap_or("tar");
+	if !harvest_archive::is_writable(format) {
+		bail!("Writing entries inside {format} archives is not supported (read-only format).");
+	}
+	let mut members: Vec<(String, Vec<u8>)> = if exists {
+		let bytes = fs.read(&relative, 256 * 1024 * 1024)?;
+		harvest_archive::Archive::from_bytes(format, bytes, &archive_path, Default::default())
+			.and_then(|archive| archive.files())
+			.map_err(|error| anyhow::anyhow!("{error}"))?
+	} else {
+		Vec::new()
+	};
+	let write_target = format!("{archive_path}:{member}");
+	if content.is_empty()
+		&& let (_, Some(selector)) = crate::read::split_path(&write_target)
+		&& !members.iter().any(|(name, _)| *name == member)
+	{
+		bail!(
+			"write target '{write_target}' ends with a read-tool selector ':{selector}' and no such \
+			 file exists — refusing to create a literal file by that name. If you meant to read it, \
+			 use read({{ path: \"{write_target}\" }}). If you truly intend to create this file, pass \
+			 its contents in `content` (a non-empty write is never blocked)."
+		);
+	}
+	match members.iter_mut().find(|(name, _)| *name == member) {
+		Some((_, bytes)) => *bytes = content.as_bytes().to_vec(),
+		None => members.push((member.clone(), content.as_bytes().to_vec())),
+	}
+	let encoded =
+		harvest_archive::encode(format, &members).map_err(|error| anyhow::anyhow!("{error}"))?;
+	fs.atomic_write(&relative, &encoded)?;
+	Ok(Some(format!(
+		"Successfully wrote {} bytes to {}:{member}",
+		content.encode_utf16().count(),
+		relative.display()
+	)))
 }
 
 /// `chmod a+x`; failures never fail the write. True when the mode changed.
@@ -844,6 +942,34 @@ mod tests {
 		assert!(run(r#"{"command":"x","cwd":"../.."}"#).is_err());
 		let timed = run(r#"{"command":"sleep 5","timeout":1}"#).unwrap();
 		assert!(timed.contains("Command timed out after 1 seconds"), "{timed}");
+	}
+
+	#[test]
+	fn archive_members_are_written_by_rewriting_the_archive() {
+		let root = tempfile::tempdir().unwrap();
+		let run = |args: &str| invoke(root.path(), &call("write", args));
+		assert_eq!(
+			run(r#"{"path":"pkg.tar.gz:src/a.txt","content":"one"}"#).unwrap(),
+			"Successfully wrote 3 bytes to pkg.tar.gz:src/a.txt"
+		);
+		run(r#"{"path":"pkg.tar.gz:b.txt","content":"two"}"#).unwrap();
+		let read = |path: &str| {
+			invoke(root.path(), &call("read", &format!(r#"{{"path":"{path}"}}"#))).unwrap()
+		};
+		assert_eq!(read("pkg.tar.gz"), "b.txt (3B)\nsrc/");
+		assert_eq!(read("pkg.tar.gz:src/a.txt"), "one");
+		assert!(
+			run(r#"{"path":"x.rar:a","content":"z"}"#)
+				.unwrap_err()
+				.to_string()
+				.contains("read-only format")
+		);
+		assert!(
+			run(r#"{"path":"pkg.zip:../a","content":"z"}"#)
+				.unwrap_err()
+				.to_string()
+				.contains("'..'")
+		);
 	}
 
 	#[test]

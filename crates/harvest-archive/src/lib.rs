@@ -499,6 +499,132 @@ fn decompress_zstd(bytes: &[u8], limits: Limits) -> Result<Vec<u8>> {
 	bounded_read(decoder, limits)
 }
 
+/// Formats `encode` can serialize (`isWritableArchiveFormat`, minus asar).
+pub fn is_writable(format: &str) -> bool {
+	matches!(format, "zip" | "tar" | "tar.gz" | "tar.zst")
+}
+
+impl Archive {
+	/// `readArchiveEntries`: every file member's bytes, in path order.
+	pub fn files(&self) -> Result<Vec<(String, Vec<u8>)>> {
+		let mut out = Vec::new();
+		let mut total = 0u64;
+		for (path, entry) in &self.entries {
+			if entry.is_dir {
+				continue;
+			}
+			let bytes = self.read(path)?;
+			total += bytes.len() as u64;
+			if total > self.limits.max_in_memory_size {
+				return Err(error("Archive is too large to read in memory"));
+			}
+			out.push((path.clone(), bytes));
+		}
+		Ok(out)
+	}
+}
+
+fn tar_header(path: &str, size: usize, directory: bool) -> Vec<u8> {
+	let mut out = Vec::new();
+	let mut name = path.to_owned();
+	if directory {
+		name.push('/');
+	}
+	if name.len() > 100 {
+		// GNU long-name record.
+		let mut long = name.clone().into_bytes();
+		long.push(0);
+		out.extend(tar_block(b"././@LongLink", long.len(), b'L'));
+		out.extend_from_slice(&long);
+		out.resize(out.len().div_ceil(512) * 512, 0);
+		name.truncate(100);
+	}
+	out.extend(tar_block(name.as_bytes(), size, if directory { b'5' } else { b'0' }));
+	out
+}
+
+fn tar_block(name: &[u8], size: usize, kind: u8) -> [u8; 512] {
+	let mut header = [0u8; 512];
+	let name = &name[..name.len().min(100)];
+	header[..name.len()].copy_from_slice(name);
+	header[100..107].copy_from_slice(if kind == b'5' { b"0000755" } else { b"0000644" });
+	header[108..115].copy_from_slice(b"0000000");
+	header[116..123].copy_from_slice(b"0000000");
+	header[124..135].copy_from_slice(format!("{size:011o}").as_bytes());
+	header[136..147].copy_from_slice(b"00000000000");
+	header[156] = kind;
+	header[257..263].copy_from_slice(b"ustar\0");
+	header[263..265].copy_from_slice(b"00");
+	header[148..156].fill(b' ');
+	let sum: u32 = header.iter().map(|&b| u32::from(b)).sum();
+	header[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+	header
+}
+
+/// `encodeTar`: parent directory records first, duplicates rejected.
+fn encode_tar(members: &[(String, Vec<u8>)]) -> Result<Vec<u8>> {
+	let mut out = Vec::new();
+	let mut kinds: BTreeMap<String, bool> = BTreeMap::new();
+	for (raw, bytes) in members {
+		let path = normalize(raw)
+			.filter(|path| !path.is_empty())
+			.ok_or_else(|| error(format!("Invalid tar member path '{raw}'")))?;
+		let segments: Vec<&str> = path.split('/').collect();
+		for index in 1..segments.len() {
+			let parent = segments[..index].join("/");
+			match kinds.get(&parent) {
+				Some(false) => return Err(error(format!("Tar member '{parent}' is not a directory"))),
+				Some(true) => {},
+				None => {
+					kinds.insert(parent.clone(), true);
+					out.extend(tar_header(&parent, 0, true));
+				},
+			}
+		}
+		if kinds.insert(path.clone(), false).is_some() {
+			return Err(error(format!("Duplicate tar member path '{path}'")));
+		}
+		out.extend(tar_header(&path, bytes.len(), false));
+		out.extend_from_slice(bytes);
+		out.resize(out.len().div_ceil(512) * 512, 0);
+	}
+	out.resize(out.len() + 1024, 0);
+	Ok(out)
+}
+
+/// `encodeArchive` for the writable formats.
+pub fn encode(format: &str, members: &[(String, Vec<u8>)]) -> Result<Vec<u8>> {
+	use std::io::Write;
+	let io = |e: std::io::Error| error(e.to_string());
+	match format {
+		"tar" => encode_tar(members),
+		"tar.gz" => {
+			let mut encoder =
+				flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+			encoder.write_all(&encode_tar(members)?).map_err(io)?;
+			encoder.finish().map_err(io)
+		},
+		"tar.zst" => zstd::stream::encode_all(encode_tar(members)?.as_slice(), 3).map_err(io),
+		"zip" => {
+			let mut cursor = Cursor::new(Vec::new());
+			let mut writer = zip::ZipWriter::new(&mut cursor);
+			let options = zip::write::SimpleFileOptions::default()
+				.compression_method(zip::CompressionMethod::Deflated);
+			for (name, bytes) in members {
+				writer
+					.start_file(name.replace('\\', "/"), options)
+					.map_err(|e| error(e.to_string()))?;
+				writer.write_all(bytes).map_err(io)?;
+			}
+			writer.finish().map_err(|e| error(e.to_string()))?;
+			Ok(cursor.into_inner())
+		},
+		other => Err(error(format!(
+			"Writing entries inside {other} archives is not supported (read-only format)."
+		))),
+	}
+}
+
 /// `formatArchiveEntryLines` (sizes through the caller's byte formatter).
 pub fn format_entry_lines(
 	entries: &[DirEntry],
@@ -592,6 +718,14 @@ mod tests {
 			Archive::from_bytes("tar.gz", gz.finish().unwrap(), "x.tgz", Limits::default())?;
 		assert_eq!(archive.read("x.txt")?, b"zz");
 		assert!(Archive::from_bytes("rar", Vec::new(), "x.rar", Limits::default()).is_err());
+		for format in ["zip", "tar", "tar.gz", "tar.zst"] {
+			let members =
+				vec![("a/b.txt".to_owned(), b"one".to_vec()), ("c.txt".to_owned(), b"two".to_vec())];
+			let bytes = encode(format, &members)?;
+			let archive = Archive::from_bytes(format, bytes, "x", Limits::default())?;
+			assert_eq!(archive.files()?, members, "{format}");
+		}
+		assert!(encode("tar", &[("a".into(), vec![]), ("a".into(), vec![])]).is_err());
 		Ok(())
 	}
 }

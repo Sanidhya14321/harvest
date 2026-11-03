@@ -9,6 +9,15 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `write` targets archive members (`pkg.zip:src/a.txt`) by rewriting the whole
+  zip/tar/tar.gz/tar.zst archive through the workspace capability (new
+  `harvest-archive` encoders; read-only formats and `..`/directory targets
+  fail with the legacy errors), and SQLite rows (`app.db:table` insert,
+  `app.db:table:key` update, empty content deletes) through the primary key
+  or ROWID with the column/scalar/query-parameter checks. 13/13 probes match
+  TS, final contents included. Row content is parsed as strict JSON (legacy
+  accepts JSON5); asar writes are pending.
+
 - `read` opens SQLite databases (`.db`, `.db3`, `.sqlite`, `.sqlite3`, magic
   checked) query-only through bundled `rusqlite`: table listing with bounded
   row counts and `sqlite_stat1` estimates, `:table` schema plus samples,
