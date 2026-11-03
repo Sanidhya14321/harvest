@@ -9,6 +9,14 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `bash` follows the legacy foreground result contract: `env` (validated
+  names), `timeout` (default 300 s, clamped to 1–3600 s with the clamp notice,
+  `0` disables), jailed `cwd` with the legacy missing/not-a-directory errors,
+  `(no output)`, the wall-time notice, `Command exited with code N`, and the
+  timeout/abort wording. Still pending: `pty`, `async`/auto-background jobs,
+  the destructive-command barrier, interceptors, skill URL expansion and the
+  client-bridge terminal.
+
 - `pi-grep` (new crate) owns the ripgrep-backed search engine: matcher
   fallbacks (brace sanitising, PCRE2, paren escaping, literal), file/dir
   search, per-file caps, context, oversized-prefix handling and cancellation

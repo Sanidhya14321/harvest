@@ -73,6 +73,10 @@ struct ToolProperties {
 	limit:          Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	skip:           Option<NumberProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	timeout:        Option<NumberProperty>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	cwd:            Option<StringProperty>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -178,7 +182,12 @@ pub fn specs() -> Vec<ToolSpec> {
 		spec(
 			"bash",
 			include_str!("prompts/tools/bash.md").trim_end(),
-			ToolProperties { command: Some(STRING), ..EMPTY },
+			ToolProperties {
+				command: Some(STRING),
+				timeout: Some(NUMBER),
+				cwd: Some(STRING),
+				..EMPTY
+			},
 			&["command"],
 		),
 	]
@@ -197,6 +206,8 @@ const EMPTY: ToolProperties = ToolProperties {
 	hidden:         None,
 	limit:          None,
 	skip:           None,
+	timeout:        None,
+	cwd:            None,
 };
 
 const fn spec(

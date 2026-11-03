@@ -167,8 +167,64 @@ struct WriteArgs {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(not(feature = "full"), allow(dead_code, reason = "used by the full shell"))]
 struct BashArgs {
 	command: String,
+	env:     Option<std::collections::HashMap<String, String>>,
+	timeout: Option<f64>,
+	cwd:     Option<String>,
+}
+
+/// `TOOL_TIMEOUTS.bash`.
+#[cfg(feature = "full")]
+const BASH_TIMEOUT: (f64, f64, f64) = (300.0, 1.0, 3600.0);
+
+/// `clampTimeout("bash", …)` (no `tools.maxTimeout` ceiling); `None` when the
+/// caller passed `0` to disable the deadline. Returns the clamp notice too.
+#[cfg(feature = "full")]
+fn bash_timeout(requested: Option<f64>) -> (Option<f64>, Option<String>) {
+	let (default, min, max) = BASH_TIMEOUT;
+	let requested = requested.unwrap_or(default);
+	if requested == 0.0 {
+		return (None, None);
+	}
+	let effective = requested.clamp(min, max);
+	let notice = (effective != requested).then(|| {
+		format!(
+			"Timeout clamped to {effective}s (requested {requested}s; allowed range {min}-{max}s)."
+		)
+	});
+	(Some(effective), notice)
+}
+
+/// Validate env names and the working directory before running anything.
+#[cfg(feature = "full")]
+fn bash_cwd(root: &Path, args: &BashArgs) -> Result<std::path::PathBuf> {
+	for key in args.env.iter().flat_map(|env| env.keys()) {
+		let mut chars = key.chars();
+		let valid = chars
+			.next()
+			.is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+			&& chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+		if !valid {
+			bail!("Invalid bash env name: {key}");
+		}
+	}
+	let fs = harvest_runtime::JailedFs::open(root)?;
+	let relative = fs.relative(Path::new(args.cwd.as_deref().unwrap_or(".")))?;
+	let absolute = fs.root().join(&relative);
+	match std::fs::metadata(&absolute) {
+		Err(_) => bail!("Working directory does not exist: {}", absolute.display()),
+		Ok(metadata) if !metadata.is_dir() => {
+			bail!("Working directory is not a directory: {}", absolute.display())
+		},
+		Ok(_) => {},
+	}
+	let canonical = std::fs::canonicalize(&absolute)?;
+	if !canonical.starts_with(fs.root()) {
+		bail!("path escapes the authorized root");
+	}
+	Ok(canonical)
 }
 
 fn parse<T: for<'de> Deserialize<'de>>(arguments: &str) -> Result<T> {
@@ -344,9 +400,13 @@ fn bash(
 	if args.command.is_empty() {
 		bail!("command is empty");
 	}
+	let cwd = bash_cwd(root, args)?;
+	let (timeout, clamp_notice) = bash_timeout(args.timeout);
+	let timeout_ms = timeout.map(|seconds| (seconds * 1000.0) as u32);
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
 		.build()?;
+	let started = std::time::Instant::now();
 	runtime.block_on(async {
 		let (sender, receiver) = flume::bounded::<String>(16);
 		let drain = tokio::spawn(async move {
@@ -357,7 +417,7 @@ fn bash(
 			}
 			captured
 		});
-		let mut execution_token = harvest_runtime::cancel::CancelToken::new(Some(60_000));
+		let mut execution_token = harvest_runtime::cancel::CancelToken::new(timeout_ms);
 		let abort = execution_token.emplace_abort_token();
 		let parent = cancellation.clone();
 		let bridge = tokio::spawn(async move {
@@ -366,8 +426,9 @@ fn bash(
 		let result = pi_shell::execute_shell(
 			pi_shell::ShellExecuteOptions {
 				command: args.command.clone(),
-				cwd: Some(root.to_string_lossy().into_owned()),
-				timeout_ms: Some(60_000),
+				cwd: Some(cwd.to_string_lossy().into_owned()),
+				env: args.env.clone(),
+				timeout_ms,
 				..Default::default()
 			},
 			Some(sender),
@@ -375,13 +436,47 @@ fn bash(
 		)
 		.await;
 		bridge.abort();
-		let text = drain.await?;
+		let output = drain.await?;
 		let result = result?;
 		cancellation.heartbeat()?;
-		if result.cancelled || result.timed_out {
-			bail!("shell execution cancelled or timed out");
+		if result.timed_out {
+			let message = timeout.map_or_else(
+				|| "Command timed out".to_owned(),
+				|seconds| format!("Command timed out after {seconds} seconds"),
+			);
+			if output.starts_with(&format!("[{message}]\n")) {
+				return Ok(output);
+			}
+			let body = if output.is_empty() {
+				"(no output)"
+			} else {
+				output.as_str()
+			};
+			return Ok(format!("{body}\n\n[{message}]"));
 		}
-		Ok(format!("{text}\nexit {}", result.exit_code.unwrap_or(1)))
+		if result.cancelled {
+			if output.starts_with("[Command cancelled]") {
+				bail!("{output}");
+			}
+			if output.is_empty() {
+				bail!("Command aborted");
+			}
+			bail!("{output}\n\n[Command aborted]");
+		}
+		let body = if output.is_empty() {
+			"(no output)"
+		} else {
+			output.as_str()
+		};
+		let mut lines = vec![body.to_owned(), String::new()];
+		lines.push(format!("Wall time: {:.2} seconds", started.elapsed().as_secs_f64()));
+		lines.extend(clamp_notice);
+		match result.exit_code {
+			None => bail!("{}\n\nCommand failed: missing exit status", lines.join("\n")),
+			Some(0) => {},
+			Some(code) => lines.extend([String::new(), format!("Command exited with code {code}")]),
+		}
+		Ok(lines.join("\n"))
 	})
 }
 
@@ -564,6 +659,44 @@ mod tests {
 	#[test]
 	// Keep this active for default builds even if their full feature is lost.
 	#[cfg(any(feature = "full", feature = "default"))]
+	#[cfg(feature = "full")]
+	fn bash_reports_failures_clamps_and_rejects_bad_cwd_or_env() {
+		let root = tempfile::tempdir().unwrap();
+		std::fs::write(root.path().join("file"), "").unwrap();
+		let run = |args: &str| invoke(root.path(), &call("bash", args));
+		assert!(
+			run(r#"{"command":"true"}"#)
+				.unwrap()
+				.starts_with("(no output)\n\nWall time: ")
+		);
+		let failed = run(r#"{"command":"echo out; exit 3"}"#).unwrap();
+		assert!(failed.starts_with("out\n\n\nWall time: "), "{failed}");
+		assert!(failed.ends_with(" seconds\n\nCommand exited with code 3"), "{failed}");
+		let clamped = run(r#"{"command":"echo hi","timeout":99999}"#).unwrap();
+		assert!(
+			clamped.contains("Timeout clamped to 3600s (requested 99999s; allowed range 1-3600s)."),
+			"{clamped}"
+		);
+		let env = run(r#"{"command":"echo $GREETING","env":{"GREETING":"hey"}}"#).unwrap();
+		assert!(env.starts_with("hey\n"), "{env}");
+		assert!(
+			run(r#"{"command":"x","env":{"1BAD":"v"}}"#)
+				.unwrap_err()
+				.to_string()
+				.contains("Invalid bash env name: 1BAD")
+		);
+		assert!(
+			run(r#"{"command":"x","cwd":"file"}"#)
+				.unwrap_err()
+				.to_string()
+				.contains("is not a directory")
+		);
+		assert!(run(r#"{"command":"x","cwd":"../.."}"#).is_err());
+		let timed = run(r#"{"command":"sleep 5","timeout":1}"#).unwrap();
+		assert!(timed.contains("Command timed out after 1 seconds"), "{timed}");
+	}
+
+	#[test]
 	fn bash_evaluates_commands_in_default_and_full_builds() {
 		let root = tempfile::tempdir().unwrap();
 		let output = invoke(root.path(), &call("bash", r#"{"command":"echo $((6 * 7))"}"#)).unwrap();
