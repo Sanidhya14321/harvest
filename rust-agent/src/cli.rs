@@ -70,6 +70,12 @@ enum Commands {
 	Ps(crate::commands::ps::PsArgs),
 	#[command(about = "List and clean up agent-managed git worktrees", visible_alias = "wt")]
 	Worktree(crate::commands::worktree::WorktreeArgs),
+	#[command(about = "Inspect and maintain image publication backends", visible_alias = "img")]
+	Images(crate::commands::images::ImagesArgs),
+	#[command(about = "Draw a session's entire thread through the transcript renderer")]
+	Render(crate::commands::render::RenderArgs),
+	#[command(about = "Rewrite text files into the dense prompt register")]
+	Compress(crate::commands::compress::CompressArgs),
 	#[command(about = "Show what the read tool returns for a path or URI")]
 	Read(crate::tool_cli::ReadArgs),
 	#[command(about = "Run the grep tool against the workspace")]
@@ -460,6 +466,9 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::Gc(args) => crate::commands::gc::execute(args),
 		Commands::Ps(args) => crate::commands::ps::execute(args),
 		Commands::Worktree(args) => crate::commands::worktree::execute(args),
+		Commands::Images(args) => crate::commands::images::execute(args),
+		Commands::Render(args) => crate::commands::render::execute(args),
+		Commands::Compress(args) => crate::commands::compress::execute(args),
 		Commands::Read(args) => crate::tool_cli::read(&args).map(|()| 0),
 		Commands::Grep(args) => crate::tool_cli::grep(&args).map(|()| 0),
 		Commands::Search(args) => crate::tool_cli::search(&args).map(|()| 0),
