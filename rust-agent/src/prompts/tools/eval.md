@@ -1,0 +1,1 @@
+Run a code cell in a fresh subprocess: `language: "py"` (python3) or `"js"` (bun, falling back to node). Each call is independent — no persistent kernel, no `tool.*`/`agent()` prelude. Runs in the workspace root. stdout/stderr are captured and capped; `timeout` seconds (default 30, max 600). Requires approval.
