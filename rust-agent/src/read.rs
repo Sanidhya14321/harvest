@@ -42,6 +42,10 @@ pub(crate) struct Args {
 }
 
 impl Args {
+	pub(crate) fn memory_id(&self) -> Option<&str> {
+		self.path.strip_prefix("memory://")
+	}
+
 	/// Reads of `artifact://` are never re-spilled.
 	pub(crate) fn is_artifact(&self) -> bool {
 		self.path.to_ascii_lowercase().starts_with("artifact://")

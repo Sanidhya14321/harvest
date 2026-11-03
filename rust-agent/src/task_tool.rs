@@ -47,16 +47,16 @@ pub fn run(
 		bail!("task is empty");
 	}
 	let agent = args.agent.as_deref().unwrap_or("task");
-	let Some(body) = crate::commands::agents::bundled_agent_body(agent) else {
+	let Some(body) =
+		crate::managed::agent_definition(root, parent.user_agent_dir.as_deref(), agent)?
+	else {
 		bail!("unknown agent {agent}");
 	};
 	let name = args
 		.name
 		.as_deref()
 		.filter(|name| {
-			!name.is_empty()
-				&& name.len() <= 32
-				&& name.chars().all(|c| c.is_ascii_alphanumeric())
+			!name.is_empty() && name.len() <= 32 && name.chars().all(|c| c.is_ascii_alphanumeric())
 		})
 		.unwrap_or("Subagent")
 		.to_owned();
@@ -65,7 +65,12 @@ pub fn run(
 		bail!("subagent nesting limit ({MAX_DEPTH}) reached; do the work directly");
 	}
 	let mut prompt = format!("<agent name=\"{agent}\">\n{}\n</agent>\n\n", body.trim());
-	if let Some(context) = args.context.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+	if let Some(context) = args
+		.context
+		.as_deref()
+		.map(str::trim)
+		.filter(|c| !c.is_empty())
+	{
 		prompt.push_str(&format!("<context>\n{context}\n</context>\n\n"));
 	}
 	prompt.push_str(task);
@@ -83,8 +88,7 @@ pub fn run(
 	};
 	DEPTH.with(|d| d.set(depth + 1));
 	let result = (|| {
-		let mut session =
-			crate::agent_session::AgentSession::open(root, Path::new(&path), None)?;
+		let mut session = crate::agent_session::AgentSession::open(root, Path::new(&path), None)?;
 		let answer = session.submit(&prompt, model, approval, &options, &mut |_| Ok(()))?;
 		Ok::<_, anyhow::Error>((answer, session.take_yield()))
 	})();
@@ -138,16 +142,27 @@ pub fn ask(arguments: &str) -> Result<String> {
 	for question in &args.questions {
 		writeln!(stderr, "\n{}", question.question)?;
 		for (index, option) in question.options.iter().enumerate() {
-			let recommended = if question.recommended == Some(index) { " (Recommended)" } else { "" };
-			let description =
-				option.description.as_deref().map(|d| format!(" — {d}")).unwrap_or_default();
+			let recommended = if question.recommended == Some(index) {
+				" (Recommended)"
+			} else {
+				""
+			};
+			let description = option
+				.description
+				.as_deref()
+				.map(|d| format!(" — {d}"))
+				.unwrap_or_default();
 			writeln!(stderr, "  {}. {}{recommended}{description}", index + 1, option.label)?;
 		}
 		writeln!(stderr, "  {}. Other (type your own)", question.options.len() + 1)?;
 		write!(
 			stderr,
 			"{}> ",
-			if question.multi { "Numbers separated by commas, or text " } else { "" }
+			if question.multi {
+				"Numbers separated by commas, or text "
+			} else {
+				""
+			}
 		)?;
 		stderr.flush()?;
 		let mut line = String::new();
@@ -156,7 +171,8 @@ pub fn ask(arguments: &str) -> Result<String> {
 		let picked: Option<Vec<&str>> = line
 			.split(',')
 			.map(|part| {
-				part.trim()
+				part
+					.trim()
 					.parse::<usize>()
 					.ok()
 					.and_then(|n| n.checked_sub(1))
@@ -165,8 +181,9 @@ pub fn ask(arguments: &str) -> Result<String> {
 			})
 			.collect();
 		let answer = match picked {
-			Some(labels) if !labels.is_empty() && (question.multi || labels.len() == 1) =>
-				labels.join(", "),
+			Some(labels) if !labels.is_empty() && (question.multi || labels.len() == 1) => {
+				labels.join(", ")
+			},
 			_ if line.is_empty() => match question.recommended.and_then(|n| question.options.get(n)) {
 				Some(option) => option.label.clone(),
 				None => "(no answer)".to_owned(),
@@ -251,7 +268,8 @@ impl AgentState {
 					Some(_) => bail!("token_budget must be a positive integer"),
 					None => None,
 				};
-				inner.goal = Some(Goal { objective: objective.to_owned(), token_budget, paused: false });
+				inner.goal =
+					Some(Goal { objective: objective.to_owned(), token_budget, paused: false });
 				Ok(format!("Goal created: {objective}"))
 			},
 			"get" => Ok(match &inner.goal {
@@ -260,7 +278,9 @@ impl AgentState {
 					"Goal ({}): {}\nToken budget: {}",
 					if goal.paused { "paused" } else { "active" },
 					goal.objective,
-					goal.token_budget.map_or_else(|| "unlimited".to_owned(), |b| b.to_string())
+					goal
+						.token_budget
+						.map_or_else(|| "unlimited".to_owned(), |b| b.to_string())
 				),
 			}),
 			"resume" => match &mut inner.goal {

@@ -73,12 +73,22 @@ impl AgentSession {
 				root,
 				&[],
 			)?,
-			harvest_runtime::JailedFs::open(storage)
-				.and_then(|fs| Ok(fs.root().join(fs.relative(path)?)))
-				.ok()
-				.and_then(|file| crate::output::ArtifactStore::for_session(&file)),
+			log.artifact_store(),
 		);
+		tools.configure_session_directory(log.storage_directory());
+		tools.initialize_memory(root, log.id())?;
 		Ok(Self { tools, root: root.canonicalize()?, log, generation: 0, sequence: 0, active: None })
+	}
+
+	/// A shared native backend is owned by the host, never tool-call arguments.
+	pub fn configure_memory(
+		&mut self,
+		backend: Option<crate::memory::SharedMemoryBackend>,
+	) -> Result<()> {
+		if self.active.is_some() {
+			bail!("cannot change memory backend during an active run");
+		}
+		self.tools.configure_memory(backend)
 	}
 
 	/// Select before a run. Snapshots remain volatile and are cleared on mode
@@ -330,7 +340,8 @@ impl AgentSession {
 						approval,
 						cancellation,
 						&mut |event| {
-							self.emit(EventKind::PluginEvent { tool_call_id: call.id.clone(), event }, sink)
+							self
+								.emit(EventKind::PluginEvent { tool_call_id: call.id.clone(), event }, sink)
 						},
 					)
 				};

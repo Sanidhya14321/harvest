@@ -44,6 +44,8 @@ static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 /// default.
 #[derive(Debug, Clone)]
 pub struct SessionEngineOptions {
+	/// Optional host backend; otherwise selected native Mnemopi is opened once.
+	pub memory:             Option<crate::memory::SharedMemoryBackend>,
 	pub edit_mode:          crate::edit::Mode,
 	pub lsp:                Vec<crate::language_services::LspConfiguration>,
 	pub dap:                Vec<crate::language_services::DapConfiguration>,
@@ -61,6 +63,7 @@ pub struct SessionEngineOptions {
 impl Default for SessionEngineOptions {
 	fn default() -> Self {
 		Self {
+			memory:             None,
 			edit_mode:          Default::default(),
 			browser:            None,
 			plugins:            Vec::new(),
@@ -317,6 +320,20 @@ impl SessionEngine {
 			let root = root.canonicalize()?;
 			let log = DurableSession::open(&root, &path, leaf.as_deref())?;
 			let mut tools = tools::ToolRuntime::default();
+			let agent_dir = options
+				.user_agent_dir
+				.clone()
+				.or_else(|| crate::config::agent_dir_from(None, |key| std::env::var_os(key)));
+			tools.configure_core(
+				crate::settings::Settings::load(agent_dir.as_deref(), &root, &[])?,
+				log.artifact_store(),
+			);
+			tools.configure_session_directory(log.storage_directory());
+			if let Some(memory) = &options.memory {
+				tools.configure_memory(Some(memory.clone()))?;
+			} else {
+				tools.initialize_memory(&root, log.id())?;
+			}
 			tools.configure_edit(options.edit_mode);
 			tools.configure_plugins(&root, &options.plugins, &CancelToken::default())?;
 			tools.configure_mcp(&root, &options.mcp, &CancelToken::default())?;

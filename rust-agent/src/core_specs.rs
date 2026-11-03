@@ -83,21 +83,21 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	cwd:                Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	agent: Option<StringProperty>,
+	agent:              Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	name: Option<StringProperty>,
+	name:               Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	context: Option<StringProperty>,
+	context:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	error: Option<StringProperty>,
+	error:              Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	objective: Option<StringProperty>,
+	objective:          Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	questions: Option<RawSchema>,
+	questions:          Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	data: Option<RawSchema>,
+	data:               Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	token_budget: Option<NumberProperty>,
+	token_budget:       Option<NumberProperty>,
 	#[serde(skip_serializing_if = "Option::is_none", flatten)]
 	extra:              Option<RawProps>,
 }
@@ -392,6 +392,94 @@ pub(crate) fn core_specs() -> Vec<ToolSpec> {
 			},
 			&["action"],
 		),
+		spec(
+			"retain",
+			include_str!("prompts/tools/retain.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"items":{"type":"array","minItems":1,"description":"memories to retain","items":{"type":"object","properties":{"content":{"type":"string","description":"information to remember"},"context":{"type":"string","description":"source context"}},"required":["content"]}}}"#,
+				)),
+				..EMPTY
+			},
+			&["items"],
+		),
+		spec(
+			"recall",
+			include_str!("prompts/tools/recall.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"query":{"type":"string","description":"natural language search query"}}"#,
+				)),
+				..EMPTY
+			},
+			&["query"],
+		),
+		spec(
+			"reflect",
+			include_str!("prompts/tools/reflect.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"query":{"type":"string","description":"question to answer"},"context":{"type":"string","description":"optional context"}}"#,
+				)),
+				..EMPTY
+			},
+			&["query"],
+		),
+		spec(
+			"memory_edit",
+			include_str!("prompts/tools/memory-edit.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"op":{"type":"string","enum":["update","forget","invalidate"]},"id":{"type":"string","description":"memory id from recall output"},"content":{"type":"string"},"importance":{"type":"number"},"replacement_id":{"type":"string"}}"#,
+				)),
+				..EMPTY
+			},
+			&["op", "id"],
+		),
+		spec(
+			"learn",
+			include_str!("prompts/tools/learn.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"memory":{"type":"string","description":"the durable, self-contained lesson to remember (what, when, why)"},"context":{"type":"string"},"skill":{"type":"object","properties":{"action":{"type":"string","enum":["create","update"]},"name":{"type":"string"},"description":{"type":"string"},"body":{"type":"string"},"expectedActive":{"type":"string"}},"required":["action","name"]}}"#,
+				)),
+				..EMPTY
+			},
+			&["memory"],
+		),
+		spec(
+			"manage_skill",
+			include_str!("prompts/tools/manage-skill.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"action":{"type":"string","enum":["create","update","delete","draft","evaluate","promote","rollback","list"]},"name":{"type":"string","description":"kebab-case skill name"},"description":{"type":"string"},"body":{"type":"string"},"revisionId":{"type":"string"},"expectedActive":{"type":"string"},"task":{"type":"string"},"expectedOutcome":{"type":"string"},"discloseUnevaluated":{"type":"boolean"}}"#,
+				)),
+				..EMPTY
+			},
+			&["action", "name"],
+		),
+		spec(
+			"sessions",
+			include_str!("prompts/tools/sessions.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"action":{"type":"string","enum":["list","inspect","create","rename","send","stop"]},"sessionId":{"type":"string"},"title":{"type":"string"},"message":{"type":"string"},"task":{"type":"string"},"confirm":{"type":"boolean"}}"#,
+				)),
+				..EMPTY
+			},
+			&["action"],
+		),
+		spec(
+			"presets",
+			include_str!("prompts/tools/presets.md").trim_end(),
+			&ToolProperties {
+				extra: Some(RawProps(
+					r#"{"action":{"type":"string","enum":["list","inspect","create","update","evaluate","promote","rollback","delete"]},"name":{"type":"string"},"description":{"type":"string"},"systemPrompt":{"type":"string"},"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string"}},"spawns":{"type":"string"},"model":{"type":"string"},"revisionId":{"type":"string"},"expectedActive":{"type":"string"},"task":{"type":"string"},"expectedOutcome":{"type":"string"},"discloseUnevaluated":{"type":"boolean"}}"#,
+				)),
+				..EMPTY
+			},
+			&["action"],
+		),
 	]
 }
 
@@ -425,14 +513,14 @@ const EMPTY: ToolProperties = ToolProperties {
 	reason:             None,
 	timeout:            None,
 	cwd:                None,
-	agent: None,
-	name: None,
-	context: None,
-	error: None,
-	objective: None,
-	questions: None,
-	data: None,
-	token_budget: None,
+	agent:              None,
+	name:               None,
+	context:            None,
+	error:              None,
+	objective:          None,
+	questions:          None,
+	data:               None,
+	token_budget:       None,
 	extra:              None,
 };
 

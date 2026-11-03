@@ -480,13 +480,17 @@ impl ToolRuntime {
 		cancellation: &harvest_runtime::cancel::CancelToken,
 		on_event: &mut dyn FnMut(crate::plugins::protocol::Event) -> Result<()>,
 	) -> Result<ToolOutput> {
-		let core_read = call.function.name == "read" && self.edit_mode == crate::edit::Mode::Replace;
+		let memory_read = call.function.name == "read"
+			&& serde_json::from_str::<ReadArgs>(&call.function.arguments)
+				.is_ok_and(|args| args.path.starts_with("memory://"));
+		let core_read = call.function.name == "read"
+			&& (self.edit_mode == crate::edit::Mode::Replace || memory_read);
 		if core_read || call.function.name == "write" {
 			if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 				bail!("tool arguments exceed frame limit");
 			}
 			self.bind_edit_root(root)?;
-			let output = ToolOutput::text(self.invoke_core(root, call, policy, cancellation)?);
+			let output = self.invoke_core(root, call, policy, cancellation)?;
 			if call.function.name == "write"
 				&& let Ok(args) = parse::<CoreWriteArgs>(&call.function.arguments)
 				&& let Ok(key) =
@@ -537,6 +541,9 @@ impl ToolRuntime {
 				},
 			}
 		}
+		if call.function.name != "browser" && crate::core_specs::is_tool(&call.function.name) {
+			return self.invoke_core(root, call, policy, cancellation);
+		}
 		Ok(ToolOutput::text(self.invoke_with_events(root, call, policy, cancellation, on_event)?))
 	}
 
@@ -547,8 +554,8 @@ impl ToolRuntime {
 		call: &ToolCall,
 		policy: &dyn Approval,
 		cancellation: &harvest_runtime::cancel::CancelToken,
-	) -> Result<String> {
-		crate::core_tools::invoke_in_session(
+	) -> Result<ToolOutput> {
+		crate::core_tools::invoke_detailed_in_session(
 			root,
 			call,
 			policy,
@@ -572,6 +579,39 @@ impl ToolRuntime {
 	/// Session state of main's core tools.
 	pub fn core_state(&self) -> &crate::core_tools::SessionState {
 		&self.core.state
+	}
+
+	pub fn configure_session_directory(&mut self, directory: Option<std::path::PathBuf>) {
+		self.core.state.session_directory = directory;
+	}
+
+	/// Install a host-owned engine. Models cannot choose a backend or database
+	/// path.
+	pub fn configure_memory(
+		&mut self,
+		backend: Option<crate::memory::SharedMemoryBackend>,
+	) -> Result<()> {
+		if let Some(backend) = &backend {
+			if self.core.state.settings.string("memory.backend").as_deref() != Some(backend.id()) {
+				bail!("installed memory backend does not match the selected backend");
+			}
+		}
+		self.core.state.memory = backend;
+		Ok(())
+	}
+
+	/// Resolve the native Mnemopi owner once, at session opening.
+	pub fn initialize_memory(&mut self, root: &Path, session_id: &str) -> Result<()> {
+		if self.core.state.settings.string("memory.backend").as_deref() == Some("mnemopi") {
+			self.configure_memory(Some(std::sync::Arc::new(
+				crate::memory::mnemopi::MnemopiBackend::from_settings(
+					&self.core.state.settings,
+					root,
+					session_id,
+				)?,
+			)))?;
+		}
+		Ok(())
 	}
 
 	fn bind_edit_root(&mut self, root: &Path) -> Result<()> {
@@ -689,6 +729,7 @@ impl ToolRuntime {
 
 	pub fn specs(&self) -> Vec<crate::chat::ToolSpec> {
 		let mut specs = crate::chat::specs_for_edit(self.edit_mode);
+		specs.retain(|spec| crate::memory::tool_enabled(&self.core.state.settings, spec.name()));
 		specs.extend(self.language_services.specs());
 		for server in &self.mcp {
 			specs.extend(server.tools().iter().map(|tool| tool.spec.clone()));
@@ -747,7 +788,7 @@ impl ToolRuntime {
 			return plugin.invoke(root, call, policy, cancellation, on_event);
 		}
 		if call.function.name != "browser" && crate::core_specs::is_tool(&call.function.name) {
-			return self.invoke_core(root, call, policy, cancellation);
+			return Ok(self.invoke_core(root, call, policy, cancellation)?.content);
 		}
 		if call.function.name != "browser" {
 			return invoke_with_cancellation(root, call, policy, cancellation);

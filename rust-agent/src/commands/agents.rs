@@ -1,4 +1,5 @@
-//! `harvest agents unpack` — write bundled agent definitions to disk (`agents-cli.ts`).
+//! `harvest agents unpack` — write bundled agent definitions to disk
+//! (`agents-cli.ts`).
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
@@ -9,7 +10,8 @@ use serde_yaml_ng::{Mapping, Value};
 use super::{CONFIG_DIR_NAME, Paint};
 
 const SCOUT: &str = include_str!("../../../packages/coding-agent/src/prompts/agents/scout.md");
-const REVIEWER: &str = include_str!("../../../packages/coding-agent/src/prompts/agents/reviewer.md");
+const REVIEWER: &str =
+	include_str!("../../../packages/coding-agent/src/prompts/agents/reviewer.md");
 const SECURITY_REVIEWER: &str =
 	include_str!("../../../packages/coding-agent/src/prompts/agents/security-reviewer.md");
 const TASK: &str = include_str!("../../../packages/coding-agent/src/prompts/agents/task.md");
@@ -79,10 +81,18 @@ fn csv_list(value: &Value) -> Option<Value> {
 /// `parseAgentFields` → `toFrontmatter` projection.
 fn to_frontmatter(source: &Mapping) -> (String, Mapping) {
 	let get = |key: &str| source.get(key);
-	let name = get("name").and_then(Value::as_str).unwrap_or_default().to_owned();
+	let name = get("name")
+		.and_then(Value::as_str)
+		.unwrap_or_default()
+		.to_owned();
 	let mut out = Mapping::new();
 	out.insert("name".into(), Value::String(name.clone()));
-	out.insert("description".into(), get("description").cloned().unwrap_or(Value::String(String::new())));
+	out.insert(
+		"description".into(),
+		get("description")
+			.cloned()
+			.unwrap_or(Value::String(String::new())),
+	);
 	let tools = get("tools").and_then(csv_list);
 	if let Some(tools) = &tools {
 		out.insert("tools".into(), tools.clone());
@@ -102,7 +112,10 @@ fn to_frontmatter(source: &Mapping) -> (String, Mapping) {
 	if let Some(model) = get("model").and_then(csv_list) {
 		out.insert("model".into(), model);
 	}
-	if let Some(level) = get("thinking-level").or_else(|| get("thinkingLevel")).filter(|v| !v.is_null()) {
+	if let Some(level) = get("thinking-level")
+		.or_else(|| get("thinkingLevel"))
+		.filter(|v| !v.is_null())
+	{
 		out.insert("thinkingLevel".into(), level.clone());
 	}
 	if let Some(output) = get("output") {
@@ -116,7 +129,10 @@ fn to_frontmatter(source: &Mapping) -> (String, Mapping) {
 
 /// System prompt body of a bundled agent definition, for the `task` tool.
 pub(crate) fn bundled_agent_body(name: &str) -> Option<String> {
-	bundled_agents().into_iter().find(|agent| agent.name == name).map(|agent| agent.body)
+	bundled_agents()
+		.into_iter()
+		.find(|agent| agent.name == name)
+		.map(|agent| agent.body)
 }
 
 fn bundled_agents() -> Vec<Agent> {
@@ -232,4 +248,13 @@ pub fn execute(args: AgentsArgs) -> Result<u8> {
 		println!("{}", p.dim(&format!("  = {path}")));
 	}
 	Ok(0)
+}
+
+/// Names of the bundled task agents (claimed; managed presets cannot shadow
+/// them).
+pub(crate) fn bundled_agent_names() -> Vec<String> {
+	bundled_agents()
+		.into_iter()
+		.map(|agent| agent.name)
+		.collect()
 }
