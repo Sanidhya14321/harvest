@@ -163,6 +163,7 @@
 		"gen:changelog": "bun scripts/rewrite-changelog.ts",
 		"ci:release:notes": "cargo xtask release-notes",
 		"gen:nix": "cargo xtask nix-bun-deps",
+		"gen:settings-schema": "bun packages/coding-agent/scripts/gen-settings-schema.ts",
 		"gen:tool-views": "bun --cwd=packages/collab-web run gen:tool-views",
 		"gen:bundle": "bun --cwd=packages/coding-agent run gen:bundle",
 		"gen:native": "bun --cwd=packages/natives run gen:native",

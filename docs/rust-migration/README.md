@@ -9,6 +9,18 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Settings: `bun run gen:settings-schema` emits the 503-entry schema (type,
+  default, enum values, credential marker) from `settings-schema.ts` into
+  `rust-agent/src/settings-schema.json`. `rust-agent/src/settings.rs` loads
+  the global `config.yml`/`config.yaml` from the agent directory, the builtin
+  project layer (`.harvest/settings.json`, then `.harvest/config.yml`) and
+  strict `--config`-style overlays, deep-merged like `#deepMerge`, with
+  schema defaults and type validation. Sessions load it; `grep` reads
+  `grep.contextBefore`/`contextAfter` and `bash` applies the
+  `tools.maxTimeout` ceiling with its clamp notice. Still pending: setting
+  writes and migrations, the `.claude`/`.codex`/`.cursor`/`.gemini`/OpenCode
+  project providers, profiles, and wiring the remaining tool settings.
+
 - `web_search` walks the legacy fallback chain over Exa, Tavily and Brave
   (keys from `EXA_API_KEY`/`TAVILY_API_KEY`/`BRAVE_API_KEY`) and keyless
   DuckDuckGo (HTML frontend, redirect unwrapping, bot-challenge error), with

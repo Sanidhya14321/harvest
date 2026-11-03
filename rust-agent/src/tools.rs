@@ -86,6 +86,8 @@ pub struct SessionState {
 	/// Active `checkpoint` (goal) and the report of a `rewind` waiting for the
 	/// session loop to branch the context.
 	checkpoint:    std::sync::Mutex<CheckpointState>,
+	/// Effective legacy settings for this workspace.
+	pub settings:  crate::settings::Settings,
 }
 
 #[derive(Default)]
@@ -96,6 +98,11 @@ struct CheckpointState {
 }
 
 impl SessionState {
+	/// Fresh state over loaded workspace settings.
+	pub fn with_settings(settings: crate::settings::Settings) -> Self {
+		Self { settings, ..Self::default() }
+	}
+
 	fn checkpoint(&self) -> std::sync::MutexGuard<'_, CheckpointState> {
 		self
 			.checkpoint
@@ -287,14 +294,29 @@ fn invoke_authorized(
 		},
 		"edit" => ToolOutput::text(crate::edit::hashline(root, arguments, store, cancellation)?),
 		"grep" => {
-			crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, store, cancellation)?
+			let mut args = parse::<crate::search::Args>(arguments)?;
+			let context = |path: &str, fallback: f64| {
+				state
+					.settings
+					.number(path)
+					.unwrap_or(fallback)
+					.max(0.0)
+					.floor() as u32
+			};
+			args.context =
+				Some((context("grep.contextBefore", 1.0), context("grep.contextAfter", 3.0)));
+			crate::search::grep(root, &args, store, cancellation)?
 		},
 		"glob" => ToolOutput::text(crate::glob::glob(
 			root,
 			&parse::<crate::glob::Args>(arguments)?,
 			cancellation,
 		)?),
-		"bash" => ToolOutput::text(bash(root, &parse::<BashArgs>(arguments)?, cancellation)?),
+		"bash" => {
+			let mut args = parse::<BashArgs>(arguments)?;
+			args.max_timeout = state.settings.number("tools.maxTimeout").unwrap_or(0.0);
+			ToolOutput::text(bash(root, &args, cancellation)?)
+		},
 		"todo" => ToolOutput::text(crate::todo::todo(&state.todos, arguments)),
 		"ast_grep" => ToolOutput::text(crate::ast::ast_grep(
 			root,
@@ -322,30 +344,42 @@ struct WriteArgs {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(not(feature = "full"), allow(dead_code, reason = "used by the full shell"))]
 struct BashArgs {
-	command: String,
-	env:     Option<std::collections::HashMap<String, String>>,
-	timeout: Option<f64>,
-	cwd:     Option<String>,
+	command:     String,
+	env:         Option<std::collections::HashMap<String, String>>,
+	timeout:     Option<f64>,
+	cwd:         Option<String>,
+	/// `tools.maxTimeout`, filled from settings.
+	#[serde(skip)]
+	max_timeout: f64,
 }
 
 /// `TOOL_TIMEOUTS.bash`.
 #[cfg(feature = "full")]
 const BASH_TIMEOUT: (f64, f64, f64) = (300.0, 1.0, 3600.0);
 
-/// `clampTimeout("bash", …)` (no `tools.maxTimeout` ceiling); `None` when the
-/// caller passed `0` to disable the deadline. Returns the clamp notice too.
+/// `clampTimeout("bash", …)` under the `tools.maxTimeout` ceiling; `None`
+/// when the caller passed `0` to disable the deadline. Returns the clamp
+/// notice (`formatTimeoutClampNotice`) too.
 #[cfg(feature = "full")]
-fn bash_timeout(requested: Option<f64>) -> (Option<f64>, Option<String>) {
+fn bash_timeout(requested: Option<f64>, ceiling: f64) -> (Option<f64>, Option<String>) {
 	let (default, min, max) = BASH_TIMEOUT;
 	let requested = requested.unwrap_or(default);
 	if requested == 0.0 {
 		return (None, None);
 	}
-	let effective = requested.clamp(min, max);
+	let capped = if ceiling > 0.0 {
+		requested.min(ceiling)
+	} else {
+		requested
+	};
+	let effective = capped.clamp(min, max);
 	let notice = (effective != requested).then(|| {
-		format!(
-			"Timeout clamped to {effective}s (requested {requested}s; allowed range {min}-{max}s)."
-		)
+		let limit = if ceiling > 0.0 && effective == ceiling && ceiling < max {
+			format!("global tools.maxTimeout ceiling {ceiling}s")
+		} else {
+			format!("allowed range {min}-{max}s")
+		};
+		format!("Timeout clamped to {effective}s (requested {requested}s; {limit}).")
 	});
 	(Some(effective), notice)
 }
@@ -652,7 +686,7 @@ fn bash(
 		bail!("command is empty");
 	}
 	let cwd = bash_cwd(root, args)?;
-	let (timeout, clamp_notice) = bash_timeout(args.timeout);
+	let (timeout, clamp_notice) = bash_timeout(args.timeout, args.max_timeout);
 	let timeout_ms = timeout.map(|seconds| (seconds * 1000.0) as u32);
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
@@ -923,6 +957,26 @@ mod tests {
 		let failed = run(r#"{"command":"echo out; exit 3"}"#).unwrap();
 		assert!(failed.starts_with("out\n\n\nWall time: "), "{failed}");
 		assert!(failed.ends_with(" seconds\n\nCommand exited with code 3"), "{failed}");
+		let mut state = super::SessionState::default();
+		std::fs::create_dir(root.path().join(".harvest")).unwrap();
+		std::fs::write(root.path().join(".harvest/config.yml"), "tools:\n  maxTimeout: 90\n")
+			.unwrap();
+		state.settings = crate::settings::Settings::load(None, root.path(), &[]).unwrap();
+		let ceiling = super::invoke_authorized(
+			root.path(),
+			&call("bash", r#"{"command":"echo hi","timeout":600}"#),
+			&Default::default(),
+			&pi_edit::EditStore::new(),
+			None,
+			&state,
+		)
+		.unwrap();
+		assert!(
+			ceiling.contains(
+				"Timeout clamped to 90s (requested 600s; global tools.maxTimeout ceiling 90s)."
+			),
+			"{ceiling}"
+		);
 		let clamped = run(r#"{"command":"echo hi","timeout":99999}"#).unwrap();
 		assert!(
 			clamped.contains("Timeout clamped to 3600s (requested 99999s; allowed range 1-3600s)."),

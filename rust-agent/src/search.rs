@@ -46,12 +46,21 @@ const GLOB_CHARS: [char; 4] = ['*', '?', '[', '{'];
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Args {
-	pattern:        String,
-	path:           Option<String>,
+	pattern:            String,
+	path:               Option<String>,
 	#[serde(rename = "case")]
-	case_sensitive: Option<bool>,
-	gitignore:      Option<bool>,
-	skip:           Option<f64>,
+	case_sensitive:     Option<bool>,
+	gitignore:          Option<bool>,
+	skip:               Option<f64>,
+	/// `grep.contextBefore` / `grep.contextAfter`, filled from settings.
+	#[serde(skip)]
+	pub(crate) context: Option<(u32, u32)>,
+}
+
+impl Args {
+	fn context(&self) -> (u32, u32) {
+		self.context.unwrap_or((CONTEXT_BEFORE, CONTEXT_AFTER))
+	}
 }
 
 struct PathSpec {
@@ -650,6 +659,7 @@ fn run_engine(
 	gitignore: bool,
 	max_count: usize,
 	per_file: usize,
+	context: (u32, u32),
 	cancellation: &CancelToken,
 ) -> Result<pi_grep::GrepResult> {
 	let mut token = CancelToken::new(Some(TIMEOUT_MS));
@@ -667,8 +677,8 @@ fn run_engine(
 		gitignore:          Some(gitignore),
 		max_count:          Some(max_count as u32),
 		offset:             None,
-		context_before:     Some(CONTEXT_BEFORE),
-		context_after:      Some(CONTEXT_AFTER),
+		context_before:     Some(context.0),
+		context_after:      Some(context.1),
 		context:            None,
 		max_columns:        Some(MAX_COLUMNS),
 		mode:               Some(GrepOutputMode::Content),
@@ -746,6 +756,7 @@ fn search_scope(
 			gitignore,
 			max_count,
 			per_file,
+			args.context(),
 			cancellation,
 		)?;
 		let matches = result
@@ -778,6 +789,7 @@ fn search_scope(
 			gitignore,
 			max_count,
 			per_file,
+			args.context(),
 			cancellation,
 		)?;
 		run.skipped_oversized += result.skipped_oversized.unwrap_or(0);
@@ -1010,8 +1022,8 @@ pub(crate) fn grep(
 			multiline:      Some(args.pattern.contains('\n') || args.pattern.contains("\\n")),
 			max_count:      Some(native_per_file as u32),
 			offset:         None,
-			context_before: Some(CONTEXT_BEFORE),
-			context_after:  Some(CONTEXT_AFTER),
+			context_before: Some(args.context().0),
+			context_after:  Some(args.context().1),
 			context:        None,
 			max_columns:    Some(MAX_COLUMNS),
 			mode:           Some(GrepOutputMode::Content),

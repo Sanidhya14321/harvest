@@ -138,3 +138,40 @@ fn archive_members_are_searched_in_memory_under_their_archive_path() -> Result<(
 	);
 	Ok(())
 }
+
+#[test]
+fn settings_drive_grep_context_lines() -> Result<()> {
+	let root = workspace();
+	fs::create_dir(root.path().join(".harvest"))?;
+	fs::write(
+		root.path().join(".harvest/config.yml"),
+		"grep:\n  contextBefore: 0\n  contextAfter: 0\n",
+	)?;
+	let mut state = crate::tools::SessionState::default();
+	state.settings = crate::settings::Settings::load(None, root.path(), &[])?;
+	let call = crate::chat::ToolCall {
+		id:       "g".into(),
+		kind:     "function".into(),
+		function: crate::chat::FunctionCall {
+			name:      "grep".into(),
+			arguments: r#"{"pattern":"needle a","path":"src/a.rs"}"#.into(),
+		},
+	};
+	struct Allow;
+	impl crate::tools::Approval for Allow {
+		fn approve(&self, _: &crate::chat::ToolCall) -> Result<bool> {
+			Ok(true)
+		}
+	}
+	let out = crate::tools::invoke_in_session(
+		root.path(),
+		&call,
+		&Allow,
+		&CancelToken::default(),
+		&EditStore::new(),
+		None,
+		&state,
+	)?;
+	assert!(out.ends_with("\n*2:needle a"), "{out}");
+	Ok(())
+}

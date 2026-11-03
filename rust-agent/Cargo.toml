@@ -85,6 +85,7 @@ pi-walker = { path = "../crates/pi-walker" }
 async-trait.workspace = true
 pi-shell = { path = "../crates/pi-shell", optional = true }
 regex.workspace = true
+serde_yaml_ng = "0.10.0"
 rusqlite = { version = "0.37", features = ["bundled"] }
 form_urlencoded = "1.2.2"
 serde.workspace = true

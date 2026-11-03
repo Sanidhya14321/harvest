@@ -17,6 +17,7 @@ mod read;
 mod search;
 mod session_context;
 pub mod session_format;
+pub mod settings;
 mod shell;
 mod sqlite;
 mod streaming;

@@ -70,7 +70,11 @@ impl AgentSession {
 				.and_then(|fs| Ok(fs.root().join(fs.relative(path)?)))
 				.ok()
 				.and_then(|file| crate::output::ArtifactStore::for_session(&file)),
-			tool_state: tools::SessionState::default(),
+			tool_state: tools::SessionState::with_settings(crate::settings::Settings::load(
+				crate::config::agent_dir_from(None, |key| std::env::var_os(key)).as_deref(),
+				root,
+				&[],
+			)?),
 		})
 	}
 
