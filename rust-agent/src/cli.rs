@@ -64,6 +64,8 @@ enum Commands {
 	Replay(ReplayArgs),
 	#[command(about = "List the built-in tools")]
 	Tools,
+	#[command(about = "Generate a conventional commit from staged changes")]
+	Commit(crate::commands::commit::CommitArgs),
 	#[command(about = "Run on-disk storage maintenance")]
 	Gc(crate::commands::gc::GcArgs),
 	#[command(about = "Inspect and control daemon-broker supervised processes")]
@@ -475,6 +477,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Commit(args) => crate::commands::commit::execute(args),
 		Commands::Gc(args) => crate::commands::gc::execute(args),
 		Commands::Ps(args) => crate::commands::ps::execute(args),
 		Commands::Worktree(args) => crate::commands::worktree::execute(args),
