@@ -569,6 +569,11 @@ impl ToolRuntime {
 			CoreState { state: crate::core_tools::SessionState::with_settings(settings), artifacts };
 	}
 
+	/// Session state of main's core tools.
+	pub fn core_state(&self) -> &crate::core_tools::SessionState {
+		&self.core.state
+	}
+
 	fn bind_edit_root(&mut self, root: &Path) -> Result<()> {
 		let canonical = JailedFs::open(root)?.root().to_owned();
 		if let Some(bound) = &self.edit_root {
