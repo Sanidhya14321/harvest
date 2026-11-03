@@ -137,3 +137,7 @@ pub mod commit;
 pub(crate) mod rules;
 pub mod ttsr;
 pub mod token;
+pub mod plugin;
+pub mod update;
+pub mod install;
+mod plugin_store;

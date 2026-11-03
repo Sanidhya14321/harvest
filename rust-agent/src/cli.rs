@@ -66,6 +66,12 @@ enum Commands {
 	Tools,
 	#[command(about = "Generate a conventional commit from staged changes")]
 	Commit(crate::commands::commit::CommitArgs),
+	#[command(about = "Manage plugins (install, uninstall, list, etc.)")]
+	Plugin(crate::commands::plugin::PluginArgs),
+	#[command(about = "Check for and install updates")]
+	Update(crate::commands::update::UpdateArgs),
+	#[command(about = "Install a plugin from a local path, npm spec, or marketplace ref")]
+	Install(crate::commands::install::InstallArgs),
 	#[command(about = "Run on-disk storage maintenance")]
 	Gc(crate::commands::gc::GcArgs),
 	#[command(about = "Inspect and control daemon-broker supervised processes")]
@@ -481,6 +487,9 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::Tools => tools(),
 		Commands::Token(args) => crate::commands::token::execute(args),
 		Commands::Commit(args) => crate::commands::commit::execute(args),
+		Commands::Plugin(args) => crate::commands::plugin::execute(args),
+		Commands::Update(args) => crate::commands::update::execute(args),
+		Commands::Install(args) => crate::commands::install::execute(args),
 		Commands::Gc(args) => crate::commands::gc::execute(args),
 		Commands::Ps(args) => crate::commands::ps::execute(args),
 		Commands::Worktree(args) => crate::commands::worktree::execute(args),
