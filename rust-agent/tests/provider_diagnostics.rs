@@ -14,6 +14,8 @@ fn model(base_url: String) -> HttpModel {
 		base_url,
 		api_key: "fixture-api-key-private".into(),
 		max_steps: 1,
+		wire: Default::default(),
+		max_tokens: None,
 	})
 }
 

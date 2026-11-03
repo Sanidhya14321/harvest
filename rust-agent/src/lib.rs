@@ -2,6 +2,7 @@
 //! met.
 pub mod agent;
 pub mod agent_session;
+pub mod anthropic;
 mod ast;
 mod brain_cli;
 pub mod catalog;

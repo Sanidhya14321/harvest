@@ -1,16 +1,29 @@
 //! Bundled provider/model routing for `provider/model` selectors.
 //!
 //! Generated from `packages/catalog/src/models.json` by
-//! `bun run gen:rust-catalog`; only OpenAI-compatible chat models are listed
-//! because that is the wire the Rust runtime speaks.
+//! `bun run gen:rust-catalog`; only the wires the Rust runtime speaks
+//! (`OpenAI` chat completions, `Anthropic` Messages) are listed.
 use std::{collections::BTreeMap, sync::LazyLock};
 
 use serde::Deserialize;
+
+/// The request protocol a catalog model speaks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Wire {
+	/// `POST {base}/chat/completions`.
+	#[default]
+	OpenAi,
+	/// `POST {base}/v1/messages`.
+	Anthropic,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogModel {
 	pub base_url:       String,
+	#[serde(default)]
+	pub wire:           Wire,
 	pub context_window: Option<u64>,
 	pub max_tokens:     Option<u64>,
 }
@@ -36,16 +49,19 @@ pub fn env_vars() -> impl Iterator<Item = &'static str> {
 /// A resolved catalog selector.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Route {
-	pub provider: &'static str,
-	pub model:    &'static str,
-	pub base_url: &'static str,
-	pub env_vars: &'static [String],
+	pub provider:   &'static str,
+	pub model:      &'static str,
+	pub base_url:   &'static str,
+	pub wire:       Wire,
+	pub max_tokens: Option<u64>,
+	pub env_vars:   &'static [String],
 }
 
 /// `parseModelString` + catalog lookup for a `provider/id` selector.
 ///
-/// Splits at the first `/` (ids such as `openai/gpt-5.5` on OpenRouter keep their slash). A
-/// trailing `:level` thinking suffix is dropped when the bare id is listed.
+/// Splits at the first `/` (ids such as `openai/gpt-5.5` on `OpenRouter` keep
+/// their slash). A trailing `:level` thinking suffix is dropped when the bare
+/// id is listed.
 pub fn route(selector: &str) -> Option<Route> {
 	let (provider, id) = selector.split_once('/')?;
 	if provider.is_empty() {
@@ -55,7 +71,14 @@ pub fn route(selector: &str) -> Option<Route> {
 	let lookup = |id: &str| entry.models.get_key_value(id);
 	let (model, row) =
 		lookup(id).or_else(|| id.rsplit_once(':').and_then(|(base, _)| lookup(base)))?;
-	Some(Route { provider, model, base_url: &row.base_url, env_vars: &entry.env_vars })
+	Some(Route {
+		provider,
+		model,
+		base_url: &row.base_url,
+		wire: row.wire,
+		max_tokens: row.max_tokens,
+		env_vars: &entry.env_vars,
+	})
 }
 
 #[cfg(test)]
@@ -71,6 +94,10 @@ mod tests {
 		assert_eq!(route.env_vars, ["GROQ_API_KEY".to_owned()]);
 		let suffixed = super::route(&format!("groq/{id}:high")).expect("thinking suffix");
 		assert_eq!(suffixed.model, id);
+		assert_eq!(route.wire, Wire::OpenAi);
+		let claude = super::route("anthropic/claude-sonnet-4-5").expect("anthropic model");
+		assert_eq!((claude.wire, claude.base_url), (Wire::Anthropic, "https://api.anthropic.com"));
+		assert!(claude.max_tokens.is_some());
 		assert!(super::route("groq/not-a-model").is_none());
 		assert!(super::route("bare-model").is_none());
 		assert!(super::route("/x").is_none());

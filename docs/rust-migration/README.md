@@ -9,6 +9,7 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- Anthropic Messages wire: `rust-agent/src/anthropic.rs` (`x-api-key`, `anthropic-version: 2023-06-01`, system hoisting, `tool_use`/`tool_result` blocks, role-merging, cache-aware usage). Catalog models with `anthropic-messages` and a concrete base URL route to it (`anthropic/claude-*`, z.ai, MiniMax, Vercel gateway, ...). Non-streaming only (text arrives at completion); no thinking, prompt caching breakpoints, images or OAuth.
 - Catalog routing: `rust-agent/src/catalog.json` (`bun run gen:rust-catalog`, generated from `models.json` + `CATALOG_PROVIDERS` env vars) lets `--model provider/id` (thinking suffix tolerated) pick the provider base URL and its key env var (`GROQ_API_KEY`, ...). An explicit base URL still wins. Only `openai-completions` models (44 providers) are routed; Anthropic/Responses/Bedrock/Google wires, OAuth, the credential store and custom models are not ported.
 
 - Settings: `bun run gen:settings-schema` emits the 503-entry schema (type,

@@ -9,10 +9,14 @@ use serde::Deserialize;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Settings {
-	pub model:     String,
-	pub base_url:  String,
-	pub api_key:   String,
-	pub max_steps: u32,
+	pub model:      String,
+	pub base_url:   String,
+	pub api_key:    String,
+	pub max_steps:  u32,
+	/// Request protocol; catalog-routed selectors may switch it.
+	pub wire:       crate::catalog::Wire,
+	/// Output-token cap from the catalog (required by the Anthropic wire).
+	pub max_tokens: Option<u64>,
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -114,6 +118,10 @@ pub fn resolve(root: &Path, flags: &Overrides, environment: &Environment) -> Res
 		.is_none()
 		.then(|| crate::catalog::route(&model))
 		.flatten();
+	let wire = route
+		.as_ref()
+		.map_or_else(Default::default, |route| route.wire);
+	let max_tokens = route.as_ref().and_then(|route| route.max_tokens);
 	let (base_url, api_key) = match route {
 		Some(route) => {
 			let key = flags.api_key.clone().or_else(|| {
@@ -134,6 +142,8 @@ pub fn resolve(root: &Path, flags: &Overrides, environment: &Environment) -> Res
 		model,
 		base_url,
 		api_key,
+		wire,
+		max_tokens,
 		max_steps: checked_steps(
 			flags
 				.max_steps

@@ -214,8 +214,13 @@ fn run(args: RunArgs) -> Result<u8> {
 		&environment,
 	)?;
 	let max_steps = settings.max_steps;
-	let model = HttpModel::new(settings).request_usage(args.request_usage);
-	let model_ref: &dyn Model = &model;
+	let model: Box<dyn Model> = match settings.wire {
+		crate::catalog::Wire::OpenAi => {
+			Box::new(HttpModel::new(settings).request_usage(args.request_usage))
+		},
+		crate::catalog::Wire::Anthropic => Box::new(crate::anthropic::AnthropicModel::new(settings)),
+	};
+	let model_ref: &dyn Model = model.as_ref();
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
 	let mut session =
