@@ -44,18 +44,22 @@ pub fn invoke_with_store(
 /// list.
 #[derive(Default)]
 pub struct SessionState {
-	pub conflicts: crate::conflict::ConflictHistory,
-	pub todos:     crate::todo::TodoList,
+	pub conflicts:         crate::conflict::ConflictHistory,
+	pub todos:             crate::todo::TodoList,
 	/// Staged previews (`ast_edit`), newest last; `xd://resolve` applies the
 	/// newest, `xd://reject` discards it.
-	pending:       std::sync::Mutex<Vec<crate::ast::EditPlan>>,
+	pending:               std::sync::Mutex<Vec<crate::ast::EditPlan>>,
 	/// Active `checkpoint` (goal) and the report of a `rewind` waiting for the
 	/// session loop to branch the context.
-	checkpoint:    std::sync::Mutex<CheckpointState>,
+	checkpoint:            std::sync::Mutex<CheckpointState>,
 	/// Effective legacy settings for this workspace.
-	pub settings:  crate::settings::Settings,
+	pub settings:          crate::settings::Settings,
 	/// Subagent `yield` submission and goal-mode objective.
-	pub(crate) agent: crate::task_tool::AgentState,
+	pub(crate) agent:      crate::task_tool::AgentState,
+	/// Installed memory engine; `None` behaves like `memory.backend = "off"`.
+	pub memory:            Option<crate::memory::SharedMemoryBackend>,
+	/// Explicit session-storage grant supplied by the native host.
+	pub session_directory: Option<std::path::PathBuf>,
 }
 
 #[derive(Default)]
@@ -166,6 +170,20 @@ pub fn invoke_in_session(
 	artifacts: Option<&crate::output::ArtifactStore>,
 	state: &SessionState,
 ) -> Result<String> {
+	Ok(invoke_detailed_in_session(root, call, policy, cancellation, store, artifacts, state)?
+		.content)
+}
+
+/// Preserve semantic errors and structured results for durable consumers.
+pub fn invoke_detailed_in_session(
+	root: &Path,
+	call: &ToolCall,
+	policy: &dyn Approval,
+	cancellation: &harvest_runtime::cancel::CancelToken,
+	store: &pi_edit::EditStore,
+	artifacts: Option<&crate::output::ArtifactStore>,
+	state: &SessionState,
+) -> Result<crate::tools::ToolOutput> {
 	let name = call.function.name.as_str();
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
@@ -173,14 +191,34 @@ pub fn invoke_in_session(
 	if !crate::core_specs::is_tool(name) {
 		bail!("unknown tool {name}");
 	}
+	if !crate::memory::tool_enabled(&state.settings, name) {
+		bail!("tool {name} is disabled by the session settings");
+	}
 	if (matches!(name, "write" | "edit" | "bash")
-		|| crate::agent_tools::requires_approval(name, &call.function.arguments))
+		|| crate::agent_tools::requires_approval(name, &call.function.arguments)
+		|| managed_requires_approval(state, name, &call.function.arguments))
 		&& !policy.approve(call)?
 	{
 		bail!("tool {name} requires human approval");
 	}
 	cancellation.heartbeat()?;
 	invoke_authorized(root, call, cancellation, store, artifacts, state)
+}
+
+/// Mutating managed-artifact/session/memory calls need human approval.
+fn managed_requires_approval(state: &SessionState, name: &str, arguments: &str) -> bool {
+	let action = || {
+		serde_json::from_str::<serde_json::Value>(arguments)
+			.ok()
+			.and_then(|v| v.get("action").and_then(|a| a.as_str()).map(str::to_owned))
+	};
+	match name {
+		"manage_skill" => true,
+		"presets" => action().is_none_or(|a| a != "list" && a != "inspect"),
+		"sessions" => crate::sessions_tool::requires_approval(arguments),
+		"learn" => crate::memory::learn_requires_approval(&state.settings, arguments),
+		_ => false,
+	}
 }
 
 /// Reads and writes stay inside `root`; generated files are protected.
@@ -197,14 +235,15 @@ fn core_policy(root: &Path) -> pi_edit::PathPolicy {
 
 #[cfg(test)]
 fn invoke_approved(root: &Path, call: &ToolCall) -> Result<String> {
-	invoke_authorized(
+	Ok(invoke_authorized(
 		root,
 		call,
 		&Default::default(),
 		&pi_edit::EditStore::new(),
 		None,
 		&SessionState::default(),
-	)
+	)?
+	.content)
 }
 
 fn invoke_authorized(
@@ -214,15 +253,20 @@ fn invoke_authorized(
 	store: &pi_edit::EditStore,
 	artifacts: Option<&crate::output::ArtifactStore>,
 	state: &SessionState,
-) -> Result<String> {
+) -> Result<crate::tools::ToolOutput> {
 	use crate::output::ToolOutput;
 	let conflicts = &state.conflicts;
 	let name = call.function.name.as_str();
 	let arguments = call.function.arguments.as_str();
 	let mut reading_artifact = false;
+	let mut is_error = false;
+	let mut details = None;
 	let output = match name {
 		"read" => {
 			let args = parse::<crate::read::Args>(arguments)?;
+			if let Some(id) = args.memory_id() {
+				return crate::memory::read(&state.settings, state.memory.as_ref(), id);
+			}
 			reading_artifact = args.is_artifact();
 			crate::read::read(root, &args, store, artifacts, conflicts, cancellation)?
 		},
@@ -311,23 +355,70 @@ fn invoke_authorized(
 		"goal" => ToolOutput::text(state.agent.goal(arguments)?),
 		"task" => bail!("task requires a host session with a model"),
 		"eval" => ToolOutput::text(crate::agent_tools::eval(root, &parse(arguments)?, cancellation)?),
-		"github" => ToolOutput::text(crate::agent_tools::github(root, &parse(arguments)?, cancellation)?),
+		"github" => {
+			ToolOutput::text(crate::agent_tools::github(root, &parse(arguments)?, cancellation)?)
+		},
 		"hub" => ToolOutput::text(crate::agent_tools::hub(root, &parse(arguments)?)?),
-		"search_code" => ToolOutput::text(crate::agent_tools::search_code(root, &parse(arguments)?, cancellation)?),
-		"security_scan" => ToolOutput::text(crate::agent_tools::security_scan(&state.settings, arguments)?),
+		"search_code" => {
+			ToolOutput::text(crate::agent_tools::search_code(root, &parse(arguments)?, cancellation)?)
+		},
+		"security_scan" => {
+			ToolOutput::text(crate::agent_tools::security_scan(&state.settings, arguments)?)
+		},
 		"ast_grep" => ToolOutput::text(crate::ast::ast_grep(
 			root,
 			&parse::<crate::ast::Args>(arguments)?,
 			store,
 			cancellation,
 		)?),
+		"retain" => ToolOutput::text(crate::memory::retain(
+			&state.settings,
+			state.memory.as_ref(),
+			root,
+			arguments,
+		)?),
+		"recall" => {
+			ToolOutput::text(crate::memory::recall(&state.settings, state.memory.as_ref(), arguments)?)
+		},
+		"reflect" => ToolOutput::text(crate::memory::reflect(
+			&state.settings,
+			state.memory.as_ref(),
+			arguments,
+		)?),
+		"memory_edit" => ToolOutput::text(crate::memory::memory_edit(
+			&state.settings,
+			state.memory.as_ref(),
+			arguments,
+		)?),
+		"learn" => ToolOutput::text(crate::memory::learn(
+			&state.settings,
+			state.memory.as_ref(),
+			root,
+			arguments,
+		)?),
+		"manage_skill" | "presets" => {
+			let outcome = if name == "manage_skill" {
+				crate::managed::manage_skill(root, arguments)?
+			} else {
+				crate::managed::presets(root, arguments)?
+			};
+			is_error = outcome.is_error;
+			details = Some(outcome.details);
+			ToolOutput::text(outcome.text)
+		},
+		"sessions" => ToolOutput::text(crate::sessions_tool::sessions_in(
+			root,
+			state.session_directory.as_deref(),
+			arguments,
+		)?),
 		_ => bail!("unknown tool {name}"),
 	};
-	Ok(match artifacts {
+	let content = match artifacts {
 		Some(artifacts) => crate::output::spill(output, name, artifacts, reading_artifact).render(),
 		// Without a session there is nowhere to spill to: keep the hard cap.
 		None => bounded(&output.render()),
-	})
+	};
+	Ok(crate::tools::ToolOutput { content, is_error, details })
 }
 
 #[derive(Debug, Deserialize)]

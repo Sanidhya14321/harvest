@@ -78,6 +78,7 @@ clap.workspace = true
 clap_mangen = "0.2.31"
 flume = { workspace = true, optional = true }
 harvest-brain = { path = "../crates/harvest-brain" }
+harvest-mnemopi = { path = "../crates/harvest-mnemopi" }
 harvest-archive = { path = "../crates/harvest-archive" }
 harvest-runtime = { path = "../crates/harvest-runtime" }
 libc.workspace = true

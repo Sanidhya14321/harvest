@@ -1,15 +1,15 @@
 //! Ported standalone CLI commands (`commands/*.ts` + `cli/*-cli.ts`).
-pub mod gc;
-mod paths;
-pub mod ps;
-pub mod worktree;
-pub mod compress;
-pub mod images;
-pub mod render;
 pub mod agents;
+pub mod compress;
+pub mod gc;
 pub mod grievances;
+pub mod images;
+pub(crate) mod paths;
+pub mod ps;
+pub mod render;
 pub mod ssh;
 pub mod usage;
+pub mod worktree;
 
 use std::{io::IsTerminal, path::PathBuf};
 
@@ -34,7 +34,11 @@ impl Paint {
 	}
 
 	fn wrap(&self, code: &str, text: &str) -> String {
-		if self.enabled { format!("\x1b[{code}m{text}\x1b[0m") } else { text.to_owned() }
+		if self.enabled {
+			format!("\x1b[{code}m{text}\x1b[0m")
+		} else {
+			text.to_owned()
+		}
 	}
 
 	pub(crate) fn red(&self, t: &str) -> String {
@@ -74,7 +78,9 @@ pub(crate) fn agent_dir() -> anyhow::Result<PathBuf> {
 /// `~/.harvest` — the parent of the agent dir (`dirs.rootSubdir`).
 pub(crate) fn root_dir() -> anyhow::Result<PathBuf> {
 	let agent = agent_dir()?;
-	Ok(agent.parent().map_or_else(|| agent.clone(), std::path::Path::to_path_buf))
+	Ok(agent
+		.parent()
+		.map_or_else(|| agent.clone(), std::path::Path::to_path_buf))
 }
 
 pub(crate) const CONFIG_DIR_NAME: &str = ".harvest";
@@ -95,7 +101,11 @@ pub(crate) fn format_duration(ms: f64) -> String {
 		return format!("{:.1}s", ms / SEC);
 	}
 	let pair = |a: f64, b: f64, ua: &str, ub: &str| {
-		if b > 0.0 { format!("{a}{ua}{b}{ub}") } else { format!("{a}{ua}") }
+		if b > 0.0 {
+			format!("{a}{ua}{b}{ub}")
+		} else {
+			format!("{a}{ua}")
+		}
 	};
 	if ms < HOUR {
 		return pair((ms / MIN).floor(), ((ms % MIN) / SEC).floor(), "m", "s");
@@ -110,7 +120,8 @@ pub(crate) fn format_duration(ms: f64) -> String {
 pub(crate) fn format_number(n: f64) -> String {
 	fn trim1(n: f64) -> String {
 		let s = format!("{n:.1}");
-		s.strip_suffix(".0").map_or_else(|| s.clone(), str::to_owned)
+		s.strip_suffix(".0")
+			.map_or_else(|| s.clone(), str::to_owned)
 	}
 	if n < 1_000.0 {
 		return n.to_string();
@@ -132,24 +143,24 @@ pub(crate) fn format_number(n: f64) -> String {
 	}
 	format!("{}B", (n / 1e9).round())
 }
-pub mod cleanse;
-pub mod commit;
-pub(crate) mod rules;
-pub mod ttsr;
-pub mod token;
-pub mod plugin;
-pub mod update;
-pub mod install;
-mod plugin_store;
-pub mod say;
-mod secrets;
-pub mod share;
-pub mod launch;
 pub mod acp;
-pub mod join;
-pub mod shell;
-pub mod git;
 pub mod auth_broker;
 pub mod auth_gateway;
-pub mod stats;
+pub mod cleanse;
+pub mod commit;
+pub mod git;
+pub mod install;
+pub mod join;
+pub mod launch;
+pub mod plugin;
+mod plugin_store;
+pub(crate) mod rules;
+pub mod say;
+mod secrets;
 pub mod setup;
+pub mod share;
+pub mod shell;
+pub mod stats;
+pub mod token;
+pub mod ttsr;
+pub mod update;

@@ -60,9 +60,11 @@ fn encode(prefix: &str, relative: &str) -> String {
 	}
 }
 
-fn default_session_dir(cwd: &Path) -> Result<PathBuf> {
+pub(crate) fn default_session_dir(cwd: &Path) -> Result<PathBuf> {
 	let canonical = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-	let home = std::env::var_os("HOME").map(PathBuf::from).and_then(|h| h.canonicalize().ok());
+	let home = std::env::var_os("HOME")
+		.map(PathBuf::from)
+		.and_then(|h| h.canonicalize().ok());
 	let temp = std::env::temp_dir().canonicalize().ok();
 	let name = if let Some(rel) = home.as_ref().and_then(|h| canonical.strip_prefix(h).ok()) {
 		encode("-", &rel.to_string_lossy())
@@ -77,7 +79,7 @@ fn default_session_dir(cwd: &Path) -> Result<PathBuf> {
 }
 
 /// Session files in `dir`, newest first by modification time.
-fn list_sessions(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn list_sessions(dir: &Path) -> Vec<PathBuf> {
 	let Ok(entries) = std::fs::read_dir(dir) else {
 		return Vec::new();
 	};
@@ -85,7 +87,15 @@ fn list_sessions(dir: &Path) -> Vec<PathBuf> {
 		.flatten()
 		.map(|entry| entry.path())
 		.filter(|path| path.extension().is_some_and(|ext| ext == "jsonl") && path.is_file())
-		.map(|path| (path.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH), path))
+		.map(|path| {
+			(
+				path
+					.metadata()
+					.and_then(|m| m.modified())
+					.unwrap_or(std::time::UNIX_EPOCH),
+				path,
+			)
+		})
 		.collect();
 	files.sort_by(|a, b| b.0.cmp(&a.0));
 	files.into_iter().map(|(_, path)| path).collect()
@@ -93,7 +103,10 @@ fn list_sessions(dir: &Path) -> Vec<PathBuf> {
 
 fn matches(path: &Path, arg: &str) -> bool {
 	let arg = arg.to_lowercase();
-	let stem = path.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+	let stem = path
+		.file_stem()
+		.map(|s| s.to_string_lossy().to_lowercase())
+		.unwrap_or_default();
 	let id = stem.rsplit_once('_').map_or("", |(_, id)| id);
 	(!id.is_empty() && id.starts_with(&arg)) || stem.starts_with(&arg)
 }
@@ -124,7 +137,10 @@ pub(crate) fn resolve_target(arg: Option<&str>, cwd: &Path) -> Result<PathBuf> {
 		.flat_map(|entry| list_sessions(&entry.path()))
 		.collect();
 	global.retain(|p| matches(p, arg));
-	global.into_iter().next().with_context(|| format!("Session \"{arg}\" not found."))
+	global
+		.into_iter()
+		.next()
+		.with_context(|| format!("Session \"{arg}\" not found."))
 }
 
 fn format_bytes(bytes: usize) -> String {
@@ -164,7 +180,9 @@ pub fn execute(args: RenderArgs) -> Result<u8> {
 	let height = args.height.or(size.map(|s| s.1)).unwrap_or(40);
 
 	let parent = source.parent().context("session path has no parent")?;
-	let name = source.file_name().context("session path has no file name")?;
+	let name = source
+		.file_name()
+		.context("session path has no file name")?;
 	let fs = JailedFs::open(parent)?;
 	let open_start = Instant::now();
 	let bytes = fs.read(Path::new(name), SESSION_LIMIT)?;
@@ -198,13 +216,19 @@ pub fn execute(args: RenderArgs) -> Result<u8> {
 	for _ in 0..args.repaint.unwrap_or(0) {
 		let start = Instant::now();
 		let again = paint()?;
-		repaints.push((start.elapsed().as_secs_f64() * 1000.0, again.iter().map(|r| r.len() + 1).sum::<usize>()));
+		repaints.push((
+			start.elapsed().as_secs_f64() * 1000.0,
+			again.iter().map(|r| r.len() + 1).sum::<usize>(),
+		));
 	}
 
 	if !args.quiet {
 		let mut out = std::io::stdout().lock();
-		let lines: Vec<String> =
-			if args.plain { rows.iter().map(|r| strip_ansi(r)).collect() } else { rows.clone() };
+		let lines: Vec<String> = if args.plain {
+			rows.iter().map(|r| strip_ansi(r)).collect()
+		} else {
+			rows.clone()
+		};
 		writeln!(out, "{}", lines.join("\n"))?;
 	}
 

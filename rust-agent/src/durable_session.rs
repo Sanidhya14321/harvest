@@ -120,6 +120,15 @@ impl DurableSession {
 		&self.id
 	}
 
+	/// Artifact storage shares the session's already validated canonical path.
+	pub fn artifact_store(&self) -> Option<crate::output::ArtifactStore> {
+		crate::output::ArtifactStore::for_session(&self.path)
+	}
+
+	pub fn storage_directory(&self) -> Option<PathBuf> {
+		self.path.parent().map(Path::to_owned)
+	}
+
 	pub fn messages(&self) -> &[ChatMessage] {
 		&self.messages
 	}
