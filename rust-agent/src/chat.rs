@@ -76,6 +76,10 @@ struct ToolProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pat:            Option<StringProperty>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	ops:            Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	paths:          Option<RawSchema>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	op:             Option<RawSchema>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	list:           Option<RawSchema>,
@@ -243,6 +247,18 @@ pub fn specs() -> Vec<ToolSpec> {
 			&ToolProperties { pat: Some(STRING), path: Some(STRING), skip: Some(NUMBER), ..EMPTY },
 			&["pat"],
 		),
+		spec(
+			"ast_edit",
+			include_str!("prompts/tools/ast-edit.md").trim_end(),
+			&ToolProperties {
+				ops: Some(RawSchema(
+					r#"{"type":"array","minItems":1,"items":{"type":"object","properties":{"pat":{"type":"string"},"out":{"type":"string"}},"required":["pat","out"]}}"#,
+				)),
+				paths: Some(RawSchema(r#"{"type":"array","minItems":1,"items":{"type":"string"}}"#)),
+				..EMPTY
+			},
+			&["ops", "paths"],
+		),
 	]
 }
 
@@ -260,6 +276,8 @@ const EMPTY: ToolProperties = ToolProperties {
 	limit:          None,
 	skip:           None,
 	pat:            None,
+	ops:            None,
+	paths:          None,
 	op:             None,
 	list:           None,
 	task:           None,
@@ -293,7 +311,9 @@ mod tests {
 	#[test]
 	fn tool_catalog_names_the_workspace_tools() {
 		let names: Vec<&str> = specs().iter().map(|spec| spec.function.name).collect();
-		assert_eq!(names, ["read", "write", "edit", "grep", "glob", "bash", "todo", "ast_grep"]);
+		assert_eq!(names, [
+			"read", "write", "edit", "grep", "glob", "bash", "todo", "ast_grep", "ast_edit"
+		]);
 	}
 
 	#[test]

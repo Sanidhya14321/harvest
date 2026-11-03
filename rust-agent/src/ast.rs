@@ -288,6 +288,384 @@ pub(crate) fn ast_grep(
 	Ok(output.join("\n"))
 }
 
+/// `PREVIEW_PENDING_NOTICE`.
+pub(crate) const PREVIEW_PENDING_NOTICE: &str = "Staged as a proposal — files NOT modified yet. \
+                                                 To apply: write a one-sentence reason to \
+                                                 xd://resolve. To discard: write to xd://reject.";
+
+#[derive(Debug, Deserialize)]
+struct EditOp {
+	pat: String,
+	out: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct EditArgs {
+	ops:   Vec<EditOp>,
+	paths: Vec<String>,
+}
+
+/// A staged `ast_edit` preview, re-run against the workspace on apply.
+pub(crate) struct EditPlan {
+	pub(crate) label:  String,
+	rewrites:          HashMap<String, String>,
+	search_path:       std::path::PathBuf,
+	is_directory:      bool,
+	glob:              Option<String>,
+	targets:           Option<Vec<(std::path::PathBuf, Option<String>)>>,
+	max_files:         u32,
+	expected_total:    u32,
+	expected_files:    u32,
+	expected_per_file: HashMap<String, u32>,
+}
+
+struct EditRun {
+	/// Changes keyed by display path, in encounter order.
+	changes:       Vec<(String, engine::AstReplaceChange)>,
+	/// Per-file counts in `fileChanges` order.
+	file_counts:   Vec<(String, u32)>,
+	total:         u32,
+	files_touched: u32,
+	limit_reached: bool,
+	parse_errors:  Vec<String>,
+	/// Absolute path for each display path.
+	absolute:      HashMap<String, std::path::PathBuf>,
+}
+
+fn plural(label: &str, count: u32) -> String {
+	if count == 1 {
+		format!("{count} {label}")
+	} else {
+		format!("{count} {label}s")
+	}
+}
+
+fn run_edit(ws: &Workspace, plan: &EditPlan) -> Result<EditRun> {
+	let targets: Vec<(std::path::PathBuf, Option<String>)> = match &plan.targets {
+		Some(targets) => targets.clone(),
+		None => vec![(plan.search_path.clone(), plan.glob.clone())],
+	};
+	let mut run = EditRun {
+		changes:       Vec::new(),
+		file_counts:   Vec::new(),
+		total:         0,
+		files_touched: 0,
+		limit_reached: false,
+		parse_errors:  Vec::new(),
+		absolute:      HashMap::new(),
+	};
+	for (base, glob) in &targets {
+		let engine_root = ws.engine_path(base)?;
+		let result = engine::ast_edit(
+			engine::AstReplaceOptions {
+				rewrites:            Some(plan.rewrites.clone()),
+				lang:                None,
+				path:                Some(engine_root.to_string_lossy().into_owned()),
+				glob:                glob.clone(),
+				selector:            None,
+				strictness:          None,
+				dry_run:             Some(true),
+				max_replacements:    None,
+				max_files:           Some(plan.max_files),
+				fail_on_parse_error: Some(false),
+			},
+			CancelToken::default(),
+		)
+		.map_err(|error| anyhow!("{error}"))?;
+		run.total += result.total_replacements;
+		run.limit_reached |= result.limit_reached;
+		run.parse_errors
+			.extend(result.parse_errors.unwrap_or_default());
+		let is_dir = engine_root.is_dir();
+		let mut locate = |engine_path: &str| -> String {
+			let absolute = if is_dir {
+				base.join(engine_path)
+			} else {
+				base.clone()
+			};
+			let display = if plan.is_directory {
+				ws.display(
+					&plan
+						.search_path
+						.join(posix_relative(&plan.search_path, &absolute)),
+				)
+			} else {
+				ws.display(&plan.search_path)
+			};
+			run.absolute.insert(display.clone(), absolute);
+			display
+		};
+		for file in result.file_changes {
+			let display = locate(&file.path);
+			match run
+				.file_counts
+				.iter_mut()
+				.find(|(path, _)| *path == display)
+			{
+				Some((_, count)) => *count += file.count,
+				None => run.file_counts.push((display, file.count)),
+			}
+		}
+		for change in result.changes {
+			let display = locate(&change.path);
+			run.changes.push((display, change));
+		}
+	}
+	run.files_touched = run.file_counts.len() as u32;
+	Ok(run)
+}
+
+fn render_edit(ws: &Workspace, plan: &EditPlan, run: &EditRun, store: &EditStore) -> Vec<String> {
+	let mut files: Vec<String> = Vec::new();
+	for (path, _) in &run.file_counts {
+		if !files.contains(path) {
+			files.push(path.clone());
+		}
+	}
+	for (path, _) in &run.changes {
+		if !files.contains(path) {
+			files.push(path.clone());
+		}
+	}
+	let mut tags: HashMap<String, String> = HashMap::new();
+	for file in &files {
+		if let Some(tag) = store.record_file(&ws.root.join(file), None) {
+			tags.insert(file.clone(), tag);
+		}
+	}
+	let first_line = |text: &str| -> String {
+		text
+			.split('\n')
+			.next()
+			.unwrap_or("")
+			.chars()
+			.take(120)
+			.collect()
+	};
+	let render = |file: &str| -> Vec<String> {
+		let hashed = tags.contains_key(file);
+		let mut out = Vec::new();
+		for (_, change) in run.changes.iter().filter(|(path, _)| path == file) {
+			let reference = if hashed {
+				format!("{}:", change.start_line)
+			} else {
+				format!("{}:{} ", change.start_line, change.start_column)
+			};
+			out.push(format!("-{reference}{}", first_line(&change.before)));
+			out.push(format!("+{reference}{}", first_line(&change.after)));
+		}
+		out
+	};
+	let count_of = |file: &str| {
+		run.file_counts
+			.iter()
+			.find(|(path, _)| path == file)
+			.map_or(0, |(_, count)| *count)
+	};
+	let mut output = Vec::new();
+	if plan.is_directory {
+		output.extend(format_grouped_files(&files, &mut |file| {
+			let hash = tags
+				.get(file)
+				.map_or_else(String::new, |tag| format!("#{tag}"));
+			(render(file), format!("{hash} ({})", plural("replacement", count_of(file))))
+		}));
+	} else {
+		for file in &files {
+			let body = render(file);
+			if body.is_empty() {
+				continue;
+			}
+			if !output.is_empty() {
+				output.push(String::new());
+			}
+			if let Some(tag) = tags.get(file) {
+				output.push(format_hashline_header(file, tag));
+			}
+			output.extend(body);
+		}
+	}
+	output
+}
+
+/// Stage an `ast_edit` preview; the plan is returned for the session's
+/// pending-action queue when there is something to apply.
+pub(crate) fn ast_edit(
+	root: &Path,
+	args: &EditArgs,
+	store: &EditStore,
+	cancellation: &CancelToken,
+) -> Result<(String, Option<EditPlan>)> {
+	cancellation.heartbeat()?;
+	if args.ops.is_empty() {
+		bail!("`ops` must include at least one op entry");
+	}
+	let mut rewrites = HashMap::new();
+	for (index, op) in args.ops.iter().enumerate() {
+		if op.pat.is_empty() {
+			bail!("`ops[{index}].pat` must be a non-empty pattern");
+		}
+		if rewrites.insert(op.pat.clone(), op.out.clone()).is_some() {
+			bail!("Duplicate rewrite pattern: {}", op.pat);
+		}
+	}
+	if args.paths.is_empty() {
+		bail!("`paths` must contain at least one path or glob");
+	}
+	let max_files = std::env::var("PI_MAX_AST_FILES")
+		.ok()
+		.and_then(|value| value.parse::<u32>().ok())
+		.filter(|value| *value > 0)
+		.unwrap_or(1000);
+	let fs = JailedFs::open(root)?;
+	let ws = Workspace { root: fs.root().to_path_buf(), fs };
+	let entries = expand_entries(&ws, &args.paths)?;
+	for entry in &entries {
+		if crate::search::is_url_like(entry) {
+			bail!("Internal URLs are not supported by this host: {entry}");
+		}
+	}
+	let scope = resolve_scope(&ws, &entries, false)?;
+	let mut plan = EditPlan {
+		label: String::new(),
+		rewrites,
+		search_path: scope.search_path.clone(),
+		is_directory: scope.is_directory,
+		glob: scope.glob.clone(),
+		targets: scope.targets.as_ref().map(|targets| {
+			targets
+				.iter()
+				.map(|t| (t.base.clone(), t.glob.clone()))
+				.collect()
+		}),
+		max_files,
+		expected_total: 0,
+		expected_files: 0,
+		expected_per_file: HashMap::new(),
+	};
+	let run = run_edit(&ws, &plan)?;
+	let parse_lines = parse_error_lines(&run.parse_errors);
+	if run.total == 0 {
+		let mut text = "No replacements made".to_owned();
+		if !parse_lines.is_empty() {
+			text.push('\n');
+			text.push_str(&parse_lines.join("\n"));
+		}
+		return Ok((text, None));
+	}
+	let mut output = render_edit(&ws, &plan, &run, store);
+	if run.limit_reached {
+		output.push(String::new());
+		output.push("Limit reached; narrow paths.".to_owned());
+	}
+	if !parse_lines.is_empty() {
+		output.push(String::new());
+		output.extend(parse_lines);
+	}
+	output.insert(0, String::new());
+	output.insert(0, PREVIEW_PENDING_NOTICE.to_owned());
+	plan.label = format!(
+		"AST Edit: {} in {}",
+		plural("replacement", run.total),
+		plural("file", run.files_touched)
+	);
+	plan.expected_total = run.total;
+	plan.expected_files = run.files_touched;
+	plan.expected_per_file = run.file_counts.iter().cloned().collect();
+	Ok((output.join("\n"), Some(plan)))
+}
+
+/// Apply a staged plan through the workspace capability: re-run the rewrite,
+/// splice each file's replacements back to front, and report fresh tags.
+pub(crate) fn apply_edit(root: &Path, plan: &EditPlan, store: &EditStore) -> Result<String> {
+	let fs = JailedFs::open(root)?;
+	let ws = Workspace { root: fs.root().to_path_buf(), fs };
+	let run = run_edit(&ws, plan)?;
+	let mut by_file: Vec<(String, Vec<&engine::AstReplaceChange>)> = Vec::new();
+	for (path, change) in &run.changes {
+		match by_file.iter_mut().find(|(existing, _)| existing == path) {
+			Some((_, list)) => list.push(change),
+			None => by_file.push((path.clone(), vec![change])),
+		}
+	}
+	for (display, changes) in &by_file {
+		let absolute = &run.absolute[display];
+		let relative = ws.fs.relative(absolute)?;
+		let bytes = ws.fs.read(&relative, harvest_runtime::MAX_FILE_BYTES)?;
+		let mut text = String::from_utf8(bytes).map_err(|_| anyhow!("{display} is not UTF-8"))?;
+		let mut ordered = changes.clone();
+		ordered.sort_by_key(|change| std::cmp::Reverse(change.byte_start));
+		let mut previous_start = usize::MAX;
+		for change in ordered {
+			let (start, end) = (change.byte_start as usize, change.byte_end as usize);
+			if end > previous_start {
+				bail!("Apply failed: overlapping replacements in {display}");
+			}
+			if text.get(start..end) != Some(change.before.as_str()) {
+				bail!("Apply failed: {display} changed since the preview");
+			}
+			text.replace_range(start..end, &change.after);
+			previous_start = start;
+		}
+		ws.fs.atomic_write(&relative, text.as_bytes())?;
+	}
+	let mut fresh = Vec::new();
+	for (display, _) in &by_file {
+		if let Some(tag) = store.record_file(&ws.root.join(display), None) {
+			fresh.push(format_hashline_header(display, &tag));
+		}
+	}
+	let stale = run.total != plan.expected_total
+		|| run.files_touched != plan.expected_files
+		|| run
+			.file_counts
+			.iter()
+			.any(|(path, count)| plan.expected_per_file.get(path) != Some(count))
+		|| plan.expected_per_file.len() != run.file_counts.len();
+	let text = if stale {
+		let expected = format!(
+			"{} in {}",
+			plural("replacement", plan.expected_total),
+			plural("file", plan.expected_files)
+		);
+		let message = if run.total == 0 {
+			format!(
+				"Preview is stale / no longer matches; no replacements were applied. Preview expected \
+				 {expected}."
+			)
+		} else if run.total < plan.expected_total {
+			format!(
+				"Preview is stale / no longer matches; only {} of {} replacements were applied in {} \
+				 of {} files.",
+				run.total, plan.expected_total, run.files_touched, plan.expected_files
+			)
+		} else {
+			format!(
+				"Preview is stale / no longer matches; applied {} replacements but preview expected \
+				 {}.",
+				run.total, plan.expected_total
+			)
+		};
+		let message = if fresh.is_empty() {
+			message
+		} else {
+			format!("{message}\n{}", fresh.join("\n"))
+		};
+		bail!("{message}");
+	} else {
+		format!(
+			"Applied {} in {}.",
+			plural("replacement", run.total),
+			plural("file", run.files_touched)
+		)
+	};
+	Ok(if fresh.is_empty() {
+		text
+	} else {
+		format!("{text}\n{}", fresh.join("\n"))
+	})
+}
+
 #[cfg(test)]
 mod tests {
 	use std::fs;
@@ -327,6 +705,32 @@ mod tests {
 				.unwrap_err()
 				.to_string()
 				.contains("non-negative")
+		);
+		Ok(())
+	}
+
+	#[test]
+	fn edits_stage_a_preview_and_apply_through_the_jail() -> Result<()> {
+		let root = tempfile::tempdir()?;
+		fs::write(root.path().join("a.ts"), "foo(1);\nfoo(2);\n")?;
+		let store = EditStore::new();
+		let args: EditArgs =
+			serde_json::from_str(r#"{"ops":[{"pat":"foo($A)","out":"bar($A)"}],"paths":["a.ts"]}"#)?;
+		let (text, plan) = ast_edit(root.path(), &args, &store, &CancelToken::default())?;
+		assert!(text.starts_with(PREVIEW_PENDING_NOTICE), "{text}");
+		assert!(text.contains("\n-1:foo(1)\n+1:bar(1)"), "{text}");
+		assert_eq!(fs::read_to_string(root.path().join("a.ts"))?, "foo(1);\nfoo(2);\n");
+		let plan = plan.expect("plan");
+		assert_eq!(plan.label, "AST Edit: 2 replacements in 1 file");
+		let applied = apply_edit(root.path(), &plan, &store)?;
+		assert!(applied.starts_with("Applied 2 replacements in 1 file.\n[a.ts#"), "{applied}");
+		assert_eq!(fs::read_to_string(root.path().join("a.ts"))?, "bar(1);\nbar(2);\n");
+		let stale = apply_edit(root.path(), &plan, &store)
+			.unwrap_err()
+			.to_string();
+		assert!(
+			stale.starts_with("Preview is stale / no longer matches; no replacements were applied."),
+			"{stale}"
 		);
 		Ok(())
 	}

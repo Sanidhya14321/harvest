@@ -481,7 +481,11 @@
     {
       "id": "tool:ast_edit",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/ast.rs",
+          "rust-agent/src/tools.rs"
+        ]
       },
       "verification": {
         "status": "unverified"

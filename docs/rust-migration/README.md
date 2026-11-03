@@ -17,8 +17,12 @@ because a Rust command or tool has the same name.
   and the legacy parse-issue and limit notices; probes match the TS tool except
   where a plain file in a `;` list is fanned out: TS renders it as
   `# file/` + `## file` (it joins the match path onto the file itself) and
-  loses the tag, Rust renders the file directly. `ast_edit` (preview plus the
-  `resolve` apply queue) is pending.
+  loses the tag, Rust renders the file directly. `ast_edit` stages a preview
+  (byte-identical to TS on three probes) on a session pending-action queue;
+  `write xd://resolve` re-runs the rewrite and splices it through the
+  workspace capability (stale-preview reporting, fresh tags), `write
+  xd://reject` discards it. `xd://propose`, the soft tool requirement and the
+  reminder injection are pending.
 
 - `todo` ports the legacy phased task model: all nine ops, `op` inference
   from unambiguous payloads, single in-progress normalization, all-or-nothing

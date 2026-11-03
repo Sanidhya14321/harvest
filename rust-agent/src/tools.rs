@@ -80,6 +80,60 @@ pub fn invoke_with_store(
 pub struct SessionState {
 	pub conflicts: crate::conflict::ConflictHistory,
 	pub todos:     crate::todo::TodoList,
+	/// Staged previews (`ast_edit`), newest last; `xd://resolve` applies the
+	/// newest, `xd://reject` discards it.
+	pending:       std::sync::Mutex<Vec<crate::ast::EditPlan>>,
+}
+
+impl SessionState {
+	fn pending(&self) -> std::sync::MutexGuard<'_, Vec<crate::ast::EditPlan>> {
+		self
+			.pending
+			.lock()
+			.unwrap_or_else(std::sync::PoisonError::into_inner)
+	}
+}
+
+/// `dispatchResolutionDevice` for `xd://resolve` and `xd://reject`; `None`
+/// when `path` is not one of those devices.
+fn resolution_device(
+	root: &Path,
+	path: &str,
+	content: &str,
+	store: &pi_edit::EditStore,
+	state: &SessionState,
+) -> Option<Result<String>> {
+	let apply = match path.trim() {
+		"xd://resolve" => true,
+		"xd://reject" => false,
+		_ => return None,
+	};
+	let reason = content.trim();
+	let Some(plan) = state.pending().pop() else {
+		return Some(if apply {
+			Err(anyhow::anyhow!(
+				"No pending action to apply — xd://resolve is only valid while a staged preview is \
+				 pending."
+			))
+		} else {
+			Ok("Nothing to reject; no pending action remains.".to_owned())
+		});
+	};
+	if !apply {
+		return Some(Ok(format!("Discarded: {}. Reason: {reason}", plan.label)));
+	}
+	Some(match crate::ast::apply_edit(root, &plan, store) {
+		Ok(text) => Ok(text),
+		Err(error) => {
+			// A failed apply keeps the preview pending so it can be rejected or
+			// retried.
+			let message = error.to_string();
+			if message.starts_with("Apply failed") {
+				state.pending().push(plan);
+			}
+			Err(error)
+		},
+	})
 }
 
 /// Invoke inside a persisted session: results over 50 KB spill into
@@ -98,7 +152,10 @@ pub fn invoke_in_session(
 	if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
 		bail!("tool arguments exceed frame limit");
 	}
-	if !matches!(name, "read" | "write" | "edit" | "grep" | "glob" | "bash" | "todo" | "ast_grep") {
+	if !matches!(
+		name,
+		"read" | "write" | "edit" | "grep" | "glob" | "bash" | "todo" | "ast_grep" | "ast_edit"
+	) {
 		bail!("unknown tool {name}");
 	}
 	if matches!(name, "write" | "edit" | "bash") && !policy.approve(call)? {
@@ -139,7 +196,25 @@ fn invoke_authorized(
 			reading_artifact = args.is_artifact();
 			crate::read::read(root, &args, store, artifacts, conflicts, cancellation)?
 		},
-		"write" => ToolOutput::text(write(root, &parse::<WriteArgs>(arguments)?, store, conflicts)?),
+		"write" => {
+			let args = parse::<WriteArgs>(arguments)?;
+			match resolution_device(root, &args.path, &args.content, store, state) {
+				Some(result) => ToolOutput::text(result?),
+				None => ToolOutput::text(write(root, &args, store, conflicts)?),
+			}
+		},
+		"ast_edit" => {
+			let (text, plan) = crate::ast::ast_edit(
+				root,
+				&parse::<crate::ast::EditArgs>(arguments)?,
+				store,
+				cancellation,
+			)?;
+			if let Some(plan) = plan {
+				state.pending().push(plan);
+			}
+			ToolOutput::text(text)
+		},
 		"edit" => ToolOutput::text(crate::edit::hashline(root, arguments, store, cancellation)?),
 		"grep" => {
 			crate::search::grep(root, &parse::<crate::search::Args>(arguments)?, store, cancellation)?
@@ -702,6 +777,43 @@ mod tests {
 		assert!(run(r#"{"command":"x","cwd":"../.."}"#).is_err());
 		let timed = run(r#"{"command":"sleep 5","timeout":1}"#).unwrap();
 		assert!(timed.contains("Command timed out after 1 seconds"), "{timed}");
+	}
+
+	#[test]
+	fn staged_ast_edits_resolve_or_reject_through_xd_devices() {
+		let root = tempfile::tempdir().unwrap();
+		std::fs::write(root.path().join("a.ts"), "foo(1);\n").unwrap();
+		let (store, state) = (pi_edit::EditStore::new(), super::SessionState::default());
+		let run = |name: &str, args: &str| {
+			super::invoke_authorized(
+				root.path(),
+				&call(name, args),
+				&Default::default(),
+				&store,
+				None,
+				&state,
+			)
+		};
+		let edit = r#"{"ops":[{"pat":"foo($A)","out":"bar($A)"}],"paths":["a.ts"]}"#;
+		assert!(
+			run("write", r#"{"path":"xd://resolve","content":"go"}"#)
+				.unwrap_err()
+				.to_string()
+				.starts_with("No pending action")
+		);
+		run("ast_edit", edit).unwrap();
+		assert_eq!(
+			run("write", r#"{"path":"xd://reject","content":"nope"}"#).unwrap(),
+			"Discarded: AST Edit: 1 replacement in 1 file. Reason: nope"
+		);
+		assert_eq!(std::fs::read_to_string(root.path().join("a.ts")).unwrap(), "foo(1);\n");
+		run("ast_edit", edit).unwrap();
+		assert!(
+			run("write", r#"{"path":"xd://resolve","content":"ok"}"#)
+				.unwrap()
+				.starts_with("Applied 1 replacement in 1 file.")
+		);
+		assert_eq!(std::fs::read_to_string(root.path().join("a.ts")).unwrap(), "bar(1);\n");
 	}
 
 	#[test]
