@@ -6537,6 +6537,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pi-grep"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "globset",
+ "grep-matcher",
+ "grep-pcre2",
+ "grep-regex",
+ "grep-searcher",
+ "harvest-runtime",
+ "libc",
+ "parking_lot",
+ "pi-walker",
+ "rayon",
+ "regex",
+ "smallvec",
+]
+
+[[package]]
 name = "pi-iso"
 version = "0.1.0"
 dependencies = [
@@ -6595,6 +6614,7 @@ dependencies = [
  "pi-ast",
  "pi-diff",
  "pi-edit",
+ "pi-grep",
  "pi-iso",
  "pi-shell",
  "pi-vcs",

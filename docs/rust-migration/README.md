@@ -9,6 +9,14 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `pi-grep` (new crate) owns the ripgrep-backed search engine: matcher
+  fallbacks (brace sanitising, PCRE2, paren escaping, literal), file/dir
+  search, per-file caps, context, oversized-prefix handling and cancellation
+  via the shared runtime token. The N-API `search`/`hasMatch`/`grep` exports
+  are thin adapters with unchanged bindings (`index.d.ts` identical). 38 engine
+  tests moved with it; 160 pi-natives tests and the focused TS grep tool tests
+  pass after an addon rebuild. No TS source is retired yet.
+
 - The merge-conflict workflow is ported (`rust-agent/src/conflict.rs`): strict
   2-way/diff3 marker scanning, a per-session history with stable ids, the
   window warning `read` appends after a file window (with the full-file count),

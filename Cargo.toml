@@ -13,6 +13,7 @@ members = [
    "crates/pi-builtins",
    "crates/pi-diff",
    "crates/pi-edit",
+   "crates/pi-grep",
    "crates/pi-iso",
    "crates/pi-natives",
    "crates/pi-shell",
@@ -218,6 +219,7 @@ too_many_lines = "allow"     # Arbitrary limits don't account for necessary comp
 pi-ast = { path = "crates/pi-ast" }
 pi-diff = { path = "crates/pi-diff" }
 pi-edit = { path = "crates/pi-edit" }
+pi-grep = { path = "crates/pi-grep" }
 pi-iso = { path = "crates/pi-iso" }
 pi-shell = { path = "crates/pi-shell" }
 pi-voice = { path = "crates/pi-voice" }

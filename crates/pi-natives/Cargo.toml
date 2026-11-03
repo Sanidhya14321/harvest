@@ -55,6 +55,7 @@ flume.workspace = true
 pi-ast.workspace = true
 pi-diff.workspace = true
 pi-edit.workspace = true
+pi-grep.workspace = true
 pi-iso.workspace = true
 pi-shell.workspace = true
 pi-voice.workspace = true

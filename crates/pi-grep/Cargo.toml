@@ -1,0 +1,28 @@
+[package]
+name = "pi-grep"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+authors.workspace = true
+repository.workspace = true
+description = "Ripgrep-backed content search shared by the N-API binding and the Rust agent"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+globset.workspace = true
+grep-matcher.workspace = true
+grep-pcre2.workspace = true
+grep-regex.workspace = true
+grep-searcher.workspace = true
+harvest-runtime = { path = "../harvest-runtime" }
+parking_lot.workspace = true
+pi-walker.workspace = true
+rayon.workspace = true
+regex.workspace = true
+smallvec.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+libc.workspace = true
