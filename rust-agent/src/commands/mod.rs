@@ -133,6 +133,7 @@ pub(crate) fn format_number(n: f64) -> String {
 	format!("{}B", (n / 1e9).round())
 }
 pub mod cleanse;
+pub mod commit;
 pub(crate) mod rules;
 pub mod ttsr;
 pub mod token;
