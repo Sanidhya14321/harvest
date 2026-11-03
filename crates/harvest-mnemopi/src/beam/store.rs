@@ -167,10 +167,6 @@ fn text(s: &str) -> SqlValue {
 	SqlValue::Text(s.to_string())
 }
 
-fn opt_text(s: Option<&str>) -> SqlValue {
-	s.map_or(SqlValue::Null, text)
-}
-
 /// Delete every artifact linked to working-memory ids (no orphans).
 pub(crate) fn purge_working_memory_artifacts(beam: &BeamMemory, ids: &[String]) -> Result<()> {
 	if ids.is_empty() {

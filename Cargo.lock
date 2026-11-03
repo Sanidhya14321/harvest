@@ -4089,6 +4089,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "harvest-mnemopi"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "harvest-runtime",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "harvest-omp"
 version = "0.1.0"
 dependencies = [
@@ -4112,6 +4127,7 @@ dependencies = [
  "harvest-brain",
  "harvest-browser",
  "harvest-media",
+ "harvest-mnemopi",
  "harvest-protocol",
  "harvest-runtime",
  "harvest-terminal",

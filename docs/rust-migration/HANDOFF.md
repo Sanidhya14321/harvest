@@ -8,24 +8,55 @@ documentation maintained for a later Claude handoff. Integration branch:
 older paused `ts-to-rust` tip; main already contains that branch. No publication
 or default-launcher cutover is part of this batch.
 
-Existing Claude worktrees are being resumed, preserving their inherited changes:
-- `agent-a54508e3b5ab6ad2c`: native TUI/editor/interactive CLI.
-- `agent-a674309bbf3672e71`: managed artifacts, memory/session tools and prompts.
-- `agent-adcc2ccfbfcc0fd96`: harvest-mnemopi SQLite memory backend.
+The three inherited Claude domains are now committed and integrated:
+- Native memory engine: source `a937c92`, integrated `bbfef35`.
+- Native TUI/editor/interactive CLI: source `035d30d`, integrated `d00774f`.
+- Managed/session/memory tools: source `b40abc1`, integrated `f9d9ab3`.
+Their original worktrees/branches remain available and clean. Resume from this
+integration branch rather than repeating those inherited changes. The coordinator
+resolved the common command registration conflict while retaining main’s latest
+bench/complete/tiny-models commands. Source baseline is unchanged; no TS deletions.
 
-One coordinator owns integration, common records and shared interface resolution;
-workers write only their assigned worktrees. Conversion-first scheduling remains
-active. Written connections remain unverified until evidence is executed.
-Source-task ownership repair assigns the 14 previously unowned sources to the
-existing catalog/tooling tasks, without advancing implementation or verification.
-Existing xtask migration/capability inventory checks pass, with unchanged counts.
-Playbook status/next now pass ownership validation but fail with `expected a regular
-file`: Git enumerates the nested .claude/worktrees repositories as directory
-entries. This remains an explicit inventory integration issue; no exclusion or
-acceptance gate has been weakened.
-An aggregate compiler check after integration is justified by the inherited TUI
-and memory cross-crate interfaces; broad behavior/platform tests remain deferred.
+Written connections: native chat/default Rust CLI -> existing SessionEngine,
+streamed/queued turns, cancellation/resume, bounded editor/transcript and paged
+full final-call approval; native memory engine -> settings-gated memory tools and
+memory:// reads through sync/async hosts; jailed managed artifacts -> real task
+preset discovery; persisted session list/inspect/rename -> host storage/workspace.
+Custom preset policies not yet enforceable are rejected, never silently ignored.
+New engine added to Cargo lockfile, Bazel graph and Rust CI package lists.
 
+Verification: aggregate `cargo check -p harvest-mnemopi -p harvest-tui -p
+harvest-omp --all-targets` PASSED after fixing existing core-tool test assertions
+for the structured ToolOutput return. Only inherited harvest-runtime dead-code
+warning remains. Compiler log: ignored
+`target/migration/codex-continuation-2026-11-03-check.log` (compiler output only,
+not a parity receipt). Engine/TUI cargo fmt, changed registration/test-helper rustfmt
+with skip_children=true, and diff hygiene pass. Recursive formatting of command
+modules exposes preexisting formatting debt; unrelated files were not rewritten.
+New storage/TUI/persistence tests are written, NOT EXECUTED. No Clippy, addon,
+Bazel, WASM, behavior, installed or platform verification is claimed. Conversion-
+first scheduling remains active; partial capability/source states are explicit.
+
+Source-task ownership assigns the 14 previously unowned sources to existing
+catalog/tooling tasks without verification advancement. Existing migration and
+capability inventory commands pass. Playbook status/next now pass ownership
+validation but fail with `expected a regular file`: Git lists the nested
+.claude/worktrees repositories as directory entries. Resolve this source-inventory
+integration issue without hiding owned executable sources or weakening acceptance.
+
+Exact next actions: continue the pending native UI/editor connections below and
+memory host lifecycle/provider wiring using these owners. Consolidation should run
+`cargo xtask test -p harvest-mnemopi -p harvest-tui -p harvest-omp`, strict Clippy,
+addon-consumer and native/WASM checks, then installed/platform workflows. Keep
+known baseline failures listed below distinct from new failures. Memory still
+needs full extraction/category/export/vector/graph parity, automatic learning,
+provider cancellation and legacy bank recovery; local/Hindsight adapters remain
+pending. Managed evaluation/architect execution, skill refresh and live-session
+create/send/stop registry remain pending. TUI still needs advanced editing,
+completion/history, Markdown/images/themes/overlays, plugin choices and full slash
+commands. Crossterm buffers paste internally before the editor cap; parser-level
+paste preallocation bounds must use the existing bounded input owner. All legacy
+production consumers/default launchers remain until final acceptance evidence.
 
 ## Merged into main (2026-11-03)
 

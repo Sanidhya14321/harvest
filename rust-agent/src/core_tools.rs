@@ -870,6 +870,11 @@ mod tests {
 	use super::invoke_approved as invoke;
 	use crate::chat::{FunctionCall, ToolCall};
 
+	fn successful_content(output: crate::tools::ToolOutput) -> String {
+		assert!(!output.is_error, "{output:?}");
+		output.content
+	}
+
 	fn call(name: &str, arguments: &str) -> ToolCall {
 		ToolCall {
 			id:       "1".to_owned(),
@@ -942,6 +947,7 @@ mod tests {
 				None,
 				&super::SessionState::default(),
 			)
+			.map(successful_content)
 		};
 		assert!(
 			run("write", r#"{"path":"src/a.txt","contents":"alpha beta\n"}"#)
@@ -1000,6 +1006,7 @@ mod tests {
 				Some(&artifacts),
 				&super::SessionState::default(),
 			)
+			.map(successful_content)
 			.unwrap()
 		};
 		let spilled = run("big.txt:1-3000");
@@ -1058,6 +1065,7 @@ mod tests {
 			None,
 			&state,
 		)
+		.map(successful_content)
 		.unwrap();
 		assert!(
 			ceiling.contains(
@@ -1131,6 +1139,7 @@ mod tests {
 				None,
 				&state,
 			)
+			.map(successful_content)
 		};
 		let edit = r#"{"ops":[{"pat":"foo($A)","out":"bar($A)"}],"paths":["a.ts"]}"#;
 		assert!(

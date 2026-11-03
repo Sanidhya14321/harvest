@@ -1498,7 +1498,11 @@
     {
       "id": "tool:memory_edit",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/memory.rs",
+          "rust-agent/src/memory/mnemopi.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1519,7 +1523,11 @@
     {
       "id": "tool:retain",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/memory.rs",
+          "rust-agent/src/memory/mnemopi.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1540,7 +1548,11 @@
     {
       "id": "tool:recall",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/memory.rs",
+          "rust-agent/src/memory/mnemopi.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1561,7 +1573,11 @@
     {
       "id": "tool:reflect",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/memory.rs",
+          "rust-agent/src/memory/mnemopi.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1582,7 +1598,11 @@
     {
       "id": "tool:learn",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/memory.rs",
+          "rust-agent/src/memory/mnemopi.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1603,7 +1623,10 @@
     {
       "id": "tool:manage_skill",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/managed.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1645,7 +1668,10 @@
     {
       "id": "tool:sessions",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/sessions_tool.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -1666,7 +1692,11 @@
     {
       "id": "tool:presets",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/managed.rs",
+          "rust-agent/src/task_tool.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -3779,7 +3809,9 @@
         "paths": [
           "crates/harvest-terminal/src/frame.rs",
           "crates/harvest-terminal/src/replay.rs",
-          "rust-agent/src/replay_cli.rs"
+          "rust-agent/src/replay_cli.rs",
+          "crates/harvest-tui/src/",
+          "rust-agent/src/interactive.rs"
         ]
       },
       "verification": {
@@ -3818,7 +3850,10 @@
           "crates/harvest-tui/src/text.rs",
           "crates/harvest-tui/src/deccara.rs",
           "crates/harvest-tui/src/highlight.rs",
-          "crates/harvest-tui/src/mouse.rs"
+          "crates/harvest-tui/src/mouse.rs",
+          "crates/harvest-tui/src/terminal.rs",
+          "crates/harvest-tui/src/editor.rs",
+          "rust-agent/src/interactive.rs"
         ]
       },
       "verification": {
@@ -4109,7 +4144,10 @@
     {
       "id": "surface:memory-backends",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "crates/harvest-mnemopi/src/"
+        ]
       },
       "verification": {
         "status": "unverified"

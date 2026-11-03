@@ -700,3 +700,13 @@ Clippy and `cargo xtask test -p xtask` passed (11 tests plus the doctest pass).
 `cargo xtask migration` reports 0/5,220 completed entries, and the completion
 gate rejects that unfinished inventory as intended. CI includes xtask tests in
 its cross-platform core/full matrix; those remote runs remain pending.
+
+## November 3 inherited Claude domain integration
+
+The active continuation branch is recorded in HANDOFF.md. Existing Claude
+worktree code for native chat/TUI, Mnemopi and managed/session/memory tools is
+integrated with its real Rust consumers. The ordinary engine is shared through
+the Rust host; retained TS production consumers remain. One aggregate all-target
+compiler check passed; behavioral/addon/installed/platform evidence is pending.
+See CONVERSION-PASS.md for exact remaining ownership and HANDOFF.md for the next
+resume action. No source removal or retained capability parity is claimed.
