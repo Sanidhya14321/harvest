@@ -191,8 +191,34 @@ pub fn load(
 			document.layer.merge(layer);
 		}
 	}
-	let api = options.api.or(document.layer.api).unwrap_or_default();
-	if api == Api::AnthropicMessages {
+	// A catalog `provider/id` selector supplies endpoint, wire and key variable
+	// unless a base URL is pinned anywhere.
+	let route = (flags.base_url.is_none()
+		&& environment.base_url.is_none()
+		&& document.layer.settings.base_url.is_none())
+	.then(|| {
+		flags
+			.model
+			.clone()
+			.or_else(|| environment.model.clone())
+			.or_else(|| document.layer.settings.model.clone())
+	})
+	.flatten()
+	.and_then(|model| crate::catalog::route(&model));
+	if let Some(route) = &route {
+		document.layer.settings.base_url = Some(route.base_url.to_owned());
+	}
+	let api = options
+		.api
+		.or(document.layer.api)
+		.or_else(|| {
+			route.as_ref().map(|route| match route.wire {
+				crate::catalog::Wire::OpenAi => Api::default(),
+				crate::catalog::Wire::Anthropic => Api::AnthropicMessages,
+			})
+		})
+		.unwrap_or_default();
+	if api == Api::AnthropicMessages && route.is_none() {
 		ensure!(
 			(flags.model.is_some()
 				|| environment.model.is_some()
@@ -207,6 +233,12 @@ pub fn load(
 	let max_output_tokens = options
 		.max_output_tokens
 		.or(document.layer.max_output_tokens)
+		.or_else(|| {
+			route
+				.as_ref()
+				.and_then(|route| route.max_tokens)
+				.map(|tokens| u32::try_from(tokens.min(16_384)).unwrap_or(16_384))
+		})
 		.unwrap_or(4096);
 	ensure!(max_output_tokens > 0, "max output tokens must be at least 1");
 	let plugins = document.layer.plugins.unwrap_or_default();
@@ -247,7 +279,21 @@ pub fn load(
 			.or(document.layer.edit_mode)
 			.unwrap_or_default(),
 		provider_values,
-		settings: config::resolve_file_values(flags, environment, document.layer.settings)?,
+		settings: {
+			let mut settings = config::resolve_file_values(flags, environment, document.layer.settings)?;
+			if let Some(route) = &route {
+				route.model.clone_into(&mut settings.model);
+				if flags.api_key.is_none()
+					&& let Some(key) = route
+						.env_vars
+						.iter()
+						.find_map(|name| environment.provider_keys.get(name))
+				{
+					key.clone_into(&mut settings.api_key);
+				}
+			}
+			settings
+		},
 		api,
 		max_output_tokens,
 		plugins,

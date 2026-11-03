@@ -82,7 +82,6 @@ struct BooleanProperty {
 	#[serde(rename = "type")]
 	kind: &'static str,
 }
-const BOOLEAN: BooleanProperty = BooleanProperty { kind: "boolean" };
 
 const STRING: &StringProperty = &StringProperty { kind: "string", enum_values: None };
 

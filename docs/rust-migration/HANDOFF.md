@@ -11,9 +11,9 @@ providers (OpenAI + streaming Anthropic), MCP, plugins, LSP/DAP and RPC are the
 core. Main's richer tools live in `core_tools.rs`/`core_specs.rs` and are
 routed from `ToolRuntime`: write, grep, bash, todo, ast_grep, ast_edit,
 web_search, think, checkpoint, rewind, plus `read` in the default (replace)
-edit mode (archives, SQLite, directories, summaries). Main's catalog routing
-(`catalog.rs`) and its Anthropic model were not carried into the branch's
-`configuration` resolver yet.
+edit mode (archives, SQLite, directories, summaries). Catalog routing (`catalog.rs`) runs inside
+`configuration::load`: an unpinned `provider/id` selector sets base URL, wire
+API (OpenAI or Anthropic Messages), provider key env var and output cap.
 
 Known failing tests after the merge (fix in the final pass): provider_diagnostics
 credential redaction and rpc_cli real-provider stream (both failing on the branch

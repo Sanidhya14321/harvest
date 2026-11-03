@@ -29,6 +29,8 @@ pub struct Environment {
 	pub base_url:  Option<String>,
 	pub api_key:   Option<String>,
 	pub max_steps: Option<u32>,
+	/// Catalog provider key variables (`GROQ_API_KEY`, ...) that are set.
+	pub provider_keys: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Clone, Deserialize, Default)]
@@ -150,6 +152,9 @@ pub fn environment_from(read: impl Fn(&str) -> Option<String>) -> Result<Environ
 		base_url: read("OMP_BASE_URL"),
 		api_key: read("OMP_API_KEY").or_else(|| read("OPENAI_API_KEY")),
 		max_steps,
+		provider_keys: crate::catalog::env_vars()
+			.filter_map(|name| read(name).map(|value| (name.to_owned(), value)))
+			.collect(),
 	})
 }
 
@@ -203,6 +208,7 @@ mod tests {
 				base_url:  Some("http://env".to_owned()),
 				api_key:   Some("env-key".to_owned()),
 				max_steps: Some(4),
+				..Default::default()
 			},
 		)
 		.unwrap();
@@ -243,5 +249,34 @@ mod tests {
 		let error =
 			environment_from(|key| (key == "OMP_MAX_STEPS").then(|| "0".to_owned())).unwrap_err();
 		assert!(error.to_string().contains("at least 1"));
+	}
+
+	#[test]
+	fn catalog_selectors_pick_endpoint_wire_and_provider_key_unless_url_is_pinned() {
+		let root = tempfile::tempdir().unwrap();
+		let environment = environment_from(|name| match name {
+			"OMP_MODEL" => Some("anthropic/claude-sonnet-4-5".to_owned()),
+			"ANTHROPIC_API_KEY" => Some("anthropic-key".to_owned()),
+			"OPENAI_API_KEY" => Some("openai-key".to_owned()),
+			_ => None,
+		})
+		.unwrap();
+		let routed =
+			crate::configuration::load(root.path(), &Overrides::default(), &environment, &Default::default())
+				.unwrap();
+		assert_eq!(routed.api, crate::configuration::Api::AnthropicMessages);
+		assert_eq!(routed.settings.model, "claude-sonnet-4-5");
+		assert_eq!(routed.settings.base_url, "https://api.anthropic.com");
+		assert_eq!(routed.settings.api_key, "anthropic-key");
+		assert_eq!(routed.max_output_tokens, 16_384);
+		let pinned = crate::configuration::load(
+			root.path(),
+			&Overrides { base_url: Some("http://local".to_owned()), ..Default::default() },
+			&environment,
+			&Default::default(),
+		)
+		.unwrap();
+		assert_eq!(pinned.settings.model, "anthropic/claude-sonnet-4-5");
+		assert_eq!(pinned.settings.api_key, "openai-key");
 	}
 }
