@@ -9,6 +9,17 @@ because a Rust command or tool has the same name.
 
 ## Implemented
 
+- `harvest-archive` (new crate) recognizes every legacy archive extension and
+  splits `archive.ext:member` paths like `parseArchivePathCandidates`; it
+  indexes ZIP, tar (ustar/GNU long names/pax paths), tar.gz, tar.zst and
+  single-stream gz/zst with synthesized parent directories, case-insensitive
+  listings, `..` rejection and the legacy size limits. `read` uses it for
+  archive listings (500-entry limit notice, offsets, tails), member reads
+  (immutable: no tag, no numbers, block-context windows) and the binary-member
+  notice; 7/7 probes match TS. Still pending: bz2/xz/Z/lzma tars, rar, 7z,
+  iso, cab, cpio, rpm, ar/deb, lzh, arj, asar (explicit unsupported error),
+  archive `write`, and grep inside archives.
+
 - `think`, `checkpoint` and `rewind` follow the legacy tools: the scratchpad
   result, the single active checkpoint, and the empty/missing/already-done
   rewind errors. A successful rewind branches the durable session back to the

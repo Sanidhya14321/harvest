@@ -432,6 +432,8 @@ struct ReadContext<'a> {
 	display:   String,
 	conflicts: &'a crate::conflict::ConflictHistory,
 	absolute:  std::path::PathBuf,
+	/// Archive members: no snapshot tag and no line numbers.
+	immutable: bool,
 }
 
 impl ReadContext<'_> {
@@ -729,8 +731,8 @@ fn read_in_memory(
 		addressable_lines(text)
 	};
 	let total = all.len();
-	let hash = (!raw).then(|| context.header(text));
-	let numbered = !raw;
+	let numbered = !raw && !context.immutable;
+	let hash = numbered.then(|| context.header(text));
 	let finish = |body: String, truncation: Option<(String, usize)>| -> ToolOutput {
 		if let Some((_, tag)) = &hash {
 			context.record_seen(tag, &body);
@@ -768,7 +770,7 @@ fn read_in_memory(
 			spans.push((range.start, end));
 			parts.push(all[range.start - 1..end].join("\n"));
 		}
-		let body = if raw {
+		let body = if !numbered {
 			parts.join("\n\n…\n\n")
 		} else if spans.is_empty() {
 			String::new()
@@ -897,6 +899,14 @@ pub(crate) fn read(
 		};
 		return read_conflict_region(conflicts, store, id, uri.scope);
 	}
+	if !(split_path(&args.path).1.is_some()
+		&& fs
+			.relative(Path::new(&args.path))
+			.is_ok_and(|path| fs.exists(&path).unwrap_or(true)))
+		&& let Some(output) = read_archive(&fs, &args.path, store, conflicts)?
+	{
+		return Ok(output);
+	}
 	// A real file whose name ends in selector syntax keeps its colon.
 	let literal_exists = || {
 		fs.relative(Path::new(&args.path))
@@ -946,7 +956,14 @@ pub(crate) fn read(
 		Selector::Raw | Selector::Lines { raw: true, .. } | Selector::Tail { raw: true, .. }
 	);
 	let absolute = fs.root().join(&relative);
-	let context = ReadContext { store, key: canonical_key(&absolute), display, conflicts, absolute };
+	let context = ReadContext {
+		store,
+		key: canonical_key(&absolute),
+		display,
+		conflicts,
+		absolute,
+		immutable: false,
+	};
 
 	if pi_edit::notebook::is_notebook_path(&relative) && !raw {
 		let json =
@@ -1494,6 +1511,109 @@ fn read_artifact(
 }
 
 /// Pin `:-N` to absolute lines once the line count is known.
+/// Archive members over this are refused before decompression.
+const MAX_ARCHIVE_BYTES: usize = 256 * 1024 * 1024;
+/// Entries per archive directory listing.
+const ARCHIVE_LIST_LIMIT: usize = 500;
+
+/// `resolveArchiveReadPath` + `readArchive`: `archive.ext[:member][:sel]`.
+fn read_archive(
+	fs: &JailedFs,
+	path: &str,
+	store: &EditStore,
+	conflicts: &crate::conflict::ConflictHistory,
+) -> Result<Option<ToolOutput>> {
+	for (archive_path, candidate_sub) in harvest_archive::path_candidates(path) {
+		let Ok(relative) = fs.relative(Path::new(&archive_path)) else {
+			continue;
+		};
+		if !fs.file_type(&relative).is_ok_and(|kind| kind.is_file()) {
+			continue;
+		}
+		let sub = if archive_path == path {
+			String::new()
+		} else {
+			candidate_sub
+		};
+		let (member, selector) = split_path(&sub);
+		let (mut member, mut selector) = (member.to_owned(), parse_selector(selector.as_deref())?);
+		let bytes = fs.read(&relative, MAX_ARCHIVE_BYTES)?;
+		let archive = harvest_archive::Archive::open(Path::new(&archive_path), bytes)
+			.map_err(|error| anyhow::anyhow!("{error}"))?;
+		let mut node = archive.node(&member);
+		if node.is_none() && !member.is_empty() && split_path(&format!("x:{member}")).1.is_some() {
+			// `a.zip:500`: the whole tail is a selector on the archive root.
+			selector = parse_selector(Some(&member))?;
+			member = String::new();
+			node = archive.node("");
+		}
+		let Some(is_dir) = node else {
+			bail!("Path '{path}' not found inside archive");
+		};
+		if is_dir {
+			if matches!(&selector, Selector::Lines { ranges, .. } if ranges.len() > 1) {
+				bail!("Multi-range line selectors are not supported for archive directory listings.");
+			}
+			let entries = archive
+				.list(&member)
+				.map_err(|error| anyhow::anyhow!("{error}"))?;
+			let (offset, limit) = match resolve_tail(selector, entries.len()) {
+				Selector::Lines { ranges, .. } => {
+					(ranges[0].start, ranges[0].end.map(|end| end - ranges[0].start + 1))
+				},
+				_ => (1, None),
+			};
+			let limit = limit.unwrap_or(ARCHIVE_LIST_LIMIT);
+			let mut shown: Vec<_> = entries.into_iter().skip(offset.saturating_sub(1)).collect();
+			let mut limits = Vec::new();
+			if limit > 0 && shown.len() >= limit {
+				shown.truncate(limit);
+				limits.push(format!("{limit} results limit reached. Use limit={} for more", limit * 2));
+			}
+			let lines =
+				harvest_archive::format_entry_lines(&shown, |size| format_bytes(size as usize));
+			let text = if lines.is_empty() {
+				"(empty archive directory)".to_owned()
+			} else {
+				lines.join("\n")
+			};
+			let (text, truncation) = crate::output::head_window(&text, MAX_BYTES);
+			return Ok(Some(ToolOutput { text, truncation, next_offset: None, limits }));
+		}
+		let bytes = archive
+			.read(&member)
+			.map_err(|error| anyhow::anyhow!("{error}"))?;
+		let normalized = member.trim_matches('/').to_owned();
+		let text = match String::from_utf8(bytes) {
+			Ok(text) if !text.contains('\0') => text,
+			Ok(text) => {
+				return Ok(Some(ToolOutput::text(format!(
+					"[Cannot read binary archive entry '{normalized}' ({})]",
+					format_bytes(text.len())
+				))));
+			},
+			Err(error) => {
+				return Ok(Some(ToolOutput::text(format!(
+					"[Cannot read binary archive entry '{normalized}' ({})]",
+					format_bytes(error.as_bytes().len())
+				))));
+			},
+		};
+		let absolute = fs.root().join(&relative);
+		let context = ReadContext {
+			store,
+			key: canonical_key(&absolute),
+			display: format!("{archive_path}:{normalized}"),
+			conflicts,
+			absolute,
+			immutable: true,
+		};
+		let selector = resolve_tail(selector, addressable_lines(&text).len());
+		return Ok(Some(read_in_memory(&context, &text, &selector, "archive entry")));
+	}
+	Ok(None)
+}
+
 fn resolve_tail(selector: Selector, total: usize) -> Selector {
 	match selector {
 		Selector::Tail { count, raw } => {
@@ -1507,6 +1627,36 @@ fn resolve_tail(selector: Selector, total: usize) -> Selector {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn archives_list_directories_and_read_members_without_tags() -> Result<()> {
+		use std::io::Write as _;
+		let root = tempfile::tempdir()?;
+		let mut out = std::io::Cursor::new(Vec::new());
+		let mut zip = zip::ZipWriter::new(&mut out);
+		for (name, body) in
+			[("src/lib.rs", "line1\nline2\nline3\n"), ("README", "hi\n"), ("bin", "a\0b")]
+		{
+			zip.start_file(name, zip::write::SimpleFileOptions::default())?;
+			zip.write_all(body.as_bytes())?;
+		}
+		zip.finish()?;
+		std::fs::write(root.path().join("pkg.zip"), out.into_inner())?;
+		let store = EditStore::new();
+		assert_eq!(run(root.path(), "pkg.zip", &store)?, "bin (3B)\nREADME (3B)\nsrc/");
+		assert_eq!(run(root.path(), "pkg.zip:src/lib.rs:2", &store)?, "line1\nline2\nline3");
+		assert_eq!(
+			run(root.path(), "pkg.zip:bin", &store)?,
+			"[Cannot read binary archive entry 'bin' (3B)]"
+		);
+		assert!(
+			run(root.path(), "pkg.zip:nope.rs", &store)
+				.unwrap_err()
+				.to_string()
+				.contains("not found inside archive")
+		);
+		Ok(())
+	}
 
 	fn run(root: &Path, path: &str, store: &EditStore) -> Result<String> {
 		read(

@@ -3751,6 +3751,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "harvest-archive"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "tempfile",
+ "zip",
+ "zstd",
+]
+
+[[package]]
 name = "harvest-brain"
 version = "0.1.0"
 dependencies = [
@@ -3791,6 +3801,7 @@ dependencies = [
  "clap_mangen",
  "flume",
  "handlebars",
+ "harvest-archive",
  "harvest-brain",
  "harvest-media",
  "harvest-runtime",
@@ -3810,6 +3821,7 @@ dependencies = [
  "tokio",
  "toml",
  "ureq",
+ "zip",
 ]
 
 [[package]]

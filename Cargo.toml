@@ -5,6 +5,7 @@
 # workspace, not a skipped entry.
 members = [
    "crates/harvest-runtime",
+   "crates/harvest-archive",
    "crates/harvest-brain",
    "crates/harvest-tui",
    "crates/harvest-media",

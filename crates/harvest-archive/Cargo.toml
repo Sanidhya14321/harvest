@@ -1,0 +1,18 @@
+[package]
+name = "harvest-archive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Read-only archive browsing (zip, tar and compressed tars) with the legacy limits and path rules"
+
+[lints]
+workspace = true
+
+[dependencies]
+flate2 = "1.1.10"
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
+zstd.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
