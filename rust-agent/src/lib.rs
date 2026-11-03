@@ -1,6 +1,7 @@
 //! Experimental Rust application runtime. Legacy capability parity is not yet
 //! met.
 pub mod agent;
+pub mod auth_storage;
 pub mod agent_session;
 pub mod anthropic;
 mod ast;

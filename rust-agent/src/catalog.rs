@@ -113,3 +113,8 @@ mod tests {
 		assert!(super::route("/x").is_none());
 	}
 }
+
+/// Environment variables a catalog provider reads its API key from.
+pub fn provider_env_vars(provider: &str) -> &'static [String] {
+	CATALOG.get(provider).map_or(&[], |entry| &entry.env_vars)
+}

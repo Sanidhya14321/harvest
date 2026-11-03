@@ -78,6 +78,8 @@ enum Commands {
 	Compress(crate::commands::compress::CompressArgs),
 	#[command(about = "Inspect and test Time-Traveling Stream Rules")]
 	Ttsr(crate::commands::ttsr::Args),
+	#[command(about = "Get the API key or OAuth token for a provider")]
+	Token(crate::commands::token::Args),
 	#[command(about = "Detect project diagnostics and dispatch file-disjoint repair agents")]
 	Cleanse(crate::commands::cleanse::Args),
 	#[command(about = "Show what the read tool returns for a path or URI")]
@@ -475,6 +477,7 @@ fn dispatch(cli: Cli) -> Result<u8> {
 		Commands::TraceReport(arguments) => crate::trace_report::cli::execute(arguments),
 		Commands::CleanupScan(arguments) => crate::cleanup_scan::execute(arguments),
 		Commands::Tools => tools(),
+		Commands::Token(args) => crate::commands::token::execute(args),
 		Commands::Gc(args) => crate::commands::gc::execute(args),
 		Commands::Ps(args) => crate::commands::ps::execute(args),
 		Commands::Worktree(args) => crate::commands::worktree::execute(args),

@@ -291,6 +291,12 @@ pub fn load(
 						.find_map(|name| environment.provider_keys.get(name))
 				{
 					key.clone_into(&mut settings.api_key);
+				} else if flags.api_key.is_none()
+					&& environment.api_key.is_none()
+					&& settings.api_key.is_empty()
+					&& let Some(key) = crate::auth_storage::stored_api_key(route.provider)
+				{
+					settings.api_key = key;
 				}
 			}
 			settings
