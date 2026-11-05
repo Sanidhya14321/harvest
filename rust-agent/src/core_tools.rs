@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use harvest_runtime::{JailedFs, MAX_FILE_BYTES};
 use serde::Deserialize;
 
@@ -60,6 +60,8 @@ pub struct SessionState {
 	pub memory:            Option<crate::memory::SharedMemoryBackend>,
 	/// Explicit session-storage grant supplied by the native host.
 	pub session_directory: Option<std::path::PathBuf>,
+	/// Selected managed-artifact/settings profile, shared with skill discovery.
+	pub agent_directory:   Option<std::path::PathBuf>,
 }
 
 #[derive(Default)]
@@ -274,7 +276,16 @@ fn invoke_authorized(
 			let args = parse::<WriteArgs>(arguments)?;
 			match resolution_device(root, &args.path, &args.content, store, state) {
 				Some(result) => ToolOutput::text(result?),
-				None => ToolOutput::text(write(root, &args, store, conflicts)?),
+				None => {
+					let mut committed_path = None;
+					let text = write(root, &args, store, conflicts, &mut committed_path)?;
+					if let Some((path, created)) = committed_path {
+						details = Some(
+							serde_json::json!({"resolvedPath":path,"op":if created {"create"} else {"update"}}),
+						);
+					}
+					ToolOutput::text(text)
+				},
 			}
 		},
 		"think" => ToolOutput::text("------"),
@@ -390,17 +401,18 @@ fn invoke_authorized(
 			state.memory.as_ref(),
 			arguments,
 		)?),
-		"learn" => ToolOutput::text(crate::memory::learn(
+		"learn" => ToolOutput::text(crate::memory::learn_in(
 			&state.settings,
 			state.memory.as_ref(),
 			root,
+			state.agent_directory.as_deref(),
 			arguments,
 		)?),
 		"manage_skill" | "presets" => {
 			let outcome = if name == "manage_skill" {
-				crate::managed::manage_skill(root, arguments)?
+				crate::managed::manage_skill_in(root, state.agent_directory.as_deref(), arguments)?
 			} else {
-				crate::managed::presets(root, arguments)?
+				crate::managed::presets_in(root, state.agent_directory.as_deref(), arguments)?
 			};
 			is_error = outcome.is_error;
 			details = Some(outcome.details);
@@ -511,11 +523,12 @@ fn write(
 	args: &WriteArgs,
 	store: &pi_edit::EditStore,
 	conflicts: &crate::conflict::ConflictHistory,
+	committed_path: &mut Option<(std::path::PathBuf, bool)>,
 ) -> Result<String> {
 	// A pasted `[path#TAG]` read header names the same target.
 	let path = pi_edit::path_policy::unwrap_hashline_header_path(&args.path);
 	let Some(uri) = crate::conflict::parse_uri(path)? else {
-		return write_file(root, path, &args.content, store);
+		return write_file(root, path, &args.content, store, committed_path);
 	};
 	if let (Some(id), Some(scope)) = (uri.id, uri.scope) {
 		let scope = scope.name();
@@ -556,6 +569,7 @@ fn write_file(
 	path: &str,
 	content: &str,
 	store: &pi_edit::EditStore,
+	committed_path: &mut Option<(std::path::PathBuf, bool)>,
 ) -> Result<String> {
 	let trimmed = path.trim();
 	if let Some((scheme, _)) = trimmed.split_once("://")
@@ -628,8 +642,12 @@ fn write_file(
 	if clean.len() > MAX_FILE_BYTES {
 		bail!("write exceeds file limit");
 	}
-	fs.atomic_write(&relative, clean.as_bytes())?;
-	let absolute = fs.root().join(&relative);
+	let absolute = fs.resource_path(&relative)?;
+	let resolved = absolute.to_str().context("write path must be UTF-8")?;
+	ensure!(resolved.len() <= 4096, "write path exceeds synchronization limit");
+	let created = !fs.entry_exists(&absolute)?;
+	fs.atomic_write(&absolute, clean.as_bytes())?;
+	*committed_path = Some((absolute.clone(), created));
 	let made_executable = clean.starts_with("#!") && mark_executable(&absolute);
 	let display = relative.display().to_string();
 	let key = pi_edit::path_policy::canonical_key(&absolute);

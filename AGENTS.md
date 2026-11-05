@@ -2,7 +2,9 @@
 
 ## Rust migration work
 
-For the full-workspace migration on `ts-to-rust`, read
+For the full-workspace migration, work directly on `main` (latest user instruction,
+2026-11-04); create no branches/worktrees. Defer tests/compiler/Clippy/addon loops
+during the conversion sweep, and record new code as unverified. Read
 `docs/rust-migration/PLAYBOOK.md`, `SCOPE.md`, and the live `HANDOFF.md`.
 The user-approved strict Rust-only target supersedes historical browser-glue and
 installer-script exceptions. Bun/TypeScript rules below apply to retained

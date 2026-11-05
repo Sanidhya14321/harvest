@@ -14,6 +14,14 @@ const OUTPUT_LIMIT: usize = 20_000;
 /// The host owns approval; a model or retrieved skill cannot grant it.
 pub trait Approval {
 	fn approve(&self, call: &ToolCall) -> Result<bool>;
+	/// Selection is data, never a grant of permission for a host tool.
+	fn choose(
+		&self,
+		_request: &crate::plugins::protocol::ChoiceRequest,
+		_cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<Option<usize>> {
+		bail!("interactive plugin choices are unavailable in this host")
+	}
 }
 
 pub struct DenyMutations;
@@ -434,20 +442,89 @@ mod tests {
 	}
 }
 
+/// Only native edit and filesystem-write reports carry these host-produced
+/// paths. Never interpret display text or arbitrary plugin metadata as a
+/// filesystem mutation receipt.
+fn native_committed_changes(
+	output: &ToolOutput,
+) -> Vec<crate::language_services::edits::WorkspaceChange> {
+	use crate::language_services::edits::WorkspaceChange;
+	let Some(details) = &output.details else {
+		return Vec::new();
+	};
+	let mut changes = Vec::new();
+	if output.is_error {
+		for change in details
+			.get("committed")
+			.and_then(serde_json::Value::as_array)
+			.into_iter()
+			.flatten()
+			.take(64)
+		{
+			let Some(path) = path_from_value(&change["path"]) else {
+				continue;
+			};
+			changes.push(match change["operation"].as_str() {
+				Some("delete" | "move_source_removed") => WorkspaceChange::Delete { path },
+				Some("create" | "move_destination") => WorkspaceChange::Create { path },
+				_ => WorkspaceChange::Edit { path },
+			});
+		}
+	} else {
+		let files = details.get("files").and_then(serde_json::Value::as_array);
+		for file in files
+			.map(Vec::as_slice)
+			.unwrap_or_else(|| std::slice::from_ref(details))
+			.iter()
+			.take(32)
+		{
+			if file.get("noop").and_then(serde_json::Value::as_bool) == Some(true) {
+				continue;
+			}
+			let Some(path) = path_from_value(&file["resolvedPath"]) else {
+				continue;
+			};
+			changes.push(if let Some(destination) = path_from_value(&file["resolvedMoveTo"]) {
+				WorkspaceChange::Rename { old_path: path, new_path: destination }
+			} else {
+				match file["op"].as_str() {
+					Some("delete") => WorkspaceChange::Delete { path },
+					Some("create") => WorkspaceChange::Create { path },
+					_ => WorkspaceChange::Edit { path },
+				}
+			});
+		}
+	}
+	changes
+}
+
+fn path_from_value(value: &serde_json::Value) -> Option<std::path::PathBuf> {
+	value
+		.as_str()
+		.filter(|s| !s.is_empty() && s.len() <= 4096)
+		.map(std::path::PathBuf::from)
+}
+
 /// One host-owned set of stateful tools. Browser options are host
 /// configuration, never model arguments; every browser operation requires
 /// final-argument approval.
 #[derive(Default)]
 pub struct ToolRuntime {
-	edit_mode:         crate::edit::Mode,
-	edit_store:        pi_edit::EditStore,
-	edit_root:         Option<std::path::PathBuf>,
+	memory_configuration_key: Option<String>,
+	memory_configuration_managed: bool,
+	memory_agent_directory: Option<std::path::PathBuf>,
+	memory_model: Option<std::sync::Arc<dyn crate::provider::Model + Send + Sync>>,
+	memory_lifecycle: crate::memory::Lifecycle,
+	memory_lifecycle_disabled: bool,
+	edit_mode: crate::edit::Mode,
+	edit_store: pi_edit::EditStore,
+	edit_root: Option<std::path::PathBuf>,
 	language_services: crate::language_services::Runtime,
-	mcp:               Vec<crate::mcp::Client>,
-	plugins:           Vec<crate::plugins::Plugin>,
-	browser_options:   Option<harvest_browser::Options>,
-	browser:           Option<harvest_browser::Browser>,
-	core:              CoreState,
+	mcp: Vec<crate::mcp::Client>,
+	plugins: Vec<crate::plugins::Plugin>,
+	browser_options: Option<harvest_browser::Options>,
+	browser: Option<harvest_browser::Browser>,
+	core: CoreState,
 }
 
 /// State for main's core tools (todo, checkpoint, conflicts, settings,
@@ -480,6 +557,81 @@ impl ToolRuntime {
 		cancellation: &harvest_runtime::cancel::CancelToken,
 		on_event: &mut dyn FnMut(crate::plugins::protocol::Event) -> Result<()>,
 	) -> Result<ToolOutput> {
+		let mut output = self.invoke_detailed_inner(root, call, policy, cancellation, on_event)?;
+		self
+			.language_services
+			.set_edit_store(self.edit_store.clone());
+		let mut notices = Vec::new();
+		if matches!(call.function.name.as_str(), "edit" | "write") {
+			let changes = native_committed_changes(&output);
+			if !changes.is_empty()
+				&& self
+					.language_services
+					.synchronize_native_changes(&changes, cancellation)
+					.is_err()
+			{
+				// The writer has committed. A notification failure must not turn
+				// its result into an apparent rejection or discard partial progress.
+				notices.push(
+					serde_json::json!({"available":false,"reason":"committed_changes_require_lsp_reload"}),
+				);
+			}
+		}
+		// Never shorten the original read result: its emitted rows determine
+		// edit provenance. Leave diagnostics queued when the result needs room.
+		let reserve = harvest_runtime::MAX_TOOL_BYTES / 2 + 4096;
+		if output.content.len() <= harvest_runtime::MAX_TOOL_BYTES.saturating_sub(reserve)
+			&& !cancellation.aborted()
+		{
+			match self
+				.language_services
+				.poll_deferred_diagnostics(cancellation)
+			{
+				Ok(updates) => notices.extend(updates),
+				Err(_) => notices.push(
+					serde_json::json!({"available":false,"reason":"deferred_diagnostics_unavailable"}),
+				),
+			}
+		}
+		if !notices.is_empty() {
+			let rendered = handlebars::Handlebars::new().render_template(
+				include_str!("prompts/diagnostics-native.md"),
+				&serde_json::json!({"updates":serde_json::to_string(&notices).unwrap_or_default()}),
+			);
+			if let Ok(rendered) = rendered
+				&& output.content.len().saturating_add(rendered.len())
+					<= harvest_runtime::MAX_TOOL_BYTES
+			{
+				output.content.push_str(&rendered);
+			}
+		}
+		Ok(output)
+	}
+
+	fn invoke_detailed_inner(
+		&mut self,
+		root: &Path,
+		call: &ToolCall,
+		policy: &dyn Approval,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_event: &mut dyn FnMut(crate::plugins::protocol::Event) -> Result<()>,
+	) -> Result<ToolOutput> {
+		let _memory_operation = crate::memory::model::Operation::enter(Some(cancellation.clone()));
+		if call.function.arguments.len() > harvest_runtime::MAX_EVENT_BYTES {
+			bail!("tool arguments exceed frame limit");
+		}
+		cancellation.heartbeat()?;
+		if call.function.name == "read" {
+			let args: ReadArgs = parse(&call.function.arguments)?;
+			if args.path.starts_with("skill://") {
+				return crate::managed::catalog::read(
+					root,
+					self.memory_agent_directory.as_deref(),
+					&self.core.state.settings,
+					&args.path,
+				);
+			}
+		}
 		let memory_read = call.function.name == "read"
 			&& serde_json::from_str::<ReadArgs>(&call.function.arguments)
 				.is_ok_and(|args| args.path.starts_with("memory://"));
@@ -566,6 +718,15 @@ impl ToolRuntime {
 		)
 	}
 
+	pub(crate) fn prepare_skill_prompt(&self, root: &Path, prompt: &str) -> Result<Option<String>> {
+		crate::managed::invocation::prepare(
+			root,
+			self.memory_agent_directory.as_deref(),
+			&self.core.state.settings,
+			prompt,
+		)
+	}
+
 	/// Install loaded settings and the session artifact store.
 	pub fn configure_core(
 		&mut self,
@@ -579,6 +740,13 @@ impl ToolRuntime {
 	/// Session state of main's core tools.
 	pub fn core_state(&self) -> &crate::core_tools::SessionState {
 		&self.core.state
+	}
+
+	/// Preserve the parent's selected profile without reopening its memory
+	/// store.
+	pub(crate) fn inherit_agent_directory(&mut self, directory: Option<std::path::PathBuf>) {
+		self.core.state.agent_directory = directory.clone();
+		self.memory_agent_directory = directory;
 	}
 
 	pub fn configure_session_directory(&mut self, directory: Option<std::path::PathBuf>) {
@@ -597,19 +765,227 @@ impl ToolRuntime {
 			}
 		}
 		self.core.state.memory = backend;
+		self.memory_configuration_managed = false;
+		self.memory_lifecycle = Default::default();
 		Ok(())
+	}
+
+	/// Return the same scoped owner to native child sessions; do not reopen its
+	/// DB.
+	pub fn memory_inheritance(&self) -> crate::memory::Inheritance {
+		crate::memory::Inheritance {
+			agent_directory: self.memory_agent_directory.clone(),
+			backend:         self.core.state.memory.clone(),
+			settings:        self.core.state.settings.clone(),
+		}
+	}
+
+	/// The selected chat model can serve remote memory work without another
+	/// client. Local/smol inference and embeddings require their own real
+	/// native providers.
+	pub fn configure_memory_model(
+		&mut self,
+		root: &Path,
+		model: std::sync::Arc<dyn crate::provider::Model + Send + Sync>,
+	) -> Result<()> {
+		self.memory_model = Some(model.clone());
+		if self.core.state.settings.string("memory.backend").as_deref() != Some("mnemopi") {
+			return Ok(());
+		}
+		let Some(backend) = self.core.state.memory.as_ref() else {
+			return Ok(());
+		};
+		match self
+			.core
+			.state
+			.settings
+			.string("mnemopi.llmMode")
+			.as_deref()
+		{
+			Some("remote") => {},
+			Some("none" | "smol") | None => return Ok(()),
+			Some(_) => bail!("unsupported native memory LLM mode"),
+		}
+		for key in ["mnemopi.llmBaseUrl", "mnemopi.llmApiKey"] {
+			if self
+				.core
+				.state
+				.settings
+				.string(key)
+				.is_some_and(|value| !value.trim().is_empty())
+			{
+				bail!("memory-specific provider overrides require a native configured model binding");
+			}
+		}
+		if self
+			.core
+			.state
+			.settings
+			.string("mnemopi.llmModel")
+			.filter(|value| !value.trim().is_empty())
+			.is_some_and(|value| value != model.model_id())
+		{
+			bail!("the configured memory model differs from the host-selected native model");
+		}
+		backend.configure_llm(Some(std::sync::Arc::new(crate::memory::model::ModelLlm::new(
+			model,
+			root,
+			self.memory_agent_directory.as_deref(),
+		))))
+	}
+
+	/// Host-only hooks consume the same backend and durable session owner as
+	/// tools.
+	pub fn configure_memory_lifecycle(&mut self, enabled: bool) {
+		self.memory_lifecycle_disabled = !enabled;
+		self.memory_lifecycle = Default::default();
+	}
+
+	pub fn memory_context(
+		&mut self,
+		root: &Path,
+		prompt: &str,
+		history: &[crate::chat::ChatMessage],
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<Option<String>> {
+		if self.memory_lifecycle_disabled {
+			return Ok(None);
+		}
+		let _operation = crate::memory::model::Operation::enter(Some(cancellation.clone()));
+		self.memory_lifecycle.before_turn(
+			&self.core.state.settings,
+			self.core.state.memory.as_ref(),
+			root,
+			prompt,
+			history,
+			cancellation,
+			self.memory_agent_directory.as_deref(),
+		)
+	}
+
+	pub fn retain_memory(
+		&mut self,
+		root: &Path,
+		session_id: &str,
+		history: &[crate::chat::ChatMessage],
+		outcome: &'static str,
+		force: bool,
+	) -> Result<()> {
+		if self.memory_lifecycle_disabled {
+			return Ok(());
+		}
+		// Cancellation/failure/shutdown may persist committed text, but must not
+		// start fresh remote extraction after the caller has stopped the run.
+		let _operation = crate::memory::model::Operation::enter(
+			(outcome == "completed").then(|| harvest_runtime::cancel::CancelToken::new(Some(5000))),
+		);
+		self.memory_lifecycle.after_turn(
+			&self.core.state.settings,
+			self.core.state.memory.as_ref(),
+			root,
+			session_id,
+			history,
+			outcome,
+			force,
+			self.memory_agent_directory.as_deref(),
+		)
 	}
 
 	/// Resolve the native Mnemopi owner once, at session opening.
 	pub fn initialize_memory(&mut self, root: &Path, session_id: &str) -> Result<()> {
+		self.initialize_memory_in(root, session_id, None)
+	}
+
+	pub fn initialize_memory_in(
+		&mut self,
+		root: &Path,
+		session_id: &str,
+		directory: Option<&Path>,
+	) -> Result<()> {
+		let directory =
+			crate::config::agent_dir_from(directory.map(Path::to_owned), |key| std::env::var_os(key));
+		self.memory_agent_directory = directory.clone();
+		self.core.state.agent_directory = directory.clone();
 		if self.core.state.settings.string("memory.backend").as_deref() == Some("mnemopi") {
 			self.configure_memory(Some(std::sync::Arc::new(
-				crate::memory::mnemopi::MnemopiBackend::from_settings(
+				crate::memory::mnemopi::MnemopiBackend::from_settings_in(
 					&self.core.state.settings,
 					root,
 					session_id,
+					directory.as_deref(),
 				)?,
 			)))?;
+		}
+		self.memory_configuration_key =
+			Some(crate::memory::configuration_key(&self.core.state.settings, directory.as_deref())?);
+		self.memory_configuration_managed = true;
+		Ok(())
+	}
+
+	/// Apply file-backed memory changes only at the next idle turn boundary.
+	/// Child aliases and isolated evaluation hosts retain their explicit owner.
+	pub fn refresh_memory_configuration(
+		&mut self,
+		root: &Path,
+		session_id: &str,
+		history: &[crate::chat::ChatMessage],
+		directory: Option<&Path>,
+	) -> Result<()> {
+		if self.memory_lifecycle_disabled || !self.memory_configuration_managed {
+			return Ok(());
+		}
+		let directory =
+			crate::config::agent_dir_from(directory.map(Path::to_owned), |key| std::env::var_os(key));
+		let settings = match crate::settings::Settings::load(directory.as_deref(), root, &[]) {
+			Ok(settings) => settings,
+			Err(error) => {
+				self.configure_memory(None)?;
+				self.memory_configuration_key = None;
+				self.memory_configuration_managed = true;
+				return Err(error);
+			},
+		};
+		let key = crate::memory::configuration_key(&settings, directory.as_deref())?;
+		if self.memory_configuration_key.as_ref() == Some(&key) {
+			return Ok(());
+		}
+		// An explicit off switch wins over background retention. For another
+		// active native scope, finish the old suffix without remote generation.
+		let flush_failed = settings.string("memory.backend").as_deref() == Some("mnemopi")
+			&& settings.bool("mnemopi.autoRetain")
+			&& self
+				.retain_memory(root, session_id, history, "transition", true)
+				.is_err();
+		self.configure_memory(None)?;
+		self.core.state.settings = settings;
+		self.memory_configuration_key = Some(key);
+		self.memory_agent_directory = directory.clone();
+		self.core.state.agent_directory = directory.clone();
+		self.memory_configuration_managed = true;
+		match self.core.state.settings.string("memory.backend").as_deref() {
+			Some("off") | None => {},
+			Some("mnemopi") => {
+				let initialized = self
+					.initialize_memory_in(root, session_id, directory.as_deref())
+					.and_then(|()| {
+						if let Some(model) = self.memory_model.clone() {
+							self.configure_memory_model(root, model)
+						} else {
+							Ok(())
+						}
+					});
+				if let Err(error) = initialized {
+					self.configure_memory(None)?;
+					self.memory_configuration_key = None;
+					self.memory_configuration_managed = true;
+					return Err(error);
+				}
+			},
+			Some(_) => bail!("the selected memory backend has no native runtime adapter"),
+		}
+		self.memory_configuration_managed = true;
+		if flush_failed {
+			bail!("the previous memory scope could not retain its final committed suffix");
 		}
 		Ok(())
 	}
@@ -729,7 +1105,10 @@ impl ToolRuntime {
 
 	pub fn specs(&self) -> Vec<crate::chat::ToolSpec> {
 		let mut specs = crate::chat::specs_for_edit(self.edit_mode);
-		specs.retain(|spec| crate::memory::tool_enabled(&self.core.state.settings, spec.name()));
+		specs.retain(|spec| {
+			crate::memory::tool_enabled(&self.core.state.settings, spec.name())
+				&& (!crate::memory::is_backend_tool(spec.name()) || self.core.state.memory.is_some())
+		});
 		specs.extend(self.language_services.specs());
 		for server in &self.mcp {
 			specs.extend(server.tools().iter().map(|tool| tool.spec.clone()));
@@ -768,6 +1147,9 @@ impl ToolRuntime {
 		}
 
 		if matches!(call.function.name.as_str(), "lsp" | "debug") {
+			self
+				.language_services
+				.set_edit_store(self.edit_store.clone());
 			return self.language_services.invoke(call, policy, cancellation);
 		}
 

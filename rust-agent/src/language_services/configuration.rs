@@ -80,22 +80,71 @@ impl ProcessConfiguration {
 pub struct LspConfiguration {
 	#[serde(flatten)]
 	pub process:                ProcessConfiguration,
+	#[serde(default, alias = "languageId")]
 	pub language_id:            String,
 	#[serde(default)]
 	pub extensions:             Vec<String>,
-	#[serde(default = "object")]
+	#[serde(default = "object", alias = "initOptions", alias = "initializationOptions")]
 	pub initialization_options: Value,
 	#[serde(default = "object")]
 	pub settings:               Value,
+	#[serde(default)]
+	pub is_linter:              bool,
+	/// Discovery is a new executable trust boundary, unlike an explicit host
+	/// process configuration. Approval is checked immediately before launch.
+	#[serde(default)]
+	pub startup_approval:       bool,
 }
 impl LspConfiguration {
 	pub fn validate(&self) -> Result<()> {
 		self.process.validate()?;
 		ensure!(
-			!self.language_id.is_empty() && self.language_id.len() <= 128 && self.settings.is_object(),
+			self.language_id.len() <= 128
+				&& self.settings.is_object()
+				&& self.extensions.len() <= 128
+				&& self
+					.extensions
+					.iter()
+					.all(|e| !e.is_empty() && e.len() <= 256),
 			"invalid native LSP configuration"
 		);
 		Ok(())
+	}
+
+	pub fn supports_path(&self, path: &Path) -> bool {
+		let extension = path.extension().and_then(|v| v.to_str()).unwrap_or("");
+		let file = path.file_name().and_then(|v| v.to_str()).unwrap_or("");
+		self.extensions.is_empty()
+			|| self.extensions.iter().any(|candidate| {
+				let candidate = candidate.trim_start_matches('.');
+				candidate.eq_ignore_ascii_case(extension)
+					|| candidate.eq_ignore_ascii_case(file.trim_start_matches('.'))
+			})
+	}
+
+	pub fn document_language(&self, path: &Path) -> String {
+		if !self.language_id.is_empty() {
+			return self.language_id.clone();
+		}
+		let extension = path
+			.extension()
+			.and_then(|v| v.to_str())
+			.unwrap_or("")
+			.to_ascii_lowercase();
+		match extension.as_str() {
+			"tsx" => "typescriptreact".into(),
+			"jsx" => "javascriptreact".into(),
+			"tf" => "terraform".into(),
+			_ => pi_ast::language::SupportLang::from_path(path)
+				.map(|language| {
+					match language {
+						pi_ast::language::SupportLang::Bash => "shellscript",
+						_ => language.canonical_name(),
+					}
+					.to_owned()
+				})
+				.unwrap_or_else(|| "plaintext".into()),
+		}
 	}
 }
 #[derive(Clone, Deserialize)]

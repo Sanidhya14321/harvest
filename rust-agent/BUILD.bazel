@@ -19,7 +19,7 @@ cargo_build_script(
 rust_library(
     name = "harvest-omp",
     srcs = glob(["src/**/*.rs"], exclude = ["src/main.rs", "src/bin/**"]),
-    compile_data = glob(["src/prompts/**/*.md"]),
+    compile_data = glob(["src/prompts/**/*.md"]) + ["//:packages/coding-agent/src/lsp/defaults.json"],
     aliases = aliases(),
     crate_name = "harvest_omp",
     crate_root = "src/lib.rs",

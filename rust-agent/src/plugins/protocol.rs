@@ -25,6 +25,15 @@ pub enum Event {
 	Choices { title: String, choices: Vec<String> },
 }
 
+/// One interactive request correlated with the already-approved plugin call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChoiceRequest {
+	pub plugin:       String,
+	pub tool_call_id: String,
+	pub title:        String,
+	pub choices:      Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Frame {
@@ -35,6 +44,8 @@ pub enum Frame {
 	Error { id: u64, error: ProtocolError },
 	Event { id: u64, event: Event },
 	HostCall { id: u64, parent_id: u64, call: ToolCall },
+	UiRequest { id: u64, parent_id: u64, title: String, choices: Vec<String> },
+	UiResponse { id: u64, selected: Option<usize>, error: Option<ProtocolError> },
 	HostResult { id: u64, value: Option<String>, error: Option<ProtocolError> },
 	Cancel { id: u64 },
 	Shutdown,

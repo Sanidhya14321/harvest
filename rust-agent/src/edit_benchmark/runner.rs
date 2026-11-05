@@ -406,6 +406,8 @@ fn run_one<M: Model>(
 			Path::new("session.jsonl"),
 			None,
 		)?;
+		// Synthetic benchmark turns must not enter the user's automatic memory.
+		session.configure_memory_lifecycle(false)?;
 		session.configure_edit(configuration.edit_mode)?;
 		let model = MeasuredModel {
 			inner:        factory(task, repetition)?,
@@ -461,6 +463,7 @@ fn run_one<M: Model>(
 								"text_delta"
 							},
 							crate::agent_session::EventKind::PluginEvent { .. } => "plugin_event",
+							crate::agent_session::EventKind::MemoryWarning { .. } => "memory_warning",
 							crate::agent_session::EventKind::Committed { .. } => "committed",
 							crate::agent_session::EventKind::Completed => "completed",
 							crate::agent_session::EventKind::Failed => "failed",

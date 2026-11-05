@@ -31,7 +31,10 @@ fn read_json_at(path: &Path) -> Result<Option<Value>> {
 	match std::fs::File::open(path) {
 		Ok(file) => {
 			let bytes = read_bounded(file, MAX_FILE_BYTES)?;
-			Ok(Some(serde_json::from_slice(&bytes).with_context(|| format!("invalid JSON in {}", path.display()))?))
+			Ok(Some(
+				serde_json::from_slice(&bytes)
+					.with_context(|| format!("invalid JSON in {}", path.display()))?,
+			))
 		},
 		Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
 		Err(error) => Err(error.into()),
@@ -39,7 +42,11 @@ fn read_json_at(path: &Path) -> Result<Option<Value>> {
 }
 
 fn obj(value: &Value, key: &str) -> Map<String, Value> {
-	value.get(key).and_then(Value::as_object).cloned().unwrap_or_default()
+	value
+		.get(key)
+		.and_then(Value::as_object)
+		.cloned()
+		.unwrap_or_default()
 }
 
 // =============================================================================
@@ -68,7 +75,12 @@ pub(crate) fn parse_plugin_spec(spec: &str) -> (String, Features) {
 }
 
 pub(crate) fn split_list(text: &str) -> Vec<String> {
-	text.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect()
+	text
+		.split(',')
+		.map(str::trim)
+		.filter(|s| !s.is_empty())
+		.map(str::to_owned)
+		.collect()
 }
 
 pub(crate) enum InstallTarget {
@@ -79,7 +91,9 @@ pub(crate) enum InstallTarget {
 
 fn is_local_path_spec(spec: &str) -> bool {
 	matches!(spec, "." | ".." | "~")
-		|| ["./", "../", ".\\", "..\\", "~/", "~\\", "/", "\\\\"].iter().any(|p| spec.starts_with(p))
+		|| ["./", "../", ".\\", "..\\", "~/", "~\\", "/", "\\\\"]
+			.iter()
+			.any(|p| spec.starts_with(p))
 		|| is_drive_path(spec)
 }
 
@@ -102,7 +116,10 @@ pub(crate) fn classify_install_target(spec: &str, known: &BTreeSet<String>) -> I
 		let rhs = &spec[at + 1..];
 		let versionish = rhs.starts_with(|c: char| c.is_ascii_digit() || "~^>=<".contains(c));
 		if !NPM_DIST_TAGS.contains(&rhs) && !versionish && known.contains(rhs) {
-			return InstallTarget::Marketplace { name: spec[..at].to_owned(), marketplace: rhs.to_owned() };
+			return InstallTarget::Marketplace {
+				name:        spec[..at].to_owned(),
+				marketplace: rhs.to_owned(),
+			};
 		}
 	}
 	InstallTarget::Npm(spec.to_owned())
@@ -119,7 +136,10 @@ fn extract_package_name(spec: &str) -> String {
 		}
 		return spec.to_owned();
 	}
-	spec.rfind('@').filter(|&i| i > 0).map_or_else(|| spec.to_owned(), |i| spec[..i].to_owned())
+	spec
+		.rfind('@')
+		.filter(|&i| i > 0)
+		.map_or_else(|| spec.to_owned(), |i| spec[..i].to_owned())
 }
 
 // =============================================================================
@@ -175,7 +195,11 @@ impl PluginManager {
 	pub(crate) fn new() -> Result<Self> {
 		let dir = plugins_dir();
 		let config = read_json_at(&Self::lockfile_in(&dir))?.unwrap_or_else(|| json!({}));
-		let mut config = if config.is_object() { config } else { json!({}) };
+		let mut config = if config.is_object() {
+			config
+		} else {
+			json!({})
+		};
 		for key in ["plugins", "settings"] {
 			if !config.get(key).is_some_and(Value::is_object) {
 				config[key] = json!({});
@@ -187,7 +211,11 @@ impl PluginManager {
 	fn lockfile_in(dir: &Path) -> PathBuf {
 		let harvest = dir.join("harvest-plugins.lock.json");
 		let legacy = dir.join("omp-plugins.lock.json");
-		if !harvest.exists() && legacy.exists() { legacy } else { harvest }
+		if !harvest.exists() && legacy.exists() {
+			legacy
+		} else {
+			harvest
+		}
 	}
 
 	fn lockfile_name(&self) -> PathBuf {
@@ -215,18 +243,26 @@ impl PluginManager {
 	}
 
 	fn deps(&self) -> Result<Map<String, Value>> {
-		Ok(read_json_at(&self.dir.join("package.json"))?.map(|v| obj(&v, "dependencies")).unwrap_or_default())
+		Ok(read_json_at(&self.dir.join("package.json"))?
+			.map(|v| obj(&v, "dependencies"))
+			.unwrap_or_default())
 	}
 
 	fn resolve(&self, fallback: &str, path: &Path) -> Result<Option<InstalledPlugin>> {
-		let Some(pkg) = read_json_at(&path.join("package.json"))? else { return Ok(None) };
+		let Some(pkg) = read_json_at(&path.join("package.json"))? else {
+			return Ok(None);
+		};
 		let name = pkg
 			.get("name")
 			.and_then(Value::as_str)
 			.filter(|s| !s.is_empty())
 			.unwrap_or(fallback)
 			.to_owned();
-		let version = pkg.get("version").and_then(Value::as_str).unwrap_or("").to_owned();
+		let version = pkg
+			.get("version")
+			.and_then(Value::as_str)
+			.unwrap_or("")
+			.to_owned();
 		let state = self.config["plugins"].get(&name);
 		let overrides = self.project_overrides();
 		let disabled_in_project = overrides
@@ -238,8 +274,16 @@ impl PluginManager {
 			.and_then(|f| f.get(&name))
 			.or_else(|| state.and_then(|s| s.get("enabledFeatures")))
 			.and_then(Value::as_array)
-			.map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect());
-		let enabled = state.and_then(|s| s.get("enabled")).and_then(Value::as_bool).unwrap_or(true);
+			.map(|a| {
+				a.iter()
+					.filter_map(Value::as_str)
+					.map(str::to_owned)
+					.collect()
+			});
+		let enabled = state
+			.and_then(|s| s.get("enabled"))
+			.and_then(Value::as_bool)
+			.unwrap_or(true);
 		Ok(Some(InstalledPlugin {
 			name,
 			version,
@@ -250,7 +294,11 @@ impl PluginManager {
 		}))
 	}
 
-	pub(crate) fn get_plugin(&self, name: &str, path: Option<&Path>) -> Result<Option<InstalledPlugin>> {
+	pub(crate) fn get_plugin(
+		&self,
+		name: &str,
+		path: Option<&Path>,
+	) -> Result<Option<InstalledPlugin>> {
 		if let Some(path) = path {
 			return self.resolve(name, path);
 		}
@@ -264,7 +312,12 @@ impl PluginManager {
 		let mut out = Vec::new();
 		let mut names: BTreeSet<String> = self.deps()?.keys().cloned().collect();
 		// Linked plugins live only in the runtime config.
-		names.extend(self.config["plugins"].as_object().into_iter().flat_map(|m| m.keys().cloned()));
+		names.extend(
+			self.config["plugins"]
+				.as_object()
+				.into_iter()
+				.flat_map(|m| m.keys().cloned()),
+		);
 		for name in names {
 			if let Some(plugin) = self.resolve(&name, &self.node_modules().join(&name))? {
 				out.push(plugin);
@@ -274,15 +327,22 @@ impl PluginManager {
 	}
 
 	fn ensure_package_json(&self, fs: &JailedFs) -> Result<()> {
-		if fs.read_optional(Path::new("package.json"), MAX_FILE_BYTES)?.is_none() {
+		if fs
+			.read_optional(Path::new("package.json"), MAX_FILE_BYTES)?
+			.is_none()
+		{
 			let body = json!({"name": "harvest-plugins", "private": true, "dependencies": {}});
-			fs.atomic_write(Path::new("package.json"), serde_json::to_string_pretty(&body)?.as_bytes())?;
+			fs.atomic_write(
+				Path::new("package.json"),
+				serde_json::to_string_pretty(&body)?.as_bytes(),
+			)?;
 		}
 		Ok(())
 	}
 
 	fn bun(&self, args: &[&str]) -> Result<()> {
-		let bun = which("bun").context("bun is required to manage npm plugins but was not found in PATH")?;
+		let bun =
+			which("bun").context("bun is required to manage npm plugins but was not found in PATH")?;
 		let mut child = Command::new(bun)
 			.args(args)
 			.current_dir(&self.dir)
@@ -292,7 +352,9 @@ impl PluginManager {
 			.spawn()?;
 		let mut tail = Vec::new();
 		if let Some(mut stderr) = child.stderr.take() {
-			(&mut stderr).take(CHILD_OUTPUT_LIMIT).read_to_end(&mut tail)?;
+			(&mut stderr)
+				.take(CHILD_OUTPUT_LIMIT)
+				.read_to_end(&mut tail)?;
 			std::io::copy(&mut stderr, &mut std::io::sink())?;
 		}
 		let status = child.wait()?;
@@ -302,7 +364,12 @@ impl PluginManager {
 		Ok(())
 	}
 
-	pub(crate) fn install(&mut self, spec: &str, force: bool, dry_run: bool) -> Result<InstalledPlugin> {
+	pub(crate) fn install(
+		&mut self,
+		spec: &str,
+		force: bool,
+		dry_run: bool,
+	) -> Result<InstalledPlugin> {
 		let (package, features) = parse_plugin_spec(spec);
 		if package.is_empty() || package.starts_with('-') || package.contains(['\n', '\r', '\0']) {
 			bail!("invalid plugin specifier: {spec}");
@@ -335,16 +402,19 @@ impl PluginManager {
 					.find(|(k, v)| before.get(*k) != Some(*v))
 					.map(|(k, _)| k.clone())
 					.with_context(|| {
-						format!("Installed {package} but could not determine package name from plugins/package.json")
+						format!(
+							"Installed {package} but could not determine package name from \
+							 plugins/package.json"
+						)
 					})?
 			};
 			if force && before.contains_key(&name) {
 				self.bun(&["update", &name])?;
 			}
 			let path = self.node_modules().join(&name);
-			let mut plugin = self
-				.resolve(&name, &path)?
-				.with_context(|| format!("Package installed but package.json not found at {}", path.display()))?;
+			let mut plugin = self.resolve(&name, &path)?.with_context(|| {
+				format!("Package installed but package.json not found at {}", path.display())
+			})?;
 			let available = plugin.feature_names();
 			let chosen = match features {
 				Features::Default => self.config["plugins"]
@@ -363,8 +433,12 @@ impl PluginManager {
 			self.config["plugins"][&name] =
 				json!({"version": plugin.version, "enabledFeatures": chosen, "enabled": true});
 			self.save_config()?;
-			plugin.enabled_features =
-				chosen.as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect());
+			plugin.enabled_features = chosen.as_array().map(|a| {
+				a.iter()
+					.filter_map(Value::as_str)
+					.map(str::to_owned)
+					.collect()
+			});
 			Ok(plugin)
 		})();
 		if result.is_err() {
@@ -422,8 +496,13 @@ impl PluginManager {
 		// Jail-resolved destination; the link target is the user-supplied source.
 		let link_path = fs.resource_path(&relative)?;
 		symlink_dir(&absolute, &link_path)?;
-		let version = pkg.get("version").and_then(Value::as_str).unwrap_or("").to_owned();
-		self.config["plugins"][&name] = json!({"version": version, "enabledFeatures": null, "enabled": true});
+		let version = pkg
+			.get("version")
+			.and_then(Value::as_str)
+			.unwrap_or("")
+			.to_owned();
+		self.config["plugins"][&name] =
+			json!({"version": version, "enabledFeatures": null, "enabled": true});
 		self.save_config()?;
 		Ok(InstalledPlugin {
 			name,
@@ -448,7 +527,12 @@ impl PluginManager {
 			.get(name)?
 			.get("enabledFeatures")?
 			.as_array()
-			.map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+			.map(|a| {
+				a.iter()
+					.filter_map(Value::as_str)
+					.map(str::to_owned)
+					.collect()
+			})
 	}
 
 	pub(crate) fn set_enabled_features(&mut self, name: &str, features: Vec<String>) -> Result<()> {
@@ -472,14 +556,21 @@ impl PluginManager {
 	pub(crate) fn settings(&self, name: &str) -> Map<String, Value> {
 		let mut merged = obj(&self.config["settings"], name);
 		let project = self.project_overrides();
-		if let Some(p) = project.get("settings").and_then(|s| s.get(name)).and_then(Value::as_object) {
+		if let Some(p) = project
+			.get("settings")
+			.and_then(|s| s.get(name))
+			.and_then(Value::as_object)
+		{
 			merged.extend(p.clone());
 		}
 		merged
 	}
 
 	pub(crate) fn set_setting(&mut self, name: &str, key: &str, value: Value) -> Result<()> {
-		if !self.config["settings"].get(name).is_some_and(Value::is_object) {
+		if !self.config["settings"]
+			.get(name)
+			.is_some_and(Value::is_object)
+		{
 			self.config["settings"][name] = json!({});
 		}
 		self.config["settings"][name][key] = value;
@@ -487,7 +578,10 @@ impl PluginManager {
 	}
 
 	pub(crate) fn delete_setting(&mut self, name: &str, key: &str) -> Result<()> {
-		if let Some(map) = self.config["settings"].get_mut(name).and_then(Value::as_object_mut) {
+		if let Some(map) = self.config["settings"]
+			.get_mut(name)
+			.and_then(Value::as_object_mut)
+		{
 			map.remove(key);
 			self.save_config()?;
 		}
@@ -506,7 +600,11 @@ impl PluginManager {
 		checks.push(check(
 			"plugins_directory".into(),
 			if dir_exists { "ok" } else { "warning" },
-			if dir_exists { format!("Found at {}", self.dir.display()) } else { "Not created yet".into() },
+			if dir_exists {
+				format!("Found at {}", self.dir.display())
+			} else {
+				"Not created yet".into()
+			},
 		));
 		let has_pkg = self.dir.join("package.json").is_file();
 		checks.push(check(
@@ -517,8 +615,19 @@ impl PluginManager {
 		let has_nm = self.node_modules().is_dir();
 		let mut nm = check(
 			"node_modules".into(),
-			if has_nm { "ok" } else if has_pkg { "error" } else { "warning" },
-			if has_nm { "Found" } else { "Missing (run npm install in plugins dir)" }.into(),
+			if has_nm {
+				"ok"
+			} else if has_pkg {
+				"error"
+			} else {
+				"warning"
+			},
+			if has_nm {
+				"Found"
+			} else {
+				"Missing (run npm install in plugins dir)"
+			}
+			.into(),
 		);
 		if !has_nm && has_pkg && fix && self.bun(&["install"]).is_ok() {
 			nm.fixed = true;
@@ -528,7 +637,8 @@ impl PluginManager {
 			let path = self.node_modules().join(&name);
 			match self.resolve(&name, &path)? {
 				None => {
-					let mut c = check(format!("plugin:{name}"), "error", "Missing from node_modules".into());
+					let mut c =
+						check(format!("plugin:{name}"), "error", "Missing from node_modules".into());
 					if fix && self.bun(&["install"]).is_ok() {
 						c.fixed = true;
 					}
@@ -552,11 +662,21 @@ impl PluginManager {
 							checks.push(check(
 								format!("plugin:{name}:{key}"),
 								"error",
-								format!("{}{} entry \"{entry}\" not found", key[..1].to_uppercase(), &key[1..]),
+								format!(
+									"{}{} entry \"{entry}\" not found",
+									key[..1].to_uppercase(),
+									&key[1..]
+								),
 							));
 						}
 					}
-					for ext in plugin.manifest.get("extensions").and_then(Value::as_array).into_iter().flatten() {
+					for ext in plugin
+						.manifest
+						.get("extensions")
+						.and_then(Value::as_array)
+						.into_iter()
+						.flatten()
+					{
 						if let Some(ext) = ext.as_str()
 							&& !path.join(ext).exists()
 						{
@@ -589,7 +709,8 @@ impl PluginManager {
 			.cloned()
 			.collect();
 		for name in orphans {
-			let mut c = check(format!("orphan:{name}"), "warning", "Plugin in config but not installed".into());
+			let mut c =
+				check(format!("orphan:{name}"), "warning", "Plugin in config but not installed".into());
 			if fix && let Some(map) = self.config["plugins"].as_object_mut() {
 				map.remove(&name);
 				c.fixed = true;
@@ -632,10 +753,21 @@ pub(crate) fn validate_setting(value: &Value, schema: &Value) -> Result<(), Stri
 		},
 		Some("boolean") if !value.is_boolean() => Err("Expected boolean".into()),
 		Some("enum") => {
-			let values: Vec<&str> =
-				schema.get("values").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
-			let text = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
-			if values.contains(&text.as_str()) { Ok(()) } else { Err(format!("Must be one of: {}", values.join(", "))) }
+			let values: Vec<&str> = schema
+				.get("values")
+				.and_then(Value::as_array)
+				.into_iter()
+				.flatten()
+				.filter_map(Value::as_str)
+				.collect();
+			let text = value
+				.as_str()
+				.map_or_else(|| value.to_string(), str::to_owned);
+			if values.contains(&text.as_str()) {
+				Ok(())
+			} else {
+				Err(format!("Must be one of: {}", values.join(", ")))
+			}
 		},
 		_ => Ok(()),
 	}
@@ -704,11 +836,16 @@ impl Marketplace {
 		mut f: impl FnMut(&mut Vec<Value>, Option<&str>) -> Result<()>,
 	) -> Result<()> {
 		let mut registry = self.registry()?;
-		let Some(entries) = registry["plugins"].get_mut(id).and_then(Value::as_array_mut) else {
+		let Some(entries) = registry["plugins"]
+			.get_mut(id)
+			.and_then(Value::as_array_mut)
+		else {
 			bail!("Plugin {id} is not installed");
 		};
 		if let Some(scope) = scope
-			&& !entries.iter().any(|e| e.get("scope").and_then(Value::as_str) == Some(scope))
+			&& !entries
+				.iter()
+				.any(|e| e.get("scope").and_then(Value::as_str) == Some(scope))
 		{
 			bail!("Plugin {id} is not installed in {scope} scope");
 		}
@@ -722,7 +859,10 @@ impl Marketplace {
 			return Ok(());
 		}
 		let fs = JailedFs::open_or_create(&self.dir)?;
-		fs.atomic_write(Path::new("installed_plugins.json"), serde_json::to_string_pretty(&registry)?.as_bytes())
+		fs.atomic_write(
+			Path::new("installed_plugins.json"),
+			serde_json::to_string_pretty(&registry)?.as_bytes(),
+		)
 	}
 
 	pub(crate) fn set_enabled(&self, id: &str, enabled: bool, scope: Option<&str>) -> Result<()> {
@@ -740,7 +880,8 @@ impl Marketplace {
 	/// are left for `harvest gc` to reclaim.
 	pub(crate) fn uninstall(&self, id: &str, scope: Option<&str>, dry_run: bool) -> Result<()> {
 		self.mutate_entries(id, scope, dry_run, |entries, scope| {
-			entries.retain(|e| scope.is_some_and(|s| e.get("scope").and_then(Value::as_str) != Some(s)));
+			entries
+				.retain(|e| scope.is_some_and(|s| e.get("scope").and_then(Value::as_str) != Some(s)));
 			Ok(())
 		})
 	}
@@ -751,8 +892,46 @@ impl Marketplace {
 // =============================================================================
 
 pub(crate) fn which(binary: &str) -> Option<PathBuf> {
+	if binary.is_empty() || Path::new(binary).components().count() != 1 {
+		return None;
+	}
 	let path = std::env::var_os("PATH")?;
-	std::env::split_paths(&path).map(|d| d.join(binary)).find(|p| p.is_file())
+	let mut names = vec![binary.to_owned()];
+	if cfg!(windows) && Path::new(binary).extension().is_none() {
+		for suffix in std::env::var("PATHEXT")
+			.unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+			.split(';')
+			.take(32)
+		{
+			let suffix = suffix.trim();
+			if suffix.starts_with('.')
+				&& suffix.len() <= 16
+				&& suffix[1..].chars().all(|ch| ch.is_ascii_alphanumeric())
+			{
+				names.push(format!("{binary}{suffix}"));
+			}
+		}
+	}
+	for directory in std::env::split_paths(&path) {
+		for name in &names {
+			let candidate = directory.join(name);
+			let Ok(metadata) = candidate.metadata() else {
+				continue;
+			};
+			if !metadata.is_file() {
+				continue;
+			}
+			#[cfg(unix)]
+			{
+				use std::os::unix::fs::PermissionsExt;
+				if metadata.permissions().mode() & 0o111 == 0 {
+					continue;
+				}
+			}
+			return Some(candidate);
+		}
+	}
+	None
 }
 
 pub(crate) fn expand_tilde(path: &str) -> PathBuf {
@@ -784,12 +963,14 @@ fn remove_link(fs: &JailedFs, relative: &Path) -> Result<()> {
 
 #[cfg(unix)]
 fn symlink_dir(target: &Path, link: &Path) -> Result<()> {
-	std::os::unix::fs::symlink(target, link).with_context(|| format!("failed to link {}", link.display()))
+	std::os::unix::fs::symlink(target, link)
+		.with_context(|| format!("failed to link {}", link.display()))
 }
 
 #[cfg(windows)]
 fn symlink_dir(target: &Path, link: &Path) -> Result<()> {
-	std::os::windows::fs::symlink_dir(target, link).with_context(|| format!("failed to link {}", link.display()))
+	std::os::windows::fs::symlink_dir(target, link)
+		.with_context(|| format!("failed to link {}", link.display()))
 }
 
 /// Directory creation inside the jail via a placeholder-free path: JailedFs

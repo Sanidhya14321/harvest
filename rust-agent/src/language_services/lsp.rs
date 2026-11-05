@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::{
 	configuration::LspConfiguration,
-	edits::{self, ApplyResult, Position},
+	edits::{self, ApplyResult, Position, WorkspaceChange},
 };
 use crate::{
 	process_transport::Process,
@@ -22,16 +22,19 @@ struct Document {
 	text:    String,
 }
 pub struct Client {
-	root:          PathBuf,
-	configuration: LspConfiguration,
-	process:       Process<Value>,
-	capabilities:  Value,
-	next_id:       u64,
-	closed:        bool,
-	documents:     BTreeMap<String, Document>,
-	diagnostics:   BTreeMap<String, Value>,
-	notifications: VecDeque<Value>,
-	applied_edits: Vec<Value>,
+	root:              PathBuf,
+	configuration:     LspConfiguration,
+	process:           Process<Value>,
+	capabilities:      Value,
+	next_id:           u64,
+	closed:            bool,
+	documents:         BTreeMap<String, Document>,
+	diagnostics:       BTreeMap<String, Value>,
+	notifications:     VecDeque<Value>,
+	applied_edits:     Vec<Value>,
+	workspace_changes: Vec<WorkspaceChange>,
+	edit_store:        Option<pi_edit::EditStore>,
+	deferred:          super::diagnostics::Deferred,
 }
 impl Client {
 	pub fn connect(
@@ -55,10 +58,13 @@ impl Client {
 			diagnostics: BTreeMap::new(),
 			notifications: VecDeque::new(),
 			applied_edits: Vec::new(),
+			workspace_changes: Vec::new(),
+			edit_store: None,
+			deferred: Default::default(),
 		};
 		let uri = reqwest::Url::from_directory_path(&client.root)
 			.map_err(|()| anyhow::anyhow!("cannot encode LSP workspace URI"))?;
-		let initialized=client.request("initialize",json!({"processId":std::process::id(),"clientInfo":{"name":"harvest-rust","version":env!("CARGO_PKG_VERSION")},"rootUri":uri.as_str(),"workspaceFolders":[{"uri":uri.as_str(),"name":"workspace"}],"capabilities":{"general":{"positionEncodings":["utf-16"]},"workspace":{"applyEdit":true,"workspaceEdit":{"documentChanges":true,"resourceOperations":[],"failureHandling":"abort"},"configuration":true,"workspaceFolders":true},"textDocument":{"synchronization":{"didSave":true},"publishDiagnostics":{"versionSupport":true},"documentSymbol":{"hierarchicalDocumentSymbolSupport":true},"rename":{"prepareSupport":true},"diagnostic":{"dynamicRegistration":false}}},"initializationOptions":configuration.initialization_options}),&DenyMutations,&deadline)?;
+		let initialized=client.request("initialize",json!({"processId":std::process::id(),"clientInfo":{"name":"harvest-rust","version":env!("CARGO_PKG_VERSION")},"rootUri":uri.as_str(),"workspaceFolders":[{"uri":uri.as_str(),"name":"workspace"}],"capabilities":{"general":{"positionEncodings":["utf-16"]},"workspace":{"applyEdit":true,"workspaceEdit":{"documentChanges":true,"resourceOperations":["create","rename","delete"],"failureHandling":"abort"},"configuration":true,"workspaceFolders":true},"textDocument":{"synchronization":{"didSave":true},"publishDiagnostics":{"versionSupport":true},"documentSymbol":{"hierarchicalDocumentSymbolSupport":true},"rename":{"prepareSupport":true},"diagnostic":{"dynamicRegistration":false}}},"initializationOptions":configuration.initialization_options}),&DenyMutations,&deadline)?;
 		ensure!(
 			initialized["capabilities"].is_object(),
 			"LSP initialize response has no capabilities"
@@ -96,6 +102,18 @@ impl Client {
 		std::mem::take(&mut self.applied_edits)
 	}
 
+	pub(crate) fn set_edit_store(&mut self, store: pi_edit::EditStore) {
+		self.edit_store = Some(store);
+	}
+
+	pub(crate) fn take_workspace_changes(&mut self) -> Vec<WorkspaceChange> {
+		std::mem::take(&mut self.workspace_changes)
+	}
+
+	pub fn needs_reload(&self) -> bool {
+		self.closed
+	}
+
 	pub fn stderr_tail(&self) -> Vec<u8> {
 		self.process.stderr_tail()
 	}
@@ -109,6 +127,7 @@ impl Client {
 	}
 
 	pub fn sync_document(&mut self, path: &Path, cancellation: &CancelToken) -> Result<String> {
+		ensure!(!self.closed, "LSP connection requires reload before document synchronization");
 		let filesystem = JailedFs::open(&self.root)?;
 		let resolved = filesystem.resource_path(path)?;
 		let bytes = filesystem.read(&resolved, MAX_FILE_BYTES)?;
@@ -153,10 +172,15 @@ impl Client {
 				.documents
 				.insert(uri.clone(), Document { version, text });
 		} else {
-			self.notify("textDocument/didOpen",json!({"textDocument":{"uri":uri,"version":1,"languageId":self.configuration.language_id,"text":text}}),cancellation)?;
+			self.notify("textDocument/didOpen",json!({"textDocument":{"uri":uri,"version":1,"languageId":self.configuration.document_language(&resolved),"text":text}}),cancellation)?;
 			self
 				.documents
 				.insert(uri.clone(), Document { version: 1, text });
+		}
+		if let Some(document) = self.documents.get(&uri) {
+			self
+				.deferred
+				.expect(uri.clone(), resolved, &document.text, document.version);
 		}
 		Ok(uri)
 	}
@@ -164,48 +188,8 @@ impl Client {
 	pub fn formatting_options(&self, uri: &str) -> Result<Value> {
 		let filesystem = JailedFs::open(&self.root)?;
 		let path = edits::uri_path(&filesystem, uri)?;
-		let mut directory = path.parent();
-		while let Some(parent) = directory {
-			if !parent.starts_with(filesystem.root()) {
-				break;
-			}
-			ensure!(
-				!filesystem.exists(&parent.join(".editorconfig"))?,
-				"native .editorconfig resolution is unfinished; provide explicit formatting options"
-			);
-			directory = parent.parent();
-		}
-		let text = &self
-			.documents
-			.get(uri)
-			.context("document is not open")?
-			.text;
-		let mut spaces = None;
-		let mut unit = 0_usize;
-		fn gcd(mut a: usize, mut b: usize) -> usize {
-			while b != 0 {
-				let next = a % b;
-				a = b;
-				b = next;
-			}
-			a
-		}
-		for line in text.lines().filter(|line| !line.trim().is_empty()) {
-			if line.starts_with('\t') {
-				if spaces.is_none() {
-					spaces = Some(false);
-				}
-			} else if line.starts_with(' ') {
-				if spaces.is_none() {
-					spaces = Some(true);
-				}
-				let count = line.bytes().take_while(|byte| *byte == b' ').count();
-				unit = if unit == 0 { count } else { gcd(unit, count) };
-			}
-		}
-		Ok(
-			json!({"tabSize":if spaces==Some(true) && unit>0 { unit } else { 2 },"insertSpaces":spaces.unwrap_or(true),"trimTrailingWhitespace":true,"insertFinalNewline":true,"trimFinalNewlines":true}),
-		)
+		let document = self.documents.get(uri).context("document is not open")?;
+		super::formatting::resolve(&filesystem, &path, &document.text)
 	}
 
 	pub fn position(
@@ -376,9 +360,16 @@ impl Client {
 				},
 				"window/workDoneProgress/create" => Value::Null,
 				"workspace/applyEdit" => {
-					match self.apply(&value["params"]["edit"], approval, cancellation) {
+					let context =
+						json!({"server":self.name(),"requestId":id,"label":value["params"].get("label")});
+					match self.apply_with_context(
+						&value["params"]["edit"],
+						approval,
+						cancellation,
+						Some(&context),
+					) {
 						Ok(result) => {
-							json!({"applied":result.applied,"failureReason":result.failure_reason})
+							json!({"applied":result.applied,"failureReason":result.failure_reason,"failedChange":result.failed_change_index})
 						},
 						Err(_) => {
 							json!({"applied":false,"failureReason":"Workspace edit rejected by host validation"})
@@ -394,28 +385,7 @@ impl Client {
 				.process
 				.send(&json!({"jsonrpc":"2.0","id":id,"result":result}), cancellation)?;
 		} else if method == "textDocument/publishDiagnostics" {
-			let uri = value["params"]["uri"]
-				.as_str()
-				.context("diagnostics have no URI")?
-				.to_owned();
-			ensure!(value["params"]["diagnostics"].is_array(), "invalid published diagnostics");
-			ensure!(
-				self.diagnostics.contains_key(&uri) || self.diagnostics.len() < 256,
-				"LSP diagnostics cache exceeds file limit"
-			);
-			let bytes = self
-				.diagnostics
-				.iter()
-				.filter(|(key, _)| *key != &uri)
-				.map(|(_, value)| serde_json::to_vec(value).map(|bytes| bytes.len()))
-				.collect::<std::result::Result<Vec<_>, _>>()?
-				.into_iter()
-				.sum::<usize>();
-			ensure!(
-				bytes + serde_json::to_vec(&value["params"])?.len() <= 8 * 1024 * 1024,
-				"LSP diagnostics cache exceeds byte limit"
-			);
-			self.diagnostics.insert(uri, value["params"].clone());
+			self.cache_diagnostics(value["params"].clone())?;
 		} else {
 			if self.notifications.len() == 32 {
 				self.notifications.pop_front();
@@ -425,29 +395,168 @@ impl Client {
 		Ok(())
 	}
 
-	pub fn diagnostics(&mut self, uri: &str, cancellation: &CancelToken) -> Result<Value> {
-		if self.capabilities.get("diagnosticProvider").is_some() {
-			return self.request(
-				"textDocument/diagnostic",
-				json!({"textDocument":{"uri":uri}}),
-				&DenyMutations,
-				cancellation,
-			);
+	fn cache_diagnostics(&mut self, mut params: Value) -> Result<()> {
+		let filesystem = JailedFs::open(&self.root)?;
+		let raw_uri = params["uri"].as_str().context("diagnostics have no URI")?;
+		let Ok(path) = edits::uri_path(&filesystem, raw_uri) else {
+			return Ok(());
+		};
+		let uri = self.file_uri(&path)?;
+		super::diagnostics::validate(&params["diagnostics"])?;
+		if let Some(version) = params.get("version").filter(|v| !v.is_null()) {
+			ensure!(version.as_i64().is_some(), "invalid diagnostic version");
 		}
-		for _ in 0..1024 {
+		ensure!(
+			self.diagnostics.contains_key(&uri) || self.diagnostics.len() < 256,
+			"LSP diagnostics cache exceeds file limit"
+		);
+		let mut budget = harvest_runtime::BoundedWriter::new(8 * 1024 * 1024);
+		for (key, value) in &self.diagnostics {
+			if key != &uri {
+				serde_json::to_writer(&mut budget, value)?;
+			}
+		}
+		params["uri"] = json!(uri);
+		serde_json::to_writer(&mut budget, &params)?;
+		self.diagnostics.insert(uri, params);
+		Ok(())
+	}
+
+	fn poll_diagnostic_messages(&mut self, cancellation: &CancelToken) -> Result<()> {
+		let mut budget = harvest_runtime::BoundedWriter::new(8 * 1024 * 1024);
+		for _ in 0..64 {
 			cancellation.heartbeat()?;
 			let Some(value) = self.process.try_receive()? else {
 				break;
 			};
+			serde_json::to_writer(&mut budget, &value)?;
+			ensure!(
+				value["jsonrpc"] == "2.0" && value.get("method").is_some(),
+				"unexpected idle LSP response"
+			);
 			self.handle_incoming(value, &DenyMutations, cancellation)?;
 		}
-		let current = self.documents.get(uri).map(|document| document.version);
-		Ok(match self.diagnostics.get(uri) {
+		Ok(())
+	}
+
+	pub(crate) fn diagnostic_items(&self, uri: &str) -> Vec<Value> {
+		let version = self.documents.get(uri).map(|document| document.version);
+		self
+			.diagnostics
+			.get(uri)
+			.filter(|params| params["version"].as_i64() == version && version.is_some())
+			.and_then(|params| params["diagnostics"].as_array())
+			.map(|items| items.iter().take(50).cloned().collect())
+			.unwrap_or_default()
+	}
+
+	fn cached_diagnostics(&self, uri: &str) -> Value {
+		match self.diagnostics.get(uri) {
 			Some(value) => {
-				json!({"available":true,"version":value.get("version"),"current":value["version"].as_i64().map(|version|Some(version)==current),"items":value["diagnostics"]})
+				let version = value["version"].as_i64();
+				let current = version.map(|version| {
+					self
+						.documents
+						.get(uri)
+						.is_some_and(|document| document.version == version)
+				});
+				if current == Some(false) {
+					json!({"uri":uri,"available":false,"current":false,"staleVersion":version,"items":[]})
+				} else {
+					super::diagnostics::report(
+						uri,
+						version,
+						current,
+						value["diagnostics"]
+							.as_array()
+							.map(Vec::as_slice)
+							.unwrap_or(&[]),
+					)
+				}
 			},
-			None => json!({"available":false,"current":false}),
-		})
+			None => json!({"uri":uri,"available":false,"current":false,"items":[]}),
+		}
+	}
+
+	pub(crate) fn cached_workspace_diagnostics(&self) -> Vec<Value> {
+		self
+			.diagnostics
+			.keys()
+			.take(20)
+			.map(|uri| self.cached_diagnostics(uri))
+			.collect()
+	}
+
+	pub(crate) fn poll_deferred_diagnostics(
+		&mut self,
+		cancellation: &CancelToken,
+		max_bytes: usize,
+	) -> Result<Vec<Value>> {
+		if self.closed {
+			return Ok(Vec::new());
+		}
+		let result = (|| {
+			self.poll_diagnostic_messages(cancellation)?;
+			self
+				.deferred
+				.collect(&JailedFs::open(&self.root)?, &self.diagnostics, max_bytes)
+		})();
+		if result.is_err() && !cancellation.aborted() {
+			self.closed = true;
+			self.documents.clear();
+			self.diagnostics.clear();
+			self.deferred.clear();
+			self.process.terminate();
+		}
+		result
+	}
+
+	pub fn diagnostics(&mut self, uri: &str, cancellation: &CancelToken) -> Result<Value> {
+		let filesystem = JailedFs::open(&self.root)?;
+		let path = edits::uri_path(&filesystem, uri)?;
+		let uri = self.sync_document(&path, cancellation)?;
+		self.poll_diagnostic_messages(cancellation)?;
+		if self
+			.capabilities
+			.get("diagnosticProvider")
+			.is_some_and(|v| !v.is_null() && v.as_bool() != Some(false))
+		{
+			let version = self.documents.get(&uri).map(|d| d.version);
+			let before = filesystem.read(&path, MAX_FILE_BYTES)?;
+			let previous = self
+				.diagnostics
+				.get(&uri)
+				.and_then(|v| v.get("resultId"))
+				.filter(|v| v.is_string())
+				.cloned();
+			let mut params = json!({"textDocument":{"uri":uri}});
+			if let Some(id) = &previous {
+				params["previousResultId"] = id.clone();
+			}
+			let result =
+				self.request("textDocument/diagnostic", params, &DenyMutations, cancellation)?;
+			if filesystem.read(&path, MAX_FILE_BYTES)? != before {
+				return Ok(
+					json!({"uri":uri,"available":false,"current":false,"reason":"document_changed"}),
+				);
+			}
+			match result["kind"].as_str() {
+                Some("full") => self.cache_diagnostics(json!({"uri":uri,"version":version,"diagnostics":result["items"],"resultId":result.get("resultId")}))?,
+                Some("unchanged") => {
+                    let cached = self.diagnostics.get_mut(&uri).context("unchanged diagnostics have no prior result")?;
+                    ensure!(previous.is_some() && result.get("resultId") == previous.as_ref(), "unchanged diagnostic result identity differs");
+                    cached["version"] = json!(version);
+                },
+                _ => bail!("invalid LSP diagnostic report kind"),
+            }
+		}
+		let report = self.cached_diagnostics(&uri);
+		if report["current"] == true {
+			if let Some(items) = report["items"].as_array() {
+				self.deferred.acknowledge(&uri, items);
+			}
+		}
+		Ok(report)
 	}
 
 	pub fn apply(
@@ -456,38 +565,175 @@ impl Client {
 		approval: &dyn Approval,
 		cancellation: &CancelToken,
 	) -> Result<ApplyResult> {
-		let versions = self
-			.documents
-			.iter()
-			.map(|(uri, document)| (uri.clone(), document.version))
-			.collect();
-		ensure!(self.applied_edits.len() < 256, "too many unconsumed LSP edit reports");
-		let mut result =
-			edits::apply_workspace_edit(&self.root, edit, &versions, approval, cancellation)?;
-		let mut synchronized = true;
-		let mut watched = Vec::new();
-		for path in &result.changed_files {
-			let delivery = (|| -> Result<()> {
-				let uri = self.file_uri(path)?;
-				if self.documents.contains_key(&uri) {
-					self.sync_document(path, cancellation)?;
-				}
-				watched.push(json!({"uri":uri,"type":2}));
-				Ok(())
-			})();
-			if delivery.is_err() {
-				synchronized = false;
-				break;
+		self.apply_with_context(edit, approval, cancellation, None)
+	}
+
+	pub(crate) fn apply_for_tool(
+		&mut self,
+		edit: &Value,
+		call: &crate::chat::ToolCall,
+		approval: &dyn Approval,
+		cancellation: &CancelToken,
+	) -> Result<ApplyResult> {
+		self.apply_with_context(
+			edit,
+			approval,
+			cancellation,
+			Some(&json!({"toolCall":call,"server":self.name()})),
+		)
+	}
+
+	fn apply_with_context(
+		&mut self,
+		edit: &Value,
+		approval: &dyn Approval,
+		cancellation: &CancelToken,
+		context: Option<&Value>,
+	) -> Result<ApplyResult> {
+		ensure!(!self.closed, "LSP connection requires reload before workspace edits");
+		let filesystem = JailedFs::open(&self.root)?;
+		let mut versions = BTreeMap::new();
+		for (uri, document) in &self.documents {
+			let path = edits::uri_path(&filesystem, uri)?;
+			if filesystem.read_optional(&path, MAX_FILE_BYTES)?.as_deref()
+				== Some(document.text.as_bytes())
+			{
+				versions.insert(uri.clone(), document.version);
 			}
 		}
-		if synchronized && !watched.is_empty() {
-			synchronized = self
-				.notify("workspace/didChangeWatchedFiles", json!({"changes":watched}), cancellation)
-				.is_ok();
-		}
-		result.synchronization_pending = !synchronized;
+		ensure!(self.applied_edits.len() < 256, "too many unconsumed LSP edit reports");
+		let mut reports = harvest_runtime::BoundedWriter::new(harvest_runtime::MAX_TOOL_BYTES / 4);
+		serde_json::to_writer(&mut reports, &self.applied_edits)?;
+		ensure!(
+			self.workspace_changes.len() <= 4096 - 512,
+			"unconsumed LSP workspace changes exceed limit"
+		);
+		let mut result =
+			super::workspace::apply(&self.root, edit, &versions, approval, cancellation, context)?;
+		self
+			.workspace_changes
+			.extend(result.executed_changes.iter().cloned());
+		result.synchronization_pending = self
+			.reconcile_changes(&result.executed_changes, cancellation)
+			.is_err();
 		self.applied_edits.push(serde_json::to_value(&result)?);
 		Ok(result)
+	}
+
+	/// Reconcile actual committed operations, including a failed write's prefix.
+	/// Failed delivery invalidates the connection; the next runtime invocation
+	/// reconnects and opens fresh disk content instead of using stale overlays.
+	pub(crate) fn reconcile_changes(
+		&mut self,
+		changes: &[WorkspaceChange],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		self.reconcile(changes, cancellation, true)
+	}
+
+	/// Native writes already invalidated provenance; native edits published
+	/// fresh engine-owned snapshots. Only synchronize language-server state.
+	pub(crate) fn reconcile_native_changes(
+		&mut self,
+		changes: &[WorkspaceChange],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		self.reconcile(changes, cancellation, false)
+	}
+
+	fn reconcile(
+		&mut self,
+		changes: &[WorkspaceChange],
+		cancellation: &CancelToken,
+		invalidate_snapshots: bool,
+	) -> Result<()> {
+		if changes.is_empty() {
+			return Ok(());
+		}
+		if invalidate_snapshots {
+			for change in changes {
+				for path in change.paths() {
+					if let Some(store) = &self.edit_store {
+						store.invalidate(&pi_edit::path_policy::canonical_key(path));
+					}
+				}
+			}
+		}
+		let delivery = (|| -> Result<()> {
+			ensure!(!self.closed, "LSP connection requires reload after workspace changes");
+			let mut deleted = std::collections::BTreeSet::new();
+			let mut final_paths = std::collections::BTreeSet::new();
+			let mut watched = Vec::new();
+			for change in changes {
+				let mut watch = |path: &Path, kind: u32| -> Result<()> {
+					let uri = self.file_uri(path)?;
+					watched.push(json!({"uri":uri,"type":kind}));
+					self.diagnostics.remove(&uri);
+					self.deferred.invalidate(&uri);
+					Ok(())
+				};
+				match change {
+					WorkspaceChange::Edit { path } => {
+						final_paths.insert(path.clone());
+						watch(path, 2)?;
+					},
+					WorkspaceChange::Create { path } => {
+						final_paths.insert(path.clone());
+						watch(path, 1)?;
+					},
+					WorkspaceChange::Delete { path } => {
+						deleted.insert(path.clone());
+						final_paths.remove(path);
+						watch(path, 3)?;
+					},
+					WorkspaceChange::Rename { old_path, new_path } => {
+						deleted.insert(old_path.clone());
+						final_paths.remove(old_path);
+						final_paths.insert(new_path.clone());
+						watch(old_path, 3)?;
+						watch(new_path, 1)?;
+					},
+				}
+			}
+			for path in deleted {
+				let uri = self.file_uri(&path)?;
+				if self.documents.contains_key(&uri) {
+					self.notify(
+						"textDocument/didClose",
+						json!({"textDocument":{"uri":uri}}),
+						cancellation,
+					)?;
+					self.documents.remove(&uri);
+					self.deferred.forget(&uri);
+				}
+			}
+			for path in final_paths {
+				let uri = self.file_uri(&path)?;
+				if self.documents.contains_key(&uri) {
+					self.sync_document(&path, cancellation)?;
+					let mut params = json!({"textDocument":{"uri":uri}});
+					if self.capabilities["textDocumentSync"]["save"]["includeText"] == true {
+						params["text"] = json!(
+							self
+								.documents
+								.get(&uri)
+								.context("saved LSP document is missing")?
+								.text
+						);
+					}
+					self.notify("textDocument/didSave", params, cancellation)?;
+				}
+			}
+			self.notify("workspace/didChangeWatchedFiles", json!({"changes":watched}), cancellation)
+		})();
+		if delivery.is_err() {
+			self.closed = true;
+			self.documents.clear();
+			self.diagnostics.clear();
+			self.deferred.clear();
+			self.process.terminate();
+		}
+		delivery
 	}
 }
 impl Drop for Client {

@@ -14,13 +14,12 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use crossterm::event::{self, Event};
 use harvest_runtime::{
-	BoundedWriter, MAX_EVENT_BYTES, MAX_HTTP_BYTES, MAX_TOOL_BYTES, truncate_bytes,
+	BoundedWriter, JailedFs, MAX_EVENT_BYTES, MAX_HTTP_BYTES, MAX_TOOL_BYTES, truncate_bytes,
 };
 use harvest_tui::{
 	component::Component,
-	editor::{Editor, EditorAction, MAX_EDITOR_BYTES},
+	editor::{Editor, EditorAction},
 	keyparse::Key,
 	layout::viewport,
 	render::Renderer,
@@ -38,6 +37,10 @@ use crate::{
 	},
 	tools::Approval,
 };
+
+mod completion;
+mod history;
+mod input;
 
 /// Lines of a tool result shown in the transcript.
 const TOOL_PREVIEW_LINES: usize = 8;
@@ -63,12 +66,29 @@ pub struct ChatOptions {
 	pub engine:    SessionEngineOptions,
 }
 
+struct PendingChoice {
+	request:      crate::plugins::protocol::ChoiceRequest,
+	reply:        std_mpsc::Sender<Option<usize>>,
+	cancellation: harvest_runtime::cancel::CancelToken,
+	selected:     usize,
+}
+
 struct ApprovalRequest {
 	name:     String,
 	display:  String,
 	offset:   usize,
 	reviewed: bool,
 	reply:    std_mpsc::Sender<bool>,
+	choice:   Option<PendingChoice>,
+}
+
+impl ApprovalRequest {
+	fn deny(self) {
+		let _ = self.reply.send(false);
+		if let Some(choice) = self.choice {
+			let _ = choice.reply.send(None);
+		}
+	}
 }
 
 struct TuiApproval {
@@ -91,10 +111,62 @@ impl Approval for TuiApproval {
 				offset: 0,
 				reviewed: false,
 				reply,
+				choice: None,
 			})
 			.map_err(|_| anyhow::anyhow!("interactive UI closed"))?;
 		// Fail closed: a dropped UI denies.
 		Ok(answer.recv().unwrap_or(false))
+	}
+
+	fn choose(
+		&self,
+		request: &crate::plugins::protocol::ChoiceRequest,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<Option<usize>> {
+		crate::plugins::protocol::event_bytes(&crate::plugins::protocol::Event::Choices {
+			title:   request.title.clone(),
+			choices: request.choices.clone(),
+		})?;
+		anyhow::ensure!(
+			!request.choices.is_empty()
+				&& request.plugin.len() <= 128
+				&& request.tool_call_id.len() <= 256,
+			"invalid plugin UI request"
+		);
+		let (reply, answer) = std_mpsc::channel();
+		let (unused, _) = std_mpsc::channel();
+		let mut pending = ApprovalRequest {
+			name:     request.plugin.clone(),
+			display:  String::new(),
+			offset:   0,
+			reviewed: false,
+			reply:    unused,
+			choice:   Some(PendingChoice {
+				request: request.clone(),
+				reply,
+				cancellation: cancellation.clone(),
+				selected: 0,
+			}),
+		};
+		loop {
+			cancellation.heartbeat()?;
+			match self.requests.try_send(pending) {
+				Ok(()) => break,
+				Err(mpsc::error::TrySendError::Closed(_)) => anyhow::bail!("native UI closed"),
+				Err(mpsc::error::TrySendError::Full(request)) => {
+					pending = request;
+					std::thread::sleep(Duration::from_millis(10));
+				},
+			}
+		}
+		loop {
+			cancellation.heartbeat()?;
+			match answer.recv_timeout(Duration::from_millis(10)) {
+				Ok(value) => return Ok(value),
+				Err(std_mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
+				Err(std_mpsc::RecvTimeoutError::Timeout) => {},
+			}
+		}
 	}
 }
 
@@ -126,7 +198,12 @@ impl Entry {
 		let inner = width
 			.saturating_sub(harvest_tui::sanitize::visible_width(marker))
 			.max(1);
-		let mut lines: Vec<String> = display_lines(&self.text, inner)
+		let rendered = if matches!(self.role, Role::Assistant) {
+			harvest_tui::markdown::render(&self.text, inner)
+		} else {
+			display_lines(&self.text, inner)
+		};
+		let mut lines: Vec<String> = rendered
 			.into_iter()
 			.enumerate()
 			.map(|(i, l)| {
@@ -147,6 +224,14 @@ struct App {
 	streaming:        String,
 	stream_truncated: bool,
 	editor:           Editor,
+	workspace:        Arc<JailedFs>,
+	agent_directory:  Option<PathBuf>,
+	session_id:       String,
+	history:          Option<Arc<history::History>>,
+	history_prompts:  Vec<String>,
+	completion:       Option<completion::Menu>,
+	completion_epoch: u64,
+	completion_task:  Option<tokio::task::JoinHandle<(u64, Result<completion::Suggestions>)>>,
 	pending:          Option<ApprovalRequest>,
 	active:           Option<RunHandle>,
 	runs:             Vec<RunHandle>,
@@ -156,6 +241,186 @@ struct App {
 }
 
 impl App {
+	fn restore_editor_history(&mut self, messages: &[ChatMessage]) {
+		let mut restored = messages
+			.iter()
+			.rev()
+			.filter(|message| message.role == "user")
+			.filter_map(|message| message.content.as_deref())
+			.take(harvest_tui::editor::MAX_HISTORY_ENTRIES)
+			.map(|text| {
+				crate::managed::invocation::original_prompt(text)
+					.map(std::borrow::Cow::Owned)
+					.unwrap_or(std::borrow::Cow::Borrowed(text))
+			})
+			.scan(0usize, |bytes, text| {
+				*bytes = bytes.saturating_add(text.len());
+				(*bytes <= harvest_tui::editor::MAX_HISTORY_BYTES).then_some(text)
+			})
+			.collect::<Vec<_>>();
+		restored.reverse();
+		self.editor.load_history(
+			self
+				.history_prompts
+				.iter()
+				.map(String::as_str)
+				.chain(restored.iter().map(|text| text.as_ref())),
+		);
+	}
+
+	fn invalidate_completion(&mut self) {
+		self.completion = None;
+		self.completion_epoch = self.completion_epoch.saturating_add(1);
+	}
+
+	fn request_completion(&mut self) {
+		// Keep one filesystem discovery job alive at a time. Draft changes
+		// invalidate its result without accumulating overlapping blocking work.
+		if self.completion_task.is_some() {
+			return;
+		}
+		self.invalidate_completion();
+		let epoch = self.completion_epoch;
+		let context = self.editor.completion_context();
+		let workspace = Arc::clone(&self.workspace);
+		let directory = self.agent_directory.clone();
+		self.completion_task = Some(tokio::task::spawn_blocking(move || {
+			(epoch, completion::paths(workspace, context, directory))
+		}));
+	}
+
+	fn request_history(&mut self, query: String) {
+		if self.completion_task.is_some() {
+			return;
+		}
+		let Some(history) = self.history.as_ref().map(Arc::clone) else {
+			self.push(
+				Role::Notice,
+				"Persistent history is unavailable; Up/Down still recalls this session's prompts.",
+			);
+			return;
+		};
+		self.invalidate_completion();
+		let epoch = self.completion_epoch;
+		let context = self.editor.completion_context();
+		self.completion_task = Some(tokio::task::spawn_blocking(move || {
+			(epoch, completion::history(history, context, query))
+		}));
+	}
+
+	fn finish_completion(
+		&mut self,
+		outcome: std::result::Result<(u64, Result<completion::Suggestions>), tokio::task::JoinError>,
+	) {
+		match outcome {
+			Ok((epoch, result)) if epoch == self.completion_epoch && self.pending.is_none() => {
+				match result {
+					Ok(suggestions) if self.editor.matches_completion(&suggestions.context) => {
+						if suggestions.items.is_empty() {
+							self.push(Role::Notice, "No matching completions.");
+							return;
+						}
+						let apply_single = suggestions.items.len() == 1 && !suggestions.history;
+						self.completion = Some(completion::Menu { suggestions, selected: 0 });
+						if apply_single {
+							self.accept_completion(false);
+						}
+					},
+					Ok(_) => {},
+					Err(error) => self.push(Role::Notice, format!("Completion unavailable: {error:#}")),
+				}
+			},
+			Err(error) => self.push(Role::Notice, format!("Completion worker stopped: {error}")),
+			_ => {},
+		}
+	}
+
+	fn accept_completion(&mut self, chain_directory: bool) {
+		let Some(menu) = self.completion.take() else {
+			return;
+		};
+		let Some(item) = menu.suggestions.items.get(menu.selected) else {
+			return;
+		};
+		let applied = if menu.suggestions.history {
+			self.editor.matches_completion(&menu.suggestions.context)
+				&& self.editor.set_text(&item.value)
+		} else {
+			self.editor.apply_completion(
+				&menu.suggestions.context,
+				menu.suggestions.replace_characters,
+				&item.value,
+			)
+		};
+		self.invalidate_completion();
+		if !applied {
+			self.push(
+				Role::Notice,
+				"Completion no longer matches the draft or exceeds the editor limit.",
+			);
+		} else if chain_directory && item.directory {
+			self.request_completion();
+		}
+	}
+
+	fn handle_completion_key(&mut self, key: &Key) -> bool {
+		if *key == Key::Ctrl('r') {
+			self.request_history(self.editor.text());
+			return true;
+		}
+		if let Some(menu) = &mut self.completion {
+			match key {
+				Key::Up | Key::BackTab => menu.select(-1),
+				Key::Down => menu.select(1),
+				Key::PageUp => menu.select(-8),
+				Key::PageDown => menu.select(8),
+				Key::Enter | Key::Tab => {
+					self.accept_completion(true);
+				},
+				Key::Right
+					if self.editor.completion_context().column
+						== self.editor.completion_context().line.chars().count() =>
+				{
+					self.accept_completion(true)
+				},
+				Key::Escape => self.invalidate_completion(),
+				_ => return false,
+			}
+			return true;
+		}
+		if matches!(key, Key::Tab | Key::BackTab) {
+			self.request_completion();
+			return true;
+		}
+		false
+	}
+
+	async fn persist_history(&mut self, prompt: String) {
+		let Some(history) = self.history.as_ref().map(Arc::clone) else {
+			return;
+		};
+		let workspace = self.workspace.root().to_owned();
+		let session_id = self.session_id.clone();
+		let result = tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+			history.record(&prompt, &workspace, &session_id)?;
+			Ok(history
+				.recent(100)?
+				.into_iter()
+				.rev()
+				.map(|entry| entry.prompt)
+				.collect())
+		})
+		.await
+		.context("prompt history worker stopped")
+		.and_then(|result| result);
+		match result {
+			Ok(prompts) => self.history_prompts = prompts,
+			Err(error) => {
+				self.push(Role::Notice, format!("Prompt history could not be saved: {error:#}"))
+			},
+		}
+	}
+
 	fn push(&mut self, role: Role, text: impl Into<String>) {
 		let text = text.into();
 		let mut visible = truncate_bytes(&text, MAX_TOOL_BYTES).to_owned();
@@ -223,7 +488,10 @@ impl App {
 			}
 		}
 		match role {
-			"user" => self.push(Role::User, text),
+			"user" => {
+				let original = crate::managed::invocation::original_prompt(&text);
+				self.push(Role::User, original.unwrap_or(text));
+			},
 			"assistant" => {
 				self.streaming.clear();
 				self.stream_truncated = false;
@@ -284,7 +552,30 @@ impl App {
 				self.finish(event, "");
 			},
 			SessionEngineEventKind::Closed => self.quit = true,
-			SessionEngineEventKind::Queued | SessionEngineEventKind::PluginEvent { .. } => {},
+			SessionEngineEventKind::MemoryWarning { operation } => {
+				self.push(Role::Notice, format!("memory {operation} is temporarily unavailable"));
+			},
+			SessionEngineEventKind::PluginEvent { event, .. } => match event {
+				crate::plugins::protocol::Event::Progress { message } => {
+					self.status = replace_tabs(message).replace('\n', " ")
+				},
+				crate::plugins::protocol::Event::Notification { title, message } => {
+					self.push(Role::Notice, format!("{title}\n{message}"))
+				},
+				crate::plugins::protocol::Event::Choices { title, choices } => self.push(
+					Role::Notice,
+					format!(
+						"{title}\n{}",
+						choices
+							.iter()
+							.enumerate()
+							.map(|(index, label)| format!("{}. {label}", index + 1))
+							.collect::<Vec<_>>()
+							.join("\n")
+					),
+				),
+			},
+			SessionEngineEventKind::Queued => {},
 		}
 	}
 
@@ -307,6 +598,52 @@ impl App {
 
 	fn frame(&mut self, width: usize, height: usize) -> (Vec<String>, Option<(usize, usize)>) {
 		if let Some(request) = &mut self.pending {
+			if let Some(choice) = &request.choice {
+				let mut details = harvest_tui::sanitize::wrap(
+					&format!(
+						"Plugin {:?} / tool call {:?}",
+						choice.request.plugin, choice.request.tool_call_id
+					),
+					width,
+				);
+				details
+					.extend(harvest_tui::sanitize::wrap(&format!("{:?}", choice.request.title), width));
+				for (index, value) in choice.request.choices.iter().enumerate() {
+					details.extend(harvest_tui::sanitize::wrap(
+						&format!(
+							"{} {}. {:?}",
+							if index == choice.selected { "›" } else { " " },
+							index + 1,
+							value
+						),
+						width,
+					));
+				}
+				let page = height.saturating_sub(2).max(1);
+				request.offset = request.offset.min(details.len().saturating_sub(page));
+				request.reviewed |= width > 0 && height >= 3 && request.offset + page >= details.len();
+				let mut lines = vec![truncate_to_width(
+					&format!("Plugin choice {}/{}", choice.selected + 1, choice.request.choices.len()),
+					width,
+				)];
+				lines.extend(
+					details
+						.iter()
+						.skip(request.offset)
+						.take(page)
+						.map(|line| truncate_to_width(line, width)),
+				);
+				lines.push(truncate_to_width(
+					if request.reviewed {
+						"↑/↓ choose · Enter submit · Esc dismiss · PgUp/PgDn review"
+					} else {
+						"Read to end · PgUp/PgDn · ↑/↓ choose · Esc dismiss"
+					},
+					width,
+				));
+				lines.truncate(height);
+				return (lines, None);
+			}
 			// Debug formatting already escapes terminal controls and invisible
 			// formatting characters. Do not shorten paths or otherwise rewrite
 			// the final arguments shown for approval.
@@ -346,7 +683,7 @@ impl App {
 			}
 		}
 		if !self.streaming.is_empty() {
-			for line in display_lines(&self.streaming, width) {
+			for line in harvest_tui::markdown::render(&self.streaming, width) {
 				if recent.len() == MAX_DISPLAY_ROWS {
 					recent.pop_front();
 				}
@@ -365,7 +702,7 @@ impl App {
 		}
 		let mut footer = Vec::new();
 		let status = if self.status.is_empty() {
-			"enter send · shift+enter newline · ctrl+d quit"
+			"Enter send · Tab complete · Ctrl-_ undo · Ctrl-Y redo · Ctrl-R history"
 		} else {
 			&self.status
 		};
@@ -374,8 +711,12 @@ impl App {
 		let mut cursor_in_editor = self.editor.cursor(width);
 		// Keep the cursor's editor window visible even for a pasted multiline
 		// draft or a terminal shorter than the draft.
-		footer.truncate(height.saturating_sub(1));
-		let editor_height = height.saturating_sub(footer.len());
+		let suggestions = self
+			.completion
+			.as_ref()
+			.map_or_else(Vec::new, |menu| menu.render(width, height.saturating_sub(3)));
+		footer.truncate(height.saturating_sub(suggestions.len()).saturating_sub(1));
+		let editor_height = height.saturating_sub(footer.len() + suggestions.len());
 		if editor.len() > editor_height {
 			let start = cursor_in_editor
 				.map_or(0, |(row, _)| row.saturating_add(1).saturating_sub(editor_height));
@@ -390,6 +731,7 @@ impl App {
 		lines.extend(footer);
 		let top = lines.len();
 		lines.extend(editor);
+		lines.extend(suggestions);
 		let cursor = if self.pending.is_some() {
 			None
 		} else {
@@ -408,10 +750,12 @@ fn preview_args(args: &str) -> String {
 	shorten_path(&flat[..cut])
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum Input {
 	Key(Key),
+	Paste { text: String, enter: bool },
 	Resize,
-	Error(String),
+	Fatal(String),
 }
 
 /// Run the interactive UI until the user quits.
@@ -427,6 +771,24 @@ pub fn run(options: ChatOptions) -> Result<u8> {
 }
 
 async fn run_async(options: ChatOptions) -> Result<u8> {
+	let workspace = Arc::new(JailedFs::open(&options.workspace)?);
+	let history_workspace = options.workspace.clone();
+	let agent_directory = options.engine.user_agent_dir.clone();
+	let history_directory = agent_directory.clone();
+	let history_loaded = tokio::task::spawn_blocking(move || -> Result<_> {
+		let history =
+			Arc::new(history::History::open(&history_workspace, history_directory.as_deref())?);
+		let prompts = history
+			.recent(100)?
+			.into_iter()
+			.rev()
+			.map(|entry| entry.prompt)
+			.collect::<Vec<_>>();
+		Ok((history, prompts))
+	})
+	.await
+	.context("native history worker failed")
+	.and_then(|result| result);
 	let (approval_tx, mut approvals) = mpsc::channel(1);
 	let session = SessionEngine::open(
 		&options.workspace,
@@ -441,18 +803,26 @@ async fn run_async(options: ChatOptions) -> Result<u8> {
 	let mut subscription = session.subscribe().await?;
 
 	let mut app = App {
-		entries:          VecDeque::new(),
-		entry_bytes:      0,
-		trimmed:          false,
-		streaming:        String::new(),
+		entries: VecDeque::new(),
+		entry_bytes: 0,
+		trimmed: false,
+		streaming: String::new(),
 		stream_truncated: false,
-		editor:           Editor::new("› "),
-		pending:          None,
-		active:           None,
-		runs:             Vec::new(),
-		scroll:           0,
-		status:           String::new(),
-		quit:             false,
+		editor: Editor::new("› "),
+		workspace,
+		agent_directory,
+		session_id: subscription.snapshot.session_id.clone(),
+		history: None,
+		history_prompts: Vec::new(),
+		completion: None,
+		completion_epoch: 0,
+		completion_task: None,
+		pending: None,
+		active: None,
+		runs: Vec::new(),
+		scroll: 0,
+		status: String::new(),
+		quit: false,
 	};
 	app.push(
 		Role::Notice,
@@ -465,48 +835,29 @@ async fn run_async(options: ChatOptions) -> Result<u8> {
 	for message in &subscription.snapshot.messages {
 		app.push_history(message);
 	}
+	match history_loaded {
+		Ok((history, prompts)) => {
+			app.history = Some(history);
+			app.history_prompts = prompts;
+		},
+		Err(error) => {
+			app.push(Role::Notice, format!("persistent prompt history unavailable: {error:#}"))
+		},
+	}
+	app.restore_editor_history(&subscription.snapshot.messages);
 
 	let guard = TerminalGuard::enter()?;
 	let (input_tx, mut inputs) = mpsc::channel(INPUT_CAPACITY);
 	let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-	let reader_stop = Arc::clone(&stop);
-	let reader = std::thread::Builder::new()
-		.name("harvest-terminal-input".into())
-		.spawn(move || {
-			while !reader_stop.load(std::sync::atomic::Ordering::Relaxed) {
-				match event::poll(Duration::from_millis(100)) {
-					Ok(false) => continue,
-					Ok(true) => {},
-					Err(error) => {
-						let _ = input_tx.blocking_send(Input::Error(error.to_string()));
-						break;
-					},
-				}
-				let input = match event::read() {
-					Ok(Event::Key(key)) => Key::from_event(&key).map(Input::Key),
-					Ok(Event::Paste(text)) if text.len() <= MAX_EDITOR_BYTES => {
-						Some(Input::Key(Key::Paste(text)))
-					},
-					Ok(Event::Paste(_)) => Some(Input::Error("paste exceeds input byte limit".into())),
-					Ok(Event::Resize(..)) => Some(Input::Resize),
-					Ok(_) => None,
-					Err(error) => {
-						let _ = input_tx.blocking_send(Input::Error(error.to_string()));
-						break;
-					},
-				};
-				if let Some(input) = input
-					&& input_tx.blocking_send(input).is_err()
-				{
-					break;
-				}
-			}
-		})
+	let reader = input::spawn_reader(input_tx, Arc::clone(&stop))
 		.context("failed to start terminal input reader")?;
 
 	let mut renderer = Renderer::new();
 	let mut out = io::stdout();
 	let outcome: Result<()> = async { while !app.quit {
+		if app.pending.as_ref().and_then(|request| request.choice.as_ref()).is_some_and(|choice| choice.cancellation.heartbeat().is_err()) {
+			if let Some(request) = app.pending.take() { request.deny(); }
+		}
 		anyhow::ensure!(guard.is_active(), "interactive terminal was restored after a panic");
 		let (cols, rows) = TerminalGuard::size();
 		let (lines, cursor) = app.frame(cols as usize, rows as usize);
@@ -515,7 +866,8 @@ async fn run_async(options: ChatOptions) -> Result<u8> {
 			input = inputs.recv() => match input {
 				None => break,
 				Some(Input::Resize) => renderer.invalidate(),
-				Some(Input::Error(message)) => app.push(Role::Error, message),
+				Some(Input::Fatal(message)) => anyhow::bail!(message),
+				Some(Input::Paste { text, enter }) => handle_paste(&mut app, &session, text, enter).await,
 				Some(Input::Key(key)) => handle_key(&mut app, &session, key).await,
 			},
 			event = subscription.events.recv() => match event {
@@ -527,19 +879,28 @@ async fn run_async(options: ChatOptions) -> Result<u8> {
 					app.active = app.runs.iter().find(|handle| Some(handle.id()) == subscription.snapshot.active).cloned();
 					app.runs.retain(|handle| Some(handle.id()) == subscription.snapshot.active || subscription.snapshot.queued.contains(&handle.id()));
 					for message in &subscription.snapshot.messages { app.push_history(message); }
+					app.restore_editor_history(&subscription.snapshot.messages);
 					app.push(Role::Notice, "display resynchronized from committed history after event lag; provisional text was discarded");
 				},
 				Err(RecvError::Closed) => break,
 			},
+			completion = async { app.completion_task.as_mut().expect("enabled completion worker").await }, if app.completion_task.is_some() => {
+				app.completion_task = None;
+				app.finish_completion(completion);
+			},
 			request = approvals.recv(), if app.pending.is_none() => {
 				if let Some(request) = request {
+					app.invalidate_completion();
 					app.pending = Some(request);
 				}
 			},
 		}
 	} Ok(()) }.await;
 	if let Some(request) = app.pending.take() {
-		let _ = request.reply.send(false);
+		request.deny();
+	}
+	if let Some(task) = app.completion_task.take() {
+		task.abort();
 	}
 	for handle in app.runs.drain(..) {
 		handle.abort();
@@ -548,7 +909,7 @@ async fn run_async(options: ChatOptions) -> Result<u8> {
 	drop(inputs);
 	approvals.close();
 	while let Ok(request) = approvals.try_recv() {
-		let _ = request.reply.send(false);
+		request.deny();
 	}
 	let shutdown = session.shutdown().await;
 	let reader_result = reader.join();
@@ -589,14 +950,54 @@ mod tests {
 
 async fn handle_key(app: &mut App, session: &crate::session_engine::SessionHandle, key: Key) {
 	if let Some(mut request) = app.pending.take() {
+		if let Some(choice) = request.choice.as_mut() {
+			match key {
+				Key::Up => {
+					choice.selected = choice.selected.saturating_sub(1);
+					app.pending = Some(request);
+				},
+				Key::Down => {
+					choice.selected = (choice.selected + 1).min(choice.request.choices.len() - 1);
+					app.pending = Some(request);
+				},
+				Key::PageDown => {
+					request.offset = request.offset.saturating_add(10);
+					app.pending = Some(request);
+				},
+				Key::PageUp => {
+					request.offset = request.offset.saturating_sub(10);
+					app.pending = Some(request);
+				},
+				Key::Enter if request.reviewed && choice.cancellation.heartbeat().is_ok() => {
+					if let Some(choice) = request.choice.take() {
+						let _ = choice.reply.send(Some(choice.selected));
+					}
+					app.push(Role::Notice, "Plugin choice submitted.");
+				},
+				Key::Escape | Key::Ctrl('c') | Key::Ctrl('d') => {
+					request.deny();
+					if key == Key::Ctrl('d') {
+						app.quit = true;
+					}
+					if key == Key::Ctrl('c') {
+						if let Some(handle) = &app.active {
+							handle.abort();
+						}
+					}
+				},
+				_ => app.pending = Some(request),
+			}
+			return;
+		}
 		match key {
 			Key::Char('y' | 'Y') if request.reviewed => {
 				let _ = request.reply.send(true);
 				app.push(Role::Notice, format!("approved {}", request.name));
 			},
 			Key::Char('n' | 'N') | Key::Escape | Key::Ctrl('c') => {
-				let _ = request.reply.send(false);
-				app.push(Role::Notice, format!("denied {}", request.name));
+				let name = request.name.clone();
+				request.deny();
+				app.push(Role::Notice, format!("denied {name}"));
 				if key == Key::Ctrl('c') {
 					if let Some(handle) = &app.active {
 						handle.abort();
@@ -604,7 +1005,7 @@ async fn handle_key(app: &mut App, session: &crate::session_engine::SessionHandl
 				}
 			},
 			Key::Ctrl('d') => {
-				let _ = request.reply.send(false);
+				request.deny();
 				app.quit = true;
 			},
 			Key::PageDown | Key::Down => {
@@ -619,6 +1020,10 @@ async fn handle_key(app: &mut App, session: &crate::session_engine::SessionHandl
 		}
 		return;
 	}
+	if app.handle_completion_key(&key) {
+		return;
+	}
+	app.invalidate_completion();
 	match key {
 		Key::Ctrl('c') => {
 			if let Some(handle) = &app.active {
@@ -643,6 +1048,45 @@ async fn handle_key(app: &mut App, session: &crate::session_engine::SessionHandl
 					app.quit = true;
 					return;
 				}
+				if text.trim() == "/help" {
+					let commands = completion::COMMANDS
+						.iter()
+						.map(|(name, description)| format!("{name} — {description}"))
+						.collect::<Vec<_>>()
+						.join("\n");
+					app.push(
+						Role::Notice,
+						format!(
+							"{commands}\nTab completes paths/commands; arrows choose, Enter inserts. \
+							 Ctrl-_ or Ctrl-Z undo; Ctrl-Y redo. Ctrl-R searches native history. \
+							 Shift-Enter inserts a newline."
+						),
+					);
+					return;
+				}
+				if text.trim() == "/skills" {
+					app.editor.set_text("/skill:");
+					app.request_completion();
+					return;
+				}
+				if text.trim() == "/clear" {
+					app.entries.clear();
+					app.entry_bytes = 0;
+					app.trimmed = false;
+					app.scroll = 0;
+					return;
+				}
+				if text.trim() == "/history" || text.trim().starts_with("/history ") {
+					app.request_history(
+						text
+							.trim()
+							.strip_prefix("/history")
+							.unwrap_or_default()
+							.trim()
+							.to_owned(),
+					);
+					return;
+				}
 				if text.trim() == "/resume" {
 					if let Err(error) = session.resume_follow_ups().await {
 						app.push(Role::Error, error.to_string());
@@ -662,6 +1106,7 @@ async fn handle_key(app: &mut App, session: &crate::session_engine::SessionHandl
 							app.active = Some(ticket.handle.clone());
 						}
 						app.status = "working… (ctrl+c to interrupt)".into();
+						app.persist_history(draft).await;
 					},
 					Err(error) => {
 						app.editor.set_text(&draft);
@@ -670,5 +1115,27 @@ async fn handle_key(app: &mut App, session: &crate::session_engine::SessionHandl
 				}
 			},
 		},
+	}
+}
+
+async fn handle_paste(
+	app: &mut App,
+	session: &crate::session_engine::SessionHandle,
+	text: String,
+	enter: bool,
+) {
+	// Paste and its same-read Enter are one input transaction. No approval or
+	// session event can move focus between insertion and submission.
+	if app.pending.is_some() {
+		return;
+	}
+	app.invalidate_completion();
+	match app.editor.apply(&Key::Paste(text)) {
+		EditorAction::Rejected => app.push(
+			Role::Error,
+			"paste exceeds the editor byte limit; draft unchanged and Enter ignored",
+		),
+		EditorAction::None if enter => handle_key(app, session, Key::Enter).await,
+		_ => {},
 	}
 }

@@ -103,6 +103,16 @@ SDK exposes `AgentSession::open`, `begin`, `execute` and `submit`, with cancella
 handles tied to each run. A writer lock protects cooperating Rust processes;
 compare-and-append also detects changes by outside writers holding the file lock.
 
+For settings-enabled Mnemopi, both session hosts recall transient context and
+retain only committed user/assistant text at the configured cadence. Sync SDK
+hosts call `AgentSession::close(sink)` to flush a below-cadence suffix and release
+the writer; async hosts call `SessionEngine::shutdown()`. Dropping a sync host
+performs no automatic retention I/O. Evaluation hosts can explicitly disable
+these hooks with `configure_memory_lifecycle(false)` while retaining explicit
+memory tools. Backend failures emit fixed-label `memory_warning` events without
+backend error text; completed model answers are preserved. Provider/vector and
+other backend lifecycle parity remains in progress.
+
 Replay supports text, ordinary function calls/results, text compaction,
 handoffs and branch-return summaries. The latest compaction supplies the summary
 and kept tail; a later durable `/clear` boundary starts context after that marker.
@@ -316,3 +326,39 @@ no new numbered-line edit authority. Use either selector or offset/limit. Confli
 malformed, overflow and unimplemented named readers fail explicitly. Literal colon
 filenames and dangling symlinks take precedence. This continuation is also uncompiled
 and unverified; the production TS read/grep consumers remain in place.
+
+### Native conversion connections in progress
+
+Native chat now connects bounded undo/redo, jailed command/path completion and
+versioned native JSON prompt history. `/history` and Ctrl-R search this store;
+legacy SQLite history remains intact, with import/FTS compatibility pending.
+Assistant Markdown uses the same bounded renderer for live and rebuilt text.
+Native LSP file resource edits share the normal writer/approval/provenance owner;
+directory/binary/rename-overwrite operations still reject before publication.
+Workspace-local EditorConfig formatting is layered over content indentation.
+
+Remote Mnemopi generation can reuse the configured host Model through
+`configure_memory_model`; other Model implementations explicitly opt into the
+per-request output-limit API. Native file-backed memory settings refresh at turn
+boundaries. `open_with_storage_in` selects an approved settings/secret directory
+at construction. Child tasks share the parent backend and disable duplicate
+automatic learning. These connections are in conversion, with verification deferred.
+
+### Conversion-only native integration (2026-11-05)
+
+The native host now connects canonical skill catalog refresh and `skill://` reads,
+profile-aware managed writes, opt-in shared-default LSP discovery, deferred
+version-checked diagnostics, native edit/file-write notifications and process-plugin
+interactive choices in the TUI. These additions are uncompiled and untested during
+the requested conversion sweep. Noninteractive plugin choice replies, full plugin skill-source grants and special
+write receipts remain pending. Native create/rename notifications now
+retain their operation identities, including committed partial-move operations. See the migration HANDOFF for the complete limitations;
+the default shipped launcher and legacy consumers remain unchanged.
+
+Native skill commands now expand leading/embedded `/skill:<name>` input in both
+session hosts. `/skills` opens the TUI completion menu. Selected instructions persist
+in a bounded `harvest_skill_invocation_v1` user-content envelope; TUI/history and
+automatic memory use the original input. Jailed companion UTF-8/directory reads use
+`skill://name/path` without edit provenance. These connections remain uncompiled and
+untested; plugin-source grants, encoded/non-text resources and legacy custom-message
+interchange still need conversion and consolidated verification.

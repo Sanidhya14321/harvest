@@ -16,6 +16,18 @@ pub struct ModelResponse {
 }
 
 pub trait Model {
+	/// Hosts opt in only when their existing wire builder can enforce the
+	/// requested generation limit. A byte cap alone is not a token budget.
+	fn stream_response_with_output_limit(
+		&self,
+		_messages: &[ChatMessage],
+		_tools: &[ToolSpec],
+		_tokens: u32,
+		_cancellation: &harvest_runtime::cancel::CancelToken,
+		_on_text: &mut dyn FnMut(&str) -> Result<()>,
+	) -> Result<ModelResponse> {
+		bail!("this model host does not support per-request generation limits")
+	}
 	// Implementations can return an ID borrowed from their configuration.
 	#[allow(
 		clippy::unnecessary_literal_bound,
@@ -303,6 +315,26 @@ struct Choice {
 }
 
 impl Model for HttpModel {
+	fn stream_response_with_output_limit(
+		&self,
+		messages: &[ChatMessage],
+		tools: &[ToolSpec],
+		tokens: u32,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+		on_text: &mut dyn FnMut(&str) -> Result<()>,
+	) -> Result<ModelResponse> {
+		let tokens = self
+			.message_tokens
+			.or(self.output_limit)
+			.map_or(tokens, |configured| configured.min(tokens));
+		self.clone().with_output_limit(tokens)?.stream_response(
+			messages,
+			tools,
+			cancellation,
+			on_text,
+		)
+	}
+
 	fn invalidate_command_credentials(
 		&self,
 		cancellation: &harvest_runtime::cancel::CancelToken,

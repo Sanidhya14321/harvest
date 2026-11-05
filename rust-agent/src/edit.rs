@@ -198,7 +198,7 @@ pub(crate) fn replace_detailed(
 }
 
 mod writer;
-use writer::NativeWriter;
+pub(crate) use writer::NativeWriter;
 pub use writer::{CommittedChange, NativeEditFailure};
 
 /// Native SDK result; file snapshots and metadata describe actual engine

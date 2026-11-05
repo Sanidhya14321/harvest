@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use serde_yaml_ng::Mapping;
 
+pub mod catalog;
+pub(crate) mod invocation;
+
 pub const MAX_REVISIONS_PER_ARTIFACT: usize = 20;
 pub const MAX_MANAGED_ARTIFACT_BYTES: usize = 64_000;
 const READ_LIMIT: usize = 1024 * 1024;
@@ -191,19 +194,18 @@ fn sanitize_description(raw: &str) -> String {
 }
 
 /// Split `---\nyaml\n---\nbody`; content without frontmatter is all body.
-pub fn parse_frontmatter(content: &str) -> (Mapping, String) {
+pub fn parse_frontmatter(content: &str) -> Result<(Mapping, String)> {
 	let normalized = content.replace("\r\n", "\n");
-	if let Some(rest) = normalized.strip_prefix("---\n")
-		&& let Some(end) = rest.find("\n---")
-	{
-		let yaml = &rest[..end];
-		let body = rest[end + 4..]
-			.trim_start_matches(['-'])
-			.trim_start_matches('\n');
-		let mapping = serde_yaml_ng::from_str::<Mapping>(yaml).unwrap_or_default();
-		return (mapping, body.to_owned());
+	if let Some(rest) = normalized.strip_prefix("---\n") {
+		let end = rest
+			.find("\n---\n")
+			.or_else(|| rest.strip_suffix("\n---").map(str::len))
+			.context("unterminated managed Markdown frontmatter")?;
+		let mapping = serde_yaml_ng::from_str::<Mapping>(&rest[..end])
+			.context("invalid managed Markdown frontmatter")?;
+		return Ok((mapping, rest.get(end + 5..).unwrap_or_default().to_owned()));
 	}
-	(Mapping::new(), normalized)
+	Ok((Mapping::new(), normalized))
 }
 
 fn render(frontmatter: &Mapping, body: &str, blank_line: bool) -> Result<String> {
@@ -226,7 +228,23 @@ impl Store {
 	pub fn open() -> Result<Self> {
 		let root = crate::config::agent_dir_from(None, |key| std::env::var_os(key))
 			.context("cannot resolve the agent directory (HOME is unset)")?;
-		Ok(Self { fs: JailedFs::open_or_create(&root)?, root })
+		Self::open_in(&root)
+	}
+
+	pub fn open_in(root: &Path) -> Result<Self> {
+		let fs = JailedFs::open_or_create(root)?;
+		Ok(Self { root: fs.root().to_owned(), fs })
+	}
+
+	fn check_name(kind: Kind, name: &str) -> Result<()> {
+		let safe = match kind {
+			Kind::Skill => sanitize_skill_name(name)?,
+			Kind::Preset => sanitize_preset_name(name)?,
+		};
+		if safe != name {
+			bail!("managed artifact name must already be canonical");
+		}
+		Ok(())
 	}
 
 	pub fn root(&self) -> &Path {
@@ -238,10 +256,12 @@ impl Store {
 	}
 
 	fn read_text(&self, path: &Path) -> Result<Option<String>> {
-		Ok(self
+		self
 			.fs
 			.read_optional(path, READ_LIMIT)?
-			.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
+			.map(String::from_utf8)
+			.transpose()
+			.context("managed artifact is not valid UTF-8")
 	}
 
 	fn write_json(&self, path: &Path, value: &impl Serialize) -> Result<()> {
@@ -255,7 +275,15 @@ impl Store {
 	fn pointer(&self, kind: Kind, name: &str) -> Result<Pointer> {
 		let path = Self::artifact_dir(kind, name).join("active.json");
 		match self.read_text(&path)? {
-			Some(text) => Ok(serde_json::from_str(&text)?),
+			Some(text) => {
+				let pointer: Pointer = serde_json::from_str(&text)?;
+				if let Some(active) = &pointer.active
+					&& validate_revision_id(active)? != *active
+				{
+					bail!("managed active pointer is not canonical");
+				}
+				Ok(pointer)
+			},
 			None => Ok(Pointer { active: None, updated_at: now() }),
 		}
 	}
@@ -266,26 +294,49 @@ impl Store {
 	}
 
 	pub fn revision(&self, kind: Kind, name: &str, rev: &str) -> Result<Option<Revision>> {
+		Self::check_name(kind, name)?;
 		let rev = validate_revision_id(rev)?;
 		let path = Self::artifact_dir(kind, name).join(format!("{rev}.json"));
-		self
-			.read_text(&path)?
-			.map(|text| serde_json::from_str(&text).map_err(Into::into))
-			.transpose()
+		let Some(text) = self.read_text(&path)? else {
+			return Ok(None);
+		};
+		let revision: Revision = serde_json::from_str(&text)?;
+		if revision.id != rev
+			|| revision.name != name
+			|| revision.kind != kind.label()
+			|| !matches!(revision.state.as_str(), "draft" | "active")
+			|| revision.content.len() > MAX_MANAGED_ARTIFACT_BYTES
+		{
+			bail!("managed revision identity or bounds do not match its requested artifact");
+		}
+		Ok(Some(revision))
 	}
 
 	fn put_revision(&self, kind: Kind, revision: &Revision) -> Result<()> {
+		Self::check_name(kind, &revision.name)?;
+		validate_revision_id(&revision.id)?;
+		if revision.kind != kind.label() || revision.content.len() > MAX_MANAGED_ARTIFACT_BYTES {
+			bail!("invalid managed revision");
+		}
 		let path = Self::artifact_dir(kind, &revision.name).join(format!("{}.json", revision.id));
 		self.write_json(&path, revision)
 	}
 
 	/// `(active, revisions oldest-first)`.
 	pub fn list(&self, kind: Kind, name: &str) -> Result<(Option<String>, Vec<Revision>)> {
+		Self::check_name(kind, name)?;
 		let dir = Self::artifact_dir(kind, name);
 		let mut revisions = Vec::new();
+		let mut bytes = 0_u64;
 		if self.fs.exists(&dir)? {
-			for entry in self.fs.entries(&dir, 10_000)? {
+			for entry in self.fs.entries(&dir, 256)? {
 				if entry.is_file && entry.name.starts_with("rev-") && entry.name.ends_with(".json") {
+					bytes = bytes
+						.checked_add(entry.size)
+						.context("managed revision catalog size overflow")?;
+					if bytes > harvest_brain::MAX_INDEX_BYTES as u64 {
+						bail!("managed revision catalog exceeds aggregate read budget");
+					}
 					let id = entry.name.trim_end_matches(".json");
 					if let Some(rev) = self.revision(kind, name, id)? {
 						revisions.push(rev);
@@ -299,16 +350,28 @@ impl Store {
 
 	fn active_revision(&self, kind: Kind, name: &str) -> Result<Option<Revision>> {
 		match self.pointer(kind, name)?.active {
-			Some(id) => self.revision(kind, name, &id),
+			Some(id) => self
+				.revision(kind, name, &id)?
+				.context("active managed pointer references a missing revision")
+				.map(Some),
 			None => Ok(None),
 		}
 	}
 
 	fn current_content(&self, kind: Kind, name: &str) -> Result<Option<String>> {
+		let Some(materialized) = self.read_text(&kind.file(name))? else {
+			return Ok(None);
+		};
 		if let Some(rev) = self.active_revision(kind, name)? {
+			if rev.content != materialized {
+				bail!(
+					"managed materialization differs from its active revision; recover it before \
+					 mutation"
+				);
+			}
 			return Ok(Some(rev.content));
 		}
-		self.read_text(&kind.file(name))
+		Ok(Some(materialized))
 	}
 
 	/// First managed mutation of a pre-revision file seeds it into history.
@@ -320,7 +383,7 @@ impl Store {
 		let Some(content) = self.read_text(&kind.file(name))? else {
 			return Ok(());
 		};
-		let (fm, _) = parse_frontmatter(&content);
+		let (fm, _) = parse_frontmatter(&content)?;
 		let mut rev =
 			self.mint(kind, name, content, mapping_str(&fm, "description").unwrap_or_default(), None);
 		rev.state = "active".into();
@@ -493,6 +556,7 @@ impl Store {
 	}
 
 	pub fn delete(&self, kind: Kind, name: &str) -> Result<()> {
+		Self::check_name(kind, name)?;
 		let _guard = TRANSACTION.lock().unwrap_or_else(|e| e.into_inner());
 		let file = kind.file(name);
 		if !self.fs.exists(&file)? {
@@ -513,7 +577,7 @@ impl Store {
 			return Ok(Vec::new());
 		}
 		let mut names = Vec::new();
-		for entry in self.fs.entries(dir, 10_000)? {
+		for entry in self.fs.entries(dir, 1024)? {
 			if entry.is_symlink {
 				continue;
 			}
@@ -525,6 +589,9 @@ impl Store {
 				},
 				_ => continue,
 			};
+			if Self::check_name(kind, &name).is_err() {
+				continue;
+			}
 			if self.fs.exists(&kind.file(&name))? {
 				names.push(name);
 			}
@@ -533,7 +600,8 @@ impl Store {
 	}
 
 	pub fn read_managed(&self, kind: Kind, name: &str) -> Result<Option<String>> {
-		self.read_text(&kind.file(name))
+		Self::check_name(kind, name)?;
+		self.current_content(kind, name)
 	}
 }
 
@@ -585,24 +653,13 @@ impl Outcome {
 
 // ---------------------------------------------------------------- skills
 
-/// Authored (non-managed) skill roots; an authored skill always wins in
-/// discovery, so managed skills may not claim its name.
-fn authored_skill_dirs(cwd: &Path, agent_dir: &Path) -> Vec<PathBuf> {
-	let mut dirs = vec![
-		agent_dir.join("skills"),
-		cwd.join(crate::commands::CONFIG_DIR_NAME).join("skills"),
-		cwd.join(".claude").join("skills"),
-	];
-	if let Some(home) = std::env::var_os("HOME") {
-		dirs.push(PathBuf::from(home).join(".claude").join("skills"));
-	}
-	dirs
-}
-
 pub fn is_name_claimed_by_authored_skill(cwd: &Path, agent_dir: &Path, name: &str) -> bool {
-	authored_skill_dirs(cwd, agent_dir)
-		.iter()
-		.any(|dir| dir.join(name).join("SKILL.md").is_file())
+	// The legacy boolean caller cannot expose a discovery error. Refuse a
+	// mutation when discovery is incomplete rather than overriding an unseen
+	// authored skill. Tool callers below retain the actionable error instead.
+	crate::settings::Settings::load(Some(agent_dir), cwd, &[])
+		.and_then(|settings| catalog::is_authored_name_claimed(cwd, agent_dir, &settings, name))
+		.unwrap_or(true)
 }
 
 /// Resolve the real task consumer through authored, bundled, then managed
@@ -639,7 +696,7 @@ pub fn agent_definition(
 	let Some(text) = store.read_managed(Kind::Preset, name)? else {
 		return Ok(None);
 	};
-	let (fm, body) = parse_frontmatter(&text);
+	let (fm, body) = parse_frontmatter(&text)?;
 	checked_agent_body(name, &fm, body).map(Some)
 }
 
@@ -712,7 +769,7 @@ fn skill_content(
 		&& (description.is_none() || body.is_none())
 		&& let Some(current) = store.current_content(Kind::Skill, name)?
 	{
-		let (fm, current_body) = parse_frontmatter(&current);
+		let (fm, current_body) = parse_frontmatter(&current)?;
 		description.get_or_insert_with(|| mapping_str(&fm, "description").unwrap_or_default());
 		body.get_or_insert(current_body);
 	}
@@ -791,8 +848,17 @@ fn relative_managed(store: &Store, path: &Path, dir: &str) -> String {
 }
 
 pub fn manage_skill(cwd: &Path, arguments: &str) -> Result<Outcome> {
+	manage_skill_in(cwd, None, arguments)
+}
+
+/// Use the same host-granted profile as discovery and the session runtime.
+pub fn manage_skill_in(cwd: &Path, agent_dir: Option<&Path>, arguments: &str) -> Result<Outcome> {
 	let args: ManageSkillArgs = serde_json::from_str(arguments)?;
-	let store = Store::open()?;
+	let store = match agent_dir {
+		Some(root) => Store::open_in(root)?,
+		None => Store::open()?,
+	};
+	let settings = crate::settings::Settings::load(Some(store.root()), cwd, &[])?;
 	let name = args.name.clone();
 	match args.action.as_str() {
 		"delete" => {
@@ -844,7 +910,7 @@ pub fn manage_skill(cwd: &Path, arguments: &str) -> Result<Outcome> {
 				);
 			}
 			let safe = sanitize_skill_name(&name)?;
-			if is_name_claimed_by_authored_skill(cwd, store.root(), &safe)
+			if catalog::is_authored_name_claimed(cwd, store.root(), &settings, &safe)?
 				&& store.active_revision(Kind::Skill, &safe)?.is_none()
 			{
 				return Ok(Outcome::error(
@@ -947,8 +1013,12 @@ pub fn manage_skill(cwd: &Path, arguments: &str) -> Result<Outcome> {
 				);
 			}
 			if action == "create"
-				&& is_name_claimed_by_authored_skill(cwd, store.root(), &sanitize_skill_name(&name)?)
-			{
+				&& catalog::is_authored_name_claimed(
+					cwd,
+					store.root(),
+					&settings,
+					&sanitize_skill_name(&name)?,
+				)? {
 				return Ok(Outcome::error(
 					format!(
 						"Cannot create managed skill \"{name}\": an authored skill of that name already \
@@ -1005,6 +1075,7 @@ fn authored_agents(cwd: &Path, agent_dir: &Path) -> Result<Vec<AuthoredAgent>> {
 	}
 	let mut seen = BTreeSet::new();
 	let mut agents = Vec::new();
+	let mut bytes = 0_u64;
 	for (root, source) in roots {
 		if !root.exists() {
 			continue;
@@ -1016,8 +1087,16 @@ fn authored_agents(cwd: &Path, agent_dir: &Path) -> Result<Vec<AuthoredAgent>> {
 			if !file.is_file || file.is_symlink || !file.name.ends_with(".md") {
 				continue;
 			}
+			bytes = bytes
+				.checked_add(file.size)
+				.context("agent catalog size overflow")?;
+			if bytes > harvest_brain::MAX_INDEX_BYTES as u64
+				|| agents.len() >= harvest_brain::MAX_FILES
+			{
+				bail!("agent catalog exceeds aggregate capacity");
+			}
 			let text = String::from_utf8(fs.read(Path::new(&file.name), MAX_MANAGED_ARTIFACT_BYTES)?)?;
-			let (frontmatter, body) = parse_frontmatter(&text);
+			let (frontmatter, body) = parse_frontmatter(&text)?;
 			let name = mapping_str(&frontmatter, "name")
 				.unwrap_or_else(|| file.name.trim_end_matches(".md").into());
 			if seen.insert(name.clone()) {
@@ -1076,7 +1155,7 @@ fn preset_content(
 	let mut fm = Mapping::new();
 	let mut body = String::new();
 	if update && let Some(current) = store.current_content(Kind::Preset, name)? {
-		let parsed = parse_frontmatter(&current);
+		let parsed = parse_frontmatter(&current)?;
 		fm = parsed.0;
 		body = parsed.1;
 	}
@@ -1119,8 +1198,16 @@ fn preset_content(
 }
 
 pub fn presets(cwd: &Path, arguments: &str) -> Result<Outcome> {
+	presets_in(cwd, None, arguments)
+}
+
+/// Use the same host-granted profile as actual task/preset resolution.
+pub fn presets_in(cwd: &Path, agent_dir: Option<&Path>, arguments: &str) -> Result<Outcome> {
 	let args: PresetsArgs = serde_json::from_str(arguments)?;
-	let store = Store::open()?;
+	let store = match agent_dir {
+		Some(root) => Store::open_in(root)?,
+		None => Store::open()?,
+	};
 	let require_name = || -> Result<String> {
 		match &args.name {
 			Some(name) => sanitize_preset_name(name),
@@ -1139,9 +1226,7 @@ pub fn presets(cwd: &Path, arguments: &str) -> Result<Outcome> {
 				if agents.iter().any(|(n, ..)| *n == name) {
 					continue;
 				}
-				let (active, revisions) = store
-					.list(Kind::Preset, &name)
-					.unwrap_or((None, Vec::new()));
+				let (active, revisions) = store.list(Kind::Preset, &name)?;
 				rows.push(format!(
 					"- {name} (managed, active {}, {} revision(s))",
 					active.as_deref().unwrap_or("none"),
@@ -1161,24 +1246,44 @@ pub fn presets(cwd: &Path, arguments: &str) -> Result<Outcome> {
 			))
 		},
 		"inspect" => {
-			let name = require_name()?;
+			let name = args
+				.name
+				.as_deref()
+				.map(str::trim)
+				.filter(|name| !name.is_empty())
+				.context("\"inspect\" requires \"name\".")?;
+			if name.len() > 128
+				|| !name
+					.chars()
+					.all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+			{
+				bail!("invalid agent name");
+			}
 			let known = agents.iter().find(|(n, ..)| *n == name);
-			let managed = store
-				.read_managed(Kind::Preset, &name)?
-				.map(|text| parse_frontmatter(&text).0);
-			let (active, revisions) = store
-				.list(Kind::Preset, &name)
-				.unwrap_or((None, Vec::new()));
+			let (managed, active, revisions) =
+				if sanitize_preset_name(name).is_ok_and(|safe| safe == name) {
+					let managed = store
+						.read_managed(Kind::Preset, name)?
+						.map(|text| parse_frontmatter(&text).map(|(mapping, _)| mapping))
+						.transpose()?;
+					let (active, revisions) = store.list(Kind::Preset, name)?;
+					(managed, active, revisions)
+				} else {
+					(None, None, Vec::new())
+				};
 			if known.is_none() && managed.is_none() && revisions.is_empty() {
 				return Ok(Outcome::error(
 					format!("Preset \"{name}\" not found."),
 					json!({ "action": "inspect", "name": name }),
 				));
 			}
-			let description = managed
-				.as_ref()
-				.and_then(|fm| mapping_str(fm, "description"))
-				.or_else(|| known.map(|(_, _, d)| d.clone()))
+			let description = known
+				.map(|(_, _, description)| description.clone())
+				.or_else(|| {
+					managed
+						.as_ref()
+						.and_then(|fm| mapping_str(fm, "description"))
+				})
 				.unwrap_or_else(|| "(no live definition)".into());
 			let lines: Vec<String> = revisions
 				.iter()
@@ -1197,10 +1302,12 @@ pub fn presets(cwd: &Path, arguments: &str) -> Result<Outcome> {
 					)
 				})
 				.collect();
-			let source = if managed.is_some() {
+			let source = if let Some((_, source, _)) = known {
+				Some(source.clone())
+			} else if managed.is_some() {
 				Some("managed".to_owned())
 			} else {
-				known.map(|(_, s, _)| s.clone())
+				None
 			};
 			Ok(Outcome::ok(
 				format!(

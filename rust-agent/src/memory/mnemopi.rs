@@ -9,13 +9,13 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use harvest_mnemopi::beam::{
-	BeamMemory, BeamOptions,
+	BeamMemory, BeamOptions, consolidate,
 	recall::{self, RecallOptions, RecallResult},
 	store::{self, RememberOptions},
 };
 use serde_json::{Value, json};
 
-use super::MemoryBackend;
+use super::{MemoryBackend, RetentionCursor, RetentionEpisode};
 
 struct ScopedBank {
 	name:   String,
@@ -67,15 +67,26 @@ impl MnemopiBackend {
 		cwd: &Path,
 		session_id: &str,
 	) -> Result<Self> {
+		Self::from_settings_in(settings, cwd, session_id, None)
+	}
+
+	pub fn from_settings_in(
+		settings: &crate::settings::Settings,
+		cwd: &Path,
+		session_id: &str,
+		agent_dir: Option<&Path>,
+	) -> Result<Self> {
 		let cwd = std::path::absolute(cwd)?;
 		let configured = settings
 			.string("mnemopi.dbPath")
 			.filter(|path| !path.trim().is_empty());
 		let base_path = match configured {
 			Some(path) => PathBuf::from(path),
-			None => crate::config::agent_dir_from(None, |key| std::env::var_os(key))
-				.context("cannot resolve memory agent directory")?
-				.join("memories/mnemopi/mnemopi.db"),
+			None => crate::config::agent_dir_from(agent_dir.map(Path::to_owned), |key| {
+				std::env::var_os(key)
+			})
+			.context("cannot resolve memory agent directory")?
+			.join("memories/mnemopi/mnemopi.db"),
 		};
 		let base_path = if base_path.is_absolute() {
 			base_path
@@ -120,6 +131,8 @@ impl MnemopiBackend {
 				channel_id: Some(name.clone()),
 				..Default::default()
 			})?;
+			// Protect age-eligible memories before the first write can TTL-trim them.
+			consolidate::sleep(&memory, false)?;
 			banks.push(ScopedBank { name, memory });
 		}
 		Ok(Self {
@@ -197,8 +210,96 @@ impl MnemopiBackend {
 }
 
 impl MemoryBackend for MnemopiBackend {
+	fn configure_llm(
+		&self,
+		llm: Option<std::sync::Arc<dyn harvest_mnemopi::providers::Llm>>,
+	) -> Result<()> {
+		let mut banks = self.lock()?;
+		for bank in banks.iter_mut() {
+			bank.memory.llm = llm.clone();
+		}
+		Ok(())
+	}
+
 	fn id(&self) -> &str {
 		"mnemopi"
+	}
+
+	fn retention_cursors(&self, session_id: &str) -> Result<Vec<RetentionCursor>> {
+		let banks = self.lock()?;
+		let bank = banks.first().context("memory has no retain bank")?;
+		let mut statement = bank.memory.db.prepare(
+			"SELECT value FROM annotations WHERE kind='coding-agent-retention-v1' AND source=? ORDER \
+			 BY id DESC LIMIT 1024",
+		)?;
+		let rows = statement.query_map([session_id], |row| row.get::<_, String>(0))?;
+		let mut cursors = Vec::new();
+		for row in rows {
+			let text = row?;
+			if text.len() > 1024 {
+				bail!("automatic memory cursor exceeds byte limit");
+			}
+			let cursor: RetentionCursor = serde_json::from_str(&text)?;
+			cursors.push(cursor);
+		}
+		Ok(cursors)
+	}
+
+	fn retain_episode(
+		&self,
+		episode: &RetentionEpisode,
+		cancellation: &harvest_runtime::cancel::CancelToken,
+	) -> Result<()> {
+		cancellation.heartbeat()?;
+		if episode.session_id != self.session_id {
+			bail!("memory retention belongs to another session");
+		}
+		if episode.transcript.is_empty() {
+			bail!("automatic retention requires meaningful committed text");
+		}
+		let banks = self.lock()?;
+		let bank = banks.first().context("memory has no retain bank")?;
+		let cursor = serde_json::to_string(&episode.cursor)?;
+		let metadata = json!({"session_id":episode.session_id,"cwd":episode.cwd,
+			"source_id":format!("{}-native-{}",episode.session_id,episode.cursor.digest),
+			"retained_through_user_turn":episode.cursor.user_turns,"native_retained_messages":episode.cursor.messages,
+			"native_prefix_digest":episode.cursor.digest,"outcome":episode.outcome});
+		let options = RememberOptions {
+			source: Some("coding-agent-transcript".into()),
+			importance: Some(0.65),
+			scope: Some("bank".into()),
+			veracity: Some("unknown".into()),
+			memory_type: Some("episode".into()),
+			metadata: metadata.as_object().cloned(),
+			embed_text: Some(episode.embed_text.clone()),
+			extract_text: episode.extract_text.clone(),
+			extract: episode.extract_text.is_some(),
+			extract_entities: episode.extract_text.is_some(),
+			..Default::default()
+		};
+		harvest_mnemopi::db::transaction(&bank.memory.db, || {
+			let id = store::remember(&bank.memory, &episode.transcript, &options)?;
+			if store::get(&bank.memory, &id)?.is_none() {
+				return Err(harvest_mnemopi::MnemopiError::Invalid(
+					"automatic episode did not remain stored".into(),
+				));
+			}
+			// Existing annotations preserve per-host cursors even when content dedupes
+			// against a transcript retained by another session in this bank.
+			bank.memory.db.execute(
+				"INSERT OR IGNORE INTO annotations(memory_id,kind,value,source,confidence) VALUES \
+				 (?,'coding-agent-retention-v1',?,?,1)",
+				rusqlite::params![id, cursor, episode.session_id],
+			)?;
+			bank.memory.db.execute(
+				"DELETE FROM annotations WHERE kind='coding-agent-retention-v1' AND source=? AND id \
+				 NOT IN (SELECT id FROM annotations WHERE kind='coding-agent-retention-v1' AND \
+				 source=? ORDER BY id DESC LIMIT 1024)",
+				rusqlite::params![episode.session_id, episode.session_id],
+			)?;
+			Ok(())
+		})?;
+		Ok(())
 	}
 
 	fn retain(&self, request: Value) -> Result<Value> {

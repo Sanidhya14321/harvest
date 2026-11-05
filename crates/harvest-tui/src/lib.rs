@@ -18,6 +18,7 @@ pub mod component;
 pub mod editor;
 pub mod keyparse;
 pub mod layout;
+pub mod markdown;
 pub mod render;
 pub mod sanitize;
 #[cfg(not(target_arch = "wasm32"))]

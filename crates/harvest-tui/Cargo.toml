@@ -14,6 +14,7 @@ phf.workspace = true
 smallvec.workspace = true
 xutf.workspace = true
 syntect.workspace = true
+pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 crossterm.workspace = true

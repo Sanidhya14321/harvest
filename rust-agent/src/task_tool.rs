@@ -40,6 +40,18 @@ pub fn run(
 	approval: &dyn Approval,
 	parent: &RunOptions,
 ) -> Result<String> {
+	run_with_memory(root, arguments, model, approval, parent, None)
+}
+
+/// Real session hosts pass the parent's backend rather than reopening memory.
+pub fn run_with_memory(
+	root: &Path,
+	arguments: &str,
+	model: &dyn Model,
+	approval: &dyn Approval,
+	parent: &RunOptions,
+	memory: Option<crate::memory::Inheritance>,
+) -> Result<String> {
 	let args: TaskArgs = serde_json::from_str(arguments)
 		.map_err(|error| anyhow::anyhow!("invalid task arguments JSON: {error}"))?;
 	let task = args.task.trim();
@@ -64,17 +76,10 @@ pub fn run(
 	if depth >= MAX_DEPTH {
 		bail!("subagent nesting limit ({MAX_DEPTH}) reached; do the work directly");
 	}
-	let mut prompt = format!("<agent name=\"{agent}\">\n{}\n</agent>\n\n", body.trim());
-	if let Some(context) = args
-		.context
-		.as_deref()
-		.map(str::trim)
-		.filter(|c| !c.is_empty())
-	{
-		prompt.push_str(&format!("<context>\n{context}\n</context>\n\n"));
-	}
-	prompt.push_str(task);
-	prompt.push_str("\n\nWhen finished, call `yield` with your result.");
+	let prompt = handlebars::Handlebars::new().render_template(
+		include_str!("prompts/task-invocation.md"),
+		&serde_json::json!({"agent":agent,"body":body.trim(),"context":args.context.as_deref().map(str::trim).filter(|context|!context.is_empty()),"task":task}),
+	)?;
 	let stamp = std::time::SystemTime::now()
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|d| d.as_nanos())
@@ -88,7 +93,22 @@ pub fn run(
 	};
 	DEPTH.with(|d| d.set(depth + 1));
 	let result = (|| {
-		let mut session = crate::agent_session::AgentSession::open(root, Path::new(&path), None)?;
+		let mut session = match memory {
+			Some(memory) => crate::agent_session::AgentSession::open_inheriting_memory(
+				root,
+				Path::new(&path),
+				None,
+				memory,
+			)?,
+			None => crate::agent_session::AgentSession::open_with_storage_in(
+				root,
+				root,
+				Path::new(&path),
+				None,
+				parent.user_agent_dir.as_deref(),
+			)?,
+		};
+		session.configure_memory_lifecycle(false)?;
 		let answer = session.submit(&prompt, model, approval, &options, &mut |_| Ok(()))?;
 		Ok::<_, anyhow::Error>((answer, session.take_yield()))
 	})();

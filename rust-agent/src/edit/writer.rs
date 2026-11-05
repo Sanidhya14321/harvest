@@ -63,7 +63,7 @@ struct State {
 	committed: Vec<CommittedChange>,
 	locks:     Vec<FileLock>,
 }
-pub(super) struct NativeWriter {
+pub(crate) struct NativeWriter {
 	fs:           Arc<JailedFs>,
 	cancellation: CancelToken,
 	state:        Mutex<State>,
@@ -138,7 +138,7 @@ impl NativeWriter {
 			let noop = file.op == FileOp::Noop;
 			let diff = (!noop && !file.diff.is_empty() && file.diff.len() <= 32 * 1024)
 				.then_some(file.diff.as_str());
-			details.push(serde_json::json!({"op":file.op.as_str(),"path":file.display,"noop":noop,"diff":diff,"diffUnavailable":if noop{Some("no_change")}else if file.diff.is_empty(){Some("not_reported")}else if diff.is_none(){Some("exceeds_limit")}else{None},"moveTo":file.move_to.as_ref().map(|m|m.display.as_str())}));
+			details.push(serde_json::json!({"op":file.op.as_str(),"path":file.display,"resolvedPath":source,"resolvedMoveTo":destination,"noop":noop,"diff":diff,"diffUnavailable":if noop{Some("no_change")}else if file.diff.is_empty(){Some("not_reported")}else if diff.is_none(){Some("exceeds_limit")}else{None},"moveTo":file.move_to.as_ref().map(|m|m.display.as_str())}));
 			plans.push_back(Planned {
 				absolute: file.absolute.clone(),
 				source,
@@ -238,9 +238,14 @@ impl NativeWriter {
 			} else {
 				self.fs.atomic_write(&plan.source, content.as_bytes())?;
 			}
-			state
-				.committed
-				.push(CommittedChange { path: plan.source, operation: "write" });
+			state.committed.push(CommittedChange {
+				path:      plan.source,
+				operation: if plan.op == FileOp::Create {
+					"create"
+				} else {
+					"write"
+				},
+			});
 		}
 		Ok(WriteResponse { written: content, diagnostics_json: None })
 	}

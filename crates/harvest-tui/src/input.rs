@@ -64,6 +64,23 @@ impl fmt::Display for InputError {
 }
 impl std::error::Error for InputError {}
 
+/// Native hosts may require complete, bounded paste transactions rather than
+/// the legacy terminal's partial-payload recovery policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasteFailure {
+	TooLarge,
+	Incomplete,
+}
+impl fmt::Display for PasteFailure {
+	fn fmt(&self, sink: &mut fmt::Formatter<'_>) -> fmt::Result {
+		sink.write_str(match self {
+			Self::TooLarge => "paste exceeds the configured byte limit",
+			Self::Incomplete => "paste ended without a complete closing marker",
+		})
+	}
+}
+impl std::error::Error for PasteFailure {}
+
 #[derive(Debug)]
 struct TimedBytes {
 	bytes: Vec<u8>,
@@ -120,6 +137,8 @@ struct Discard {
 pub struct InputBuffer {
 	options:            InputOptions,
 	mode:               InputMode,
+	strict_paste:       bool,
+	paste_failure:      Option<PasteFailure>,
 	buffer:             Vec<u8>,
 	search_offset:      usize,
 	paste_start_offset: usize,
@@ -156,6 +175,8 @@ impl InputBuffer {
 		Ok(Self {
 			options,
 			mode,
+			strict_paste: false,
+			paste_failure: None,
 			buffer: Vec::new(),
 			search_offset: 0,
 			paste_start_offset: 0,
@@ -172,6 +193,22 @@ impl InputBuffer {
 
 	pub const fn set_mode(&mut self, mode: InputMode) {
 		self.mode = mode;
+	}
+
+	/// Opt into fail-closed paste transactions before feeding native UI input.
+	/// Overflow is rejected before extending the payload allocation, and an
+	/// inactivity timeout never publishes an unterminated paste prefix. Existing
+	/// adapters retain their recovery policy unless they explicitly opt in.
+	pub fn require_complete_pastes(&mut self) {
+		self.strict_paste = true;
+	}
+
+	/// A strict paste failure blocks all subsequent delivery until an explicit
+	/// `clear`. The host must close/reset its input owner, never submit a prefix
+	/// or dispatch the rejected paste's trailing Enter to a different component.
+	#[must_use]
+	pub const fn paste_failure(&self) -> Option<PasteFailure> {
+		self.paste_failure
 	}
 
 	/// Pending key/raw-burst bytes; active bracketed paste payloads stay
@@ -203,6 +240,12 @@ impl InputBuffer {
 		self.raw = None;
 		self.printable = None;
 		self.discard = None;
+		self.paste_failure = None;
+	}
+
+	fn reject_paste(&mut self, reason: PasteFailure) {
+		self.clear();
+		self.paste_failure = Some(reason);
 	}
 
 	fn take_buffer(&mut self) -> Vec<u8> {
@@ -514,6 +557,9 @@ impl InputBuffer {
 		if data.len() > MAX_INPUT_CHUNK {
 			return Err(InputError::ChunkTooLarge);
 		}
+		if self.paste_failure.is_some() {
+			return Ok(Vec::new());
+		}
 		let mut events = Vec::new();
 		let mut input = Cow::Borrowed(data);
 		if self.pending_paste.is_some() {
@@ -561,6 +607,16 @@ impl InputBuffer {
 				if input.contains(&0x1b) {
 					self.flush_raw(now, false, &mut events);
 				} else {
+					if self.strict_paste
+						&& input.len()
+							> self
+								.options
+								.paste_byte_limit
+								.saturating_sub(self.raw.as_ref().unwrap().bytes.len())
+					{
+						self.reject_paste(PasteFailure::TooLarge);
+						break;
+					}
 					let raw = self.raw.as_mut().unwrap();
 					let classified = raw.append(&input);
 					if raw.bytes.len() > self.options.paste_byte_limit || classified {
@@ -573,6 +629,10 @@ impl InputBuffer {
 				&& !input.contains(&0x1b)
 				&& (input.contains(&b'\r') || input.contains(&b'\n'))
 			{
+				if self.strict_paste && input.len() > self.options.paste_byte_limit {
+					self.reject_paste(PasteFailure::TooLarge);
+					break;
+				}
 				let mut raw = RawCandidate::new(now);
 				let classified = raw.append(&input);
 				self.raw = Some(raw);
@@ -589,14 +649,23 @@ impl InputBuffer {
 				None => break,
 			}
 		}
+		if self.paste_failure.is_some() {
+			events.clear();
+		}
 		Ok(events)
 	}
 
 	/// Run after queued input has had a chance to arrive. Escape expiry takes
 	/// two timer turns; the first returns a zero delay for an I/O-poll deferral.
 	pub fn tick(&mut self, now: Duration) -> Vec<InputEvent> {
+		if self.paste_failure.is_some() {
+			return Vec::new();
+		}
 		let mut events = Vec::new();
 		self.expire_auxiliary(now, &mut events);
+		if self.paste_failure.is_some() {
+			return Vec::new();
+		}
 		if self.flush_at.is_some_and(|deadline| now >= deadline) {
 			if self.flush_deferred {
 				self.flush_at = None;
@@ -640,6 +709,9 @@ impl InputBuffer {
 	/// remains on its separate watchdog, matching the existing terminal API.
 	/// Return pending keys, preserving active paste and torn-string recovery.
 	pub fn flush(&mut self) -> Vec<Vec<u8>> {
+		if self.paste_failure.is_some() {
+			return Vec::new();
+		}
 		self.drain_buffer()
 	}
 
@@ -656,6 +728,10 @@ impl InputBuffer {
 			.as_ref()
 			.is_some_and(|paste| now >= paste.at.saturating_add(self.options.paste_timeout))
 		{
+			if self.strict_paste {
+				self.reject_paste(PasteFailure::Incomplete);
+				return;
+			}
 			let content = self.paste.take().unwrap().bytes;
 			self.printable = None;
 			events.push(InputEvent::Paste { content, enter: None });
@@ -665,6 +741,10 @@ impl InputBuffer {
 			.as_ref()
 			.is_some_and(|pending| now >= pending.at.saturating_add(self.options.paste_timeout))
 		{
+			if self.strict_paste {
+				self.reject_paste(PasteFailure::Incomplete);
+				return;
+			}
 			let pending = self.pending_paste.take().unwrap();
 			events.push(InputEvent::Paste { content: pending.content, enter: None });
 			if !pending.suffix.is_empty() {
@@ -727,6 +807,10 @@ impl InputBuffer {
 			.position(|window| window == PASTE_END)
 		{
 			let end = paste.bytes.len() - overlap + marker;
+			if self.strict_paste && end > self.options.paste_byte_limit {
+				self.reject_paste(PasteFailure::TooLarge);
+				return None;
+			}
 			if end < paste.bytes.len() {
 				paste.bytes.truncate(end);
 			} else {
@@ -738,9 +822,27 @@ impl InputBuffer {
 			self.printable = None;
 			return self.finish_paste(paste.bytes, remaining, now, end_of_read, events);
 		}
+		// A split closing marker is protocol overhead, not pasted content. Keep
+		// at most its five-byte prefix while still checking the content budget
+		// before extending the allocation.
+		let closing_prefix = (1..PASTE_END.len())
+			.rev()
+			.find(|&length| probe.ends_with(&PASTE_END[..length]))
+			.unwrap_or(0);
+		if self.strict_paste
+			&& paste
+				.bytes
+				.len()
+				.saturating_add(input.len())
+				.saturating_sub(closing_prefix)
+				> self.options.paste_byte_limit
+		{
+			self.reject_paste(PasteFailure::TooLarge);
+			return None;
+		}
 		paste.bytes.extend_from_slice(input);
 		paste.at = now;
-		if paste.bytes.len() > self.options.paste_byte_limit {
+		if !self.strict_paste && paste.bytes.len() > self.options.paste_byte_limit {
 			self.printable = None;
 			events.push(InputEvent::Paste { content: paste.bytes, enter: None });
 		} else {
@@ -851,6 +953,82 @@ impl InputBuffer {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn strict_paste_limit_allows_only_closing_marker_overhead_at_the_exact_boundary() {
+		let mut input = InputBuffer::new(
+			InputOptions { paste_byte_limit: 5, ..InputOptions::default() },
+			InputMode::default(),
+		)
+		.unwrap();
+		input.require_complete_pastes();
+		assert!(
+			input
+				.feed(b"\x1b[200~abcde\x1b[2", Duration::ZERO, true)
+				.unwrap()
+				.is_empty()
+		);
+		assert_eq!(input.retained_bytes(), 8);
+		assert_eq!(input.feed(b"01~\r", Duration::ZERO, true).unwrap(), [InputEvent::Paste {
+			content: b"abcde".to_vec(),
+			enter:   Some(b"\r".to_vec()),
+		}]);
+		assert_eq!(input.paste_failure(), None);
+		assert_eq!(input.retained_bytes(), 0);
+	}
+
+	#[test]
+	fn strict_oversized_paste_blocks_tail_and_enter_until_explicit_reset() {
+		let mut input = InputBuffer::new(
+			InputOptions { paste_byte_limit: 5, ..InputOptions::default() },
+			InputMode::default(),
+		)
+		.unwrap();
+		input.require_complete_pastes();
+		assert!(
+			input
+				.feed(b"\x1b[200~abcdef", Duration::ZERO, true)
+				.unwrap()
+				.is_empty()
+		);
+		assert_eq!(input.paste_failure(), Some(PasteFailure::TooLarge));
+		assert_eq!(input.retained_bytes(), 0);
+		assert!(
+			input
+				.feed(b"\x1b[201~\ry", Duration::ZERO, true)
+				.unwrap()
+				.is_empty()
+		);
+		input.clear();
+		assert_eq!(input.feed(b"q", Duration::ZERO, true).unwrap(), [InputEvent::Data(
+			b"q".to_vec()
+		)]);
+	}
+
+	#[test]
+	fn strict_paste_watchdog_never_releases_an_unterminated_prefix_as_editor_input() {
+		let mut input = InputBuffer::new(
+			InputOptions { paste_timeout: Duration::from_millis(10), ..InputOptions::default() },
+			InputMode::default(),
+		)
+		.unwrap();
+		input.require_complete_pastes();
+		assert!(
+			input
+				.feed(b"\x1b[200~do not submit", Duration::ZERO, true)
+				.unwrap()
+				.is_empty()
+		);
+		assert!(input.tick(Duration::from_millis(10)).is_empty());
+		assert_eq!(input.paste_failure(), Some(PasteFailure::Incomplete));
+		assert_eq!(input.retained_bytes(), 0);
+		assert!(
+			input
+				.feed(b"\x1b[201~\r", Duration::from_millis(11), true)
+				.unwrap()
+				.is_empty()
+		);
+	}
 	fn at(milliseconds: u64) -> Duration {
 		Duration::from_millis(milliseconds)
 	}

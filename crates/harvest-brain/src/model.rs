@@ -67,27 +67,30 @@ pub enum RecordStatus {
 #[serde(default)]
 pub struct Metadata {
 	pub schema_version: Option<u32>,
-	pub id:             String,
-	pub title:          String,
-	pub name:           String,
-	pub description:    String,
-	pub kind:           RecordKind,
-	pub ownership:      Ownership,
-	pub status:         RecordStatus,
-	pub pinned:         bool,
-	pub safety:         bool,
-	pub superseded:     bool,
-	pub conditions:     BTreeSet<String>,
-	pub evidence:       BTreeSet<String>,
+	pub id: String,
+	pub title: String,
+	pub name: String,
+	pub description: String,
+	pub kind: RecordKind,
+	pub ownership: Ownership,
+	pub status: RecordStatus,
+	pub pinned: bool,
+	pub hide: bool,
+	#[serde(rename = "disableModelInvocation")]
+	pub disable_model_invocation: bool,
+	pub safety: bool,
+	pub superseded: bool,
+	pub conditions: BTreeSet<String>,
+	pub evidence: BTreeSet<String>,
 	#[serde(deserialize_with = "string_list")]
-	pub depends_on:     Vec<String>,
+	pub depends_on: Vec<String>,
 	#[serde(deserialize_with = "string_list")]
-	pub relates_to:     Vec<String>,
+	pub relates_to: Vec<String>,
 	#[serde(deserialize_with = "string_list")]
-	pub supersedes:     Vec<String>,
+	pub supersedes: Vec<String>,
 	#[serde(deserialize_with = "string_list")]
-	pub contradicts:    Vec<String>,
-	pub created_at:     u64,
+	pub contradicts: Vec<String>,
+	pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

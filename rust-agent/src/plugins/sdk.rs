@@ -46,6 +46,44 @@ impl Context<'_> {
 		write_frame(self.output, &Frame::Event { id: self.id, event })
 	}
 
+	/// Ask the native host for a choice; None means explicit dismissal.
+	/// Noninteractive hosts return an explicit UI-unavailable error.
+	pub fn choose(&mut self, title: String, choices: Vec<String>) -> Result<Option<usize>> {
+		self.cancellation.heartbeat()?;
+		ensure!(!choices.is_empty(), "plugin choice list is empty");
+		protocol::event_bytes(&Event::Choices { title: title.clone(), choices: choices.clone() })?;
+		let id = self.next_host_id;
+		ensure!(id < protocol::MAX_HOST_CALLS as u64, "too many plugin host requests");
+		self.next_host_id += 1;
+		let count = choices.len();
+		write_frame(self.output, &Frame::UiRequest { id, parent_id: self.id, title, choices })?;
+		loop {
+			self.cancellation.heartbeat()?;
+			match self.input.recv_timeout(Duration::from_millis(10)) {
+				Ok(Ok((Frame::UiResponse { id: response, selected, error: None }, _)))
+					if response == id =>
+				{
+					ensure!(
+						selected.is_none_or(|index| index < count),
+						"host returned an invalid choice"
+					);
+					return Ok(selected);
+				},
+				Ok(Ok((Frame::UiResponse { id: response, error: Some(_), .. }, _)))
+					if response == id =>
+				{
+					bail!("native host cannot complete this UI request")
+				},
+				Ok(Ok(_)) => bail!("unexpected plugin UI response"),
+				Ok(Err(error)) => return Err(error),
+				Err(mpsc::RecvTimeoutError::Disconnected) => {
+					bail!("plugin host disconnected during UI request")
+				},
+				Err(mpsc::RecvTimeoutError::Timeout) => {},
+			}
+		}
+	}
+
 	pub fn host_call(&mut self, call: ToolCall) -> Result<String> {
 		self.cancellation.heartbeat()?;
 		let id = self.next_host_id;

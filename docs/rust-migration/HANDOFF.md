@@ -1,6 +1,258 @@
 # Current Rust migration handoff
 
-## Active Codex continuation (2026-11-03)
+## User stop/export instruction (2026-11-05)
+
+The user stopped local migration execution and requested pushing every pending
+project change to GitHub, followed by complete local Harvest uninstall/data/cache/
+checkout deletion. This source checkpoint remains uncompiled and untested; preserve
+all partial/unverified states and the original baseline. Do not automatically resume
+migration or recreate the local checkout. A later explicit user request is required
+to resume from the saved remote main. Earlier continuation instructions below are
+historical context. Local runtime credentials/data/caches are not source backups
+and are not included in this commit.
+
+## Native skill invocation/resource continuation (2026-11-05)
+
+Current work stays directly on `main`, uncommitted. No new branch/worktree,
+compiler/test/Clippy/addon run, commit or push. Rustfmt and diff hygiene only;
+all code below remains **unverified**, with no parity or source-removal advance.
+
+Connected workflow: enabled catalog -> explicit `/skill:<name>` or mid-prompt token
+-> both synchronous AgentSession and asynchronous SessionEngine -> persisted user
+message -> provider/replay. The existing selected skill snapshot supplies the body,
+source path and directory. Static `skill-invocation-native.md` supplies instructions;
+no skill becomes a system message or expands approval/workspace permissions.
+A bounded JSON user-content envelope (`kind=harvest_skill_invocation_v1`, camel-case
+originalPrompt, skill, instructions) retains the selected body and original request
+across replay without a new session record kind or protocol field. Memory recall/
+retention uses originalPrompt only for user messages; cursor digests continue to
+hash actual durable content. Assistant messages/tool results are not reinterpreted
+as invocation envelopes. Unknown/malformed skill names remain ordinary user text;
+source/index errors still fail closed before the user message is committed.
+Cancellation is checked again after expansion and before commit.
+
+Native TUI `/skills` opens the existing completion menu with `/skill:`. Completion
+uses the same enabled catalog on the existing bounded discovery worker, filters
+before its 100-item cap, and retains stale-draft/cursor publication checks. Hidden/
+model-disabled listings remain available to explicit user commands. Transcript
+rendering and editor history show originalPrompt rather than the JSON/body;
+recovery uses the editor's existing entry and aggregate byte caps.
+
+`skill://name/<relative-path>` now reads bounded UTF-8 companion files or sorted
+bounded directory metadata. It resolves the selected source capability and skill
+base through JailedFs, rejects absolute/traversal/encoded/drive-like paths and
+symlink escapes from the skill directory, reuses resolved paths for I/O and grants
+no numbered-line edit provenance. The selected skill body's existing snapshot read
+is unchanged. No executable script is run by resource access.
+
+Pending: Agent Plugin skill-source manifests and package containment grants,
+percent-encoded resource compatibility, non-text/image resource previews, complete
+legacy custom-message/attribution interchange and user-facing catalog diagnostics.
+The native JSON envelope is an explicit native persisted representation, not a
+claim of legacy custom-message byte parity. Full behavioral/security/cancellation/
+replay verification, installed/Windows evidence and TypeScript consumer retirement
+remain deferred. Keep legacy skills.ts, skill-command.ts and skill-protocol.ts until
+all remaining consumers move. Other editor/LSP/memory/plugin gaps below remain.
+
+Exact next connections: continue plugin skill-source ownership/containment through
+the existing plugin/index owners, special-write mutation receipts through existing
+writers, and the remaining editor/history/memory surfaces. Preserve this batch and
+keep the original source baseline and partial/unverified gates.
+
+## Main conversion continuation: skills, plugin choices and LSP (2026-11-05)
+
+Written directly on existing `main`; no new branches/worktrees, commits or pushes.
+This batch is **uncompiled and untested**. Rustfmt and `git diff --check` are the
+only executed checks. All original baselines, retained legacy consumers and final
+acceptance gates remain. Earlier test results below do not verify this batch.
+
+Connected native paths:
+- `managed/catalog.rs` uses the existing brain snapshot engine for enabled
+  project/user/custom skill sources, authored precedence, managed revision
+  consistency, hidden listings and exact `skill://name` reads. Generic brain
+  context excludes skill documents/companions to avoid shadowed/hidden leakage.
+  Sync and async model loops refresh only their known transient context message
+  before subsequent requests. They preserve stored history and protocol blocks.
+- `manage_skill`, `presets` and skill-producing `learn` now use the same selected
+  agent directory as discovery/settings. Child sessions inherit that profile,
+  settings and memory owner without reopening the parent's database. Explicit
+  external memory owners and evaluation opt-outs remain host-controlled.
+- Plugin SDK `Context::choose` -> correlated `UiRequest` -> host Approval choice
+  seam -> existing bounded native TUI approval channel -> `UiResponse`. Cancellation,
+  dismissal, index validation, message limits and complete paged review are written.
+  Choice data never authorizes a tool. Plain Choices events stay display-only.
+  Additive v1 frames require updated host/SDK for this optional interaction; older
+  peers fail explicitly. RPC/custom hosts default to UI-unavailable until wired.
+- Opt-in native LSP discovery loads the existing declarative defaults.json plus
+  bounded workspace configuration; explicit server names override discovered ones.
+  No duplicate default registry or process owner. Bazel includes the defaults asset.
+  Startup approval binds the actual command, args, cwd and environment fingerprint.
+- Existing LSP client owns version-aware push/pull diagnostics and the bounded
+  12-second deferred queue with disk fingerprint/stale-version checks. Native tool
+  dispatch polls existing clients without starting servers. Static diagnostics
+  prompt appends data to the same correlated result only when the original output
+  fits; large file results stay intact and diagnostics remain queued.
+- NativeWriter preflights canonical resolved-path metadata before publication.
+  Edit success and structured partial-commit reports, plus ordinary filesystem
+  writes, synchronize overlays/watchers/diagnostics in existing clients. Create,
+  update, delete and rename identities use the existing WorkspaceChange model;
+  partial moves report only their landed destination/source operations. Plain-write
+  create/update classification uses the pre-write observed state, without a CAS
+  guarantee against external writers. Native
+  reconciliation preserves the engine's fresh edit snapshots; LSP-origin changes
+  still invalidate them. Notification failures preserve committed tool results.
+
+Remaining connections/limits (do not mark complete): the compatibility path-only
+notification API still reports live targets as Changed; normal native tool results
+now use the operation-aware bridge. Archive/SQLite/conflict-resolution writes lack equivalent
+committed-path receipts. Native-tool Err paths without structured progress cannot
+claim synchronization. Oversized outputs may omit a synchronization notice; explicit
+LSP diagnostics remain the recovery surface. Workspace/global/plugin LSP source
+parity, full checkers/mux warmup, directory/binary/recursive/overwrite writer ops,
+ACP/cache/auto-repair consumers remain. Basic skill invocation and jailed companion reads are connected above; full
+plugin-source semantics and legacy custom-message interchange remain. Plugin RPC reply broker,
+durable UI reconnect and broader overlays remain. Managed eval/architect runners,
+revision crash recovery, legacy SQLite history import/FTS, native local/smol/vector/
+Hindsight memory and complete legacy bank recovery remain unfinished.
+
+Exact resume: continue these existing owners and missing real callers, especially
+special-write receipts and plugin skill-source/resource grants;
+then move other dependency-ready inventory domains. Do not add a second writer,
+registry, backend or UI broker. Preserve partial/unverified ledger states. Tests,
+compiler/Clippy/addon/installed loops stay deferred until integration scheduling.
+
+## Current shared-checkout continuation (resumed 2026-11-04)
+
+Latest user instruction: work directly on MAIN and shift the entire owned
+codebase to Rust; NO TESTS right now. Compiler/Clippy/addon/test loops are deferred
+for the conversion sweep. No new branches or worktrees. The existing five
+migration commits were fast-forwarded onto local main without a merge commit;
+the entire tracked uncommitted diff was hash-checked before/after and preserved.
+The historical codex branch below is a recovery reference, not the active branch.
+All current workers edit disjoint files in this one main checkout. No worker
+commits, pushes or changes Git refs. Keep unverified/partial states honest.
+
+Active domain ownership: native editor undo/completion/history + UI consumer;
+LSP ordered workspace resource/text edits through the existing NativeWriter;
+memory configured-provider/subagent connections using existing host/backend;
+coordinator owns bounded native Markdown renderer, shared interface exposure,
+CLI wiring and shared records. No tests are written or run for this sweep.
+Prior test results below are historical and do not verify these new edits.
+
+## Main conversion checkpoint: native editor, LSP and memory (2026-11-04)
+
+All code below is written directly in the existing main checkout, uncommitted.
+NO tests, compiler, Clippy or addon execution was performed for this conversion
+batch. Rustfmt syntax/formatting and diff hygiene only. Earlier checks further
+below apply to earlier source, not this tree. No verified/done/removal advances.
+The workers reached their usage limit; their partial edits were preserved and
+the coordinator finished missing memory host calls and formatting connections.
+No background writer or automatic continuation is implied by this checkpoint.
+
+Written real connections:
+- Native editor: bounded undo/redo, grapheme-safe edits, stale-draft-checked async
+  path/command completion with visible selection, history search/recall, native
+  help/clear commands. Persistent normalized unique prompt history/provenance
+  uses bounded locked atomic history-native-v1.json, preserving legacy history.db.
+- Markdown: new harvest-tui::markdown::render is called for both committed and
+  streaming assistant output. CommonMark headings/lists/links/tasks/tables/code
+  use shared Unicode/ANSI width and syntax engines; raw and entity-decoded
+  controls are sanitized. Input/output/row/code/table/nesting limits are explicit.
+  Math remains literal source and images are labels; rich math/image/theme/overlay
+  parity is pending. pulldown-cmark 0.13.4 is in the generated Cargo lock. Offline
+  metadata could not fetch an unrelated uncached any_spawner package; lockfile
+  resolution completed without builds and preserved existing dependency pins.
+- LSP: ordered file create/text/rename/delete uses whole-plan jailed/version/
+  alias/preimage preflight and complete final-argument approval with parent tool/
+  server identity. Existing NativeWriter publishes sequentially with real prefix/
+  partial-move reports. Runtime reconciles watchers/overlays/diagnostics and shares
+  session EditStore invalidation across configured clients, reconnecting broken
+  clients on later invocations. Direct and server-initiated edits use this owner.
+- Formatting: language_services/formatting.rs resolves bounded workspace-local
+  EditorConfig sections/root inheritance with the shared pi-walker glob normalizer,
+  then content indent detection and the existing fallback. Client formatting calls
+  it directly. Parent configurations above the workspace capability require host
+  options; complete cross-boundary/EditorConfig compatibility remains pending.
+- Memory: configured remote mode uses the existing Arc<Model>/credentials/client
+  through a central per-request generation-limit seam; HttpModel clones existing
+  configuration and caps to its host output limit. No new model registry/client,
+  fabricated embeddings or paid smol fallback. Scoped cancellable callback guards
+  are thread-bound. Static provider/task prompts replace inline task construction.
+- Child tasks inherit the selected backend/settings instead of reopening SQLite,
+  disabling duplicate automatic child retention. File-backed native memory config
+  refresh now runs at actual sync/async idle turn boundaries, resets recalled
+  context/owners on change, and respects explicit off. Externally injected owners,
+  inherited child owners and evaluation opt-outs retain their host contract.
+  Selected agent directories propagate to initial settings, backend paths and
+  redaction, including sync CLI. Failed managed refresh disables stale memory
+  and remains retryable on a later turn; fixed warnings contain no secret errors.
+
+Exact remaining conversion work: LSP defaults/discovery/deferred diagnostics and
+broader editor-service consumers; directory/recursive/binary resource operations
+and replacing existing rename targets need shared writer contracts first (current
+preflight rejects them). Native UI still needs broader slash/plugin choices,
+advanced overlays/themes/images/math and legacy SQLite history import/FTS.
+Memory still needs native local/smol/vector providers, Hindsight, legacy bank/
+cursor recovery and full transition/extraction/export compatibility. Do not add
+alternate parsers/backends/writers. Continue these connected workflows from the
+current main tree; no new branches and no tests during the conversion sweep.
+
+The interrupted native input/memory lifecycle batch is now connected in this
+checkout. No branches, worktrees, commits or pushes were created during this
+shared-checkout continuation. Historical source commits below remain unchanged.
+
+Written connections:
+- Native Unix reader -> fixed 4 KiB reads -> existing InputBuffer strict policy
+  -> shared key parser -> bounded editor/history. Strict paste checks occur before
+  payload extension (up to five bytes of closing-marker overhead); overflow or
+  torn-paste timeout closes input without delivering a prefix or trailing Enter.
+  Input closure uses existing denial/cancellation/terminal restoration cleanup.
+  Windows retains its fixed-record backend; legacy/N-API defaults remain intact.
+- Both session hosts -> transient recalled context -> settings-controlled durable
+  user/assistant retention. Recalled blocks/tool output/provisional deltas are not
+  retained; acknowledged prefix digests prevent duplicate reopen retention.
+  Existing redactor handles retained text; failures emit fixed-label warnings and
+  preserve completed answers. Native v1/v2 RPC and TUI consume warning events.
+- Sync CLI calls AgentSession::close even after submit failure; async shutdown
+  flushes below-cadence retained text. Rust SDK hosts must call close explicitly.
+  Benchmark sessions explicitly opt out of automatic lifecycle, preserving tools
+  and avoiding synthetic evaluation retention; external storage alone does not
+  disable normal session behavior.
+- Source inventory recognizes only exact live registered nested-worktree directory
+  tokens with matching Git common-dir/top-level identity, reports exclusions and
+  keeps ordinary/sibling/tracked descendant sources. Unrelated/stale replacement
+  repositories fail closed. Playbook status/next now operate on this checkout.
+- Focused test runner strips nextest -E/--filter-expr selectors before its Cargo
+  doctest pass. This fixes a real post-nextest failure found during this batch.
+
+Executed on the current checkout:
+- cargo check --locked -p harvest-omp -p harvest-tui -p pi-natives --all-targets:
+  PASS after adding the warning event to benchmark event recording. Inherited
+  runtime/addon warnings remain; no product cutover follows from compilation.
+- cargo xtask test -p xtask --test playbook: 12 tests PASS plus doctest pass.
+- cargo xtask test -p xtask --lib testing::tests: 5 tests PASS plus doctest pass.
+- cargo xtask test -p harvest-tui -p harvest-omp --lib -E
+  'package(harvest-tui) | test(memory::lifecycle_tests) | test(interactive::input::tests)':
+  114 selected tests PASS, 99 unselected; 4 TUI doctests PASS. The first invocation
+  passed nextest then failed its doctest flag parsing; the runner fix above and
+  final invocation pass both stages. These are bounded workflow regressions,
+  not complete application/provider/installed/platform parity.
+
+Logs are under ignored target/migration/shared-continuation-2026-11-04-*;
+compiler/test output is not a final source/capability parity receipt. All legacy
+production consumers remain. No verified source/capability/removal states advance.
+Native-addon rebuild/TS consumer checks, Clippy, WASM/Windows/installed/platform
+and broader behavioral consolidation are pending under conversion-first scheduling.
+
+Exact next connections: continue existing native editing owners through rich read
+rendering/LSP/ACP/cache/repair and advanced editor/plugin UI consumers. Memory still
+needs cancellable provider/vector hooks, local/Hindsight and full extraction/graph/
+export parity, legacy bank/cursor rescue, backend transitions and subagent lifecycle
+inheritance. Do not create a second backend/registry/input parser. SDK close is
+explicit; dropping a sync session intentionally performs no retention I/O. Keep
+partial manifest states and the original baseline while conversion continues.
+
+## Previous integrated checkpoint (2026-11-03)
 
 The user requested continuation in Claude’s parallel-worktree style, with shared
 documentation maintained for a later Claude handoff. Integration branch:
@@ -39,10 +291,9 @@ first scheduling remains active; partial capability/source states are explicit.
 
 Source-task ownership assigns the 14 previously unowned sources to existing
 catalog/tooling tasks without verification advancement. Existing migration and
-capability inventory commands pass. Playbook status/next now pass ownership
-validation but fail with `expected a regular file`: Git lists the nested
-.claude/worktrees repositories as directory entries. Resolve this source-inventory
-integration issue without hiding owned executable sources or weakening acceptance.
+capability inventory commands pass. At that checkpoint, playbook status/next passed ownership
+validation but failed with `expected a regular file`: Git listed the nested
+.claude/worktrees repositories as directory entries. This source-inventory issue is resolved by the newer shared-checkout batch above.
 
 Exact next actions: continue the pending native UI/editor connections below and
 memory host lifecycle/provider wiring using these owners. Consolidation should run

@@ -18,14 +18,212 @@ use crate::{
 
 #[derive(Default)]
 pub struct Runtime {
-	root:             PathBuf,
-	lsp_configs:      Vec<LspConfiguration>,
-	dap_configs:      Vec<DapConfiguration>,
-	language_clients: BTreeMap<String, lsp::Client>,
-	debug_clients:    BTreeMap<String, dap::Client>,
-	breakpoints:      BTreeMap<(String, String), Vec<Value>>,
+	root:                PathBuf,
+	lsp_configs:         Vec<LspConfiguration>,
+	dap_configs:         Vec<DapConfiguration>,
+	language_clients:    BTreeMap<String, lsp::Client>,
+	debug_clients:       BTreeMap<String, dap::Client>,
+	breakpoints:         BTreeMap<(String, String), Vec<Value>>,
+	edit_store:          Option<pi_edit::EditStore>,
+	unavailable_servers: Vec<super::discovery::UnavailableServer>,
 }
 impl Runtime {
+	/// Synchronize actual native writer paths, including a committed prefix on
+	/// failure. This never starts a server or infers success from tool
+	/// arguments. Present files are change notifications; a path-only callback
+	/// cannot infer whether an existing file was newly created or renamed into
+	/// place.
+	pub fn synchronize_native_files(
+		&mut self,
+		paths: &[PathBuf],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		ensure!(paths.len() <= 256, "too many native synchronization paths");
+		if paths.is_empty() || self.language_clients.is_empty() {
+			return Ok(());
+		}
+		let filesystem = harvest_runtime::JailedFs::open(&self.root)?;
+		let mut resolved = std::collections::BTreeSet::new();
+		let mut path_bytes = 0usize;
+		for path in paths {
+			cancellation.heartbeat()?;
+			let authored = path
+				.to_str()
+				.context("native synchronization path must be UTF-8")?;
+			ensure!(
+				!authored.is_empty() && authored.len() <= 4096 && !authored.contains("://"),
+				"native synchronization requires a bounded filesystem path"
+			);
+			path_bytes = path_bytes
+				.checked_add(authored.len())
+				.context("native synchronization path size overflow")?;
+			ensure!(path_bytes <= 128 * 1024, "native synchronization paths exceed byte limit");
+			// Resolve every path before inspecting its operation/state, including
+			// nonexistent targets beneath an existing symlinked ancestor.
+			resolved.insert(filesystem.resource_path(path)?);
+		}
+		let mut deleted = Vec::new();
+		let mut present = Vec::new();
+		for path in resolved {
+			cancellation.heartbeat()?;
+			if filesystem.entry_exists(&path)? {
+				ensure!(
+					filesystem.file_type(&path)?.is_file(),
+					"native synchronization target must be a regular file"
+				);
+				present.push(super::edits::WorkspaceChange::Edit { path });
+			} else {
+				deleted.push(super::edits::WorkspaceChange::Delete { path });
+			}
+		}
+		deleted.extend(present);
+		self.deliver_native_changes(&deleted, cancellation)
+	}
+
+	/// Preserve committed operation identities from the native writer. Jail
+	/// every path before any notification, using the existing reconciliation
+	/// engine.
+	pub(crate) fn synchronize_native_changes(
+		&mut self,
+		changes: &[super::edits::WorkspaceChange],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		use super::edits::WorkspaceChange;
+		ensure!(changes.len() <= 64, "too many native changes");
+		if changes.is_empty() || self.language_clients.is_empty() {
+			return Ok(());
+		}
+		let fs = harvest_runtime::JailedFs::open(&self.root)?;
+		let mut bytes = 0usize;
+		let mut resolve = |path: &Path| -> Result<PathBuf> {
+			cancellation.heartbeat()?;
+			let text = path.to_str().context("native change path must be UTF-8")?;
+			ensure!(
+				!text.is_empty() && text.len() <= 4096 && !text.contains("://"),
+				"invalid native change path"
+			);
+			bytes = bytes
+				.checked_add(text.len())
+				.context("native change size overflow")?;
+			ensure!(bytes <= 128 * 1024, "native change paths exceed limit");
+			fs.resource_path(path)
+		};
+		let mut resolved = Vec::new();
+		for change in changes {
+			resolved.push(match change {
+				WorkspaceChange::Edit { path } => WorkspaceChange::Edit { path: resolve(path)? },
+				WorkspaceChange::Create { path } => WorkspaceChange::Create { path: resolve(path)? },
+				WorkspaceChange::Delete { path } => WorkspaceChange::Delete { path: resolve(path)? },
+				WorkspaceChange::Rename { old_path, new_path } => WorkspaceChange::Rename {
+					old_path: resolve(old_path)?,
+					new_path: resolve(new_path)?,
+				},
+			});
+		}
+		self.deliver_native_changes(&resolved, cancellation)
+	}
+
+	fn deliver_native_changes(
+		&mut self,
+		changes: &[super::edits::WorkspaceChange],
+		cancellation: &CancelToken,
+	) -> Result<()> {
+		let mut failed = false;
+		for client in self.language_clients.values_mut() {
+			// A previous delivery failure has already invalidated its overlays;
+			// normal service invocation owns reconnect and fresh document opens.
+			if client.needs_reload() {
+				failed = true;
+				continue;
+			}
+			if client
+				.reconcile_native_changes(changes, cancellation)
+				.is_err()
+			{
+				failed = true;
+			}
+		}
+		ensure!(
+			!failed,
+			"native filesystem changes committed; LSP synchronization requires server reload"
+		);
+		cancellation.heartbeat()?;
+		Ok(())
+	}
+
+	/// Share the current session snapshot owner; mode changes may replace it.
+	pub fn set_edit_store(&mut self, store: pi_edit::EditStore) {
+		for client in self.language_clients.values_mut() {
+			client.set_edit_store(store.clone());
+		}
+		self.edit_store = Some(store);
+	}
+
+	/// Drain late, version/fingerprint-checked messages from existing clients.
+	/// No new server is started and no workspace checker command is spawned.
+	pub fn poll_deferred_diagnostics(&mut self, cancellation: &CancelToken) -> Result<Vec<Value>> {
+		let mut updates = Vec::new();
+		let mut remaining = harvest_runtime::MAX_TOOL_BYTES / 2;
+		for (name, client) in &mut self.language_clients {
+			cancellation.heartbeat()?;
+			if remaining < 1024 {
+				break;
+			}
+			match client.poll_deferred_diagnostics(cancellation, remaining - 1024) {
+				Ok(messages) => {
+					for mut message in messages {
+						message["server"] = json!(name);
+						let size = message.to_string().len();
+						remaining = remaining.saturating_sub(size);
+						updates.push(message);
+					}
+				},
+				Err(_) if cancellation.aborted() => {
+					cancellation.heartbeat()?;
+				},
+				Err(_) => {
+					let value = json!({"server":name,"available":false,"reason":"diagnostic_transport_unavailable"});
+					remaining = remaining.saturating_sub(value.to_string().len());
+					updates.push(value);
+				},
+			}
+		}
+		Ok(updates)
+	}
+
+	/// Opt-in discovery for explicit native LSP entrypoints. Ordinary configure
+	/// remains explicit-only so the application's enable gate owns startup.
+	pub fn configure_discovered(
+		&mut self,
+		root: &Path,
+		explicit: Vec<LspConfiguration>,
+		dap: Vec<DapConfiguration>,
+	) -> Result<()> {
+		let discovery = super::discovery::discover(root)?;
+		let mut selected: BTreeMap<_, _> = discovery
+			.configurations
+			.into_iter()
+			.map(|c| (c.process.name.clone(), c))
+			.collect();
+		for config in explicit {
+			selected.insert(config.process.name.clone(), config);
+		}
+		let mut selected: Vec<_> = selected.into_values().collect();
+		selected.sort_by_key(|c| (c.is_linter, c.process.name.clone()));
+		self.configure(root, selected, dap)?;
+		self.unavailable_servers = discovery
+			.unavailable
+			.into_iter()
+			.filter(|entry| {
+				!self
+					.lsp_configs
+					.iter()
+					.any(|config| config.process.name == entry.name)
+			})
+			.collect();
+		Ok(())
+	}
+
 	pub fn configure(
 		&mut self,
 		root: &Path,
@@ -46,6 +244,7 @@ impl Runtime {
 		self.language_clients.clear();
 		self.debug_clients.clear();
 		self.breakpoints.clear();
+		self.unavailable_servers.clear();
 		self.root = root.canonicalize()?;
 		self.lsp_configs = lsp;
 		self.dap_configs = dap;
@@ -77,16 +276,100 @@ impl Runtime {
 			.map_err(|_| anyhow::anyhow!("invalid language tool arguments"))?;
 		ensure!(arguments.is_object(), "language tool arguments must be an object");
 		let result = match call.function.name.as_str() {
-			"lsp" => self.language(&arguments, call, approval, cancellation)?,
-			"debug" => self.debug(&arguments, call, approval, cancellation)?,
+			"lsp" => self.language(&arguments, call, approval, cancellation),
+			"debug" => self.debug(&arguments, call, approval, cancellation),
 			_ => bail!("unknown language service tool"),
 		};
-		let result = serde_json::to_string(&result)?;
-		ensure!(
-			result.len() <= harvest_runtime::MAX_TOOL_BYTES,
-			"language service result exceeds host output limit"
-		);
-		Ok(result)
+		let deferred = if cancellation.aborted() {
+			Vec::new()
+		} else {
+			self
+				.poll_deferred_diagnostics(cancellation)
+				.unwrap_or_default()
+		};
+		// Even a failed semantic request can have applied a server-requested edit.
+		// Broadcast its actual prefix before returning either success or failure.
+		let batches: Vec<_> = self
+			.language_clients
+			.iter_mut()
+			.filter_map(|(name, client)| {
+				let changes = client.take_workspace_changes();
+				(!changes.is_empty()).then(|| (name.clone(), changes))
+			})
+			.collect();
+		let mut synchronization_pending = false;
+		for (origin, changes) in &batches {
+			for (name, client) in &mut self.language_clients {
+				if name != origin && client.reconcile_changes(changes, cancellation).is_err() {
+					synchronization_pending = true;
+				}
+			}
+		}
+		let reports: Vec<_> = self
+			.language_clients
+			.values_mut()
+			.flat_map(lsp::Client::take_applied_edits)
+			.collect();
+		let mut result = match result {
+			Ok(value) => value,
+			Err(error) if reports.is_empty() => return Err(error),
+			Err(error) => {
+				let mut output =
+					harvest_runtime::BoundedWriter::new(harvest_runtime::MAX_TOOL_BYTES - 4096);
+				serde_json::to_writer(&mut output, &reports)?;
+				return Err(error.context(format!(
+					"LSP request failed after workspace publication; re-read affected files; committed \
+					 reports: {}",
+					String::from_utf8(output.into_inner())?
+				)));
+			},
+		};
+		if !reports.is_empty() {
+			if let Some(object) = result.as_object_mut() {
+				object.insert("workspaceEdits".into(), json!(reports));
+			} else {
+				result = json!({"result":result,"workspaceEdits":reports});
+			}
+		}
+		if synchronization_pending {
+			if !result.is_object() {
+				result = json!({"result":result});
+			}
+			result["workspaceSynchronizationPending"] = json!(true);
+		}
+		if !deferred.is_empty() {
+			if !result.is_object() {
+				result = json!({"result":result});
+			}
+			if let Some(items) = result
+				.get_mut("deferredDiagnostics")
+				.and_then(Value::as_array_mut)
+			{
+				items.extend(deferred);
+			} else {
+				result["deferredDiagnostics"] = json!(deferred);
+			}
+		}
+		let mut output = harvest_runtime::BoundedWriter::new(harvest_runtime::MAX_TOOL_BYTES);
+		if serde_json::to_writer(&mut output, &result).is_err() {
+			let has_reports = result
+				.get("workspaceEdits")
+				.is_some_and(|value| value.as_array().is_some_and(|v| !v.is_empty()));
+			let has_diagnostics = result
+				.get("deferredDiagnostics")
+				.is_some_and(|value| value.as_array().is_some_and(|v| !v.is_empty()));
+			if has_reports || has_diagnostics {
+				let mut summary = harvest_runtime::BoundedWriter::new(harvest_runtime::MAX_TOOL_BYTES);
+				serde_json::to_writer(
+					&mut summary,
+					&json!({"resultUnavailable":"host_output_limit","workspaceEdits":result.get("workspaceEdits"),"deferredDiagnostics":result.get("deferredDiagnostics"),
+					"workspaceSynchronizationPending":synchronization_pending}),
+				)?;
+				return Ok(String::from_utf8(summary.into_inner())?);
+			}
+			bail!("language service result exceeds host output limit");
+		}
+		Ok(String::from_utf8(output.into_inner())?)
 	}
 
 	fn language(
@@ -99,13 +382,38 @@ impl Runtime {
 		let action = arguments["action"]
 			.as_str()
 			.context("LSP action is required")?;
+		if action == "diagnostics_deferred" {
+			return Ok(json!({"deferredDiagnostics":self.poll_deferred_diagnostics(cancellation)?}));
+		}
+		if action == "diagnostics" && arguments["file"] == "*" {
+			let mut reports = Vec::new();
+			let mut bytes = 0usize;
+			for (name, client) in &self.language_clients {
+				if client.needs_reload() {
+					continue;
+				}
+				for report in client.cached_workspace_diagnostics() {
+					let value = json!({"server":name,"diagnostics":report});
+					let size = value.to_string().len();
+					if bytes + size > harvest_runtime::MAX_TOOL_BYTES / 2 {
+						break;
+					}
+					bytes += size;
+					reports.push(value);
+				}
+			}
+			return Ok(
+				json!({"scope":"published_workspace_documents","complete":false,"files":reports,
+				"note":"Only cached server diagnostics are included; workspace checker execution is pending conversion"}),
+			);
+		}
 		if action == "status" {
 			return Ok(
-				json!({"servers":self.lsp_configs.iter().map(|server|json!({"name":server.process.name,"connected":self.language_clients.contains_key(&server.process.name),"extensions":server.extensions})).collect::<Vec<_>>() }),
+				json!({"servers":self.lsp_configs.iter().map(|server|json!({"name":server.process.name,"connected":self.language_clients.get(&server.process.name).is_some_and(|client|!client.needs_reload()),"requiresReload":self.language_clients.get(&server.process.name).is_some_and(lsp::Client::needs_reload),"extensions":server.extensions})).collect::<Vec<_>>(),"unavailable":self.unavailable_servers}),
 			);
 		}
 		let file = arguments["file"].as_str();
-		let configurations: Vec<_> = self
+		let mut configurations: Vec<_> = self
 			.lsp_configs
 			.iter()
 			.filter(|server| {
@@ -113,20 +421,21 @@ impl Runtime {
 					return server.process.name == name;
 				}
 				if let Some(file) = file.filter(|file| *file != "*") {
-					let extension = Path::new(file)
-						.extension()
-						.and_then(|value| value.to_str())
-						.unwrap_or("");
-					return server.extensions.is_empty()
-						|| server.extensions.iter().any(|value| {
-							value
-								.trim_start_matches('.')
-								.eq_ignore_ascii_case(extension)
-						});
+					return server.supports_path(Path::new(file));
 				}
 				true
 			})
 			.collect();
+		if arguments["server"].is_null() && file.is_some() && configurations.len() > 1 {
+			let primary: Vec<_> = configurations
+				.iter()
+				.copied()
+				.filter(|server| !server.is_linter)
+				.collect();
+			if primary.len() == 1 {
+				configurations = primary;
+			}
+		}
 		ensure!(
 			configurations.len() == 1,
 			"choose one configured LSP server explicitly; file selection is missing or ambiguous"
@@ -152,10 +461,41 @@ impl Runtime {
 			self.language_clients.remove(&name);
 			return Ok(json!({"reloaded":name}));
 		}
+		if self
+			.language_clients
+			.get(&name)
+			.is_some_and(lsp::Client::needs_reload)
+		{
+			self.language_clients.remove(&name);
+		}
 		if !self.language_clients.contains_key(&name) {
-			self
-				.language_clients
-				.insert(name.clone(), lsp::Client::connect(&self.root, &configuration, cancellation)?);
+			if configuration.startup_approval {
+				let mut environment =
+					harvest_runtime::BoundedWriter::new(harvest_runtime::MAX_EVENT_BYTES);
+				serde_json::to_writer(&mut environment, &configuration.process.env)?;
+				let arguments = json!({"action":"start_server","server":name,"command":configuration.process.command,
+					"args":configuration.process.args,"cwd":configuration.process.cwd,"environmentNames":configuration.process.env.keys().collect::<Vec<_>>(),
+					"environmentFingerprint":harvest_runtime::content_hash(&environment.into_inner()),"parentCall":call});
+				let mut bounded = harvest_runtime::BoundedWriter::new(harvest_runtime::MAX_EVENT_BYTES);
+				serde_json::to_writer(&mut bounded, &arguments)?;
+				let startup = ToolCall {
+					id:       call.id.clone(),
+					kind:     call.kind.clone(),
+					function: FunctionCall {
+						name:      "lsp".into(),
+						arguments: String::from_utf8(bounded.into_inner())?,
+					},
+				};
+				ensure!(
+					approval.approve(&startup)?,
+					"discovered LSP server startup requires host approval"
+				);
+			}
+			let mut client = lsp::Client::connect(&self.root, &configuration, cancellation)?;
+			if let Some(store) = &self.edit_store {
+				client.set_edit_store(store.clone());
+			}
+			self.language_clients.insert(name.clone(), client);
 		}
 		let client = self
 			.language_clients
@@ -262,7 +602,7 @@ impl Runtime {
 				let position = params["position"].clone();
 				params.as_object_mut().unwrap().remove("position");
 				params["range"] = json!({"start":position,"end":position});
-				params["context"] = json!({"diagnostics":[]});
+				params["context"] = json!({"diagnostics":client.diagnostic_items(&uri)});
 				"textDocument/codeAction"
 			},
 			"format" => {
@@ -312,7 +652,9 @@ impl Runtime {
 			} else {
 				result
 			};
-			let applied = client.apply(&edit, approval, cancellation)?;
+			let mut preview = harvest_runtime::BoundedWriter::new(harvest_runtime::MAX_TOOL_BYTES / 2);
+			serde_json::to_writer(&mut preview, &edit)?;
+			let applied = client.apply_for_tool(&edit, call, approval, cancellation)?;
 			json!({"edit":edit,"application":applied})
 		} else {
 			result

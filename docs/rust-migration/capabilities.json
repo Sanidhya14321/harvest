@@ -955,7 +955,8 @@
           "crates/pi-edit/src/files.rs",
           "crates/pi-edit/src/store.rs",
           "rust-agent/src/edit/read",
-          "crates/harvest-runtime/src/filesystem.rs"
+          "crates/harvest-runtime/src/filesystem.rs",
+          "rust-agent/src/managed/catalog.rs"
         ]
       },
       "verification": {
@@ -1298,7 +1299,12 @@
         "paths": [
           "rust-agent/src/language_services/lsp.rs",
           "rust-agent/src/language_services/edits.rs",
-          "rust-agent/src/language_services/runtime.rs"
+          "rust-agent/src/language_services/runtime.rs",
+          "rust-agent/src/language_services/workspace.rs",
+          "rust-agent/src/language_services/formatting.rs",
+          "rust-agent/src/language_services/discovery.rs",
+          "rust-agent/src/language_services/diagnostics.rs",
+          "rust-agent/src/tools.rs"
         ]
       },
       "verification": {
@@ -1625,7 +1631,9 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "rust-agent/src/managed.rs"
+          "rust-agent/src/managed.rs",
+          "rust-agent/src/managed/catalog.rs",
+          "rust-agent/src/core_tools.rs"
         ]
       },
       "verification": {
@@ -2599,7 +2607,13 @@
     {
       "id": "slash:skills",
       "implementation": {
-        "status": "absent"
+        "status": "partial",
+        "paths": [
+          "rust-agent/src/interactive.rs",
+          "rust-agent/src/interactive/completion.rs",
+          "rust-agent/src/managed/catalog.rs",
+          "rust-agent/src/managed/invocation.rs"
+        ]
       },
       "verification": {
         "status": "unverified"
@@ -3811,7 +3825,10 @@
           "crates/harvest-terminal/src/replay.rs",
           "rust-agent/src/replay_cli.rs",
           "crates/harvest-tui/src/",
-          "rust-agent/src/interactive.rs"
+          "rust-agent/src/interactive.rs",
+          "crates/harvest-tui/src/markdown.rs",
+          "rust-agent/src/interactive/completion.rs",
+          "rust-agent/src/interactive/history.rs"
         ]
       },
       "verification": {
@@ -3957,7 +3974,8 @@
           "rust-agent/src/plugins",
           "rust-agent/src/tools.rs",
           "rust-agent/src/chat.rs",
-          "rust-agent/examples/native-plugin.rs"
+          "rust-agent/examples/native-plugin.rs",
+          "rust-agent/src/interactive.rs"
         ]
       },
       "verification": {
@@ -4058,7 +4076,11 @@
         "status": "partial",
         "paths": [
           "rust-agent/src/language_services",
-          "rust-agent/src/process_transport.rs"
+          "rust-agent/src/process_transport.rs",
+          "rust-agent/src/language_services/workspace.rs",
+          "rust-agent/src/language_services/formatting.rs",
+          "rust-agent/src/language_services/discovery.rs",
+          "rust-agent/src/language_services/diagnostics.rs"
         ]
       },
       "verification": {
@@ -4146,7 +4168,10 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "crates/harvest-mnemopi/src/"
+          "crates/harvest-mnemopi/src/",
+          "rust-agent/src/memory/model.rs",
+          "rust-agent/src/provider.rs",
+          "rust-agent/src/tools.rs"
         ]
       },
       "verification": {
@@ -4412,7 +4437,11 @@
       "implementation": {
         "status": "partial",
         "paths": [
-          "crates/harvest-brain/src/"
+          "crates/harvest-brain/src/",
+          "rust-agent/src/memory.rs",
+          "rust-agent/src/memory/mnemopi.rs",
+          "rust-agent/src/agent_session.rs",
+          "rust-agent/src/session_engine.rs"
         ]
       },
       "verification": {

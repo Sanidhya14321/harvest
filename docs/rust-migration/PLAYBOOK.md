@@ -1,9 +1,14 @@
 # Harvest Rust migration playbook
 
-Use the active integration branch named in HANDOFF.md. The November 3 authorized
-merge brought ts-to-rust into main; older branch-only instructions are historical.
-Preserve existing history and user changes. Save coherent migration checkpoints;
-do not publish, release or switch default launchers as part of conversion work. [SCOPE.md](SCOPE.md) records the user-approved target.
+Latest user instruction (2026-11-04): work directly on `main`, create no new
+branches/worktrees, and shift the entire owned executable codebase to Rust. NO
+TESTS during this conversion sweep; defer compiler, Clippy, addon and behavioral
+loops to integration/stabilization. Keep shared HANDOFF/CONVERSION-PASS and the
+original source/capability records synchronized for Claude continuation. Preserve
+history/user changes/security contracts; never inflate verified/done states.
+[SCOPE.md](SCOPE.md) still defines the strict whole-workspace target. Prior branch
+instructions below are historical. No publication/release/default-launcher
+cutover is implied until its required acceptance evidence exists.
 
 ## Full conversion sweep (latest user instruction)
 

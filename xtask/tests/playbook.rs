@@ -3,7 +3,7 @@ use std::{path::Path, process::Command};
 use anyhow::Result;
 use harvest_runtime::JailedFs;
 use serde_json::{Value, json};
-use tempfile::tempdir;
+use tempfile::{TempDir, tempdir};
 
 fn capability() -> Value {
 	json!({"id":"session","work_unit":"engine","implementation":{"status":"complete","paths":["engine/lib.rs"]},"verification":{"status":"verified","contract_suites":["engine-contracts"]},"installation":"candidate-default-rust","legacy":{"removable":false},"lifecycle":{"candidate":{"status":"pending"},"legacy":{"status":"pending"},"promotion":{"status":"pending"}}})
@@ -305,5 +305,126 @@ fn text_wrapped_scripts_and_reviewed_embedded_bundles_cannot_be_inert_assets() -
 	])
 	.unwrap_err();
 	assert_eq!(error.to_string(), "missing migration entry: assets/new.js.txt");
+	Ok(())
+}
+
+fn source_audit_git(root: &Path, arguments: &[&str]) -> Result<()> {
+	// Use the existing bounded-duration check runner; fixture Git never needs
+	// network, hooks, signing, a terminal, or an in-memory output capture.
+	let mut command: Vec<String> = [
+		"git",
+		"-c",
+		"user.name=source-audit-fixture",
+		"-c",
+		"user.email=fixture@example.invalid",
+		"-c",
+		"commit.gpgsign=false",
+		"-c",
+		"core.hooksPath=nonexistent-fixture-hooks",
+		"-c",
+		"core.fsmonitor=false",
+	]
+	.into_iter()
+	.map(str::to_owned)
+	.collect();
+	command.extend(arguments.iter().map(|argument| (*argument).to_owned()));
+	let result = xtask::verification::run_check(root, &xtask::verification::Check {
+		id: "source-audit-fixture-git".into(),
+		command,
+		timeout_seconds: 10,
+		kind: "contracts".into(),
+	})?;
+	assert!(
+		result.passed,
+		"fixture Git failed: timeout={} exit={:?} error={:?}",
+		result.timed_out, result.exit_code, result.error
+	);
+	Ok(())
+}
+
+fn source_audit_fixture() -> Result<TempDir> {
+	let root = tempdir()?;
+	source_audit_git(root.path(), &["init", "--quiet"])?;
+	let fs = JailedFs::open(root.path())?;
+	fs.atomic_write(Path::new("engine.ts"), b"export const engine = 1;\n")?;
+	fs.atomic_write(Path::new("docs/rust-migration/capabilities.json"), &serde_json::to_vec(&json!({
+		"version": 2,
+		"capabilities": [{ "id": "fixture", "implementation": { "status": "absent" }, "verification": { "status": "unverified" } }]
+	}))?)?;
+	source_audit_git(root.path(), &["add", "engine.ts", "docs/rust-migration/capabilities.json"])?;
+	source_audit_git(root.path(), &["commit", "--quiet", "-m", "Capture fixture source"])?;
+	Ok(root)
+}
+
+fn run_source_audit(root: &Path) -> Result<()> {
+	xtask::source_audit::execute(vec![
+		"audit".into(),
+		"--root".into(),
+		root.to_str().unwrap().into(),
+		"--output".into(),
+		"report.json".into(),
+	])
+}
+
+#[test]
+fn nested_registered_worktree_tokens_are_excluded_without_hiding_claude_or_sibling_sources()
+-> Result<()> {
+	let root = source_audit_fixture()?;
+	// NUL worktree records must preserve spaces and, where supported, newlines.
+	let name = if cfg!(unix) {
+		".claude/worktrees/agent space\nline"
+	} else {
+		".claude/worktrees/agent space"
+	};
+	source_audit_git(root.path(), &["worktree", "add", "--quiet", "--detach", name, "HEAD"])?;
+	let fs = JailedFs::open(root.path())?;
+	fs.atomic_write(
+		&Path::new(name).join("separate-checkout-only.ts"),
+		b"export const separate = true;\n",
+	)?;
+	fs.atomic_write(Path::new(".claude/local.ts"), b"export const owned = true;\n")?;
+	let sibling = format!("{name}-sibling/worker.py");
+	fs.atomic_write(Path::new(&sibling), b"print('owned sibling source')\n")?;
+	run_source_audit(root.path())?;
+	let report: Value = serde_json::from_slice(&fs.read(Path::new("report.json"), 1024 * 1024)?)?;
+	assert_eq!(report["excluded_worktrees"], json!([name]));
+	assert_eq!(
+		report["non_rust_executable_files"],
+		json!([".claude/local.ts", sibling, "engine.ts"])
+	);
+	Ok(())
+}
+
+#[test]
+fn ordinary_nested_sources_stay_in_inventory_and_an_unregistered_repository_fails_with_its_path()
+-> Result<()> {
+	let root = source_audit_fixture()?;
+	let fs = JailedFs::open(root.path())?;
+	let nested = ".claude/worktrees/unregistered";
+	fs.atomic_write(&Path::new(nested).join("worker.ts"), b"export const owned = true;\n")?;
+	run_source_audit(root.path())?;
+	let report: Value = serde_json::from_slice(&fs.read(Path::new("report.json"), 1024 * 1024)?)?;
+	assert_eq!(
+		report["non_rust_executable_files"],
+		json!([format!("{nested}/worker.ts"), "engine.ts"])
+	);
+	assert_eq!(report["excluded_worktrees"], json!([]));
+	source_audit_git(&root.path().join(nested), &["init", "--quiet"])?;
+	let error = format!("{:#}", run_source_audit(root.path()).unwrap_err());
+	assert!(error.contains(nested), "{error}");
+	assert!(error.contains("expected a regular file"), "{error}");
+	Ok(())
+}
+
+#[test]
+fn stale_worktree_registration_cannot_hide_a_replacement_repository() -> Result<()> {
+	let root = source_audit_fixture()?;
+	let nested = ".claude/worktrees/replaced";
+	source_audit_git(root.path(), &["worktree", "add", "--quiet", "--detach", nested, "HEAD"])?;
+	std::fs::remove_file(root.path().join(nested).join(".git"))?;
+	source_audit_git(&root.path().join(nested), &["init", "--quiet"])?;
+	let error = format!("{:#}", run_source_audit(root.path()).unwrap_err());
+	assert!(error.contains("registration does not match checkout"), "{error}");
+	assert!(error.contains(nested), "{error}");
 	Ok(())
 }

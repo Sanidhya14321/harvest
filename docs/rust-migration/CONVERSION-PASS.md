@@ -1,20 +1,58 @@
 # Conversion-first pass: shared ownership and feature register
 
 Active task: **`application:conversion-first`**, state **in_progress**.
-Initial base: `64f3dd7`; current native editing domain continuation base: `ea95e01`. Current owner: the coordinator on the active integration branch in HANDOFF.md.
+Initial base: `64f3dd7`; current native editing domain continuation base: `ea95e01`. Current owner: the coordinator directly on main, per HANDOFF.md.
 The latest user instruction changes scheduling: convert connected code first,
 then resolve errors and test together. `PLAYBOOK.md` records this across sessions.
 Do not revert to per-file test/addon cycles on resume.
 
-## November 3 parallel continuation
+## Current main conversion continuation
 
-Resume the three inherited Claude worktrees listed in HANDOFF.md: native TUI,
-managed/session/memory tools, and SQLite memory backend. Each has exclusive domain
-ownership; coordinator owns cross-domain integration and records. Existing native
-editing work stays in scope, including TUI rendering connections. Do not replace
-these inherited implementations with parallel alternatives. Checkpoints are
-conversion-only until recorded checks run; no legacy deletion or parity advance
-is implied.
+The three inherited Claude domains are integrated onto main (see HANDOFF.md).
+Latest user steering requires direct main edits and no new branches/worktrees:
+all current work stays in the same main checkout, with exclusive file ownership and one integration
+coordinator. Historical worktrees remain preserved and inactive. Current domain connections are editor undo/completion/persisted history, LSP
+ordered resource/text edits, memory configured-provider/subagent inheritance and
+bounded Markdown rendering. NO TESTS or compiler/Clippy/addon loops in this sweep. No overlapping writers or duplicate
+owners. Conversion-only states remain until actual evidence runs.
+
+## Skill workflow continuation (2026-11-05; unverified)
+
+- [x] Write/connect explicit leading and embedded skill invocation across native
+  sync/async hosts, preserving selected body for replay in a bounded versioned
+  user-content envelope and original user input for automatic memory retention.
+- [x] Write/connect `/skills` and dynamic skill completion through the existing
+  bounded/stale-checked completion owner; render original input in transcript and
+  bounded editor-history recovery.
+- [x] Write/connect skill companion text/directory resources through the existing
+  source capability with canonical containment, output limits and no edit grants.
+- [ ] Full plugin skill discovery/package grants, encoded/non-text resources,
+  legacy attribution/custom-message interchange and consolidated verification.
+
+No tests/compiler checks or legacy removals; native envelope format and exact
+remaining constraints are in HANDOFF.md. Source/capability states remain partial.
+
+## Connected native continuation (2026-11-05; unverified)
+
+- [x] Write/connect bounded canonical skill catalog -> native sync/async transient
+  context refresh and exact virtual reads; share selected profile with managed
+  mutations/learn and inherited child owners.
+- [x] Write/connect native process-plugin interactive choices through the existing
+  bounded approval channel, cancellation and paged review. Noninteractive replies
+  and durable reconnect remain pending.
+- [x] Write/connect shared-default LSP discovery, push/pull/deferred diagnostics,
+  native edit/ordinary-write committed-path notifications and correlated bounded
+  diagnostic tool output. Preserve native edit provenance and original read rows.
+- [x] Write/connect native create/rename identities and partial-move notifications
+  through the existing workspace-change reconciliation engine.
+- [ ] Special write receipts,
+  broader discovery/checkers, ACP/cache/repair consumers and remaining writer ops.
+- [ ] Full plugin skill-source/resource grants and legacy interchange; remaining native
+  editor overlays, legacy history import and managed runner/crash recovery.
+
+These checks mean source connections written, not compilation/parity. HANDOFF.md
+has exact limitations. No tests/compiler/addon checks, new branches or commits.
+Original source/capability gates remain partial and unverified.
 
 ## Current execution order: broad conversion sweep
 
@@ -72,8 +110,12 @@ through this table and the machine task before editing a shared interface.
 
 | Feature | Sole Rust destination | Consumers connected | Remaining work | State |
 |---|---|---|---|---|
-| Native interactive chat | harvest-tui component/editor/layout/render/terminal; rust-agent interactive.rs | Native chat/default Rust CLI -> existing SessionEngine, approvals, streaming, cancellation, resume | advanced editor/render/plugin/slash parity, parser paste bounds, WASM/installed/platform evidence | Written/connected; aggregate compiler only |
-| Native memory backend | crates/harvest-mnemopi; rust-agent memory/mnemopi.rs | settings-gated retain/recall/reflect/learn/edit/read, sync/async session hosts and host injection | automatic lifecycle/providers, advanced extraction/vector/graph/export/bank parity, local/Hindsight, installed evidence | Partial; aggregate compiler only |
+| Native editor and history | existing harvest-tui editor; interactive completion/history owners | native UI undo/redo, command/path completion, search/recall, versioned atomic JSON history | legacy SQLite import/FTS, broader commands/plugin UI/overlays and platform parity | Written/connected; new code uncompiled/untested |
+| Native Markdown display | harvest-tui markdown + existing highlight/text/sanitize engines | both assistant committed and streaming paths | rich math/images/themes and full TS renderer parity | Written/connected; new code uncompiled/untested |
+| LSP ordered resources and formatting | language_services workspace/edits/lsp/runtime/formatting; existing NativeWriter | native direct/server edits, cross-client watchers/provenance recovery, per-file format options | directory/binary/rename-overwrite writer contracts, above-workspace EditorConfig, diagnostics/discovery and platform evidence | Written/connected; new code uncompiled/untested |
+| Memory configured provider and transitions | memory model/mnemopi; existing Model/HttpModel and ToolRuntime/session owners | remote configured model, child backend sharing, native idle-turn config refresh and agent-directory redaction | local/vector/Hindsight/legacy compatibility; other model hosts must implement generation-limit opt-in | Written/connected; new code uncompiled/untested |
+| Native interactive chat | harvest-tui component/editor/layout/render/terminal; rust-agent interactive.rs | Native chat/default Rust CLI -> existing SessionEngine, approvals, streaming, cancellation, resume | advanced editor/render/plugin/slash parity, WASM/Windows/installed/platform evidence | Bounded input/history connected; focused regression evidence, whole parity pending |
+| Native memory backend | crates/harvest-mnemopi; rust-agent memory/mnemopi.rs | settings-gated retain/recall/reflect/learn/edit/read, sync/async session hosts and host injection | provider/vector cancellation, advanced extraction/graph/export/bank parity, local/Hindsight, backend transitions/subagent lifecycle, installed evidence | Sync/async lifecycle connected; focused regression evidence, whole parity pending |
 | Managed artifacts and persisted sessions | rust-agent managed.rs, sessions_tool.rs; existing task_tool.rs | jailed skills/presets, task discovery, list/inspect/rename and workspace storage grants | evaluator/architect/skill refresh, custom policy binding and live create/send/stop registry | Partial; aggregate compiler only |
 | Metaharness narrative trace report | trace_report modules; shared provider/configuration/HTTP/session/display/cancel owners | native CLI/SDK, package trace:report and README; HTTP/offline/selected session inputs | shared stored/OAuth credential prerequisite; legacy-auth consumer; consolidation/platform/removal gates | Whole pipeline written/connected; partial and unverified |
 | Cleanup discovery | cleanup_scan modules; pi-ast cleanup facts | Rust scan/CLI; both cleanup prompts; package alias | source-bound removal and consolidated/platform gates | Whole feature implemented/cut over; verification pending |

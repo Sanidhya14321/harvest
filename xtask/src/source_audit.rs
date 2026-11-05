@@ -124,6 +124,9 @@ pub struct Inventory {
 	pub non_rust_executable_files: Vec<String>,
 	pub files_by_language:         BTreeMap<String, usize>,
 	pub absent_tracked_paths:      Vec<String>,
+	/// Exact nested checkouts registered to the same Git common directory.
+	/// Their directory tokens are not sources of the enclosing checkout.
+	pub excluded_worktrees:        Vec<String>,
 	pub excluded_report:           String,
 	pub files:                     Vec<SourceFile>,
 }
@@ -300,7 +303,8 @@ pub fn inspect_files(fs: &JailedFs, manifest: &[u8], output: &Path) -> Result<In
 	let mut inventory = Inventory {
 		schema_version:            2,
 		scope:                     "Git tracked plus nonignored untracked checkout files; ignored \
-		                            build outputs and .git internals excluded",
+		                            build outputs, .git internals and exact separately registered \
+		                            nested worktree directory tokens excluded",
 		review_level:              "inventory-only; a file hash or source count does not establish \
 		                            semantic review or Rust parity",
 		source_fingerprint:        String::new(),
@@ -312,13 +316,17 @@ pub fn inspect_files(fs: &JailedFs, manifest: &[u8], output: &Path) -> Result<In
 		non_rust_executable_files: Vec::new(),
 		files_by_language:         BTreeMap::new(),
 		absent_tracked_paths:      Vec::new(),
+		excluded_worktrees:        Vec::new(),
 		excluded_report:           portable_path(&output)?,
 		files:                     Vec::new(),
 	};
 	let mut fingerprint = ContentDigest::default();
 	for path in paths {
 		let path_string = portable_path(&path)?;
-		let Some(bytes) = fs.read_optional(&path, FILE_LIMIT)? else {
+		let Some(bytes) = fs
+			.read_optional(&path, FILE_LIMIT)
+			.with_context(|| format!("could not inventory source {path_string}"))?
+		else {
 			inventory.absent_tracked_paths.push(path_string);
 			continue;
 		};
@@ -384,8 +392,24 @@ pub fn inspect_files(fs: &JailedFs, manifest: &[u8], output: &Path) -> Result<In
 }
 
 pub(crate) fn git_bytes(root: &Path, arguments: &[&str]) -> Result<Vec<u8>> {
-	let mut child = Command::new("git")
+	let mut command = Command::new("git");
+	// Enumeration and worktree registration must refer to the named checkout,
+	// even when invoked by a host carrying another repository's Git overrides.
+	for variable in [
+		"GIT_DIR",
+		"GIT_WORK_TREE",
+		"GIT_COMMON_DIR",
+		"GIT_INDEX_FILE",
+		"GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	] {
+		command.env_remove(variable);
+	}
+	let mut child = command
 		.current_dir(root)
+		.env("GIT_OPTIONAL_LOCKS", "0")
+		.env("GIT_TERMINAL_PROMPT", "0")
+		.args(["-c", "core.fsmonitor=false"])
 		.args(arguments)
 		.stdin(Stdio::null())
 		.stdout(Stdio::piped())
@@ -407,12 +431,93 @@ pub(crate) fn git_bytes(root: &Path, arguments: &[&str]) -> Result<Vec<u8>> {
 	Ok(bytes)
 }
 
+fn git_path(root: &Path, argument: &str) -> Result<PathBuf> {
+	let bytes = git_bytes(root, &["rev-parse", "--path-format=absolute", argument])?;
+	// Remove only Git's output terminator, preserving newlines in actual paths.
+	let bytes = bytes
+		.strip_suffix(b"\n")
+		.context("unterminated Git metadata path")?;
+	let path = PathBuf::from(std::str::from_utf8(bytes).context("Git metadata path must be UTF-8")?);
+	path
+		.canonicalize()
+		.context("could not resolve Git metadata path")
+}
+
+fn inspect_checkout(fs: &JailedFs, output: &Path) -> Result<Inventory> {
+	let manifest =
+		git_bytes(fs.root(), &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])?;
+	if manifest
+		.split(|b| *b == 0)
+		.filter(|name| !name.is_empty())
+		.count()
+		> FILE_COUNT_LIMIT
+	{
+		bail!("source file count exceeds limit");
+	}
+	// Git represents an untracked nested repository as a directory token, rather
+	// than listing its files. Never suppress ordinary source files or arbitrary
+	// nested repositories. Only a live, exactly registered sibling checkout of
+	// this repository may be excluded; explicitly listed descendants still pass
+	// through the ordinary inventory and jail checks.
+	let directories: BTreeSet<_> = manifest
+		.split(|b| *b == 0)
+		.filter(|name| name.ends_with(b"/"))
+		.collect();
+	if directories.is_empty() {
+		return inspect_files(fs, &manifest, output);
+	}
+	let registration = git_bytes(fs.root(), &["worktree", "list", "--porcelain", "-z"])?;
+	let common = git_path(fs.root(), "--git-common-dir")?;
+	let mut excluded = BTreeSet::new();
+	for field in registration.split(|b| *b == 0) {
+		let Some(path) = field.strip_prefix(b"worktree ") else {
+			continue;
+		};
+		let path =
+			Path::new(std::str::from_utf8(path).context("registered worktree path must be UTF-8")?);
+		let Ok(relative) = fs.relative(path) else {
+			continue;
+		};
+		if relative.as_os_str().is_empty() {
+			continue;
+		}
+		let relative_string = portable_path(&relative)?;
+		let directory_token = format!("{relative_string}/");
+		if !directories.contains(directory_token.as_bytes()) {
+			continue;
+		}
+		if !fs.file_type(&relative)?.is_dir() {
+			bail!("registered nested worktree is not a directory: {relative_string}");
+		}
+		let resolved = fs.resource_path(&relative)?;
+		let top = git_path(&resolved, "--show-toplevel").with_context(|| {
+			format!("could not validate registered nested worktree {relative_string}")
+		})?;
+		let nested_common = git_path(&resolved, "--git-common-dir").with_context(|| {
+			format!("could not validate registered nested worktree {relative_string}")
+		})?;
+		if top != resolved || nested_common != common {
+			bail!("nested worktree registration does not match checkout: {relative_string}");
+		}
+		excluded.insert(directory_token);
+	}
+	let mut filtered = Vec::with_capacity(manifest.len());
+	for name in manifest.split(|b| *b == 0).filter(|name| !name.is_empty()) {
+		if !excluded.contains(std::str::from_utf8(name).context("source path must be UTF-8")?) {
+			filtered.extend_from_slice(name);
+			filtered.push(0);
+		}
+	}
+	let mut inventory = inspect_files(fs, &filtered, output)?;
+	inventory.excluded_worktrees = excluded
+		.into_iter()
+		.map(|path| path.trim_end_matches('/').to_string())
+		.collect();
+	Ok(inventory)
+}
+
 pub(crate) fn current_inventory(fs: &JailedFs) -> Result<Inventory> {
-	inspect_files(
-		fs,
-		&git_bytes(fs.root(), &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])?,
-		Path::new("docs/rust-migration/source-audit.json"),
-	)
+	inspect_checkout(fs, Path::new("docs/rust-migration/source-audit.json"))
 }
 
 pub fn execute(arguments: Vec<String>) -> Result<()> {
@@ -433,11 +538,7 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 		MigrationCommand::Baseline { .. } => unreachable!(),
 	};
 	let fs = JailedFs::open(&root.unwrap_or(env::current_dir()?))?;
-	let inventory = inspect_files(
-		&fs,
-		&git_bytes(fs.root(), &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])?,
-		&output,
-	)?;
+	let inventory = inspect_checkout(&fs, &output)?;
 	let manifest: serde_json::Value =
 		serde_json::from_slice(&fs.read(Path::new(CAPABILITY_PATH), 16 * 1024 * 1024)?)?;
 	let progress = capabilities::inspect(&manifest)?;
@@ -459,6 +560,13 @@ pub fn execute(arguments: Vec<String>) -> Result<()> {
 		"{} non-Rust executable sources remain (including generated bindings and templates)",
 		inventory.non_rust_executable_files.len()
 	);
+	if !inventory.excluded_worktrees.is_empty() {
+		println!(
+			"Excluded {} exact registered nested worktree directories; their sources belong to \
+			 separate checkouts",
+			inventory.excluded_worktrees.len()
+		);
+	}
 	println!(
 		"{}/{} retained capabilities implemented (partial or complete); {}/{} verified; {}/{} \
 		 retirements removed",

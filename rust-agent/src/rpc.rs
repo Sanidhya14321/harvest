@@ -579,6 +579,16 @@ impl Adapter<'_> {
 					.delta(self.sink, &self.options.model, text)
 					.await?;
 			},
+			SessionEngineEventKind::MemoryWarning { operation } => {
+				self
+					.sink
+					.send(&json!({
+						"type": "memory_warning", "operation": operation,
+						"sessionId": frame.session_id, "run": frame.run,
+						"runGeneration": generation, "sequence": frame.sequence
+					}))
+					.await?;
+			},
 			SessionEngineEventKind::PluginEvent { tool_call_id, event } => {
 				self
 					.sink

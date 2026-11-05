@@ -12,6 +12,7 @@ exports_files([
     "Cargo.toml",
     "Cargo.lock",
     "rustfmt.toml",
+    "packages/coding-agent/src/lsp/defaults.json",
 ])
 _ADDONS = {
     "linux-x64-baseline": ("//bazel/platforms:linux-x64-baseline", "pi_natives.linux-x64-baseline.node"),

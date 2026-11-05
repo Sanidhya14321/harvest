@@ -710,3 +710,37 @@ the Rust host; retained TS production consumers remain. One aggregate all-target
 compiler check passed; behavioral/addon/installed/platform evidence is pending.
 See CONVERSION-PASS.md for exact remaining ownership and HANDOFF.md for the next
 resume action. No source removal or retained capability parity is claimed.
+
+## November 4 shared-checkout continuation
+
+Native Unix input now connects the existing bounded parser/key owner to the
+editor with opt-in strict paste rejection, atomic paste/Enter handling and resumed
+history. Native memory lifecycle connects both session hosts with settings gates,
+transient recall, acknowledged durable retention and explicit shutdown flushing;
+benchmarks opt out of automatic learning. Source inventory handles registered
+nested worktrees without hiding ordinary owned sources. Focused input/lifecycle,
+playbook and runner regressions passed; see HANDOFF.md for exact commands and
+remaining parity/platform checks. No TS deletion or verified-state advance.
+
+## November 4 direct-main conversion sweep
+
+Latest user direction is direct main edits with tests deferred. Native editor
+undo/completion/versioned prompt history and shared Markdown display now connect
+to real UI consumers. Ordered LSP file resources use the existing writer with
+cross-client provenance/cache synchronization; per-file workspace EditorConfig
+formatting is connected. Configured memory generation uses the existing model
+owner, child tasks share backend ownership, and actual host turn boundaries refresh
+file-backed memory configuration. New code is uncompiled/untested; source and
+capability states remain partial. HANDOFF.md records exact remaining contracts.
+
+## Native skill invocation and resources (conversion-only, 2026-11-05)
+
+Both Rust session hosts now expand enabled leading/embedded skill commands through
+the canonical catalog. Selected instructions persist as a bounded versioned user
+content envelope, preserving the original request for TUI/history and automatic
+memory. Native `/skills` and completion share the existing worker/catalog. Companion
+UTF-8 files and bounded directory listings use the original source jail and canonical
+skill-directory containment without edit provenance. Source records remain partial;
+legacy consumers remain, and plugin-source/encoded/non-text/legacy-interchange
+contracts and consolidated verification are pending. No compiler or tests executed;
+see HANDOFF.md for exact source connections and resume instructions.

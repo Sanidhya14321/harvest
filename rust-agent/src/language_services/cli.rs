@@ -45,7 +45,11 @@ pub(crate) fn execute(tool: &str, arguments: Arguments) -> Result<u8> {
 			..Default::default()
 		})?;
 	let mut runtime = super::Runtime::default();
-	runtime.configure(&root, resolved.lsp, resolved.dap)?;
+	if tool == "lsp" {
+		runtime.configure_discovered(&root, resolved.lsp, resolved.dap)?;
+	} else {
+		runtime.configure(&root, resolved.lsp, resolved.dap)?;
+	}
 	let mut request = arguments.arguments;
 	if arguments.interactive {
 		ensure!(io::stdin().is_terminal(), "interactive service mode requires a terminal");

@@ -31,6 +31,7 @@ impl RunHandle {
 pub enum EventKind {
 	Started,
 	TextDelta { text: String },
+	MemoryWarning { operation: String },
 	PluginEvent { tool_call_id: String, event: crate::plugins::protocol::Event },
 	Committed { entry_id: String, role: String },
 	Completed,
@@ -65,18 +66,59 @@ impl AgentSession {
 		path: &Path,
 		leaf: Option<&str>,
 	) -> Result<Self> {
+		Self::open_owned(root, storage, path, leaf, None, None)
+	}
+
+	/// Open with the host-approved settings/secret directory from the outset.
+	pub fn open_with_storage_in(
+		root: &Path,
+		storage: &Path,
+		path: &Path,
+		leaf: Option<&str>,
+		directory: Option<&Path>,
+	) -> Result<Self> {
+		Self::open_owned(root, storage, path, leaf, None, directory)
+	}
+
+	pub fn open_inheriting_memory(
+		root: &Path,
+		path: &Path,
+		leaf: Option<&str>,
+		memory: crate::memory::Inheritance,
+	) -> Result<Self> {
+		Self::open_owned(root, root, path, leaf, Some(memory), None)
+	}
+
+	fn open_owned(
+		root: &Path,
+		storage: &Path,
+		path: &Path,
+		leaf: Option<&str>,
+		inherited: Option<crate::memory::Inheritance>,
+		directory: Option<&Path>,
+	) -> Result<Self> {
 		let log = DurableSession::open_for_workspace(storage, path, leaf, root)?;
 		let mut tools = tools::ToolRuntime::default();
-		tools.configure_core(
-			crate::settings::Settings::load(
-				crate::config::agent_dir_from(None, |key| std::env::var_os(key)).as_deref(),
+		let settings = match &inherited {
+			Some(memory) => memory.settings.clone(),
+			None => crate::settings::Settings::load(
+				crate::config::agent_dir_from(directory.map(Path::to_owned), |key| {
+					std::env::var_os(key)
+				})
+				.as_deref(),
 				root,
 				&[],
 			)?,
-			log.artifact_store(),
-		);
+		};
+		tools.configure_core(settings, log.artifact_store());
 		tools.configure_session_directory(log.storage_directory());
-		tools.initialize_memory(root, log.id())?;
+		if let Some(memory) = inherited {
+			tools.inherit_agent_directory(memory.agent_directory);
+			tools.configure_memory(memory.backend)?;
+			tools.configure_memory_lifecycle(false);
+		} else {
+			tools.initialize_memory_in(root, log.id(), directory)?;
+		}
 		Ok(Self { tools, root: root.canonicalize()?, log, generation: 0, sequence: 0, active: None })
 	}
 
@@ -89,6 +131,26 @@ impl AgentSession {
 			bail!("cannot change memory backend during an active run");
 		}
 		self.tools.configure_memory(backend)
+	}
+
+	pub fn configure_memory_model(
+		&mut self,
+		model: std::sync::Arc<dyn Model + Send + Sync>,
+	) -> Result<()> {
+		if self.active.is_some() {
+			bail!("cannot change the memory model during an active run");
+		}
+		self.tools.configure_memory_model(&self.root, model)
+	}
+
+	/// Evaluation hosts can disable automatic learning while keeping explicit
+	/// tools.
+	pub fn configure_memory_lifecycle(&mut self, enabled: bool) -> Result<()> {
+		if self.active.is_some() {
+			bail!("cannot change automatic memory during an active run");
+		}
+		self.tools.configure_memory_lifecycle(enabled);
+		Ok(())
 	}
 
 	/// Select before a run. Snapshots remain volatile and are cleared on mode
@@ -177,6 +239,23 @@ impl AgentSession {
 		self.execute(&handle, prompt, model, approval, options, sink)
 	}
 
+	/// Flush the configured automatic-retention suffix, then release the writer.
+	/// Backend failure becomes a UI warning rather than changing a completed
+	/// answer.
+	pub fn close(mut self, sink: &mut dyn FnMut(SessionEvent) -> Result<()>) -> Result<()> {
+		if self.active.is_some() {
+			bail!("cannot close a session with an active run");
+		}
+		if self
+			.tools
+			.retain_memory(&self.root, self.log.id(), self.log.messages(), "shutdown", true)
+			.is_err()
+		{
+			self.emit(EventKind::MemoryWarning { operation: "retention".into() }, sink)?;
+		}
+		Ok(())
+	}
+
 	/// Stop successfully at a durable tool-batch boundary when the host's
 	/// checkpoint returns true. Every call in the batch has its result
 	/// committed; no synthetic assistant response or provider usage is
@@ -225,6 +304,20 @@ impl AgentSession {
 		let cancellation = cancellation.clone();
 		let result = self.drive(prompt, model, approval, options, &cancellation, sink, checkpoint);
 		self.active = None;
+		let outcome = if cancellation.aborted() {
+			"cancelled"
+		} else if result.is_ok() {
+			"completed"
+		} else {
+			"failed"
+		};
+		if self
+			.tools
+			.retain_memory(&self.root, self.log.id(), self.log.messages(), outcome, false)
+			.is_err()
+		{
+			self.emit(EventKind::MemoryWarning { operation: "retention".into() }, sink)?;
+		}
 		// Failure to deliver the terminal event is surfaced too, never hidden.
 		self.emit(
 			if result.is_ok() {
@@ -296,16 +389,60 @@ impl AgentSession {
 		cancellation.heartbeat()?;
 		self.log.ensure_ready()?;
 		// Resolve reference context before modifying the session.
-		let context = agent::context(&self.root, prompt, options)?;
+		let mut context = agent::context(&self.root, prompt, options)?;
 		self.emit(EventKind::Started, sink)?;
-		self.commit(&chat::user(prompt), model, None, sink)?;
+		if self
+			.tools
+			.refresh_memory_configuration(
+				&self.root,
+				self.log.id(),
+				self.log.messages(),
+				options.user_agent_dir.as_deref(),
+			)
+			.is_err()
+		{
+			self.emit(EventKind::MemoryWarning { operation: "configuration".into() }, sink)?;
+		}
+
+		let memory =
+			match self
+				.tools
+				.memory_context(&self.root, prompt, self.log.messages(), cancellation)
+			{
+				Ok(context) => context,
+				Err(_) => {
+					if !cancellation.aborted() {
+						self.emit(EventKind::MemoryWarning { operation: "recall".into() }, sink)?;
+					}
+					None
+				},
+			};
+		cancellation.heartbeat()?;
+		let skill_prompt = self.tools.prepare_skill_prompt(&self.root, prompt)?;
+		cancellation.heartbeat()?;
+		self.commit(&chat::user(skill_prompt.as_deref().unwrap_or(prompt)), model, None, sink)?;
 		let mut messages = vec![agent::system_message()];
+		let mut context_index = None;
 		if !context.is_empty() {
+			context_index = Some(messages.len());
 			messages.push(chat::system(&context));
 		}
+		if let Some(memory) = memory {
+			messages.push(chat::system(&memory));
+		}
 		messages.extend_from_slice(self.log.messages());
-		for _ in 0..options.max_steps {
+		for step in 0..options.max_steps {
 			cancellation.heartbeat()?;
+			if step > 0 {
+				agent::refresh_context(
+					&mut messages,
+					&mut context,
+					&mut context_index,
+					&self.root,
+					prompt,
+					options,
+				)?;
+			}
 			let response =
 				model.stream_response(&messages, &self.tools.specs(), cancellation, &mut |text| {
 					cancellation.heartbeat()?;
@@ -331,8 +468,15 @@ impl AgentSession {
 				let mut runtime = std::mem::take(&mut self.tools);
 				let root = self.root.clone();
 				let result = if call.function.name == "task" {
-					crate::task_tool::run(&root, &call.function.arguments, model, approval, options)
-						.map(tools::ToolOutput::text)
+					crate::task_tool::run_with_memory(
+						&root,
+						&call.function.arguments,
+						model,
+						approval,
+						options,
+						Some(runtime.memory_inheritance()),
+					)
+					.map(tools::ToolOutput::text)
 				} else {
 					runtime.invoke_detailed_with_events(
 						&root,

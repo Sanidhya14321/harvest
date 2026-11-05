@@ -1,7 +1,9 @@
-//! Key normalization (port of packages/tui `keys.ts` onto crossterm events).
+//! Focused-editor adapters; protocol parsing stays in the shared key engine.
 
 #[cfg(not(target_arch = "wasm32"))]
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+use crate::keys::{self, InputMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Key {
@@ -30,6 +32,58 @@ pub enum Key {
 }
 
 impl Key {
+	/// Normalize an already-framed terminal event using the legacy editor's
+	/// shared parser. Protocol replies and release events never insert text.
+	#[must_use]
+	pub fn from_bytes(bytes: &[u8], mode: InputMode) -> Option<Self> {
+		if let Ok(value) = std::str::from_utf8(bytes)
+			&& let Some(text) = keys::extract_printable_text(value)
+		{
+			let mut chars = text.chars();
+			let first = chars.next()?;
+			return Some(if chars.next().is_none() {
+				Self::Char(first)
+			} else {
+				Self::Paste(text.into_owned())
+			});
+		}
+		let key = keys::parse_input_key(bytes, mode)?;
+		Some(match key.as_ref() {
+			"enter" => Self::Enter,
+			"shift+enter" | "alt+enter" | "ctrl+enter" => Self::ShiftEnter,
+			"backspace" => Self::Backspace,
+			"ctrl+backspace" | "alt+backspace" => Self::Ctrl('w'),
+			"delete" => Self::Delete,
+			"left" => Self::Left,
+			"right" => Self::Right,
+			"up" => Self::Up,
+			"down" => Self::Down,
+			"home" => Self::Home,
+			"end" => Self::End,
+			"pageUp" => Self::PageUp,
+			"pageDown" => Self::PageDown,
+			"tab" => Self::Tab,
+			"shift+tab" => Self::BackTab,
+			"escape" => Self::Escape,
+			"ctrl+left" | "alt+left" => Self::WordLeft,
+			"ctrl+right" | "alt+right" => Self::WordRight,
+			"space" => Self::Char(' '),
+			other => {
+				let (modifier, letter) = other.split_once('+')?;
+				let mut chars = letter.chars();
+				let character = chars.next()?;
+				if chars.next().is_some() {
+					return None;
+				}
+				match modifier {
+					"ctrl" => Self::Ctrl(character),
+					"alt" => Self::Alt(character),
+					_ => return None,
+				}
+			},
+		})
+	}
+
 	/// Normalize one crossterm key event; release events map to `None`.
 	#[must_use]
 	#[cfg(not(target_arch = "wasm32"))]
@@ -44,8 +98,9 @@ impl Key {
 			KeyCode::Char(c) if ctrl => Self::Ctrl(c.to_ascii_lowercase()),
 			KeyCode::Char(c) if alt => Self::Alt(c),
 			KeyCode::Char(c) => Self::Char(c),
-			KeyCode::Enter if shift || alt => Self::ShiftEnter,
+			KeyCode::Enter if shift || alt || ctrl => Self::ShiftEnter,
 			KeyCode::Enter => Self::Enter,
+			KeyCode::Backspace if ctrl || alt => Self::Ctrl('w'),
 			KeyCode::Backspace => Self::Backspace,
 			KeyCode::Delete => Self::Delete,
 			KeyCode::Left if ctrl || alt => Self::WordLeft,

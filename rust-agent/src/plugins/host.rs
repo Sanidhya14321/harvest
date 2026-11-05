@@ -42,6 +42,7 @@ impl std::fmt::Debug for Configuration {
 }
 
 pub struct Plugin {
+	name:    String,
 	process: crate::process_transport::Process<Frame>,
 	tools:   Vec<ToolSpec>,
 	next_id: u64,
@@ -105,6 +106,7 @@ impl Plugin {
 			cancellation,
 		)?;
 		let mut plugin = Self {
+			name: String::new(),
 			process,
 			tools: Vec::new(),
 			next_id: 1,
@@ -125,6 +127,7 @@ impl Plugin {
 					tool.validate()?;
 					ensure!(names.insert(tool.name()), "duplicate plugin tool name");
 				}
+				plugin.name = name;
 				plugin.tools = tools;
 				Ok(plugin)
 			},
@@ -235,6 +238,47 @@ impl Plugin {
 						"plugin event stream exceeds byte limit"
 					);
 					on_event(event)?;
+				},
+				Frame::UiRequest { id: request_id, parent_id, title, choices } if parent_id == id => {
+					ensure!(
+						host_ids.len() < protocol::MAX_HOST_CALLS && host_ids.insert(request_id),
+						"duplicate or excessive plugin host requests"
+					);
+					ensure!(!choices.is_empty(), "plugin choice list is empty");
+					event_bytes += protocol::event_bytes(&Event::Choices {
+						title:   title.clone(),
+						choices: choices.clone(),
+					})?;
+					ensure!(
+						event_bytes <= protocol::MAX_EVENT_TOTAL_BYTES,
+						"plugin UI stream exceeds byte limit"
+					);
+					let count = choices.len();
+					let request = protocol::ChoiceRequest {
+						plugin: self.name.clone(),
+						tool_call_id: call.id.clone(),
+						title,
+						choices,
+					};
+					let response = match approval.choose(&request, deadline) {
+						Ok(selected) => {
+							ensure!(
+								selected.is_none_or(|index| index < count),
+								"host selected an invalid plugin choice"
+							);
+							Frame::UiResponse { id: request_id, selected, error: None }
+						},
+						Err(_) => Frame::UiResponse {
+							id:       request_id,
+							selected: None,
+							error:    Some(ProtocolError {
+								code:    "ui_unavailable".into(),
+								message: "Native host UI request was unavailable or cancelled".into(),
+							}),
+						},
+					};
+					deadline.heartbeat()?;
+					self.send(&response, deadline)?;
 				},
 				Frame::HostCall { id: host_id, parent_id, call } if parent_id == id => {
 					ensure!(

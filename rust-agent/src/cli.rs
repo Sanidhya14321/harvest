@@ -64,9 +64,15 @@ enum Commands {
 	Tools,
 	#[command(about = "Benchmark model latency and throughput")]
 	Bench(crate::commands::bench::BenchArgs),
-	#[command(name = "if-bench", about = "Instruction-following benchmark on an incremental array machine")]
+	#[command(
+		name = "if-bench",
+		about = "Instruction-following benchmark on an incremental array machine"
+	)]
 	IfBench(crate::commands::bench::IfBenchArgs),
-	#[command(name = "dry-balance", about = "Dry-run credential balancing across random session ids")]
+	#[command(
+		name = "dry-balance",
+		about = "Dry-run credential balancing across random session ids"
+	)]
 	DryBalance(crate::commands::bench::DryBalanceArgs),
 	#[command(about = "Render every built-in tool renderer across its lifecycle states")]
 	Gallery(crate::commands::bench::GalleryArgs),
@@ -313,6 +319,20 @@ impl ConfigurationArgs {
 		// exposure is an explicit host choice; adapters start lazily on invocation.
 		if !self.enable_lsp {
 			resolved.lsp.clear();
+		} else {
+			let discovery = crate::language_services::discovery::discover(root)?;
+			let names: std::collections::BTreeSet<_> = resolved
+				.lsp
+				.iter()
+				.map(|server| server.process.name.clone())
+				.collect();
+			let mut servers: Vec<_> = discovery
+				.configurations
+				.into_iter()
+				.filter(|server| !names.contains(&server.process.name))
+				.collect();
+			servers.extend(std::mem::take(&mut resolved.lsp));
+			resolved.lsp = servers;
 		}
 		if !self.enable_debug {
 			resolved.dap.clear();
@@ -787,11 +807,18 @@ fn run(args: RunArgs) -> Result<u8> {
 		);
 	}
 	let configured_browser = browser_options(&args);
-	let model_ref: &dyn Model = &model;
+	let shared_model: Arc<dyn Model + Send + Sync> = Arc::new(model);
+	let model_ref: &dyn Model = shared_model.as_ref();
 	let user_agent_dir =
 		config::agent_dir_from(args.agent_dir, |key| env::var_os(key)).filter(|path| path.is_dir());
-	let mut session =
-		crate::agent_session::AgentSession::open(&workspace, &args.session, args.leaf.as_deref())?;
+	let mut session = crate::agent_session::AgentSession::open_with_storage_in(
+		&workspace,
+		&workspace,
+		&args.session,
+		args.leaf.as_deref(),
+		user_agent_dir.as_deref(),
+	)?;
+	session.configure_memory_model(Arc::clone(&shared_model))?;
 	session.configure_edit(resolved.edit_mode)?;
 	session.configure_plugins(&resolved.plugins, &Default::default())?;
 	session.configure_mcp(&resolved.mcp, &Default::default())?;
@@ -800,6 +827,14 @@ fn run(args: RunArgs) -> Result<u8> {
 		session.configure_browser(options);
 	}
 	let mut output = io::stdout().lock();
+	let mut emit = |event: crate::agent_session::SessionEvent| {
+		if args.events {
+			serde_json::to_writer(&mut output, &event)?;
+			writeln!(output)?;
+			output.flush()?;
+		}
+		Ok(())
+	};
 	let answer = session.submit(
 		&args.prompt,
 		model_ref,
@@ -810,15 +845,11 @@ fn run(args: RunArgs) -> Result<u8> {
 			tags: args.tag.into_iter().collect(),
 			cancellation: Default::default(),
 		},
-		&mut |event| {
-			if args.events {
-				serde_json::to_writer(&mut output, &event)?;
-				writeln!(output)?;
-				output.flush()?;
-			}
-			Ok(())
-		},
-	)?;
+		&mut emit,
+	);
+	let closed = session.close(&mut emit);
+	let answer = answer?;
+	closed?;
 	if !args.events {
 		writeln!(output, "{answer}")?;
 	}

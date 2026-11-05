@@ -34,53 +34,104 @@ pub fn requires_approval(arguments: &str) -> bool {
 }
 
 struct Summary {
-	path:    PathBuf,
-	id:      String,
-	title:   Option<String>,
-	entries: usize,
+	path:     PathBuf,
+	id:       String,
+	title:    Option<String>,
+	entries:  usize,
+	modified: std::time::SystemTime,
 }
 
-fn summarize(fs: &harvest_runtime::JailedFs, path: &Path, cwd: &Path) -> Option<Summary> {
-	let bytes = fs.read(path, SESSION_LIMIT).ok()?;
+fn summarize(
+	fs: &harvest_runtime::JailedFs,
+	path: &Path,
+	cwd: &Path,
+	limit: usize,
+) -> Option<Summary> {
+	let file = fs.open_read(path, limit as u64).ok()?;
+	let modified = file
+		.metadata()
+		.ok()?
+		.modified()
+		.unwrap_or(std::time::UNIX_EPOCH);
+	// Keep each read within its reserved catalog bytes even if a writer grows
+	// the file after directory enumeration. A torn/changing file is skipped.
+	let bytes = harvest_runtime::read_bounded(file, limit).ok()?;
 	let document = SessionDocument::decode(&bytes).ok()?;
 	let header = document.header();
 	let recorded = PathBuf::from(decoded_string(header, "cwd").ok()?);
 	if recorded != cwd {
 		return None;
 	}
+	let id = decoded_string(header, "id").ok()?;
+	if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) {
+		return None;
+	}
 	Some(Summary {
-		path:    path.to_owned(),
-		id:      decoded_string(header, "id").unwrap_or_default(),
-		title:   decoded_string(header, "title").ok(),
+		path: fs.root().join(path),
+		id,
+		title: decoded_string(header, "title").ok().map(|title| {
+			harvest_runtime::truncate_bytes(&title, crate::session_format::TITLE_SLOT_BYTES).to_owned()
+		}),
 		entries: document.entries().len(),
+		modified,
 	})
 }
 
-fn find(
-	fs: &harvest_runtime::JailedFs,
-	dir: &Path,
-	cwd: &Path,
-	session_id: &str,
-) -> Result<Summary> {
-	if session_id.trim().is_empty() {
-		bail!("sessionId must not be empty");
+fn summaries(fs: &harvest_runtime::JailedFs, cwd: &Path) -> Result<Vec<Summary>> {
+	let mut summaries = Vec::new();
+	let mut total = 0_u64;
+	for entry in fs.entries(Path::new(""), 1024)? {
+		if !entry.is_file
+			|| entry.is_symlink
+			|| !entry.name.ends_with(".jsonl")
+			|| entry.size > SESSION_LIMIT as u64
+		{
+			continue;
+		}
+		total = total
+			.checked_add(entry.size)
+			.context("session catalog size overflow")?;
+		if total > SESSION_LIMIT as u64 {
+			bail!("persisted session catalog exceeds the aggregate read budget");
+		}
+		if let Some(summary) = summarize(fs, Path::new(&entry.name), cwd, entry.size as usize) {
+			summaries.push(summary);
+		}
+	}
+	summaries.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.path.cmp(&b.path)));
+	Ok(summaries)
+}
+
+fn find(fs: &harvest_runtime::JailedFs, cwd: &Path, session_id: &str) -> Result<Summary> {
+	if session_id.trim().is_empty()
+		|| session_id.len() > 256
+		|| session_id.chars().any(char::is_control)
+	{
+		bail!("sessionId must be non-empty and within the identifier limit");
 	}
 	let wanted = session_id.to_lowercase();
 	let mut prefixes = Vec::new();
-	for path in crate::commands::render::list_sessions(dir) {
-		let Some(summary) = summarize(fs, &path, cwd) else {
-			continue;
-		};
-		let stem = path
+	let mut exact = Vec::new();
+	for summary in summaries(fs, cwd)? {
+		let stem = summary
+			.path
 			.file_stem()
 			.map(|s| s.to_string_lossy().to_lowercase())
 			.unwrap_or_default();
-		if summary.id.to_lowercase() == wanted || stem == wanted {
+		if stem == wanted {
 			return Ok(summary);
 		}
-		if summary.id.to_lowercase().starts_with(&wanted) {
+		if summary.id.to_lowercase() == wanted {
+			exact.push(summary);
+		} else if summary.id.to_lowercase().starts_with(&wanted) {
 			prefixes.push(summary);
 		}
+	}
+	if exact.len() > 1 {
+		bail!("Session {session_id} resolves to several files; use its exact file stem.");
+	}
+	if let Some(summary) = exact.pop() {
+		return Ok(summary);
 	}
 	if prefixes.len() > 1 {
 		bail!("Session prefix {session_id} is ambiguous; use the full id.");
@@ -112,10 +163,7 @@ pub fn sessions_in(cwd: &Path, directory: Option<&Path>, arguments: &str) -> Res
 	let fs = harvest_runtime::JailedFs::open(&dir)?;
 	match args.action.as_str() {
 		"list" => {
-			let summaries: Vec<Summary> = crate::commands::render::list_sessions(&dir)
-				.iter()
-				.filter_map(|path| summarize(&fs, path, &cwd))
-				.collect();
+			let summaries = summaries(&fs, &cwd)?;
 			let lines: Vec<String> = summaries
 				.iter()
 				.map(|s| {
@@ -130,7 +178,7 @@ pub fn sessions_in(cwd: &Path, directory: Option<&Path>, arguments: &str) -> Res
 			Ok(format!("Sessions ({}):\n{}", summaries.len(), lines.join("\n")))
 		},
 		"inspect" => {
-			let s = find(&fs, &dir, &cwd, args.session_id.as_deref().unwrap_or_default())?;
+			let s = find(&fs, &cwd, args.session_id.as_deref().unwrap_or_default())?;
 			Ok(format!(
 				"Session {}: {} (session, persisted). File: {}. Entries: {}.",
 				s.id,
@@ -144,8 +192,7 @@ pub fn sessions_in(cwd: &Path, directory: Option<&Path>, arguments: &str) -> Res
 			if title.is_empty() {
 				bail!("\"rename\" requires \"title\".");
 			}
-			let s = find(&fs, &dir, &cwd, args.session_id.as_deref().unwrap_or_default())?;
-			let fs = harvest_runtime::JailedFs::open(&dir)?;
+			let s = find(&fs, &cwd, args.session_id.as_deref().unwrap_or_default())?;
 			let file = s
 				.path
 				.file_name()
@@ -153,6 +200,11 @@ pub fn sessions_in(cwd: &Path, directory: Option<&Path>, arguments: &str) -> Res
 				.context("invalid session path")?;
 			let _lease = crate::durable_session::lock_session(&fs, &file)?;
 			let document = SessionDocument::decode(&fs.read(&file, SESSION_LIMIT)?)?;
+			if decoded_string(document.header(), "id")? != s.id
+				|| PathBuf::from(decoded_string(document.header(), "cwd")?) != cwd
+			{
+				bail!("session identity or workspace changed before rename");
+			}
 			let bytes = document.retitled(title, Some("user"), &chrono::Utc::now().to_rfc3339())?;
 			fs.atomic_write(&file, &bytes)?;
 			Ok(format!("Renamed session {} to \"{title}\".", s.id))
@@ -165,11 +217,11 @@ pub fn sessions_in(cwd: &Path, directory: Option<&Path>, arguments: &str) -> Res
 			if args.message.as_deref().is_none_or(|m| m.trim().is_empty()) {
 				bail!("\"send\" requires \"message\".");
 			}
-			let s = find(&fs, &dir, &cwd, args.session_id.as_deref().unwrap_or_default())?;
+			let s = find(&fs, &cwd, args.session_id.as_deref().unwrap_or_default())?;
 			bail!("Session {} has no live runtime (status: persisted).", s.id)
 		},
 		"stop" => {
-			let s = find(&fs, &dir, &cwd, args.session_id.as_deref().unwrap_or_default())?;
+			let s = find(&fs, &cwd, args.session_id.as_deref().unwrap_or_default())?;
 			bail!("Session {} has no live runtime (status: persisted).", s.id)
 		},
 		other => bail!("Unknown sessions action \"{other}\"."),

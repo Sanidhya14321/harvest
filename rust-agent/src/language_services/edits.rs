@@ -7,12 +7,9 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use harvest_runtime::{JailedFs, MAX_FILE_BYTES, cancel::CancelToken};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::{
-	chat::{FunctionCall, ToolCall},
-	tools::Approval,
-};
+use crate::tools::Approval;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Position {
@@ -40,6 +37,40 @@ pub struct ApplyResult {
 	pub changed_files:           Vec<PathBuf>,
 	pub failure_reason:          Option<&'static str>,
 	pub failed_file_index:       Option<usize>,
+	pub failed_change_index:     Option<usize>,
+	pub executed_changes:        Vec<WorkspaceChange>,
+}
+
+/// Only mutations that actually landed; skipped resource operations are absent.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceChange {
+	Edit {
+		path: PathBuf,
+	},
+	Create {
+		path: PathBuf,
+	},
+	Delete {
+		path: PathBuf,
+	},
+	Rename {
+		#[serde(rename = "oldPath")]
+		old_path: PathBuf,
+		#[serde(rename = "newPath")]
+		new_path: PathBuf,
+	},
+}
+
+impl WorkspaceChange {
+	pub(crate) fn paths(&self) -> Vec<&Path> {
+		match self {
+			Self::Edit { path } | Self::Create { path } | Self::Delete { path } => {
+				vec![path.as_path()]
+			},
+			Self::Rename { old_path, new_path } => vec![old_path.as_path(), new_path.as_path()],
+		}
+	}
 }
 
 pub fn uri_path(filesystem: &JailedFs, uri: &str) -> Result<PathBuf> {
@@ -143,125 +174,5 @@ pub fn apply_workspace_edit(
 	approval: &dyn Approval,
 	cancellation: &CancelToken,
 ) -> Result<ApplyResult> {
-	cancellation.heartbeat()?;
-	ensure!(edit.is_object(), "workspace edit must be an object");
-	let filesystem = JailedFs::open(root)?;
-	let mut grouped: BTreeMap<String, Vec<TextEdit>> = BTreeMap::new();
-	if let Some(changes) = edit.get("changes") {
-		for (uri, edits) in changes.as_object().context("invalid LSP changes mapping")? {
-			uri_path(&filesystem, uri)?;
-			grouped.entry(uri.clone()).or_default().extend(
-				serde_json::from_value::<Vec<TextEdit>>(edits.clone())
-					.map_err(|_| anyhow::anyhow!("invalid LSP text edits"))?,
-			);
-		}
-	}
-	if let Some(changes) = edit.get("documentChanges") {
-		for change in changes.as_array().context("invalid LSP document changes")? {
-			ensure!(
-				change.get("kind").is_none(),
-				"LSP create/rename/delete resource operations are not converted; no edits were applied"
-			);
-			let document = &change["textDocument"];
-			let uri = document["uri"]
-				.as_str()
-				.context("LSP document edit has no URI")?;
-			uri_path(&filesystem, uri)?;
-			if let Some(version) = document.get("version").filter(|version| !version.is_null()) {
-				ensure!(
-					version
-						.as_i64()
-						.is_some_and(|version| versions.get(uri) == Some(&version)),
-					"stale or unknown LSP document version"
-				);
-			}
-			grouped.entry(uri.into()).or_default().extend(
-				serde_json::from_value::<Vec<TextEdit>>(change["edits"].clone())
-					.map_err(|_| anyhow::anyhow!("invalid LSP text edits"))?,
-			);
-		}
-	}
-	ensure!(grouped.len() <= 256, "too many workspace edit files");
-	let mut plan = Vec::new();
-	let mut paths = std::collections::BTreeSet::new();
-	let mut bytes = 0;
-	for (uri, edits) in &grouped {
-		cancellation.heartbeat()?;
-		let path = uri_path(&filesystem, uri)?;
-		ensure!(paths.insert(path.clone()), "multiple LSP URI aliases target the same file");
-		let original = filesystem.read(&path, MAX_FILE_BYTES)?;
-		let text = std::str::from_utf8(&original).context("LSP target is not UTF-8")?;
-		ensure!(!text.contains('\0'), "LSP target is not text");
-		let changed = apply_text_edits(text, edits)?;
-		bytes += original.len() + changed.len();
-		ensure!(bytes <= 32 * 1024 * 1024, "workspace edit plan exceeds byte limit");
-		plan.push((path, original, changed));
-	}
-	let final_arguments =
-		serde_json::to_string(&json!({"action":"apply_workspace_edit","edit":edit}))?;
-	ensure!(
-		final_arguments.len() <= harvest_runtime::MAX_EVENT_BYTES,
-		"workspace edit approval exceeds frame limit"
-	);
-	let call = ToolCall {
-		id:       approval_id()?,
-		kind:     "function".into(),
-		function: FunctionCall { name: "lsp".into(), arguments: final_arguments },
-	};
-	if !approval.approve(&call)? {
-		return Ok(ApplyResult {
-			synchronization_pending: false,
-			applied:                 false,
-			changed_files:           Vec::new(),
-			failure_reason:          Some("host_approval_denied"),
-			failed_file_index:       None,
-		});
-	}
-	cancellation.heartbeat()?;
-	// Revalidate every source before the first write. Individual file replacement
-	// is atomic; report the exact partial result if a later mutation fails.
-	for (path, original, _) in &plan {
-		ensure!(
-			filesystem.read(path, MAX_FILE_BYTES)? == *original,
-			"workspace edit target changed during approval"
-		);
-	}
-	let mut result = ApplyResult {
-		synchronization_pending: false,
-		applied:                 true,
-		changed_files:           Vec::new(),
-		failure_reason:          None,
-		failed_file_index:       None,
-	};
-	for (index, (path, original, changed)) in plan.iter().enumerate() {
-		let write = (|| -> Result<()> {
-			cancellation.heartbeat()?;
-			ensure!(
-				filesystem.read(path, MAX_FILE_BYTES)? == *original,
-				"workspace edit target changed before write"
-			);
-			filesystem.atomic_write(path, changed.as_bytes())
-		})();
-		if write.is_err() {
-			result.applied = false;
-			result.failed_file_index = Some(index);
-			result.failure_reason = Some("workspace_edit_write_failed_or_cancelled");
-			break;
-		}
-		result.changed_files.push(path.clone());
-		result.synchronization_pending = true;
-	}
-	Ok(result)
-}
-
-fn approval_id() -> Result<String> {
-	static ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-	let id = ID
-		.try_update(
-			std::sync::atomic::Ordering::Relaxed,
-			std::sync::atomic::Ordering::Relaxed,
-			|id| id.checked_add(1),
-		)
-		.map_err(|_| anyhow::anyhow!("LSP approval IDs exhausted"))?;
-	Ok(format!("lsp-workspace-edit-{id}"))
+	super::workspace::apply(root, edit, versions, approval, cancellation, None)
 }

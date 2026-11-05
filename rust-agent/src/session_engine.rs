@@ -177,6 +177,7 @@ pub enum SessionEngineEventKind {
 	Queued,
 	Started,
 	TextDelta { text: String },
+	MemoryWarning { operation: String },
 	PluginEvent { tool_call_id: String, event: crate::plugins::protocol::Event },
 	Committed { entry_id: String, role: String, message: Box<RawValue> },
 	Completed,
@@ -332,8 +333,9 @@ impl SessionEngine {
 			if let Some(memory) = &options.memory {
 				tools.configure_memory(Some(memory.clone()))?;
 			} else {
-				tools.initialize_memory(&root, log.id())?;
+				tools.initialize_memory_in(&root, log.id(), agent_dir.as_deref())?;
 			}
+			tools.configure_memory_model(&root, model.clone())?;
 			tools.configure_edit(options.edit_mode);
 			tools.configure_plugins(&root, &options.plugins, &CancelToken::default())?;
 			tools.configure_mcp(&root, &options.mcp, &CancelToken::default())?;
@@ -426,6 +428,10 @@ struct Driver {
 }
 
 enum WorkerPacket {
+	MemoryWarning {
+		run:       RunId,
+		operation: &'static str,
+	},
 	PluginEvent {
 		run:          RunId,
 		tool_call_id: String,
@@ -514,12 +520,32 @@ impl Owner {
 	async fn run(mut self) -> Result<()> {
 		loop {
 			if self.stopping && self.active.is_none() {
-				let driver = self.driver.take();
+				let mut driver = self.driver.take();
 				// Stateful tools can need bounded native-process shutdown. Reap them
 				// off the async scheduler, then release the writer before Closed.
-				tokio::task::spawn_blocking(move || drop(driver))
-					.await
-					.context("session resource shutdown failed")?;
+				let memory_failed = tokio::task::spawn_blocking(move || {
+					let failed = driver.as_mut().is_some_and(|driver| {
+						driver
+							.tools
+							.retain_memory(
+								&driver.root,
+								driver.log.id(),
+								driver.log.messages(),
+								"shutdown",
+								true,
+							)
+							.is_err()
+					});
+					drop(driver);
+					failed
+				})
+				.await
+				.context("session resource shutdown failed")?;
+				if memory_failed {
+					self.emit(None, SessionEngineEventKind::MemoryWarning {
+						operation: "retention".into(),
+					})?;
+				}
 				self.emit(None, SessionEngineEventKind::Closed)?;
 				self.closed.send_replace(true);
 				return Ok(());
@@ -659,6 +685,29 @@ impl Owner {
 						"model or host callback panicked; session owner closed".into(),
 					)),
 				};
+				if !poisoned {
+					let status = if request.cancellation.aborted() {
+						"cancelled"
+					} else if result.is_ok() {
+						"completed"
+					} else {
+						"failed"
+					};
+					if driver
+						.tools
+						.retain_memory(
+							&driver.root,
+							driver.log.id(),
+							driver.log.messages(),
+							status,
+							false,
+						)
+						.is_err()
+					{
+						let _ = events
+							.blocking_send(WorkerPacket::MemoryWarning { run, operation: "retention" });
+					}
+				}
 				let _ = events.blocking_send(WorkerPacket::Finished {
 					run,
 					driver: Box::new(driver),
@@ -675,6 +724,11 @@ impl Owner {
 
 	async fn packet(&mut self, packet: WorkerPacket) -> Result<()> {
 		match packet {
+			WorkerPacket::MemoryWarning { run, operation } => {
+				self.emit(Some(run), SessionEngineEventKind::MemoryWarning {
+					operation: operation.into(),
+				})?;
+			},
 			WorkerPacket::PluginEvent { run, tool_call_id, event } => {
 				self.emit(Some(run), SessionEngineEventKind::PluginEvent { tool_call_id, event })?;
 			},
@@ -793,17 +847,52 @@ impl Driver {
 	) -> Result<String> {
 		cancellation.heartbeat()?;
 		self.log.ensure_ready()?;
-		let context = agent::context(&self.root, prompt, &RunOptions {
+		let mut context = agent::context(&self.root, prompt, &RunOptions {
 			max_steps:      self.options.max_model_turns.unwrap_or(u32::MAX),
 			user_agent_dir: self.options.user_agent_dir.clone(),
 			tags:           self.options.tags.clone(),
 			cancellation:   cancellation.clone(),
 		})?;
+		if self
+			.tools
+			.refresh_memory_configuration(
+				&self.root,
+				self.log.id(),
+				self.log.messages(),
+				self.options.user_agent_dir.as_deref(),
+			)
+			.is_err()
+			&& !cancellation.aborted()
+		{
+			let _ =
+				events.blocking_send(WorkerPacket::MemoryWarning { run, operation: "configuration" });
+		}
+		let memory =
+			match self
+				.tools
+				.memory_context(&self.root, prompt, self.log.messages(), cancellation)
+			{
+				Ok(context) => context,
+				Err(_) => {
+					if !cancellation.aborted() {
+						let _ =
+							events.blocking_send(WorkerPacket::MemoryWarning { run, operation: "recall" });
+					}
+					None
+				},
+			};
 		cancellation.heartbeat()?;
-		self.commit(run, chat::user(prompt), events)?;
+		let skill_prompt = self.tools.prepare_skill_prompt(&self.root, prompt)?;
+		cancellation.heartbeat()?;
+		self.commit(run, chat::user(skill_prompt.as_deref().unwrap_or(prompt)), events)?;
 		let mut messages = vec![agent::system_message()];
+		let mut context_index = None;
 		if !context.is_empty() {
+			context_index = Some(messages.len());
 			messages.push(chat::system(&context));
+		}
+		if let Some(memory) = memory {
+			messages.push(chat::system(&memory));
 		}
 		messages.extend_from_slice(self.log.messages());
 		let mut turns = 0_u32;
@@ -815,6 +904,21 @@ impl Driver {
 				.is_some_and(|limit| turns >= limit)
 			{
 				bail!("model turn limit reached");
+			}
+			if turns > 0 {
+				agent::refresh_context(
+					&mut messages,
+					&mut context,
+					&mut context_index,
+					&self.root,
+					prompt,
+					&RunOptions {
+						max_steps:      self.options.max_model_turns.unwrap_or(u32::MAX),
+						user_agent_dir: self.options.user_agent_dir.clone(),
+						tags:           self.options.tags.clone(),
+						cancellation:   cancellation.clone(),
+					},
+				)?;
 			}
 			turns = turns
 				.checked_add(1)
@@ -860,17 +964,18 @@ impl Driver {
 			// including calls skipped by cancellation. Never strand replay pairs.
 			for call in calls {
 				let output = if call.function.name == "task" {
-					crate::task_tool::run(
+					crate::task_tool::run_with_memory(
 						&self.root,
 						&call.function.arguments,
 						self.model.as_ref(),
 						self.approval.as_ref(),
 						&crate::agent::RunOptions {
 							max_steps:      16,
-							user_agent_dir: None,
-							tags:           Default::default(),
+							user_agent_dir: self.options.user_agent_dir.clone(),
+							tags:           self.options.tags.clone(),
 							cancellation:   cancellation.clone(),
 						},
+						Some(self.tools.memory_inheritance()),
 					)
 					.map(tools::ToolOutput::text)
 				} else {

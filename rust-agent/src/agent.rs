@@ -44,9 +44,18 @@ pub fn run_with_options(
 	let root = workspace
 		.canonicalize()
 		.with_context(|| format!("failed to resolve {}", workspace.display()))?;
-	let mut session =
-		crate::agent_session::AgentSession::open(&root, Path::new(".omp/session.jsonl"), None)?;
-	session.submit(prompt, model, approval, options, &mut |_| Ok(()))
+	let mut session = crate::agent_session::AgentSession::open_with_storage_in(
+		&root,
+		&root,
+		Path::new(".omp/session.jsonl"),
+		None,
+		options.user_agent_dir.as_deref(),
+	)?;
+	let result = session.submit(prompt, model, approval, options, &mut |_| Ok(()));
+	let closed = session.close(&mut |_| Ok(()));
+	let answer = result?;
+	closed?;
+	Ok(answer)
 }
 
 pub(crate) fn context(workspace: &Path, prompt: &str, options: &RunOptions) -> Result<String> {
@@ -71,11 +80,65 @@ pub(crate) fn context(workspace: &Path, prompt: &str, options: &RunOptions) -> R
 	}
 	let mut index = harvest_brain::BrainIndex::default();
 	index.refresh(&stores)?;
+	crate::managed::catalog::remove_skill_documents(&mut index)?;
+	let directory =
+		crate::config::agent_dir_from(options.user_agent_dir.clone(), |key| std::env::var_os(key));
+	let settings = crate::settings::Settings::load(directory.as_deref(), root, &[])?;
+	let catalog = crate::managed::catalog::context(root, directory.as_deref(), &settings)?;
+	let catalog_size = catalog.chars().count();
+	if catalog_size > harvest_brain::MAX_CONTEXT_CHARS {
+		bail!("skill catalog exceeds host context budget");
+	}
 	let context = index.context_block(prompt, &harvest_brain::RetrievalContext {
 		tags: options.tags.clone(),
+		max_chars: Some(
+			harvest_brain::MAX_CONTEXT_CHARS
+				.saturating_sub(catalog_size)
+				.saturating_sub(2),
+		),
 		..Default::default()
 	});
-	Ok(context)
+	Ok(if context.is_empty() {
+		catalog
+	} else if catalog.is_empty() {
+		context
+	} else {
+		format!("{context}\n\n{catalog}")
+	})
+}
+
+/// Replace only our transient context message; provider protocol/history blocks
+/// remain untouched after managed artifact changes during a tool batch.
+pub(crate) fn refresh_context(
+	messages: &mut Vec<ChatMessage>,
+	context: &mut String,
+	index: &mut Option<usize>,
+	workspace: &Path,
+	prompt: &str,
+	options: &RunOptions,
+) -> Result<()> {
+	options.cancellation.heartbeat()?;
+	let fresh = self::context(workspace, prompt, options)?;
+	if &fresh == context {
+		return Ok(());
+	}
+	if let Some(position) = *index {
+		let current = messages
+			.get(position)
+			.context("transient context position disappeared")?;
+		if current.role != "system" || current.content.as_deref() != Some(context.as_str()) {
+			bail!("transient context no longer belongs to this host");
+		}
+		messages.remove(position);
+	}
+	*index = if fresh.is_empty() {
+		None
+	} else {
+		messages.insert(1, chat::system(&fresh));
+		Some(1)
+	};
+	*context = fresh;
+	Ok(())
 }
 
 pub(crate) fn system_message() -> ChatMessage {

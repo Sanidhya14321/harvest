@@ -14,7 +14,19 @@ pub fn doctest_selection(selection: &[String]) -> Result<Vec<String>> {
 		let (option, attached) = argument
 			.split_once('=')
 			.map_or((argument.as_str(), None), |(option, value)| (option, Some(value)));
-		if matches!(option, "--test" | "--bin" | "--bench" | "--example") {
+		if matches!(option, "-E" | "--filter-expr") {
+			let value = if let Some(value) = attached {
+				value
+			} else {
+				index += 1;
+				selection
+					.get(index)
+					.with_context(|| format!("{option} needs a filter expression"))?
+			};
+			if value.is_empty() || value.starts_with('-') {
+				bail!("{option} needs a filter expression");
+			}
+		} else if matches!(option, "--test" | "--bin" | "--bench" | "--example") {
 			let value = if let Some(value) = attached {
 				value
 			} else {
@@ -43,6 +55,26 @@ mod tests {
 
 	fn args(values: &[&str]) -> Vec<String> {
 		values.iter().map(|value| (*value).to_owned()).collect()
+	}
+
+	#[test]
+	fn nextest_filters_do_not_prevent_the_following_doctest_pass() -> Result<()> {
+		assert_eq!(
+			doctest_selection(&args(&[
+				"-p",
+				"harvest-omp",
+				"--lib",
+				"-E",
+				"test(memory::lifecycle_tests)",
+				"--filter-expr=test(interactive::input)",
+				"--features",
+				"full"
+			]))?,
+			args(&["-p", "harvest-omp", "--features", "full"])
+		);
+		assert!(doctest_selection(&args(&["-E"])).is_err());
+		assert!(doctest_selection(&args(&["--filter-expr="])).is_err());
+		Ok(())
 	}
 
 	#[test]

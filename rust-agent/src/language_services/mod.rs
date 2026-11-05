@@ -4,8 +4,12 @@
 pub(crate) mod cli;
 pub mod configuration;
 pub mod dap;
+mod diagnostics;
+pub mod discovery;
 pub mod edits;
+mod formatting;
 pub mod lsp;
 mod runtime;
+mod workspace;
 pub use configuration::{DapConfiguration, LspConfiguration, ProcessConfiguration};
 pub use runtime::Runtime;
